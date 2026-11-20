@@ -16,12 +16,13 @@
 "Repeat with }, {"
 > (document:text (buffers:document (buffers:find "*Messages*")))
 ""
-; A key that ends the repetition clears the hint.
+; A key that ends the repetition takes its hint away; C-x o starts a
+; repetition of its own.
 > (press! c1 "C-x" "o")
 > (keymap-names c1)
-(layout:keymap keys:global)
+(keymap layout:keymap keys:global)
 > (echo-area:current-message)
-#f
+"Repeat with o, O"
 > (layout:selected-view)
 #<view 4>
 ; A key bound in the keymap works only while it repeats.

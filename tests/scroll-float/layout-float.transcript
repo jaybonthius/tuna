@@ -154,6 +154,20 @@ class="float-child" style="--layout-float-inline-size:calc(30ch + var(--layout-f
 (layout:popups-root () (layout-float:container () #(views:view ((view . 20) (buffer . "*question*") (place box 1/2 1/5) (width . 3/5) (height lines 12) (locked . #t)))))
 > (eq? pal (layout-float:display-palette question))
 #t
+; Selecting a popup records no use of its buffer: the user does not go
+; back to a palette with C-x b.
+> (layout:select! ve)
+> (layout:select! pal)
+> (list (buffers:name (car (buffers:all))) (eq? (layout:selected-view) pal))
+("b" #t)
+; Nor do C-x <left> and C-x <right> step through a popup's buffers.
+> (raised (lambda () (layout:previous-buffer 1)))
+(layout:previous-buffer "Cannot switch buffers in a popup")
+; From a popup, the views C-x o visits start at the view of the layout
+; selected last.
+> (eq? (car (layout:other-views)) ve)
+#t
+> (layout:select! ve)
 ; The popups a module made go when it unloads.
 > (load-module! '(popper))
 > (define made (as-module '(popper) (popper:show! (layout:selected-view))))

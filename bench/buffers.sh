@@ -42,6 +42,7 @@ echo "$output" | awk '
     for (i in blocks) unit[blocks[i]] = "ns"
     unit["replace-rows-0mb"] = "ms"
     unit["replace-same-rows-0mb"] = "ms"
+    unit["move-to-front-0mb"] = "ns"
     missing = 0
   }
   $1 in unit {

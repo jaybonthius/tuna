@@ -48,6 +48,6 @@
 1
 > (press! "C-p" "RET")
 > (buffers:name (views:buffer (view)))
-"*scratch*"
+"notes.org"
 > (length (cddr (undo:history buffer-list:list-buffer)))
 1

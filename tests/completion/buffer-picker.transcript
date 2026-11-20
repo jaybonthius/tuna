@@ -35,6 +35,9 @@
 #<buffer notes>
 > (views:point (view))
 5
+; The preview left the view's buffer history as it was.
+> (map buffers:name (views:previous-buffers (view)))
+("*scratch*")
 ; A name that no candidate names makes a buffer of that name.
 > (define t (start! (lambda () (press! "C-x" "b"))))
 > (type! "fresh")
@@ -97,3 +100,55 @@
 39
 > (raised (lambda () (buffer-picker:switch-to-buffer 5)))
 (buffer-picker:switch-to-buffer "neither a buffer nor a location")
+; C-x b lists buffers used most recently first, those a view shows
+; after them and the current buffer last, as Consult does, so C-x b RET
+; goes back to the buffer left last.
+> (remove-option! buffer-picker:sources)
+> (remp buffers:kill! (remp (lambda (b) (buffers:internal-name? (buffers:name b))) (buffers:all)))
+()
+> (define one (buffers:make "one" "1\n"))
+> (define two (buffers:make "two" "2\n"))
+> (define three (buffers:make "three" "3\n"))
+> (layout:switch-to-buffer one)
+> (layout:switch-to-buffer three)
+> (layout:switch-to-buffer two)
+> (map buffers:name (remp (lambda (b) (buffers:internal-name? (buffers:name b))) (buffers:all)))
+("two" "three" "one")
+> (define t (start! (lambda () (press! "C-x" "b"))))
+> (wait-matches (session))
+> (texts (session))
+("three" "one" "two" "sub" "a.txt")
+> (press! "RET")
+> (result t)
+> (buffers:name (views:buffer (view)))
+"three"
+> (define t (start! (lambda () (press! "C-x" "b"))))
+> (press! "RET")
+> (result t)
+> (buffers:name (views:buffer (view)))
+"two"
+> (layout:switch-to-buffer one)
+> (layout:switch-to-buffer two)
+> (define right (layout-split:split-view! (view) (layout-split:direction row)))
+> (views:set-buffer! right one)
+> (define t (start! (lambda () (press! "C-x" "b"))))
+> (wait-matches (session))
+> (texts (session))
+("three" "one" "two" "sub" "a.txt")
+> (press! "C-g")
+! &quit
+> (result t)
+; A quit puts the view back before its preview ends, and the buffer
+; previewed records no use, so the order is as it was.
+> (define (order) (map buffers:name (remp (lambda (b) (buffers:internal-name? (buffers:name b))) (buffers:all))))
+> (define before (order))
+> (define left (layout:selected-view))
+> (define t (start! (lambda () (press! "C-x" "b"))))
+> (wait-matches (session))
+> (list (views:previewing? left) (buffers:name (views:buffer left)))
+(#t "three")
+> (press! "C-g")
+! &quit
+> (result t)
+> (equal? (order) before)
+#t

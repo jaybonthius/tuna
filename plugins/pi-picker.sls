@@ -55,19 +55,8 @@
   (map (lambda (chat) (cons (buffers:name (pi-chat:buffer chat)) chat)) chats))
 
 (define (%chat-preview view)
-  (let ([before #f])
-    (lambda (chat)
-      (cond
-        [chat
-         (unless before (set! before (cons (views:buffer view) (views:point view))))
-         (let ([b (pi-chat:buffer chat)])
-           (unless (eq? (views:buffer view) b) (views:set-buffer! view b)))]
-        [before
-         (let ([shown (car before)] [point (cdr before)])
-           (set! before #f)
-           (when (and shown (buffers:live? shown) (not (eq? (views:buffer view) shown)))
-             (views:set-buffer! view shown)
-             (views:set-point! view point)))]))))
+  (lambda (chat)
+    (if chat (views:preview-buffer! view (pi-chat:buffer chat)) (views:end-preview! view))))
 
 (define (%chats-for b)
   (if b (pi-chat:chats-for b) (reverse (pi:chats))))

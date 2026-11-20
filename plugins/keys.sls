@@ -27,6 +27,7 @@
    last-key key-count key-digit browser-key mouse-item-key screen-key valid-event? key-or-event? check-event event-key-clicks
    event-basic-type-of event-modifiers-of dropped-mouse-key? drag-as-click pending-typed pending-seq pending-posn make-pending
    current-press make-press current-keys current-shifted current-session current-event make-quit
+   running-press session-wrappers session-wrappers-set! press-handed? press-handed?-set! press-wrapped? press-wrapped?-set! press-session
    push-temporary! end-temporary! end-temporaries! end-owned! test-temporaries! quit-paused!
    set-prefix! prefix-keys push-universal-arguments! give-page-settings!
    call-ending-idleness)
@@ -253,7 +254,8 @@
 
   (define-record-type session
     (sealed #t)
-    (fields (mutable pending) (mutable prefix) (mutable temporaries) (mutable running) (mutable reading)))
+    (fields (mutable pending) (mutable prefix) (mutable temporaries) (mutable running) (mutable reading)
+            (mutable wrappers)))
 
   ;; A sequence is looked up in the keymaps of its first key, so the
   ;; position of a mouse key that starts one is kept with it.
@@ -269,7 +271,7 @@
 
   (define (session-of frame)
     (or (eq-hashtable-ref sessions frame #f)
-        (let ([s (make-session #f #f '() '() #f)])
+        (let ([s (make-session #f #f '() '() #f '())])
           (eq-hashtable-set! sessions frame s)
           s)))
 
@@ -603,11 +605,14 @@
         (assertion-violation 'keys:item-key "not a key's name" name))
       name))
 
-  ;; One parameter for the four, since each binding costs a
+  ;; One parameter for what a press binds, since each binding costs a
   ;; dynamic-wind.
   (define-record-type press
     (sealed #t)
-    (fields keys shifted? session event))
+    (fields keys shifted? session event (mutable handed?) (mutable wrapped?))
+    (protocol
+      (lambda (new)
+        (lambda (keys shifted? session event) (new keys shifted? session event #f #f)))))
 
   (define current-press (make-thread-parameter #f))
 
@@ -752,6 +757,7 @@
 
   (define (set-prefix! s prefix)
     (session-prefix-set! s prefix)
+    (let ([p (running-press)]) (when p (press-handed?-set! p #t)))
     (commands:keep-last-command!))
 
   (define (prefix-keys prefix)
@@ -967,14 +973,23 @@
                              (make-message-condition
                                (format "~a runs ~a, which is not loaded" typed (bound-name command)))))]
                         [else
-                         (let ([entry (list (current-task))])
+                         (let ([entry (list (current-task))] [wrappers (session-wrappers s)]
+                               [press (make-press typed shifted? s event)])
                            (when (car entry)
                              (session-running-set! s (cons entry (session-running s))))
-                           (parameterize ([current-press (make-press typed shifted? s event)])
-                             (if (eq? (commands:prefix-argument) prefix)
-                                 (commands:run (or command undefined))
-                                 (parameterize ([commands:prefix-argument prefix])
-                                   (commands:run (or command undefined)))))
+                           (session-wrappers-set! s '())
+                           (press-wrapped?-set! press (pair? wrappers))
+                           (parameterize ([current-press press])
+                             ((fold-left
+                                (lambda (run wrapper) (lambda () ((car wrapper) run)))
+                                (lambda ()
+                                  (if (eq? (commands:prefix-argument) prefix)
+                                      (commands:run (or command undefined))
+                                      (parameterize ([commands:prefix-argument prefix])
+                                        (commands:run (or command undefined)))))
+                                (reverse wrappers))))
+                           (when (press-handed? press)
+                             (session-wrappers-set! s (append wrappers (session-wrappers s))))
                            (session-running-set! s
                              (remp (lambda (e) (or (eq? e entry) (task-done? (car e)))) (session-running s))))]))])))]))))))
 
@@ -1071,8 +1086,25 @@
 
 (define (prefix-description client)
   (check-main-thread 'keys:prefix-description)
-  (let* ([s (eq-hashtable-ref sessions client #f)] [prefix (and s (session-prefix s))])
-    (and prefix (prefix-keys prefix))))
+  (let* ([s (eq-hashtable-ref sessions client #f)] [prefix (and s (session-prefix s))]
+         [parts (append (if s (map cdr (session-wrappers s)) '()) (if prefix (list (prefix-keys prefix)) '()))])
+    (and (pair? parts)
+         (fold-left (lambda (text part) (string-append text " " part)) (car parts) (cdr parts)))))
+
+(define (wrap-next-command! wrap description)
+  (check-main-thread 'keys:wrap-next-command!)
+  (unless (procedure? wrap)
+    (assertion-violation 'keys:wrap-next-command! "not a procedure" wrap))
+  (unless (string? description)
+    (assertion-violation 'keys:wrap-next-command! "not a string" description))
+  (let ([p (running-press)])
+    (unless p
+      (assertion-violation 'keys:wrap-next-command! "no key or click is being handled"))
+    (let ([s (press-session p)])
+      (session-wrappers-set! s (append (session-wrappers s) (list (cons wrap description))))
+      (when (commands:this-command)
+        (press-handed?-set! p #t)
+        (commands:keep-last-command!)))))
 
 (define push-keymap!
   (case-lambda
@@ -1110,9 +1142,11 @@
   "Clears the frame's pending keys and prefix argument; with none, also ends its temporary keymaps and quits the newest paused command its keys started."
   (let ([s (current-session)])
     (when s
-      (let ([none? (and (not (commands:prefix-argument)) (fx= (key-count (current-keys)) 1))])
+      (let ([none? (and (not (commands:prefix-argument)) (fx= (key-count (current-keys)) 1)
+                        (not (press-wrapped? (current-press))))])
         (session-pending-set! s #f)
         (session-prefix-set! s #f)
+        (session-wrappers-set! s '())
         (when none?
           (end-temporaries! s)
           (quit-paused! s))))))

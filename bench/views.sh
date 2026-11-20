@@ -32,6 +32,8 @@ echo "$output" | awk '
     unit["draw-nodes"] = "ns"
     unit["report"] = "ns"
     unit["save"] = "ns"
+    unit["save-with-histories"] = "ns"
+    unit["switch-buffer"] = "ns"
     unit["edit-ten-views"] = "ns"
     unit["edit-other-views"] = "ns"
     unit["next-stop"] = "ns"

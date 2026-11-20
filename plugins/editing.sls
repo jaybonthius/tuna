@@ -885,6 +885,14 @@
   "Moves the primary cursor to the end of the buffer and removes the other cursors."
   (%to-edge 'editing:end-of-buffer #t))
 
+(commands:define-command (beginning-of-buffer-other-view)
+  "Runs editing:beginning-of-buffer in layout:other-view-for-scrolling."
+  (views:call-with-view (layout:other-view-for-scrolling) (lambda () (commands:run beginning-of-buffer))))
+
+(commands:define-command (end-of-buffer-other-view)
+  "Runs editing:end-of-buffer in layout:other-view-for-scrolling."
+  (views:call-with-view (layout:other-view-for-scrolling) (lambda () (commands:run end-of-buffer))))
+
 ;; At an isolating node's edge the buffer has not ended, so the primary
 ;; cursor stopping there is no end of buffer.
 (define (%move-words who n)
@@ -1778,6 +1786,8 @@
 (keys:bind! keys:global "<end>" move-end-of-line)
 (keys:bind! keys:global "M-<" beginning-of-buffer)
 (keys:bind! keys:global "M->" end-of-buffer)
+(keys:bind! keys:global "M-<home>" beginning-of-buffer-other-view)
+(keys:bind! keys:global "M-<end>" end-of-buffer-other-view)
 (keys:bind! keys:global "M-f" forward-word)
 (keys:bind! keys:global "C-<right>" forward-word)
 (keys:bind! keys:global "M-<right>" forward-word)

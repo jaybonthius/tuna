@@ -22,6 +22,11 @@
 (define-table position-describers
   "Maps a kind's constructor to a procedure of a node of the kind and a view that describes where the view's point is in the node.")
 
+(define-enumeration switch-reason (previous next bury kill) switch-reasons)
+
+(define-option skipped-buffer-predicate (lambda (view buffer reason) #f) procedure?
+  "A procedure of a view, a buffer and a switch reason that returns true for a buffer views:previous-buffer!, views:next-buffer!, views:replace-buffer! or a killed buffer's views must not show in that view.")
+
 (define-enumeration align (top center bottom) %alignments)
 
 (define-enumeration scroller-align (start end center nearest) %scroller-alignments)
@@ -31,6 +36,8 @@
 (module %internals
   (check-main-thread check-view check-cursor check-node check-option check-position check-live-buffer shown-buffer
    current-view make-new-view! find-view views-showing bound-buffer show-buffer! drop-view! with-view-bound
+   switch-buffer! previous-buffer-in! next-buffer-in! replace-buffer-in! previous-buffers-of last-point-of set-last-point-of! previewing-in?
+   preview-in! end-preview-in!
    view-record? view-record-dropped? view-record-id view-record-cursors view-record-cursors-set!
    view-record-folds-set! view-record-narrowing-set! view-record-shown-count top-position body-size-in
    cursor-record? cursor-record-view cursor-record-goal cursor-record-goal-set!
@@ -65,12 +72,14 @@
             (mutable moved?) (mutable moved-by) (mutable moved-last) (mutable placed-by) clients
             (mutable folds) (mutable narrowing) (mutable options) (mutable states)
             (mutable saved?) (mutable host) (mutable dropped?) (mutable shown-count)
-            devices (mutable items) (mutable items-key) (mutable drawn) (mutable next-item))
+            devices (mutable items) (mutable items-key) (mutable drawn) (mutable next-item)
+            (mutable previous) (mutable next) (mutable preview))
     (protocol
       (lambda (new)
         (lambda (id name buffer place folds narrowing saved?)
           (new id name buffer '() place #f #f 'followed #f (make-eq-hashtable)
-               folds narrowing '() '() saved? #f #f 0 (make-hashtable string-hash string=?) (make-eqv-hashtable) #f 0 1)))))
+               folds narrowing '() '() saved? #f #f 0 (make-hashtable string-hash string=?) (make-eqv-hashtable) #f 0 1
+               '() '() #f)))))
 
   (define-record-type place
     (sealed #t)
@@ -82,11 +91,11 @@
     (sealed #t)
     (fields device (mutable number) (mutable placement) (mutable own) (mutable measured) (mutable facts)
             (mutable from) (mutable to) (mutable sizer) (mutable scale) (mutable map)
-            (mutable owed) (mutable reported) (mutable drawn-batch))
+            (mutable owed) (mutable reported) (mutable drawn-batch) (mutable sized))
     (protocol
       (lambda (new)
         (lambda (device)
-          (new device 0 #f #f #f #f #f #f #f 1.0 #f #f 0 -1)))))
+          (new device 0 #f #f #f #f #f #f #f 1.0 #f #f 0 -1 #f)))))
 
   (define-record-type facts
     (sealed #t)
@@ -243,7 +252,11 @@
   (define (primary-moved! v)
     (with-interrupts-disabled
       (view-record-moved?-set! v #t)
-      (view-record-moved-by-set! v (web:current-client))))
+      (view-record-moved-by-set! v (web:current-client)))
+    (let ([b (view-record-buffer v)])
+      (when b
+        (eq-hashtable-set! movers b v)
+        (set! history-dirty? #t))))
 
   ;; Before a device has measured a view at its width, nothing says how
   ;; many items fill it, so its first screen draws this many on each side.
@@ -429,12 +442,15 @@
 
   ;; What a browser measured of one buffer says nothing of another, but
   ;; each client keeps counting its placements, since its page may hold
-  ;; the last one.
+  ;; the last one. The view's element keeps its size, so its size is kept
+  ;; for body-size until the browser measures again: a display right after
+  ;; a preview asks how big the view is.
   (define (forget-measured! v)
     (hashtable-clear! (view-record-devices v))
     (forget-items! v)
     (for-each-client-view
       (lambda (c cs)
+        (when (client-view-facts cs) (client-view-sized-set! cs (client-view-facts cs)))
         (client-view-own-set! cs #f)
         (client-view-measured-set! cs #f)
         (client-view-facts-set! cs #f)
@@ -505,6 +521,9 @@
     (reset-view! v b))
 
   (define (drop-view! v)
+    (let ([b (view-record-buffer v)])
+      (when (and b (buffers:live? b)) (note-left! v b)))
+    (set! history-dirty? #t)
     (let ([all (remq v views)])
       (with-interrupts-disabled
         (set-shown-buffer! v #f)
@@ -514,6 +533,223 @@
         (set! dirty? #t)))
     (let-values ([(keys vs) (hashtable-entries copies)])
       (vector-for-each (lambda (k c) (when (eq? c v) (hashtable-delete! copies k))) keys vs)))
+
+  ;; Read from saved data, a kept state's positions are numbers until a
+  ;; buffer of the name is made, as a restored view's are.
+  (define-record-type kept
+    (sealed #t)
+    (fields (mutable buffer) (mutable name) (mutable cursors) (mutable place) moved-last
+            (mutable folds) (mutable narrowing) states))
+
+  (define history-dirty? #f)
+
+  (define movers (make-weak-eq-hashtable))
+  (define left-points (make-weak-eq-hashtable))
+  (define waiting-points (make-hashtable string-hash string=?))
+
+  (define (internal-buffer? b) (buffers:internal-name? (buffers:name b)))
+
+  (define (kept-of v b)
+    (make-kept b (buffers:name b)
+      (map (lambda (c) (cons (cursor-record-point c) (cursor-record-mark c))) (view-record-cursors v))
+      (view-record-place v) (view-record-moved-last v) (view-record-folds v) (view-record-narrowing v)
+      (view-record-states v)))
+
+  (define (bind-kept! k b)
+    (let* ([n (buffer-length b)] [spot (lambda (s after?) (make-spot b (fxmin n (spot-position s)) after?))])
+      (with-interrupts-disabled
+        (kept-buffer-set! k b)
+        (kept-cursors-set! k (map (lambda (pm) (cons (point-spot b (fxmin n (spot-position (car pm))))
+                                                     (and (cdr pm) (spot (cdr pm) #f))))
+                                  (kept-cursors k)))
+        (kept-place-set! k (let ([pl (kept-place k)]) (place-at pl (and (place-spot pl) (spot (place-spot pl) #f)))))
+        (kept-folds-set! k (map (lambda (f) (cons (spot (car f) #t) (spot (cdr f) #f))) (kept-folds k)))
+        (kept-narrowing-set! k (let ([r (kept-narrowing k)]) (and r (cons (spot (car r) #f) (spot (cdr r) #t))))))))
+
+  (define (kept-now k)
+    (let ([b (kept-buffer k)])
+      (cond
+        [b (and (buffers:live? b) b)]
+        [(buffers:find (kept-name k)) => (lambda (b) (bind-kept! k b) b)]
+        [else #f])))
+
+  (define (kept-for v b)
+    (find-first (lambda (k) (eq? (kept-now k) b)) (view-record-previous v)))
+
+  (define (next-now v)
+    (fold-right (lambda (x acc) (let ([b (if (string? x) (buffers:find x) x)]) (if (and b (buffers:live? b)) (cons b acc) acc)))
+                '() (view-record-next v)))
+
+  (define (previous-buffers-of v)
+    (fold-right (lambda (k acc) (let ([b (kept-now k)]) (if b (cons b acc) acc))) '() (view-record-previous v)))
+
+  (define (last-point-of b)
+    (and (not (internal-buffer? b))
+         (let ([v (eq-hashtable-ref movers b #f)])
+           (cond
+             [(and v (not (view-record-dropped? v)) (eq? (view-record-buffer v) b)) (point-of (car (view-record-cursors v)))]
+             [(eq-hashtable-ref left-points b #f) => buffers:anchor-position]
+             [(hashtable-ref waiting-points (buffers:name b) #f)
+              => (lambda (p)
+                   (let ([a (buffers:anchor b (fxmin p (buffer-length b)))])
+                     (eq-hashtable-set! left-points b a)
+                     (hashtable-delete! waiting-points (buffers:name b))
+                     (buffers:anchor-position a)))]
+             [else #f]))))
+
+  (define (set-last-point-of! b p)
+    (eq-hashtable-delete! movers b)
+    (hashtable-delete! waiting-points (buffers:name b))
+    (eq-hashtable-set! left-points b (buffers:anchor b p))
+    (set! history-dirty? #t))
+
+  (define (note-left! v b)
+    (when (let ([m (eq-hashtable-ref movers b #f)])
+            (or (not m) (eq? m v) (view-record-dropped? m) (not (eq? (view-record-buffer m) b))))
+      (eq-hashtable-delete! movers b)
+      (eq-hashtable-set! left-points b (buffers:anchor b (point-of (car (view-record-cursors v)))))
+      (set! history-dirty? #t)))
+
+  ;; A kept state's anchors stay with the history, so the view takes
+  ;; fresh ones: a preview that ends puts the state back as it was.
+  (define (show-kept! v b k)
+    (view-record-name-set! v (buffers:name b))
+    (set-shown-buffer! v b)
+    (let*-values ([(n) (buffer-length b)]
+                  [(lo hi) (let ([r (kept-narrowing k)])
+                             (if r (values (spot-position (car r)) (spot-position (cdr r))) (values 0 n)))]
+                  [(fresh) (lambda (s after?) (make-spot b (spot-position s) after?))])
+      (with-interrupts-disabled
+        (view-record-cursors-set! v
+          (map (lambda (pm)
+                 (make-cursor-record v (point-spot b (stop-within b lo hi (spot-position (car pm))))
+                   (and (cdr pm) (fresh (cdr pm) #f)) #f))
+               (kept-cursors k)))
+        (view-record-folds-set! v (map (lambda (f) (cons (fresh (car f) #t) (fresh (cdr f) #f))) (kept-folds k)))
+        (view-record-narrowing-set! v (let ([r (kept-narrowing k)]) (and r (cons (fresh (car r) #f) (fresh (cdr r) #t)))))
+        (view-record-states-set! v (kept-states k))
+        (view-record-moved?-set! v (eq? (kept-moved-last k) 'followed))
+        (view-record-moved-last-set! v (kept-moved-last k)))
+      (forget-measured! v)
+      (let ([pl (kept-place k)])
+        (place-all! v (place-at pl (and (place-spot pl) (fresh (place-spot pl) #f))) #f))))
+
+  (define (show-at-point! v b p)
+    (show-buffer! v b)
+    (let ([n (buffer-length b)])
+      (with-interrupts-disabled
+        (cursor-record-point-set! (car (view-record-cursors v)) (point-spot b (stop-within b 0 n (fxmin p n))))
+        (view-record-moved?-set! v #t))))
+
+  (define (leave! v)
+    (let ([b (view-record-buffer v)])
+      (when (and b (buffers:live? b))
+        (note-left! v b)
+        (unless (internal-buffer? b)
+          (view-record-previous-set! v
+            (cons (kept-of v b) (remp (lambda (k) (eq? (kept-now k) b)) (view-record-previous v))))))))
+
+  (define (enter! v b)
+    (let ([k (kept-for v b)] [p (last-point-of b)])
+      (when k (view-record-previous-set! v (remq k (view-record-previous v))))
+      (cond
+        [k (show-kept! v b k)]
+        [p (show-at-point! v b p)]
+        [else (show-buffer! v b)])
+      (eq-hashtable-set! movers b v)
+      (set! history-dirty? #t)
+      (mark-dirty!)))
+
+  (define (switch-buffer! v b)
+    (unless (eq? (view-record-buffer v) b)
+      (leave! v)
+      (view-record-next-set! v '())
+      (enter! v b)))
+
+  (define (skipped? v b reason) ((skipped-buffer-predicate) v b reason))
+
+  (define (previous-buffer-in! v)
+    (let* ([old (view-record-buffer v)] [next (next-now v)]
+           [ok? (lambda (b) (and b (not (eq? b old)) (not (memq b next)) (not (skipped? v b 'previous))))]
+           [b (or (exists (lambda (k) (let ([b (kept-now k)]) (and (ok? b) b))) (view-record-previous v))
+                  (find-first (lambda (b) (and (ok? b) (not (internal-buffer? b)))) (reverse (buffers:all)))
+                  (find-first (lambda (b) (and (not (eq? b old)) (kept-for v b) (not (skipped? v b 'previous))))
+                              (reverse next)))])
+      (when b
+        (leave! v)
+        (enter! v b)
+        (view-record-next-set! v (if old (cons old (remq old next)) next)))
+      b))
+
+  (define (next-buffer-in! v)
+    (let* ([old (view-record-buffer v)] [next (next-now v)]
+           [ok? (lambda (b) (and b (not (eq? b old)) (not (skipped? v b 'next))))]
+           [b (or (find-first (lambda (b) (and (ok? b) (kept-for v b))) next)
+                  (find-first (lambda (b) (and (ok? b) (not (internal-buffer? b)) (not (kept-for v b)))) (buffers:all))
+                  (exists (lambda (k) (let ([b (kept-now k)]) (and (ok? b) b))) (reverse (view-record-previous v))))])
+      (when b
+        (leave! v)
+        (enter! v b)
+        (view-record-next-set! v (remq b next)))
+      b))
+
+  (define (replace-buffer-in! v reason)
+    (let* ([old (view-record-buffer v)]
+           [ok? (lambda (b) (and b (not (eq? b old)) (not (skipped? v b reason))))]
+           [b (or (exists (lambda (k) (let ([b (kept-now k)]) (and (ok? b) b))) (view-record-previous v))
+                  (find-first (lambda (b) (and (ok? b) (not (internal-buffer? b)))) (buffers:all)))])
+      (when b
+        (when (and old (buffers:live? old)) (note-left! v old))
+        (forget-in-history! v old)
+        (enter! v b))
+      b))
+
+  (define (forget-in-history! v b)
+    (view-record-previous-set! v (remp (lambda (k) (or (eq? (kept-buffer k) b) (and (not (kept-buffer k)) b (string=? (kept-name k) (buffers:name b))))) (view-record-previous v)))
+    (view-record-next-set! v (remp (lambda (x) (if (string? x) (and b (string=? x (buffers:name b))) (eq? x b))) (view-record-next v)))
+    (set! history-dirty? #t))
+
+  ;; A preview changes no buffer's last point, so it keeps the entries it
+  ;; touches and puts them back when it ends.
+  (define (keep-last-point! before b)
+    (when (and b (not (assq b (vector-ref before 4))))
+      (vector-set! before 4
+        (cons (list b (eq-hashtable-ref movers b #f) (eq-hashtable-ref left-points b #f)) (vector-ref before 4)))))
+
+  (define (put-back-last-points! before)
+    (for-each
+      (lambda (e)
+        (let ([b (car e)] [mover (cadr e)] [left (caddr e)])
+          (if mover (eq-hashtable-set! movers b mover) (eq-hashtable-delete! movers b))
+          (if left (eq-hashtable-set! left-points b left) (eq-hashtable-delete! left-points b))))
+      (vector-ref before 4)))
+
+  (define (preview-in! v b)
+    (unless (view-record-preview v)
+      (let ([old (view-record-buffer v)])
+        (view-record-preview-set! v
+          (vector old (and old (buffers:live? old) (kept-of v old)) (view-record-previous v) (view-record-next v) '()))))
+    (unless (eq? (view-record-buffer v) b)
+      (let ([before (view-record-preview v)])
+        (keep-last-point! before (view-record-buffer v))
+        (keep-last-point! before b))
+      (leave! v)
+      (enter! v b)))
+
+  (define (previewing-in? v) (and (view-record-preview v) #t))
+
+  (define (end-preview-in! v)
+    (let ([before (view-record-preview v)])
+      (when before
+        (view-record-preview-set! v #f)
+        (let ([old (vector-ref before 0)] [k (vector-ref before 1)] [b (view-record-buffer v)])
+          (when (and k (buffers:live? old) (not (eq? b old)))
+            (show-kept! v old k)))
+        (put-back-last-points! before)
+        (view-record-previous-set! v (vector-ref before 2))
+        (view-record-next-set! v (vector-ref before 3))
+        (set! history-dirty? #t)
+        (mark-dirty!))))
 
   (define (place-at pl spot)
     (make-place (place-kind pl) spot (place-offset pl) (place-height pl) (place-left pl)))
@@ -2081,7 +2317,7 @@
 
   ;; A part of a cell that does not fit is no column or row.
   (define (body-size-in v c)
-    (let* ([cs (hashtable-ref (view-record-clients v) c #f)] [f (and cs (client-view-facts cs))])
+    (let* ([cs (hashtable-ref (view-record-clients v) c #f)] [f (and cs (or (client-view-facts cs) (client-view-sized cs)))])
       (if f
           (values (fxmax 1 (flonum->fixnum (flfloor (fl/ (fixnum->flonum (facts-width f)) (facts-char-width f)))))
                   (fxmax 1 (flonum->fixnum (flfloor (fl/ (fixnum->flonum (facts-height f)) (facts-line-height f))))))
@@ -2246,6 +2482,100 @@
           (cdr saved))
         (set! dirty? #f))))
 
+  ;; Histories and last points change with every edit of a buffer they
+  ;; hold, and building them costs far more than a view's own entry, so
+  ;; they are saved apart, at idle and when the plugin unloads, not after
+  ;; every batch with the views.
+  (define (saved-entry? e)
+    (and (list? e) (fx= (length e) 5)
+         (let-values ([(name place cursors folds narrowing) (apply values e)])
+           (and (string? name) (saved-place? place)
+                (pair? cursors) (list? cursors)
+                (for-all (lambda (c) (and (pair? c) (position? (car c)) (or (not (cdr c)) (position? (cdr c))))) cursors)
+                (list? folds) (for-all range? folds)
+                (or (not narrowing) (range? narrowing))))))
+
+  (define (saved-histories? x)
+    (and (pair? x) (list? (car x)) (list? (cdr x))
+         (for-all (lambda (h) (and (list? h) (fx= (length h) 3) (fixnum? (car h))
+                                   (list? (cadr h)) (for-all saved-entry? (cadr h))
+                                   (list? (caddr h)) (for-all string? (caddr h))))
+                  (car x))
+         (for-all (lambda (p) (and (pair? p) (string? (car p)) (position? (cdr p)))) (cdr x))))
+
+  (define-saved histories '(()) saved-histories?)
+
+  (define (place-datum moved-last pl)
+    (if (eq? moved-last 'followed)
+        'follow
+        (let ([round (lambda (x) (fl/ (flround (fl* x 100.0)) 100.0))])
+          (list (spot-position (place-spot pl)) (round (place-offset pl)) (round (place-height pl)) (round (place-left pl))))))
+
+  (define (kept-datum k)
+    (list (let ([b (kept-buffer k)]) (if b (buffers:name b) (kept-name k)))
+          (place-datum (kept-moved-last k) (kept-place k))
+          (map (lambda (pm) (cons (spot-position (car pm)) (and (cdr pm) (spot-position (cdr pm))))) (kept-cursors k))
+          (map (lambda (f) (cons (spot-position (car f)) (spot-position (cdr f))))
+               (filter (lambda (f) (fx< (spot-position (car f)) (spot-position (cdr f)))) (kept-folds k)))
+          (let ([n (kept-narrowing k)]) (and n (cons (spot-position (car n)) (spot-position (cdr n)))))))
+
+  (define (write-histories!)
+    (set! history-dirty? #f)
+    (let* ([kept (fold-right
+                   (lambda (v acc)
+                     (if (view-record-saved? v)
+                         (cons (list (view-record-id v)
+                                     (map kept-datum (filter (lambda (k) (or (kept-now k) (not (kept-buffer k))))
+                                                             (view-record-previous v)))
+                                     (map (lambda (x) (if (string? x) x (buffers:name x)))
+                                          (filter (lambda (x) (or (string? x) (buffers:live? x))) (view-record-next v))))
+                               acc)
+                         acc))
+                   '() views)]
+           [points (fold-right
+                     (lambda (b acc) (let ([p (last-point-of b)]) (if p (cons (cons (buffers:name b) p) acc) acc)))
+                     '() (buffers:all))]
+           [waiting (let-values ([(names ps) (hashtable-entries waiting-points)])
+                      (filter (lambda (np) (not (buffers:find (car np))))
+                              (map cons (vector->list names) (vector->list ps))))]
+           [now (cons kept (append points (list-sort (lambda (a b) (string<? (car a) (car b))) waiting)))])
+      (unless (equal? now (histories))
+        (set-saved! histories now))))
+
+  ;; A start makes its buffers again before it first idles, so an entry
+  ;; or a last point still waiting then names a buffer that is gone, and
+  ;; keeping it would grow the saved histories at every restart.
+  (define waiting? #t)
+
+  (define (forget-waiting!)
+    (set! waiting? #f)
+    (for-each
+      (lambda (v)
+        (view-record-previous-set! v (filter kept-now (view-record-previous v)))
+        (view-record-next-set! v (next-now v)))
+      views)
+    (vector-for-each
+      (lambda (name) (unless (buffers:find name) (hashtable-delete! waiting-points name)))
+      (hashtable-keys waiting-points))
+    (set! history-dirty? #t))
+
+  (define (restore-histories!)
+    (let ([saved (histories)])
+      (for-each
+        (lambda (h)
+          (let ([v (find-view (car h))])
+            (when v
+              (view-record-previous-set! v
+                (map (lambda (e)
+                       (let-values ([(name place cursors folds narrowing) (apply values e)])
+                         (make-kept #f name cursors
+                           (if (eq? place 'follow) (make-place 'position 0 0.0 0.0 0.0) (apply make-place 'position place))
+                           (if (eq? place 'follow) 'followed 'scrolled) folds narrowing '())))
+                     (cadr h)))
+              (view-record-next-set! v (caddr h)))))
+        (car saved))
+      (for-each (lambda (np) (hashtable-set! waiting-points (car np) (cdr np))) (cdr saved))))
+
   ;; An edit that deletes the node holding a cursor leaves its anchor
   ;; where no cursor may rest. Whether a position is a stop depends on the
   ;; nodes around it, so the cursors move once a batch, after its edits.
@@ -2261,6 +2591,7 @@
         (view-record-cursors v))))
 
   (define (note-edit buffer edit)
+    (set! history-dirty? #t)
     (let ([vs (hashtable-ref by-buffer buffer '())])
       (unless (null? vs)
         (set! dirty? #t)
@@ -2295,22 +2626,18 @@
             (hashtable-values (view-record-devices v))))
         vs)))
 
-  (define (replacement-for killed)
-    (let ([candidates (filter (lambda (b)
-                                (not (or (eq? b killed) (buffers:internal-name? (buffers:name b)))))
-                              (reverse (buffers:all)))])
-      (or (find-first (lambda (b) (null? (views-showing b))) candidates)
-          (and (pair? candidates) (car candidates)))))
-
   (define (note-kill buffer)
     (for-each (lambda (v) (when (eq? (view-record-host v) buffer) (drop-view! v))) views)
     (for-each
       (lambda (v)
-        (let ([next (replacement-for buffer)])
-          (if next
-              (show-buffer! v next)
-              (begin (set-shown-buffer! v #f) (reset-view! v #f)))))
-      (hashtable-ref by-buffer buffer '())))
+        (unless (replace-buffer-in! v 'kill)
+          (set-shown-buffer! v #f)
+          (reset-view! v #f)))
+      (hashtable-ref by-buffer buffer '()))
+    (for-each (lambda (v) (forget-in-history! v buffer)) views)
+    (eq-hashtable-delete! movers buffer)
+    (eq-hashtable-delete! left-points buffer)
+    (hashtable-delete! waiting-points (buffers:name buffer)))
 
   (define (after-batch ended)
     (ended)
@@ -2624,7 +2951,13 @@
   (record-writer (record-type-descriptor cursor-record)
     (lambda (c p wr) (fprintf p "#<cursor>")))
 
-  (restore!))
+  (restore!)
+  (restore-histories!)
+  (run-with-idle-timer 1
+    (lambda ()
+      (when waiting? (forget-waiting!))
+      (when history-dirty? (write-histories!))))
+  (on-unload write-histories!))
 
 (import %internals)
 
@@ -2640,7 +2973,53 @@
 (define (set-buffer! view buffer)
   (check-view 'views:set-buffer! view)
   (check-live-buffer 'views:set-buffer! buffer)
-  (show-buffer! view buffer))
+  (bound-buffer view)
+  (switch-buffer! view buffer))
+
+(define (previous-buffers view)
+  (check-view 'views:previous-buffers view)
+  (previous-buffers-of view))
+
+(define (previous-buffer! view)
+  (check-view 'views:previous-buffer! view)
+  (bound-buffer view)
+  (previous-buffer-in! view))
+
+(define (next-buffer! view)
+  (check-view 'views:next-buffer! view)
+  (bound-buffer view)
+  (next-buffer-in! view))
+
+(define (replace-buffer! view)
+  (check-view 'views:replace-buffer! view)
+  (bound-buffer view)
+  (replace-buffer-in! view 'bury))
+
+(define (last-point buffer)
+  (check-main-thread 'views:last-point)
+  (check-live-buffer 'views:last-point buffer)
+  (last-point-of buffer))
+
+(define (set-last-point! buffer position)
+  (check-main-thread 'views:set-last-point!)
+  (check-live-buffer 'views:set-last-point! buffer)
+  (unless (and (fixnum? position) (fx<= 0 position (document:length (buffers:document buffer))))
+    (assertion-violation 'views:set-last-point! "not a position in the buffer" position))
+  (set-last-point-of! buffer position))
+
+(define (preview-buffer! view buffer)
+  (check-view 'views:preview-buffer! view)
+  (check-live-buffer 'views:preview-buffer! buffer)
+  (bound-buffer view)
+  (preview-in! view buffer))
+
+(define (end-preview! view)
+  (check-view 'views:end-preview! view)
+  (end-preview-in! view))
+
+(define (previewing? view)
+  (check-view 'views:previewing? view)
+  (previewing-in? view))
 
 (define (drop! view)
   (check-view 'views:drop! view)

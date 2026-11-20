@@ -9,7 +9,7 @@
 ("hi" "hi\n" #f)
 > (run! shell-commands:shell-command "seq 3" #f)
 > (list (shown) (text (buffers:find "*Shell Command Output*")))
-(("*Shell Command Output*") "1\n2\n3\n")
+(("*scratch*" "*Shell Command Output*") "1\n2\n3\n")
 > (run! shell-commands:shell-command "false" #f)
 > (list (message) (text (buffers:find "*Shell Command Output*")))
 ("(Shell command failed with code 1 and no output)" "")

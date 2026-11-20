@@ -906,9 +906,10 @@
     (cond
       [(not v) (show! (or chat (pi:start (folder-for b))))]
       [(not (layout:deletable? (layout:view-node v)))
-       (let ([other (find (lambda (o) (and (not (chat-of o)) (not (buffers:internal-name? (buffers:name o)))))
-                          (reverse (buffers:all)))])
-         (when other (views:set-buffer! v other)))]
+       (let ([skip? (views:skipped-buffer-predicate)])
+         (with-options ([views:skipped-buffer-predicate (lambda (view o reason) (or (skip? view o reason) (chat-of o)))])
+           (views:replace-buffer! v)
+           (void)))]
       [else (layout:delete-part! (layout:view-node v))])))
 
 (define (%region-text chat b start end)

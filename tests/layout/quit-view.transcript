@@ -26,51 +26,46 @@
 > (commands:run layout:quit-view)
 > (list (shown) (views:point (layout:selected-view)))
 (((1 "notes" #t)) 5)
-; A quit takes its record: a second one finds none.
+; A quit with no record of a display that made the part buries the
+; view's buffer: it goes to the back of buffers:all and the view shows
+; its previous buffer, where the view left it.
 > (define right (layout:display-buffer (buffers:make "other" "")))
 > (shown)
 ((1 "notes" #t) (4 "other" #f))
+> (views:set-point! (layout:selected-view) 3)
 > (layout:display-buffer mail in-selected)
 #<view 1>
 > (commands:run layout:quit-view)
-> (shown)
-((1 "notes" #t) (4 "other" #f))
+> (list (shown) (views:point (layout:selected-view)))
+(((1 "notes" #t) (4 "other" #f)) 3)
+> (buffers:name (car (last-pair (remp (lambda (b) (buffers:internal-name? (buffers:name b))) (buffers:all)))))
+"mail"
+; A buried buffer is the last the buffer list offers: the view goes to
+; the previous buffers it has, then to the buffer used most recently.
 > (commands:run layout:quit-view)
 > (shown)
-((4 "other" #t))
+((1 "*Pager*" #t) (4 "other" #f))
 ; A record no longer counts once the view shows another buffer.
+> (layout:select! right)
 > (layout:display-buffer mail in-selected)
 #<view 4>
 > (views:set-buffer! (layout:selected-view) notes)
-; With no record and no other view in its level, quitting shows the
-; newest buffer that is not internal and that no view shows, else the
-; newest that is not internal.
 > (commands:run layout:quit-view)
 > (shown)
-((4 "other" #t))
-> (commands:run layout:quit-view)
-> (shown)
-((4 "mail" #t))
-; A buffer killed since the display is not shown again.
-> (layout:display-buffer notes in-selected)
-#<view 4>
-> (buffers:kill! mail)
-#t
-> (commands:run layout:quit-view)
-> (shown)
-((4 "other" #t))
+((1 "*Pager*" #f) (4 "mail" #t))
+; With nothing else to show, quitting deletes the view's part when it
+; can go, as Emacs's quit-window deletes the window.
 > (define (kill-others!)
-    (let ([b (views:buffer (layout:selected-view))])
-      (for-each (lambda (x) (unless (or (eq? x b) (buffers:internal-name? (buffers:name x))) (buffers:kill! x)))
-                (buffers:all))))
+    (remp buffers:kill!
+          (remp (lambda (x) (or (eq? x (views:buffer right)) (buffers:internal-name? (buffers:name x)))) (buffers:all))))
 > (kill-others!)
+()
 > (commands:run layout:quit-view)
-! layout:quit-view: no other buffer to show
+> (shown)
+((1 "mail" #t))
 ; A locked part is never deleted.
 > (define echo (layout:display-buffer (buffers:make "*Echo*" "")
                  (layout-split:display-at-side (layout:direction down) 90 'content '((locked . #t)))))
 > (layout:select! echo)
 > (commands:run layout:quit-view)
 ! layout:quit-view: a locked part with irritant #<node views:view 5>
-> (shown)
-((4 "other" #f) (5 "*Echo*" #t))

@@ -98,8 +98,7 @@ completion:buffer-category
 ; choice: C-; in C-x C-w writes the buffer and does not visit the file.
 > (keys:bind! completion:file-action-keymap "RET" file-picker:find-file)
 > (define draft (buffers:make "draft" "text\n"))
-> (layout:display-buffer draft)
-#<view 1>
+> (layout:switch-to-buffer draft)
 > (define t (start! (lambda () (press! "C-x" "C-w"))))
 > (minibuffer:set-input! (prompt) "~/src/draft.txt")
 > (sleep-for 0.3)
@@ -109,8 +108,7 @@ completion:buffer-category
 > (list (buffers:name (views:buffer (view))) (files:path draft))
 ("draft.txt" "$HOME/src/draft.txt")
 > (define b (buffers:make "other" "text\n"))
-> (layout:display-buffer b)
-#<view 1>
+> (layout:switch-to-buffer b)
 > (define t (start! (lambda () (press! "C-x" "C-w"))))
 > (minibuffer:set-input! (prompt) "~/src/notes.txt")
 > (sleep-for 0.3)

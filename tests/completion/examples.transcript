@@ -126,7 +126,7 @@ words:word-category
 > (define t (start! (lambda () (commands:run command-picker:execute-extended-command))))
 > (type! "find-file")
 > (rows (session))
-(("file-picker:find-file" (keyword . "C-x C-f") (shadow . "Visits PATH and shows its buffer in the selected view.")))
+(("file-picker:find-file" (keyword . "C-x C-f") (shadow . "Visits PATH and shows its buffer in the selected view.")) ("file-picker:find-file-other-view" (keyword . "C-x 4 f") (shadow . "Visits PATH and shows its buffer in another view, which it selects.")))
 > (press! "C-g")
 ! &quit
 ; The configuration's buffer sources: C-x b offers the notes too, valued

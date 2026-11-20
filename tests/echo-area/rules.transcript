@@ -59,7 +59,7 @@
 ; A message of "" clears it at once and logs nothing.
 > (echo-area:message! "")
 > (list (echo-area:current-message) (echo-area-element))
-(#f "<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-5\" data-line=\"1\" data-at=\"1\"><br></div></div>")
+(#f "<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-6\" data-line=\"1\" data-at=\"1\"><br></div></div>")
 ; Each message is logged; an equal one counts on the last line, and a
 ; message of several lines takes several lines.
 > (echo-area:message! "Saved")
@@ -70,7 +70,7 @@
 > (echo-area:current-message)
 "two\nlines"
 > (messages)
-"First\nHello\nSaved [3 times]\ntwo\nlines [2 times]\n"
+"No other view to select\nFirst\nHello\nSaved [3 times]\ntwo\nlines [2 times]\n"
 ; The log keeps echo-area:log-max lines, the oldest going first.
 > (set-option! echo-area:log-max 3)
 > (echo-area:message! "Next")
@@ -170,7 +170,7 @@ echo-area:show-messages
 #f
 > (advice-remove! echo-area:hidden? hide)
 > (echo-area-element)
-"<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-13\" data-line=\"1\" data-at=\"1\"><br></div></div>"
+"<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-14\" data-line=\"1\" data-at=\"1\"><br></div></div>"
 ; echo-area:current-face is the current message's face, or #f.
 > (echo-area:message! "Plain")
 > (echo-area:current-face)

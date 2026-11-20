@@ -138,10 +138,15 @@
   "Visits PATH and shows its buffer in the selected view."
   (layout:switch-to-buffer (files:visit path)))
 
+(commands:define-command (find-file-other-view [path (ask:file-name "Find file in other view: ")])
+  "Visits PATH and shows its buffer in another view, which it selects."
+  (layout:call-with-overriding-action layout:display-in-other-view (lambda () (find-file path))))
+
 (set-option! ask:file-name-reader read-file-name)
 (add-hook! minibuffer:input-changed %mark-discarded)
 ;; A candidate under a folder part that does not exist carries that
 ;; part, such as c/t/m's code/tuna/main.sls, which only partial matches.
 (table-set! completion:category-styles completion:file-category (list completion:partial))
 (keys:bind! keys:global "C-x C-f" find-file)
+(keys:bind! keys:global "C-x 4 f" find-file-other-view)
 (keys:bind! completion:file-action-keymap "f" find-file)

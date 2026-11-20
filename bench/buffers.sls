@@ -287,8 +287,23 @@
     (show-blocks "delete-into-table" (op-cost (with-undo b (lambda () (buffers:replace! b (+ (paragraph-start 999) 10) (+ cell-text 1) "")))))
     (show-blocks "yank-heading-mid-paragraph" (op-cost (with-undo b (lambda () (buffers:insert! b (+ text 8) (heading '() "Plan\n"))))))))
 
+;; A selection of a view moves its buffer to the front of the order of
+;; use: here among a hundred live buffers.
+(define (bench-move-to-front)
+  (let ([bs (map (lambda (i) (buffers:make (format "front-~a" i) "")) (iota 100))])
+    (show "move-to-front" 0
+      (median
+        (map (lambda (k)
+               (let ([picks (map (lambda (i) (list-ref bs (random 100))) (iota 200))])
+                 (collect-rendezvous)
+                 (let ([start (now-ns)])
+                   (for-each buffers:move-to-front! picks)
+                   (/ (- (now-ns) start) 200.0))))
+             (iota 9))))))
+
 (define (run)
   (random-seed 7)
+  (bench-move-to-front)
   (for-each bench '(1 10 100))
   (for-each bench-structured '(1 10))
   (bench-reconcile)

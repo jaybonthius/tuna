@@ -6,7 +6,7 @@
 > (run! shell-commands:async-shell-command "echo first; until [ -e go ]; do sleep 0.05; done")
 > (define first (buffers:find "*Async Shell Command*"))
 > (list (runs:status first) (shown) saved)
-(#f ("*Async Shell Command*") 0)
+(#f ("*scratch*" "*Async Shell Command*") 0)
 > (run! shell-commands:async-shell-command "echo second")
 > (define second (buffers:find "*Async Shell Command*<2>"))
 > (ended? second)

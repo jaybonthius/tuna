@@ -136,6 +136,27 @@
         (views:set-point! v (+ 1 (* 7 (mod i 50))))
         (batch-ended)))))
 
+;; The same batch with fifty buffers in each view's history, which
+;; views saves apart from the views, at idle.
+(define (save-with-histories-cost b)
+  (let* ([kept (map (lambda (k) (buffers:make (format "kept-~a" k) "kept\n")) (iota 50))]
+         [holder (buffers:make "holder-2"
+                   (apply code '() (map (lambda (k) (views:view `((view . ,(+ 2000 k)) (buffer . ,(buffers:name b))))) (iota 10))))]
+         [doc (buffers:document holder)]
+         [views (map (lambda (k) (views:atom-view (document:token doc (+ k 1)))) (iota 10))]
+         [v (car views)])
+    (for-each (lambda (w) (for-each (lambda (o) (views:set-buffer! w o)) kept) (views:set-buffer! w b)) views)
+    (batch-ended)
+    (ns-per-op 200
+      (lambda (i)
+        (views:set-point! v (+ 1 (* 7 (mod i 50))))
+        (batch-ended)))))
+
+;; Showing another buffer keeps the one left, with the view's state in it.
+(define (switch-cost a b)
+  (let ([v (views:make a)])
+    (ns-per-op 2000 (lambda (i) (views:set-buffer! v (if (even? i) b a))))))
+
 ;; Every edit tells each view of its buffer: what ten views add to an
 ;; edit.
 (define (edit-cost plain viewed)
@@ -172,6 +193,8 @@
     (show "draw-nodes" (draw-cost nodes))
     (show "report" (report-cost typical))
     (show "save" (save-cost (views:buffer typical)))
+    (show "save-with-histories" (save-with-histories-cost (views:buffer typical)))
+    (show "switch-buffer" (switch-cost (file-buffer 1000 #f) (file-buffer 1000 #f)))
     (show "edit-ten-views" (edit-cost (file-buffer 1000 #f) (file-buffer 1000 #f)))
     (show "edit-other-views" (other-views-cost (file-buffer 1000 #f) (file-buffer 1000 #f)
                                                (map (lambda (k) (file-buffer 10 #f)) (iota 10))))

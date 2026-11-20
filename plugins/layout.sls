@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (keys) (commands) (modes) (web) (haml))
+(import (buffers) (document) (views) (keys) (commands) (modes) (web) (haml) (ask))
 
 (define-enumeration direction (left right up down) directions)
 
@@ -430,10 +430,18 @@
       (set! selection-dirty? #t)))
 
   ;; Popups are drawn over the whole layout, zoomed or not.
+  ;; A popup's or a prompt's buffer is none the user returns to with
+  ;; C-x b, so only a view of the layout showing a buffer that is not
+  ;; internal records a use. A prompt that quits selects its view again
+  ;; before its picker ends the preview there, so a previewed buffer
+  ;; records none.
   (define (select-id! id)
     (unless (or (index-atom (popups-index) id) (exists (lambda (a) (eqv? (atom-id a) id)) (shown-atoms)))
       (set-zoom! #f))
-    (set-order! (cons id (remv id view-order))))
+    (set-order! (cons id (remv id view-order)))
+    (let* ([a (index-atom (current-index) id)] [b (and a (views:buffer (view-of a)))])
+      (when (and b (not (buffers:internal-name? (buffers:name b))) (not (views:previewing? (view-of a))))
+        (buffers:move-to-front! b))))
 
   ;; A deleted view leaves the order, so the first view left is where the
   ;; focused children lead from the root.
@@ -1608,11 +1616,18 @@
   (check-main-thread 'layout:find-view)
   (%showing b (map view-of (index-atoms))))
 
+(define inhibit-same-view?
+  (make-thread-parameter #f
+    (lambda (v)
+      (unless (boolean? v)
+        (assertion-violation 'layout:inhibit-same-view? "not a boolean" v))
+      v)))
+
 (define (reuse-view b)
   (unless (buffers:buffer? b)
     (assertion-violation 'layout:reuse-view "not a buffer" b))
   (check-main-thread 'layout:reuse-view)
-  (%showing b (views)))
+  (%showing b (if (inhibit-same-view?) (remq (selected-view) (views)) (views))))
 
 ;; The commands that mean the other views act in the level of the view
 ;; selected last in the layout, so in a popup, such as a prompt, they act
@@ -1630,9 +1645,12 @@
                [candidates (filter (lambda (u) (not (or (eqv? (atom-id u) selected) (locked-in? ix u) (placed-atom? ix u))))
                                    units)]
                [order (current-order)]
-               [age (lambda (u) (let ([m (memv (atom-id u) order)]) (if m (length m) 0)))])
+               [age (lambda (u) (let ([m (memv (atom-id u) order)]) (if m (length m) 0)))]
+               [showed (filter (lambda (u) (memq b (views:previous-buffers (view-of u)))) candidates)]
+               [newest (lambda (us) (fold-left (lambda (best u) (if (> (age u) (age best)) u best)) (car us) (cdr us)))]
+               [oldest (lambda (us) (fold-left (lambda (best u) (if (< (age u) (age best)) u best)) (car us) (cdr us)))])
           (and (pair? candidates)
-               (let ([v (view-of (fold-left (lambda (best u) (if (< (age u) (age best)) u best)) (car candidates) (cdr candidates)))])
+               (let ([v (view-of (if (pair? showed) (newest showed) (oldest candidates)))])
                  (views:set-buffer! v b)
                  v))))))
 
@@ -1641,27 +1659,23 @@
 
 (define-record-type %display
   (sealed #t)
-  (fields buffer made? previous point))
+  (fields buffer made?))
 
 ;; Weak, so a dropped view takes its record with it.
 (define %displays (make-weak-eq-hashtable))
 
-(define-record-type %shown
-  (sealed #t)
-  (fields view buffer point))
-
 (define (%views-and-buffers)
-  (map (lambda (a) (let ([v (view-of a)]) (make-%shown v (views:buffer v) (views:point v))))
+  (map (lambda (a) (let ([v (view-of a)]) (cons v (views:buffer v))))
        (append (index-atoms) (index-atom-list (popups-index)))))
 
 ;; A view that already showed the buffer keeps its record, so a second
 ;; display of it is undone as the first.
 (define (%note-display! v b before)
-  (let ([was (find (lambda (shown) (eq? (%shown-view shown) v)) before)])
+  (let ([was (assq v before)])
     (cond
-      [(not was) (eq-hashtable-set! %displays v (make-%display b #t #f #f))]
-      [(eq? (%shown-buffer was) b) (void)]
-      [else (eq-hashtable-set! %displays v (make-%display b #f (%shown-buffer was) (%shown-point was)))])
+      [(not was) (eq-hashtable-set! %displays v (make-%display b #t))]
+      [(eq? (cdr was) b) (void)]
+      [else (eq-hashtable-set! %displays v (make-%display b #f))])
     v))
 
 (define display-buffer
@@ -1673,9 +1687,13 @@
      (unless (or (not action) (procedure? action))
        (assertion-violation 'layout:display-buffer "not a procedure" action))
      (check-main-thread 'layout:display-buffer)
-     (let ([before (%views-and-buffers)])
+     (let ([before (%views-and-buffers)] [overriding (%overriding)])
        (%note-display!
-         (or (exists (lambda (rule)
+         (or (and overriding (unbox overriding) (not (buffers:internal-name? (buffers:name b)))
+                  (let ([action (unbox overriding)])
+                    (set-box! overriding #f)
+                    (%check-action-result 'layout:display-buffer (action b))))
+             (exists (lambda (rule)
                        (and ((car rule) b) (%check-action-result 'layout:display-buffer ((cdr rule) b))))
                      (reverse (table-entries display-rules)))
              (and action (%check-action-result 'layout:display-buffer (action b)))
@@ -1691,18 +1709,92 @@
 (define (switch-to-buffer b)
   (unless (buffers:buffer? b)
     (assertion-violation 'layout:switch-to-buffer "not a buffer" b))
-  (let* ([v (selected-view)] [ix (index-of-id (views:id v))])
-    (if (locked-in? ix (index-atom ix (views:id v)))
-        (let* ([before (%views-and-buffers)] [shown (display-buffer b)]
-               [was (find (lambda (s) (eq? (%shown-view s) shown)) before)])
-          (select! shown)
-          (when (and was (%shown-buffer was) (not (eq? (%shown-buffer was) b)))
-            (after-switch-to-buffer shown (%shown-buffer was) (%shown-point was))))
-        (let ([left (views:buffer v)])
-          (unless (eq? left b)
-            (let ([point (views:point v)])
-              (views:set-buffer! v b)
-              (when left (after-switch-to-buffer v left point))))))))
+  (let* ([v (selected-view)] [ix (index-of-id (views:id v))] [overriding (%overriding)])
+    (cond
+      [(or (locked-in? ix (index-atom ix (views:id v)))
+           (and overriding (unbox overriding) (not (buffers:internal-name? (buffers:name b)))))
+       (let* ([overridden? (not (locked-in? ix (index-atom ix (views:id v))))]
+              [before (map (lambda (shown) (list (car shown) (cdr shown) (views:point (car shown)))) (%views-and-buffers))]
+              [shown (display-buffer b)]
+              [was (assq shown before)])
+         (select! shown)
+         ;; A prefix such as C-x 4 4 sends the buffer to another view,
+         ;; which is no jump from the place the selected view shows.
+         (when (and was (cadr was) (not (eq? (cadr was) b)) (or (not overridden?) (eq? shown v)))
+           (after-switch-to-buffer shown (cadr was) (caddr was))))]
+      [else
+       (let ([left (views:buffer v)])
+         (unless (eq? left b)
+           (let ([point (views:point v)])
+             (views:set-buffer! v b)
+             (when left (after-switch-to-buffer v left point)))))])
+    (unless (buffers:internal-name? (buffers:name b))
+      (buffers:move-to-front! b))))
+
+(define %overriding (make-thread-parameter #f))
+
+(define (call-with-overriding-action action thunk)
+  (unless (procedure? action)
+    (assertion-violation 'layout:call-with-overriding-action "not a procedure" action))
+  (unless (procedure? thunk)
+    (assertion-violation 'layout:call-with-overriding-action "not a procedure" thunk))
+  (parameterize ([%overriding (box action)])
+    (thunk)))
+
+(define (display-in-other-view b)
+  (unless (buffers:buffer? b)
+    (assertion-violation 'layout:display-in-other-view "not a buffer" b))
+  (parameterize ([inhibit-same-view? #t])
+    ((display-action) b)))
+
+(define (display-in-selected-view b)
+  (unless (buffers:buffer? b)
+    (assertion-violation 'layout:display-in-selected-view "not a buffer" b))
+  (let* ([v (selected-view)] [id (views:id v)] [ix (index-of-id id)])
+    (and (eq? ix (current-index))
+         (not (locked-in? ix (index-atom ix id)))
+         (begin
+           (unless (eq? (views:buffer v) b) (views:set-buffer! v b))
+           v))))
+
+;; Emacs's override waits through mouse events, as a click that only
+;; moves point may come before the double click that shows a buffer, so a
+;; click whose command displayed nothing hands the wrapper on.
+(define (%overriding-wrapper action description)
+  (letrec ([wrap (lambda (run)
+                   (let ([overriding (box action)])
+                     (call-with-values
+                       (lambda () (parameterize ([%overriding overriding]) (run)))
+                       (lambda results
+                         (when (and (unbox overriding) (keys:event? (keys:command-event)))
+                           (keys:wrap-next-command! wrap description))
+                         (apply values results)))))])
+    wrap))
+
+;; Under M-x the keys that ran the prefix are M-x's, so the prefix is
+;; named instead, set apart as Emacs shows [other-window].
+(define (%prefix-description command)
+  (let ([typed (keys:command-keys)])
+    (if (and typed (eq? (keys:lookup (web:current-client) typed) command))
+        typed
+        (string-append "[" (symbol->string (commands:command-name command)) "]"))))
+
+(commands:define-command (other-view-prefix)
+  "Shows the buffer the next command displays in another view, which it selects."
+  (let ([description (%prefix-description other-view-prefix)])
+    (keys:wrap-next-command! (%overriding-wrapper display-in-other-view description) description)))
+
+(commands:define-command (same-view-prefix)
+  "Shows the buffer the next command displays in the selected view."
+  (let ([description (%prefix-description same-view-prefix)])
+    (keys:wrap-next-command! (%overriding-wrapper display-in-selected-view description) description)))
+
+(commands:define-command (kill-buffer-and-view)
+  "Kills the selected view's buffer and, when it is killed, deletes the view's part."
+  (let* ([v (selected-view)] [id (views:id v)] [ix (index-of-id id)])
+    (check-unlocked 'layout:kill-buffer-and-view ix (index-atom ix id))
+    (when (buffers:kill! (views:buffer v))
+      (delete-part! (view-node v)))))
 
 (define (%other-view-in? ix n)
   (let loop ([n n])
@@ -1710,18 +1802,63 @@
 
 (define (%after-other-view ix)
   (let ([b (exists (lambda (id) (let ([a (index-atom ix id)]) (and a (not (%other-view-in? ix a)) a))) (current-order))])
-    (and b (find (lambda (u) (not (locked-in? ix u))) (level-units ix (enclosing-level ix b) (visible-atoms))))))
+    (if b
+        (filter (lambda (u) (not (locked-in? ix u))) (level-units ix (enclosing-level ix b) (visible-atoms)))
+        '())))
 
-(commands:define-command (other-view)
-  "Selects the next view in the selected view's level that is not locked, cyclically, then the parts outside it and the popups that set other-view, or from a popup the view selected before it; a level inside it counts as its view selected last."
+(define (other-views)
+  (check-main-thread 'layout:other-views)
   (let-values ([(ix a units) (%level-units)])
     (let* ([id (selected-id)] [sx (index-of-id id)])
-      (if (%other-view-in? sx (index-atom sx id))
-          (let ([next (%after-other-view ix)])
-            (when next (select! (view-of next))))
-          (%cycle-other-view ix a units)))))
+      (map view-of
+           (if (%other-view-in? sx (index-atom sx id))
+               (%after-other-view ix)
+               (%cycle-atoms ix a units))))))
 
-(define (%cycle-other-view ix a units)
+(define (%select-other n)
+  (let ([others (other-views)])
+    (if (null? others)
+        (ask:message "No other view to select")
+        (let ([k (mod n (+ (length others) 1))])
+          (unless (zero? k) (select! (list-ref others (- k 1))))))))
+
+(commands:define-command (other-view [n (commands:prefix-number)])
+  "Selects the view n places on in layout:other-views, back for a negative n."
+  (%select-other n))
+
+(commands:define-command (other-view-backward [n (commands:prefix-number)])
+  "Selects the view n places back in layout:other-views."
+  (%select-other (- n)))
+
+(define-table other-view-keymap "Keys that go on selecting views after C-x o or C-x O.")
+
+(define (other-view-for-scrolling)
+  (check-main-thread 'layout:other-view-for-scrolling)
+  (let* ([id (selected-id)] [sx (index-of-id id)] [ix (current-index)])
+    (or (if (or (not (eq? sx ix)) (%other-view-in? sx (index-atom sx id)))
+            (let ([b (exists (lambda (id) (let ([a (index-atom ix id)]) (and a (not (%other-view-in? ix a)) a)))
+                             (current-order))])
+              (and b (view-of b)))
+            (find (lambda (v) (let ([b (views:buffer v)]) (and b (not (buffers:internal-name? (buffers:name b))))))
+                  (other-views)))
+        (error 'layout:other-view-for-scrolling "no other view"))))
+
+(define (%in-other-view command)
+  (views:call-with-view (other-view-for-scrolling) (lambda () (commands:run command))))
+
+(commands:define-command (scroll-other-view)
+  "Runs views:scroll-up in layout:other-view-for-scrolling."
+  (%in-other-view views:scroll-up))
+
+(commands:define-command (scroll-other-view-down)
+  "Runs views:scroll-down in layout:other-view-for-scrolling."
+  (%in-other-view views:scroll-down))
+
+(commands:define-command (recenter-other-view)
+  "Runs views:recenter-top-bottom in layout:other-view-for-scrolling."
+  (%in-other-view views:recenter-top-bottom))
+
+(define (%cycle-atoms ix a units)
   (let* ([selected (selected-id)]
          [level (enclosing-level ix a)]
          [px (popups-index)]
@@ -1734,12 +1871,11 @@
          [joined (append units outside)]
          [m (memp (lambda (u) (eqv? (atom-id u) (atom-id a))) joined)]
          [from-a (if m (append m (list-head joined (fx- (length joined) (length m)))) joined)]
-         [after (if (and m (eqv? (atom-id a) selected)) (cdr from-a) from-a)]
-         [next (find (lambda (u)
-                       (not (or (eqv? (atom-id u) selected)
-                                (and (not (memq u outside)) (locked-in? ix u)))))
-                     after)])
-    (when next (select! (view-of next)))))
+         [after (if (and m (eqv? (atom-id a) selected)) (cdr from-a) from-a)])
+    (filter (lambda (u)
+              (not (or (eqv? (atom-id u) selected)
+                       (and (not (memq u outside)) (locked-in? ix u)))))
+            after)))
 
 (commands:define-command (delete-view)
   "Deletes the selected view's part; in the part mode, the selected part, then selects the part before it, else the one after."
@@ -1758,30 +1894,61 @@
   (exists (lambda (x) (and (not (same-node? x a)) (same-level? ix x a) (not (locked-in? ix x))))
           (index-atom-list ix)))
 
-;; The rule views applies when a view's buffer is killed, so the two
-;; agree.
-(define (%newest-buffer-but b)
-  (let ([candidates (filter (lambda (x) (not (or (eq? x b) (buffers:internal-name? (buffers:name x)))))
-                            (reverse (buffers:all)))])
-    (or (find (lambda (x) (null? (views:showing x))) candidates)
-        (and (pair? candidates) (car candidates)))))
+(define (%bury! who v)
+  (let ([b (views:buffer v)])
+    (when b (buffers:move-to-back! b))
+    (unless (views:replace-buffer! v)
+      (error who "no other buffer to show"))))
 
 (commands:define-command (quit-view)
-  "Undoes what layout:display-buffer did to the selected view while it shows that buffer: deletes its part if the display made it, else shows again the buffer it showed before, at the same point. Otherwise deletes its part when its level holds another view that is not locked, or else shows the newest buffer that is not internal, preferring one no view shows."
+  "Moves the selected view's buffer to the back of buffers:all. Deletes the view's part if layout:display-buffer made it for the buffer the view shows; otherwise shows the view's previous buffer where the view left it, or deletes the part when there is none."
   (let* ([v (selected-view)] [id (views:id v)] [ix (index-of-id id)] [a (index-atom ix id)]
          [d (eq-hashtable-ref %displays v #f)]
-         [d (and d (eq? (%display-buffer d) (views:buffer v)) d)]
-         [deletable? (or (not (eq? ix (current-index))) (%other-unlocked-view? ix a))])
+         [d (and d (eq? (%display-buffer d) (views:buffer v)) d)])
     (check-unlocked 'layout:quit-view ix a)
     (eq-hashtable-delete! %displays v)
-    (cond
-      [(and d (%display-made? d) deletable?) (remove-part! ix a) (void)]
-      [(and d (%display-previous d) (buffers:live? (%display-previous d)))
-       (views:set-buffer! v (%display-previous d))
-       (views:set-point! v (fxmin (%display-point d) (fx- (document:length (buffers:document (%display-previous d))) 1)))]
-      [deletable? (remove-part! ix a) (void)]
-      [(%newest-buffer-but (views:buffer v)) => (lambda (b) (views:set-buffer! v b))]
-      [else (error 'layout:quit-view "no other buffer to show")])))
+    (let ([deletable? (or (not (eq? ix (current-index))) (%other-unlocked-view? ix a))] [b (views:buffer v)])
+      (cond
+        [(and d (%display-made? d) deletable?)
+         (remove-part! ix a)
+         (when (and b (buffers:live? b)) (buffers:move-to-back! b))]
+        [else
+         (when b (buffers:move-to-back! b))
+         (unless (views:replace-buffer! v)
+           (if deletable?
+               (remove-part! ix a)
+               (error 'layout:quit-view "no other buffer to show")))]))
+    (void)))
+
+(define (%check-switchable who v)
+  (let* ([id (views:id v)] [ix (index-of-id id)])
+    (unless (eq? ix (current-index))
+      (error who "Cannot switch buffers in a popup"))
+    (check-unlocked who ix (index-atom ix id))))
+
+(commands:define-command (bury-buffer)
+  "Moves the selected view's buffer to the back of buffers:all and shows the view's previous buffer."
+  (let ([v (selected-view)])
+    (%check-switchable 'layout:bury-buffer v)
+    (%bury! 'layout:bury-buffer v)))
+
+(commands:define-command (previous-buffer [n (commands:prefix-number)])
+  "Shows in the selected view its previous buffer, n times."
+  (let ([v (selected-view)])
+    (%check-switchable 'layout:previous-buffer v)
+    (do ([k 0 (fx+ k 1)]) ((>= k n))
+      (unless (views:previous-buffer! v)
+        (error 'layout:previous-buffer "No previous buffer")))))
+
+(commands:define-command (next-buffer [n (commands:prefix-number)])
+  "Shows in the selected view its next buffer, n times."
+  (let ([v (selected-view)])
+    (%check-switchable 'layout:next-buffer v)
+    (do ([k 0 (fx+ k 1)]) ((>= k n))
+      (unless (views:next-buffer! v)
+        (error 'layout:next-buffer "No next buffer")))))
+
+(define-table buffer-navigation-keymap "Keys that go on through a view's buffers after C-x <left> or C-x <right>.")
 
 (commands:define-command (zoom [prefix (commands:prefix-argument)])
   "Zooms the selected view to fill its level; with a number n, the level n out; with C-u, the screen. When zoomed, shows the whole layout again."
@@ -2041,6 +2208,25 @@
 (keys:bind! keys:global "C-x o" other-view)
 (keys:bind! keys:global "C-x 0" delete-view)
 (keys:bind! keys:global "C-x 1" zoom)
+(keys:bind! keys:global "C-x O" other-view-backward)
+(keys:bind! other-view-keymap "o" other-view)
+(keys:bind! other-view-keymap "O" other-view-backward)
+(table-set! keys:repeat-keymaps other-view-keymap)
+(keys:bind! keys:global "C-x 4 4" other-view-prefix)
+(keys:bind! keys:global "C-x 4 1" same-view-prefix)
+(keys:bind! keys:global "C-x 4 0" kill-buffer-and-view)
+(keys:bind! keys:global "C-M-v" scroll-other-view)
+(keys:bind! keys:global "M-<next>" scroll-other-view)
+(keys:bind! keys:global "C-M-V" scroll-other-view-down)
+(keys:bind! keys:global "M-<prior>" scroll-other-view-down)
+(keys:bind! keys:global "C-M-L" recenter-other-view)
+(keys:bind! keys:global "C-x <left>" previous-buffer)
+(keys:bind! keys:global "C-x C-<left>" previous-buffer)
+(keys:bind! keys:global "C-x <right>" next-buffer)
+(keys:bind! keys:global "C-x C-<right>" next-buffer)
+(keys:bind! buffer-navigation-keymap "<left>" previous-buffer)
+(keys:bind! buffer-navigation-keymap "<right>" next-buffer)
+(table-set! keys:repeat-keymaps buffer-navigation-keymap)
 (keys:bind! keys:global "s-i" select-up)
 (keys:bind! keys:global "s-j" select-left)
 (keys:bind! keys:global "s-k" select-down)

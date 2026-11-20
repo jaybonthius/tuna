@@ -194,18 +194,18 @@ gone
 > (views:set-point! kv 5)
 > (views:keymaps kv)
 (field-keys box-keys)
-; set-buffer! shows another buffer as make would, keeping the view's
-; options.
+; set-buffer! shows another buffer at its last point, here that of the
+; view showing it, keeping the view's options.
 > (views:set-option! w views:wrap-lines #t)
 > (views:fold! w 2 3)
 > (views:set-buffer! w k)
 > (list (eq? (views:buffer w) k) (views:point w) (views:folded? w 2) (views:with-view w (views:wrap-lines)))
-(#t 2 #f #t)
+(#t 5 #f #t)
 ; Killing a buffer shows another buffer in its views.
 > (buffers:kill! k)
 #t
 > (list (buffers:name (views:buffer w)) (buffers:name (views:buffer kv)))
-("m" "m")
+("notes" "notes")
 ; Only the main thread uses views.
 > (define from-thread #f)
 > (begin
@@ -266,24 +266,17 @@ gone
 #t
 > (list (views:find 40) (eq? (views:buffer hv) host) (views:find (views:id hv)))
 (#f #f #<view 8>)
-; Each view of a killed buffer shows the newest buffer that no view
-; shows, else the newest buffer, never an internal one.
-> (map buffers:name (remp (lambda (b) (pair? (views:showing b))) (buffers:all)))
-()
+; Each view of a killed buffer shows its newest previous buffer, else
+; the buffer used most recently, never an internal one; nothing has been
+; used here, so that is the oldest.
 > (define older (buffers:make "older" "o\n"))
-> (define newer (buffers:make "newer" "n\n"))
-> (define newer-view (views:make newer))
 > (define inner (buffers:make " inner" "i\n"))
 > (define doomed (buffers:make "doomed" "d\n"))
-> (define doomed-views (list (views:make doomed) (views:make doomed)))
+> (define came-from-older (views:make older))
+> (views:set-buffer! came-from-older inner)
+> (views:set-buffer! came-from-older doomed)
+> (define doomed-views (list came-from-older (views:make doomed)))
 > (buffers:kill! doomed)
 #t
-> (list-sort string<? (map (lambda (v) (buffers:name (views:buffer v))) doomed-views))
-("newer" "older")
-> (define first-free (buffers:make "first-free" "a\n"))
-> (define last-free (buffers:make "last-free" "b\n"))
-> (define lone (views:make (buffers:make "doomed-2" "d\n")))
-> (buffers:kill! (views:buffer lone))
-#t
-> (buffers:name (views:buffer lone))
-"last-free"
+> (map (lambda (v) (buffers:name (views:buffer v))) doomed-views)
+("older" "notes")

@@ -67,7 +67,7 @@
 > (keymap-names c1)
 (layout:keymap keys:global)
 > (map (lambda (entry) (eq? (car entry) layout-split:resize-keymap)) (table-entries keys:repeat-keymaps))
-(#t #f)
+(#f #f #t #f)
 > (press! c1 "C-x" "{" "{")
 > (list (weights) (keymap-names c1))
 ((7/5 3/5) (layout-split:resize-keymap layout:keymap keys:global))
@@ -107,3 +107,23 @@
 ! layout-split:enlarge: the selected view is in no split
 > (list (echo-area:current-message) (keymap-names c1))
 ("the selected view is in no split" (layout:keymap keys:global))
+; Layout's buffer navigation repeats: after C-x <left>, each <left> or
+; <right> goes on through the selected view's buffers.
+> (press! c1 "C-g")
+> (define (show! name) (layout:switch-to-buffer (buffers:make name "")))
+> (for-each show! (list "p1" "p2" "p3"))
+> (press! c1 "C-x" "<left>" "<left>")
+> (buffers:name (views:buffer (layout:selected-view)))
+"p1"
+> (press! c1 "<right>")
+> (buffers:name (views:buffer (layout:selected-view)))
+"p2"
+; So does C-x o: each o or O selects the next or previous view.
+> (press! c1 "C-x" "3")
+> (define first (layout:selected-view))
+> (press! c1 "C-x" "o" "o")
+> (eq? (layout:selected-view) first)
+#t
+> (press! c1 "O")
+> (eq? (layout:selected-view) first)
+#f

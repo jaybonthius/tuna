@@ -14,27 +14,27 @@
       (wait-matches (session))
       (let* ([s (session)] [r (completion:spans s (car (match-list s)))]) (press! "C-g") r)))
 > (offered '("M-x") "find file")
-("file-picker:find-file")
+("file-picker:find-file" "file-picker:find-file-other-view")
 ! &quit
 > (offered '("M-x") "file find")
-("file-picker:find-file")
+("file-picker:find-file" "file-picker:find-file-other-view")
 ! &quit
 > (offered '("M-x") "find")
-("file-picker:find-file")
+("file-picker:find-file" "file-picker:find-file-other-view")
 ! &quit
 ; Dispatch characters, in either order with a plain word: ! leaves out,
 ; = is literal, ^ anchors at the start, ~ is flex, $ anchors at the end.
 > (offered '("M-x") "find !files")
-("file-picker:find-file")
+("file-picker:find-file" "file-picker:find-file-other-view")
 ! &quit
 > (offered '("M-x") "!files find")
-("file-picker:find-file")
+("file-picker:find-file" "file-picker:find-file-other-view")
 ! &quit
 > (offered '("M-x") "picker: =find-file")
-("file-picker:find-file")
+("file-picker:find-file" "file-picker:find-file-other-view")
 ! &quit
 > (offered '("M-x") "=find-file picker:")
-("file-picker:find-file")
+("file-picker:find-file" "file-picker:find-file-other-view")
 ! &quit
 > (offered '("M-x") "file ^files")
 ("files:write-file" "files:save-buffer" "files:not-modified" "files:save-some-buffers" "files:save-buffers-kill-tuna")
@@ -77,9 +77,9 @@
 > (type! "file find")
 > (wait-matches (session))
 > (texts (session))
-("file-picker:find-file")
+("file-picker:find-file" "file-picker:find-file-other-view")
+("<mark data-face=\"completion.match-0\">file</mark>" "<mark data-face=\"completion.match-1\">find</mark>" "<mark data-face=\"completion.match-0\">file</mark>" "<mark data-face=\"completion.match-1\">find</mark>")
 > (marks (lines-html (minibuffer:prompt-view (prompt))))
-("<mark data-face=\"completion.match-0\">file</mark>" "<mark data-face=\"completion.match-1\">find</mark>")
 > (press! "C-g")
 ! &quit
 ; Other styles keep one look: their matches have no face. Files try
@@ -118,7 +118,7 @@
 ; the categories' defaults stand in for it.
 > (table-set! completion:category-styles completion:command-category (list completion:prefix))
 > (offered '("M-x") "find file")
-("file-picker:find-file")
+("file-picker:find-file" "file-picker:find-file-other-view")
 ! &quit
 > (table-remove! completion:category-styles completion:command-category)
 > (set-option! completion:styles (option-default completion:styles))
@@ -126,11 +126,11 @@
 ()
 ! &quit
 > (offered '("M-x") "find-file")
-("file-picker:find-file")
+("file-picker:find-file" "file-picker:find-file-other-view")
 ! &quit
 > (remove-option! completion:styles)
 > (offered '("M-x") "find file")
-("file-picker:find-file")
+("file-picker:find-file" "file-picker:find-file-other-view")
 ! &quit
 ; Files try partial, then the styles set: in ~/src, the folder of the
 ; buffer shown, flex finds a name partial misses.

@@ -54,13 +54,22 @@
 > (run! pi-chat:toggle)
 > (buffers:name (views:buffer (view)))
 "a.txt"
+; Hiding a chat in a view that cannot go shows what the view showed
+; before its chats, not another chat.
+> (define other-chat (pi:start project))
+> (in-client (lambda () (layout:switch-to-buffer (pi-chat:buffer other-chat)) (layout:switch-to-buffer (pi-chat:buffer chat))))
+> (run! pi-chat:toggle)
+> (buffers:name (views:buffer (view)))
+"a.txt"
+> (pi:stop! other-chat)
+> (wait-until (lambda () (= (length (pi:chats)) 1)))
 ; C-c a r adds the region to the prompt: a reference the agent reads for
 ; an unmodified file buffer, the text in a fence for any other.
 > (in-client (lambda () (views:set-point! (view) 5) (views:set-mark! (view) 15)))
 > (run! pi-chat:add-region)
 > (shown chat)
 "lib/a.txt:2-3\n"
-> (in-client (lambda () (layout:switch-to-buffer file-buffer)))
+> (in-client (lambda () (layout:switch-to-buffer file-buffer) (views:set-point! (view) 1)))
 > (press! "x")
 > (in-client (lambda () (views:set-point! (view) 1) (views:set-mark! (view) 6)))
 > (run! pi-chat:add-region)

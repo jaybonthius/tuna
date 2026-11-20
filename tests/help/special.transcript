@@ -4,7 +4,12 @@
 ; hook sets locally.
 > (define notes (buffers:make "notes" "x\n"))
 > (layout:switch-to-buffer notes)
+> (eq? (layout:display-action) layout-split:display-pop-up)
+#t
 > (press! "C-h" "b")
+; With one view, *Help* pops up in a view below it.
+> (map (lambda (v) (buffers:name (views:buffer v))) (layout:views))
+("notes" "*Help*" " *Echo Area*" " *Minibuf*")
 > (layout:select! (help-view))
 > (define (bound key) (in-client (lambda () (commands:command-name (keys:lookup client key)))))
 > (list (modes:derived? help:mode modes:special) (modes:ancestry help:mode))
@@ -31,3 +36,10 @@
 > (press! "q")
 > (shown)
 (("notes" #t))
+; q buries *Help*: it goes to the back of the buffers, behind notes.
+> (and (member "*Help*" (cdr (member "notes" (map buffers:name (buffers:all))))) #t)
+#t
+; Unloading layout-split takes its display action back.
+> (unload-module! '(layout-split))
+> (eq? (layout:display-action) layout:use-other-view)
+#t

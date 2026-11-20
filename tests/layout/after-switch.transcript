@@ -31,4 +31,24 @@
 > (buffers:name (views:buffer echo))
 "*Echo*"
 > calls
-((1 "notes" 1))
+((1 "notes" 5))
+; A switch an overriding action sends to another view calls nothing; one
+; it keeps in the selected view calls as a plain switch does. C-x <left>
+; calls nothing.
+> (layout-split:split-view! (layout:selected-view) (layout-split:direction row))
+#<view 4>
+> (set! calls '())
+> (layout:call-with-overriding-action layout:display-in-other-view
+    (lambda () (layout:switch-to-buffer (buffers:make "other" ""))))
+> (cons (selected) (buffers:name (views:buffer (layout:selected-view))))
+(4 . "other")
+> calls
+()
+> (layout:call-with-overriding-action layout:display-in-selected-view
+    (lambda () (layout:switch-to-buffer notes)))
+> calls
+((4 "other" 1))
+> (set! calls '())
+> (commands:run layout:previous-buffer)
+> calls
+()

@@ -41,6 +41,7 @@
 > (views:id (layout:reuse-view notes))
 3
 > (press! c1 '("x" "control") '("o"))
+! ask:message: No other view to select
 > (selected)
 3
 > (set-option! layout:display-action layout:use-other-view)

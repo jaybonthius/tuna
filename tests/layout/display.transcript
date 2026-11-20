@@ -9,7 +9,7 @@
 > (views:id (layout:display-buffer notes))
 3
 > (tree)
-(layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Pager*"))) #(views:view ((view . 3) (buffer . "*scratch*")))))
+(layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "*Pager*"))) #(views:view ((view . 3) (buffer . "notes")))))
 > (selected)
 1
 ; A buffer already shown is shown where it is.
@@ -23,7 +23,7 @@
 > (views:id (layout:display-buffer pager))
 4
 > (tree)
-(layout:level () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Pager*"))) #(views:view ((view . 4) (buffer . "*scratch*")))) #(views:view ((view . 3) (buffer . "*scratch*")))))
+(layout:level () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Pager*"))) #(views:view ((view . 4) (buffer . "*Pager*")))) #(views:view ((view . 3) (buffer . "notes")))))
 ; Rules are tried newest first, then the caller's action, then the
 ; option's, then the selected view.
 > (define tried '())
@@ -38,7 +38,7 @@
 > (reverse tried)
 (newer older caller option)
 > (tree)
-(layout:level () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Pager*"))) #(views:view ((view . 4) (buffer . "*scratch*")))) #(views:view ((view . 3) (buffer . "*scratch*")))))
+(layout:level () (layout-split:container ((direction . row)) (layout-split:container ((direction . column)) #(views:view ((view . 1) (buffer . "*Pager*"))) #(views:view ((view . 4) (buffer . "*Pager*")))) #(views:view ((view . 3) (buffer . "notes")))))
 > (raised (lambda () (layout:display-buffer mail (lambda (b) 'nonsense))))
 (layout:display-buffer "an action returned what is not a view or #f")
 > (raised (lambda () (layout:display-buffer 'mail)))
@@ -91,7 +91,7 @@
 > (commands:run layout:zoom)
 > (commands:run layout:reset-layout)
 > (tree)
-(layout:level () (layout-split:container ((direction . column)) (layout:level () #(views:view ((view . 6) (buffer . "mail")))) #(views:view ((view . 5) (buffer . "*Echo*") (depth . 90) (size . content) (locked . #t)))))
+(layout:level () (layout-split:container ((direction . column)) (layout:level () #(views:view ((view . 6) (buffer . "*compilation*")))) #(views:view ((view . 5) (buffer . "*Echo*") (depth . 90) (size . content) (locked . #t)))))
 > (selected)
 6
 > (map views:id (layout:views))

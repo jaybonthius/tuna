@@ -11,7 +11,7 @@
 (module %internals
   (check-main-thread check-buffer check-change check-position check-range check-layer check-anchor
    check-edit check-spans check-version check-kind check-layer-change check-layer-read
-   make-buffer! find-buffer live-buffers buffer-live? rename-buffer! forget-buffer! with-current
+   make-buffer! find-buffer live-buffers buffer-live? rename-buffer! forget-buffer! with-current move-buffer!
    current-buffer frozen-document internal? with-silent check-piece
    replace-content! fitted-deletion refuses-typing-probe? splice-content! reconcile-node! edits-after map-position-through
    define-kind! note-constructor! find-kind find-constructor-kind stop-at next-stop-after previous-stop-before range-text range-atom-texts
@@ -34,7 +34,56 @@
   (define-table layer-types)
 
   (define by-name (make-hashtable string-hash string=?))
+
+  ;; The order of use is saved by name, since Tuna makes its buffers
+  ;; again at every start: a buffer made with a saved name takes its saved
+  ;; place among the buffers not used since, so the order outlasts a
+  ;; restart.
   (define made '())
+  (define-saved saved-order '() (lambda (v) (and (list? v) (for-all string? v))))
+  (define ranks
+    (let ([t (make-hashtable string-hash string=?)])
+      (let loop ([names (saved-order)] [i 0])
+        (unless (null? names)
+          (hashtable-set! t (car names) i)
+          (loop (cdr names) (fx+ i 1))))
+      t))
+  (define unmade (saved-order))
+  (define used (make-weak-eq-hashtable))
+
+  (define (rank b) (hashtable-ref ranks (buffer-name b) #f))
+
+  (define (placed-among order b)
+    (let ([r (rank b)])
+      (let loop ([bs order] [before '()])
+        (cond
+          [(null? bs) (reverse (cons b before))]
+          [(and r (not (eq-hashtable-contains? used (car bs)))
+                (let ([q (rank (car bs))]) (or (not q) (fx> q r))))
+           (append (reverse before) (cons b bs))]
+          [else (loop (cdr bs) (cons (car bs) before))]))))
+
+  (define (save-order!)
+    (let* ([live (fold-right (lambda (b acc) (if (internal? (buffer-name b)) acc (cons (buffer-name b) acc))) '() made)]
+           [now (append live (remp (lambda (n) (member n live)) unmade))])
+      (unless (equal? now (saved-order))
+        (set-saved! saved-order now))))
+
+  ;; A start makes its buffers again before it first idles, so a saved
+  ;; name no buffer has taken back by then names a buffer that is gone,
+  ;; and keeping it would grow the saved order at every restart.
+  (define (forget-unmade!)
+    (unless (null? unmade)
+      (set! unmade '())
+      (save-order!)))
+
+  (define (move-buffer! b front?)
+    (let ([others (remq b made)])
+      (with-interrupts-disabled
+        (eq-hashtable-set! used b #t)
+        (set! made (if front? (cons b others) (append others (list b)))))
+      (unless (internal? (buffer-name b))
+        (save-order!))))
 
   (define current-buffer (make-thread-parameter #f))
 
@@ -153,12 +202,15 @@
       (let ([b (make-buffer-record (string->immutable-string name) doc (make-scope) (internal? name))])
         (with-interrupts-disabled
           (hashtable-set! by-name (buffer-name b) b)
-          (set! made (cons b made)))
+          (set! made (placed-among made b))
+          (set! unmade (remp (lambda (n) (string=? n name)) unmade)))
+        (unless (internal? name)
+          (save-order!))
         b)))
 
   (define (find-buffer name) (hashtable-ref by-name name #f))
 
-  (define (live-buffers) (reverse made))
+  (define (live-buffers) made)
 
   (define (rename-buffer! who b name)
     (unless (string? name)
@@ -170,13 +222,16 @@
       (with-interrupts-disabled
         (hashtable-delete! by-name (buffer-name b))
         (buffer-name-set! b name)
-        (hashtable-set! by-name name b))))
+        (hashtable-set! by-name name b))
+      (save-order!)))
 
   (define (forget-buffer! b)
     (with-interrupts-disabled
       (hashtable-delete! by-name (buffer-name b))
       (set! made (remq b made))
-      (buffer-scope-set! b #f)))
+      (buffer-scope-set! b #f))
+    (unless (internal? (buffer-name b))
+      (save-order!)))
 
   (define (with-current b thunk)
     (if (and (eq? (current-buffer) b) (eq? (current-scope) (buffer-scope b)))
@@ -1631,7 +1686,8 @@
   (table-set! kinds 'document:raw-byte
     (make-kind-entry 'document:raw-byte 'atom #f 'both 'all #f #f #f #t #f (lambda (atom) "\xFFFD;") '(buffers)))
 
-  (run-with-idle-timer 1 trim-logs!))
+  (run-with-idle-timer 1 trim-logs!)
+  (run-with-idle-timer 1 forget-unmade!))
 
 (import %internals)
 
@@ -1643,6 +1699,14 @@
   (find-buffer name))
 
 (define (all) (live-buffers))
+
+(define (move-to-front! buffer)
+  (check-change 'buffers:move-to-front! buffer)
+  (move-buffer! buffer #t))
+
+(define (move-to-back! buffer)
+  (check-change 'buffers:move-to-back! buffer)
+  (move-buffer! buffer #f))
 
 (define (free-name name)
   (unless (string? name)

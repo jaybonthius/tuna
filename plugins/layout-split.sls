@@ -246,9 +246,18 @@
   (child-attributes weight size)
   (collapse))
 
-(define (split-view! view direction)
+(define split-view!
+  (case-lambda
+    [(view direction) (split-view! view direction #f)]
+    [(view direction shown) (%split-view! view direction shown)]))
+
+;; A view made to show a displayed buffer shows it from the start, so its
+;; history does not begin with the buffer it was split from.
+(define (%split-view! view direction shown)
   (unless (views:view? view)
     (assertion-violation 'layout-split:split-view! "not a view" view))
+  (unless (or (not shown) (buffers:buffer? shown))
+    (assertion-violation 'layout-split:split-view! "not a buffer" shown))
   (unless (enum-set-member? direction (enum-set-universe (directions)))
     (assertion-violation 'layout-split:split-view! "not a split direction" direction))
   (let ([atom (layout:view-node view)] [b (views:buffer view)] [kind (%kind)])
@@ -258,11 +267,11 @@
       (assertion-violation 'layout-split:split-view! "a locked view" view))
     (unless b
       (assertion-violation 'layout-split:split-view! "the view shows no buffer" view))
-    (let* ([new (views:make b)]
-           [new-datum (vector 'views:view (list (cons 'view (views:id new)) (cons 'buffer (buffers:name b))))]
+    (let* ([new (views:make (or shown b))]
+           [new-datum (vector 'views:view (list (cons 'view (views:id new)) (cons 'buffer (buffers:name (or shown b)))))]
            [d (node-datum atom)]
            [parent (document:enclosing (buffers:document layout:buffer) (document:node-start atom))])
-      (views:set-point! new (views:point view))
+      (unless shown (views:set-point! new (views:point view)))
       (if (and (split-node? parent kind) (eq? (if (column? parent) 'column 'row) direction))
           (let ([w (/ (weight atom) 2)])
             (replace-node! atom (document:from-datum (with-weight d w) (with-weight new-datum w))))
@@ -304,9 +313,7 @@
   (or (layout:reuse-view b)
       (let* ([selected (layout:selected-view)] [atom (layout:view-node selected)])
         (and atom (not (layout:locked? atom))
-             (let ([v (split-view! selected direction)])
-               (views:set-buffer! v b)
-               v)))))
+             (split-view! selected direction b)))))
 
 (define (display-below b)
   (unless (buffers:buffer? b)
@@ -317,6 +324,60 @@
   (unless (buffers:buffer? b)
     (assertion-violation 'layout-split:display-right "not a buffer" b))
   (%display-in b (direction row)))
+
+(define (%threshold? v) (or (not v) (and (fixnum? v) (fx> v 0))))
+
+(define-option split-width-threshold 160 %threshold?
+  "The fewest columns a view needs for layout-split:display-pop-up to split it beside, or #f never to.")
+
+(define-option split-height-threshold 80 %threshold?
+  "The fewest lines a view needs for layout-split:display-pop-up to split it below, or #f never to, except as the only view of its level.")
+
+;; A part that carries depth was placed at a side by a plugin, as
+;; display-at-side places one, and is no window of the user's to split.
+(define (%placed? atom level)
+  (let ([doc (buffers:document layout:buffer)])
+    (let loop ([n atom])
+      (cond
+        [(or (not n) (fx= (document:node-start n) (document:node-start level))) #f]
+        [(document:node-attribute n 'depth #f) #t]
+        [else (loop (document:enclosing doc (document:node-start n)))]))))
+
+(define (%size view)
+  (let ([client (or (web:current-client)
+                    (find (lambda (c) (let-values ([(columns lines) (views:body-size view c)]) columns))
+                          (web:clients)))])
+    (if client (views:body-size view client) (values #f #f))))
+
+(define (%split-sensibly view alone? b)
+  (let-values ([(columns lines) (%size view)])
+    (let ([height (split-height-threshold)] [width (split-width-threshold)])
+      (cond
+        [(and height lines (>= lines height)) (split-view! view (direction column) b)]
+        [(and width columns (>= columns width)) (split-view! view (direction row) b)]
+        [alone? (split-view! view (direction column) b)]
+        [else #f]))))
+
+(define (display-pop-up b)
+  (unless (buffers:buffer? b)
+    (assertion-violation 'layout-split:display-pop-up "not a buffer" b))
+  (or (layout:reuse-view b)
+      (let* ([selected (layout:selected-view)] [level (layout:level-of selected)])
+        (and level
+             (let* ([in-level (filter (lambda (v)
+                                        (let ([l (layout:level-of v)] [atom (layout:view-node v)])
+                                          (and l (fx= (document:node-start l) (document:node-start level))
+                                               (not (layout:locked? atom)) (not (%placed? atom level)))))
+                                      (layout:views))]
+                    [alone? (and (pair? in-level) (null? (cdr in-level)))]
+                    [cells (lambda (v) (let-values ([(columns lines) (%size v)]) (if columns (* columns lines) 0)))]
+                    [largest (and (pair? in-level)
+                                  (fold-left (lambda (best v) (if (> (cells v) (cells best)) v best)) (car in-level) (cdr in-level)))]
+                    [least-recent (find (lambda (v) (memq v in-level)) (reverse (layout:selection-order)))]
+                    [made (or (and largest (%split-sensibly largest alone? b))
+                              (and least-recent (not (eq? least-recent largest)) (%split-sensibly least-recent alone? b)))])
+               made)))
+      (layout:use-other-view b)))
 
 (commands:define-command (split-below)
   "Splits the selected view with a new view below it."
@@ -395,4 +456,5 @@
 (keys:bind! resize-keymap "}" enlarge)
 (keys:bind! resize-keymap "{" shrink)
 (table-set! keys:repeat-keymaps resize-keymap)
+(set-option! layout:display-action display-pop-up)
 (table-set! web:stylesheets 'layout-split "layout-split/layout-split.css")

@@ -1,0 +1,115 @@
+; layout-split:display-pop-up shows a buffer in a view already showing
+; it, else splits a view of the selected view's level when it is big
+; enough: below when it has split-height-threshold lines, else beside
+; when it has split-width-threshold columns, as Emacs's
+; split-window-sensibly. This configuration sets display-right as the
+; display action, and a setting of its own wins over the plugin's.
+> (eq? (layout:display-action) layout-split:display-right)
+#t
+> (set-option! layout:display-action layout-split:display-pop-up)
+> (define c1 (web:add-client! 1))
+> (define (named name) (buffers:make name (string-append name "\n")))
+> (define (outline) (shape (tree)))
+> (define (shape d)
+    (cond
+      [(vector? d) (buffers:name (views:buffer (views:find (cdr (assq 'view (vector-ref d 1))))))]
+      [(eq? (car d) 'layout-split:container) (cons (cdr (assq 'direction (cadr d))) (map shape (cddr d)))]
+      [else (cons (car d) (map shape (cddr d)))]))
+> (define size (cons 100 30))
+> (define (sized body-size view client) (values (car size) (cdr size)))
+> (advice-add! views:body-size sized)
+> (define text (views:make (named "text")))
+> (set-parts! (atom text))
+> (layout:select! text)
+; Too small either way, a view alone in its level splits below.
+> (define help (layout:display-buffer (named "*Help*")))
+> (outline)
+(layout:level (column "text" "*Help*"))
+; The view a display makes shows the buffer from the start, so its
+; history does not hold the buffer it was split from.
+> (views:previous-buffers help)
+()
+> (layout:display-buffer (buffers:find "*Help*"))
+#<view 4>
+; With two views, neither big enough, it shows the buffer in the other.
+> (layout:display-buffer (named "*Other*"))
+#<view 4>
+> (outline)
+(layout:level (column "text" "*Other*"))
+; Wide enough, a view splits beside: the larger first.
+> (set-parts! (atom text))
+> (layout:select! text)
+> (set! size (cons 170 30))
+> (layout:display-buffer (named "*Wide*"))
+#<view 5>
+> (outline)
+(layout:level (row "text" "*Wide*"))
+; Tall enough, below first.
+> (set-parts! (atom text))
+> (layout:select! text)
+> (set! size (cons 170 90))
+> (layout:display-buffer (named "*Tall*"))
+#<view 6>
+> (outline)
+(layout:level (column "text" "*Tall*"))
+; The owner's configuration: beside at 80 columns, never below.
+> (set-parts! (atom text))
+> (layout:select! text)
+> (set-option! layout-split:split-width-threshold 80 layout-split:split-height-threshold #f)
+> (set! size (cons 90 90))
+> (layout:display-buffer (named "*Side*"))
+#<view 7>
+> (outline)
+(layout:level (row "text" "*Side*"))
+> (remove-option! layout-split:split-width-threshold layout-split:split-height-threshold)
+; A locked view is never split, nor counted: here text is the only
+; other view of its level, and splits.
+> (define locked (views:make (named "*Locked*")))
+> (set-parts! (layout-split:container '((direction . row)) (atom text) (atom locked '(locked . #t))))
+> (layout:select! text)
+> (set! size (cons 90 30))
+> (layout:display-buffer (named "*Beside locked*"))
+#<view 9>
+> (outline)
+(layout:level (row (column "text" "*Beside locked*") "*Locked*"))
+; With no view to split, layout:use-other-view takes a view of the
+; level whose previous buffers hold the buffer, before the view
+; selected least recently.
+> (define a text)
+> (define b (views:make (named "b")))
+> (define c (views:make (named "c")))
+> (views:set-buffer! b (buffers:find "*Tall*"))
+> (views:set-buffer! b (buffers:find "b"))
+> (set-parts! (layout-split:container '((direction . row)) (atom a) (atom b) (atom c)))
+> (layout:select! c)
+> (layout:select! b)
+> (layout:select! a)
+> (eq? (layout:display-buffer (buffers:find "*Tall*")) b)
+#t
+; A part placed at a side is never split: from it, the buffer goes to
+; the user's windows, by layout:use-other-view.
+> (set-parts! (atom text))
+> (layout:select! text)
+> (define explorer (layout:display-buffer (named "*explorer*") (layout-split:display-at-side (layout:direction left) 50 '(columns 30))))
+> (layout:select! explorer)
+> (layout:display-buffer (named "*From explorer*"))
+#<view 3>
+> (outline)
+(layout:level (row "*explorer*" (layout:level "*From explorer*")))
+; q deletes a view the display made.
+> (layout:select! text)
+> (set! size (cons 90 30))
+> (define made (layout:display-buffer (named "*Made*")))
+> (layout:select! made)
+> (commands:run layout:quit-view)
+> (outline)
+(layout:level (row "*explorer*" (layout:level "*From explorer*")))
+; Without a client's report no threshold holds, and only a view alone
+; in its level splits.
+> (advice-remove! views:body-size sized)
+> (set-parts! (atom text))
+> (layout:select! text)
+> (layout:display-buffer (named "*Unmeasured*"))
+#<view 14>
+> (outline)
+(layout:level (column "*From explorer*" "*Unmeasured*"))

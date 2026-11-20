@@ -292,3 +292,22 @@
 > (sleep-for 0.1)
 > (released?)
 #t
+; Other buffers are searched in the order of buffers:all, the buffer
+; used last first, as Emacs's dabbrev walks buffer-list.
+> (define older (buffers:make "older" "quokka"))
+> (define newer (buffers:make "newer" "quarry"))
+> (define asking (buffers:make "asking" "qu"))
+> (layout:switch-to-buffer older)
+> (layout:switch-to-buffer asking)
+> (views:set-point! (view) 3)
+> (press! "M-/")
+> (word-before-point)
+"quokka"
+> (press! "C-g")
+> (press! "DEL" "DEL" "DEL" "DEL" "DEL" "DEL" "q" "u")
+> (layout:switch-to-buffer newer)
+> (layout:switch-to-buffer asking)
+> (views:set-point! (view) 3)
+> (press! "M-/")
+> (word-before-point)
+"quarry"

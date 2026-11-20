@@ -1,0 +1,16 @@
+(import (tuna) (tuna plugins) (document))
+(use-plugin views)
+(use-plugin files)
+(use-plugin save-place)
+
+(define (write-file! name text)
+  (let ([path (string-append (getenv "HOME") "/" name)])
+    (when (file-exists? path) (delete-file path))
+    (call-with-output-file path (lambda (p) (put-string p text)))))
+
+(define (leave! path point)
+  (let* ([b (files:visit path)] [v (views:make b)])
+    (views:set-point! v point)
+    (views:drop! v)
+    (buffers:kill! b)))
+(import (console))

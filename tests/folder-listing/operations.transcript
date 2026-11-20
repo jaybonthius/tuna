@@ -160,7 +160,7 @@
 > (set-option! folder-listing:other-listing-target? #t)
 > (layout-split:split-right)
 > (layout:switch-to-buffer into)
-> (layout:other-view)
+> (layout:other-view 1)
 > (goto "w.txt")
 > (press! "C")
 > (settle)

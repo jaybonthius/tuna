@@ -386,7 +386,7 @@
 ("$HOME/src/tuna/" "$HOME")
 > (pi-chat:region-text chat file-buffer 1 5)
 "lib/a.txt:1"
-> (in-client (lambda () (layout:switch-to-buffer file-buffer)))
+> (in-client (lambda () (layout:switch-to-buffer file-buffer) (views:set-point! (view) 1)))
 > (in-client pi-chat:current-chat)
 #f
 > (press! "x")
