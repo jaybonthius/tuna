@@ -1,0 +1,7 @@
+#!/bin/sh
+printf './a.txt\000%s\n' '1:one a'
+sleep 0.3
+printf './b.txt\000%s\n' '1:one b'
+sleep 0.3
+printf './a.txt\000%s\n' '2:two a'
+sleep 2

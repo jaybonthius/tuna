@@ -30,6 +30,7 @@
       (candidates (list->vector (map (lambda (b) (cons (buffers:name b) b)) ordered)))
       (in-order)
       (title "Buffers")
+      (narrow #\b)
       (category completion:buffer-category)
       (preview (and view (%buffer-preview view))))))
 

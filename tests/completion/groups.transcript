@@ -1,0 +1,421 @@
+; A group clause's title procedure names each candidate's group; matches
+; come by group, groups in the order of their first match, each group's
+; matches in the source's order, so each title shows once.
+> (define (titles s) (map (lambda (m) (completion:title s m)) (match-list s)))
+> (define (drawn after)
+    (let ([html (lines-html (list-view))] [open (string-append "<" after ">")])
+      (let loop ([i 0] [acc '()])
+        (cond
+          [(> (+ i (string-length open)) (string-length html)) (reverse acc)]
+          [(string=? (substring html i (+ i (string-length open))) open)
+           (let* ([from (+ i (string-length open))]
+                  [to (let find ([j from]) (if (char=? (string-ref html j) #\<) j (find (+ j 1))))])
+             (loop to (cons (substring html from to) acc)))]
+          [else (loop (+ i 1) acc)]))))
+> (define (fruit-title text value) (if (memv (string-ref text 0) '(#\a #\b)) "Early" "Late"))
+> (define fruit
+    (completion:source
+      (candidates (vector "cherry" "apple" "date" "banana" "avocado"))
+      (group fruit-title)))
+> (define t (start! (lambda () (completion:read "? " (list fruit) #f))))
+> (define s (session))
+> (texts s)
+("date" "cherry" "apple" "banana" "avocado")
+> (titles s)
+("Late" "Late" "Early" "Early" "Early")
+> (eq? (car (titles s)) (cadr (titles s)))
+#t
+> (type! "a")
+> (texts s)
+("date" "apple" "banana" "avocado")
+> (drawn "li class=\"ui-list-heading\"><span")
+("Late" "Early")
+; A title is drawn beside its row's element, not inside it, so it names
+; no row: a click on it, which names the list's own node, chooses
+; nothing and keeps the selection.
+> (define (list-start)
+    (let ([doc (buffers:document (views:buffer (list-view)))])
+      (let loop ([p 0])
+        (let ([x (document:token doc p)]) (if (and (document:node? x) (eq? (document:node-kind x) 'ui:list)) p (loop (+ p 1)))))))
+> (let* ([html (lines-html (list-view))] [heading "<li class=\"ui-list-heading\"><span>Late</span></li><div class=\"node whole"])
+    (let loop ([i 0]) (and (<= (+ i (string-length heading)) (string-length html))
+                           (or (string=? (substring html i (+ i (string-length heading))) heading) (loop (+ i 1))))))
+#t
+> (press! "C-n")
+> (selected-text s)
+"apple"
+> (click-token! (list-view) (list-start))
+> (list (selected-text s) (input))
+("apple" "a")
+> (press! "C-g")
+! &quit
+; The list draws a heading above its first shown row too, so rows shown
+; from inside a group still name it; headings take lines of the list's
+; completion-list:lines, 15 here.
+> (define long-group
+    (completion:source
+      (candidates (list->vector (append (map (lambda (i) (format "a.txt:~a:x" (+ i 1))) (iota 30)) (list "b.txt:1:x"))))
+      (in-order)
+      (group (lambda (text value) (substring text 0 5)) (lambda (text value) (substring text 6 (string-length text))))))
+> (define t (start! (lambda () (completion:read "? " (list long-group) #f))))
+> (define s (session))
+> (list (drawn "li class=\"ui-list-heading\"><span") (length (drawn "span class=\"completion-text\"")))
+(("a.txt") 14)
+> (press! "C-v")
+> (selected-text s)
+"a.txt:16:x"
+> (drawn "li class=\"ui-list-heading\"><span")
+("a.txt")
+> (drawn "span class=\"completion-text\"")
+("3:x" "4:x" "5:x" "6:x" "7:x" "8:x" "9:x" "10:x" "11:x" "12:x" "13:x" "14:x" "15:x" "16:x")
+> (press! "M->")
+> (drawn "li class=\"ui-list-heading\"><span")
+("a.txt" "b.txt")
+> (length (drawn "span class=\"completion-text\""))
+13
+> (press! "C-g")
+! &quit
+; The order of groups follows the first match: with an in-order source,
+; that is the candidates' order.
+> (define mixed
+    (completion:source
+      (candidates (vector "b1" "a1" "b2" "c1" "a2"))
+      (in-order)
+      (group (lambda (text value) (string (string-ref text 0))))))
+> (define t (start! (lambda () (completion:read "? " (list mixed) #f))))
+> (define s (session))
+> (texts s)
+("b1" "b2" "a1" "a2" "c1")
+> (titles s)
+("b" "b" "a" "a" "c")
+; A row procedure gives the text a row shows under its title; spans are
+; found in that text.
+> (press! "C-g")
+! &quit
+> (define lines
+    (completion:source
+      (candidates (vector (cons "notes.txt:1:needle" 1) (cons "notes.txt:2:hay" 2) (cons "todo.txt:1:needle" 3)))
+      (in-order)
+      (group (lambda (text value) (substring text 0 (- (string-length text) (if (= value 2) 6 9))))
+             (lambda (text value) (substring text (- (string-length text) (if (= value 2) 5 8)) (string-length text))))))
+> (define t (start! (lambda () (completion:read "? " (list lines) #f))))
+> (define s (session))
+> (type! "need")
+> (map (lambda (m) (list (completion:title s m) (completion:row-text s m) (completion:spans s m))) (match-list s))
+(("notes.txt" "1:needle" ((2 6 completion.match-0))) ("todo.txt" "1:needle" ((2 6 completion.match-0))))
+> (press! "C-g")
+! &quit
+; Bad clauses.
+> (raised (lambda () (completion:source (candidates (vector "a")) (group 1))))
+(completion:source "not a procedure")
+> (raised (lambda () (completion:source (candidates (vector "a")) (group values 2))))
+(completion:source "neither a procedure nor #f")
+> (raised (lambda () (completion:source (candidates (vector "a")) (narrow "b"))))
+(completion:source "neither a character other than a space nor #f")
+> (raised (lambda () (completion:source (candidates (vector "a")) (narrow #\space))))
+(completion:source "neither a character other than a space nor #f")
+> (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "a")) (group (lambda (t v) 'x)))) #f))))
+! completion:source: a group's title procedure returned what is not a string with irritant x
+> (result t)
+(raised "a group's title procedure returned what is not a string")
+; M-} and M-{ move between groups; a source with no group clause is one
+; group, under its title.
+> (define t (start! (lambda () (completion:read "? " (list fruit (completion:source (candidates (vector "fig" "grape")) (title "More"))) #f))))
+> (define s (session))
+> (selected-text s)
+"date"
+> (press! "M-}")
+> (selected-text s)
+"apple"
+> (press! "M-}")
+> (selected-text s)
+"fig"
+> (press! "M-}")
+> (selected-text s)
+"fig"
+> (press! "M-{")
+> (selected-text s)
+"apple"
+> (press! "C-u" "2" "M-{")
+> (selected-text s)
+"date"
+> (press! "C-u" "2" "M-}")
+> (selected-text s)
+"fig"
+> (press! "C-g")
+! &quit
+; A negative count moves the other way, as completion:next's does.
+> (define abc
+    (completion:source
+      (candidates (vector "apple" "apricot" "banana" "blueberry" "cherry"))
+      (in-order)
+      (group (lambda (text value) (string (string-ref text 0))))))
+> (define t (start! (lambda () (completion:read "? " (list abc) #f))))
+> (define s (session))
+> (press! "M-}" "M-}")
+> (selected-text s)
+"cherry"
+> (press! "C-u" "-" "M-}")
+> (selected-text s)
+"banana"
+> (press! "M--" "M-{")
+> (selected-text s)
+"cherry"
+> (press! "C-u" "-" "1" "C-n")
+> (selected-text s)
+"blueberry"
+> (press! "C-g")
+! &quit
+; C-v and M-v move a page of rows, as many as the list shows; with none
+; selected, counting from before the first match.
+> (define many (completion:source (candidates (list->vector (map (lambda (i) (format "row ~2,'0d" i)) (iota 40)))) (in-order)))
+> (define t (start! (lambda () (completion:read "? " (list many) #f))))
+> (define s (session))
+> (press! "C-v")
+> (selected-text s)
+"row 15"
+> (press! "C-v" "C-v")
+> (selected-text s)
+"row 39"
+> (press! "M-v")
+> (selected-text s)
+"row 24"
+> (press! "M-v" "M-v")
+> (selected-text s)
+"row 00"
+> (completion:select! s #f)
+> (press! "C-v")
+> (selected-text s)
+"row 14"
+; M-w saves the selected match's whole text, and with none selected the
+; input.
+> (press! "M-w")
+> (kill-ring:text (kill-ring:current))
+"row 14"
+> (completion:select! s #f)
+> (type! "row 3")
+> (completion:select! s #f)
+> (press! "M-w")
+> (kill-ring:text (kill-ring:current))
+"row 3"
+> (press! "C-g")
+! &quit
+; With none selected and an empty input, M-w saves the read's default.
+> (define t (start! (lambda () (completion:read "? " (list many) #f "row 07"))))
+> (define s (session))
+> (completion:select! s #f)
+> (press! "M-w")
+> (kill-ring:text (kill-ring:current))
+"row 07"
+> (press! "C-g")
+! &quit
+; A prefix is a candidate's base only where its source emits one, as a
+; file's folder; a split alone, as grep's search, is no part of it.
+> (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "main" "more")) (split (lambda (input) (min 4 (string-length input)))))) #f))))
+> (type! "lib/ma")
+> (press! "M-w")
+> (kill-ring:text (kill-ring:current))
+"main"
+; With a region in the input, M-w saves the region.
+> (press! "C-a" "C-SPC" "C-f" "C-f" "C-f" "M-w")
+> (kill-ring:text (kill-ring:current))
+"lib"
+> (press! "C-g")
+! &quit
+> (define t (start! (lambda () (press! "C-x" "C-f"))))
+> (type! "src/te")
+> (sleep-for 0.3)
+> (selected-text (session))
+"text.txt"
+> (press! "M-w")
+> (kill-ring:text (kill-ring:current))
+"~/src/text.txt"
+> (press! "C-g")
+! &quit
+; Narrowing: a narrow character then SPC shows only the sources with that
+; character and clears the input, as Consult's; DEL on the empty input
+; widens. The count line names the source narrowed to.
+> (define buffers-like (completion:source (candidates (vector "notes" "todo")) (title "Buffers") (narrow #\b)))
+> (define files-like (completion:source (candidates (vector "notes.txt" "init.ss")) (title "Files") (narrow #\f)))
+> (define t (start! (lambda () (completion:read-or-input "? " (list buffers-like files-like) #f))))
+> (define s (session))
+> (texts s)
+("todo" "notes" "init.ss" "notes.txt")
+> (type! "f")
+> (press! "SPC")
+> (input)
+""
+> (texts s)
+("init.ss" "notes.txt")
+> (completion:narrowed s)
+"Files"
+> (drawn "span class=\"completion-list-narrowed\"")
+("Files")
+> (type! "no")
+> (texts s)
+("notes.txt")
+> (press! "RET")
+> (result t)
+"notes.txt"
+> (define t (start! (lambda () (completion:read-or-input "? " (list buffers-like files-like) #f))))
+> (define s (session))
+> (type! "b")
+> (press! "SPC")
+> (texts s)
+("todo" "notes")
+; A narrowed read answers only with its sources' candidates.
+> (type! "init.ss")
+> (press! "DEL" "DEL" "DEL" "DEL" "DEL" "DEL" "DEL")
+> (input)
+""
+> (completion:narrowed s)
+"Buffers"
+> (press! "DEL")
+> (completion:narrowed s)
+#f
+> (texts s)
+("todo" "notes" "init.ss" "notes.txt")
+; SPC after a character that is no narrow character, or after more than
+; one, types a space.
+> (type! "x ")
+> (input)
+"x "
+> (press! "C-a" "C-k")
+> (type! "bb ")
+> (input)
+"bb "
+> (completion:narrowed s)
+#f
+> (press! "C-a" "C-k")
+> (in-client (lambda () (commands:run completion:narrow-by-input)))
+! completion:narrow-by-input: the input is not one narrow character with irritant ""
+> (press! "C-g")
+! &quit
+; Narrowing chooses among a read's sources, so a read of one source,
+; such as C-x k's or C-x b's by default, types SPC after its narrow
+; character.
+> (define t (start! (lambda () (press! "C-x" "k"))))
+> (type! "b sc")
+> (list (input) (completion:narrowed (session)))
+("b sc" #f)
+> (press! "C-g")
+! &quit
+> (set-option! buffer-picker:sources (option-default buffer-picker:sources))
+> (define t (start! (lambda () (press! "C-x" "b"))))
+> (type! "b ")
+> (list (input) (completion:narrowed (session)))
+("b " #f)
+> (press! "C-g")
+! &quit
+> (remove-option! buffer-picker:sources)
+; A prefix key bound to completion:narrow-key-keymap in
+; completion:narrowing-keymap narrows by the next character and keeps the
+; input, as consult-narrow does; a character no source has, such as the
+; prefix again, widens. A read with no narrow characters lacks the
+; prefix, which types itself there.
+> (keys:bind! completion:narrowing-keymap "<" completion:narrow-key-keymap)
+> (define t (start! (lambda () (completion:read-or-input "? " (list buffers-like files-like) #f))))
+> (define s (session))
+> (type! "not")
+> (press! "<" "f")
+> (list (input) (completion:narrowed s) (texts s))
+("not" "Files" ("notes.txt"))
+> (press! "<" "<")
+> (list (input) (completion:narrowed s))
+("not" #f)
+> (press! "<" "b")
+> (type! " ini")
+> (press! "<" "x")
+> (list (input) (completion:narrowed s))
+("not ini" #f)
+; completion:narrow takes a character: run with any other value it
+; raises rather than widening.
+> (press! "<" "f")
+> (in-client (lambda () (commands:run completion:narrow "b")))
+! completion:narrow: not a character with irritant "b"
+> (in-client (lambda () (commands:run completion:narrow #f)))
+! completion:narrow: no character was typed
+> (completion:narrowed s)
+"Files"
+; completion:narrow-characters lists a read's narrow characters with the
+; title of the first source of each, for a help command to show.
+> (completion:narrow-characters s)
+((#\b . "Buffers") (#\f . "Files"))
+> (press! "C-g")
+! &quit
+> (define t (start! (lambda () (completion:read "? " (list buffers-like) #f))))
+> (completion:narrow-characters (session))
+()
+> (press! "C-g")
+! &quit
+> (define t (start! (lambda () (completion:read "? " (list fruit) #f))))
+> (type! "<a")
+> (input)
+"<a"
+> (press! "C-g")
+! &quit
+> (keys:unbind! completion:narrowing-keymap "<")
+; Moving between groups walks one group's matches: across a group of a
+; million, M-} and M-{ still land on the groups' first matches.
+> (define million
+    (completion:source
+      (candidates (let ([v (make-vector 1000000)])
+                    (do ([i 0 (+ i 1)]) ((= i 1000000) v) (vector-set! v i (number->string i)))))
+      (in-order)
+      (group (lambda (text value) (if (string=? text "999999") "small" "big")))))
+> (define t (start! (lambda () (completion:read "? " (list million) #f))))
+> (define s (session))
+> (wait-matches s)
+> (completion:matches-count (completion:session-matches s))
+1000000
+> (selected-text s)
+"0"
+> (press! "M-}")
+> (selected-text s)
+"999999"
+> (press! "M-{")
+> (selected-text s)
+"0"
+> (press! "C-g")
+! &quit
+; Actions act on a grouped list's candidates: a grep line's whole text,
+; without the search, as M-w copies it. A narrowed read's input takes
+; the category of the sources it shows, as its matches do.
+> (use-plugin actions)
+> (define (act! . keys)
+    (let ([t (start! (lambda () (apply press! keys)))])
+      (wait-until (lambda () (or (task-done? t) (keys:reading client))))
+      t))
+> (set-option! grep:command-line (list (string-append (getenv "HOME") "/bin/grouped-rg")))
+> (views:set-buffer! (view) (files:visit "~/src/text.txt"))
+> (define t (start! (lambda () (press! "M-s" "r"))))
+> (define s (session))
+> (type! "any")
+> (wait-matches s)
+> (type! "#two")
+> (selected-text s)
+"a.txt:2:two a"
+> (define a (act! "C-."))
+> (press! "w")
+! &quit
+> (kill-ring:text (kill-ring:current))
+"a.txt:2:two a"
+> (remove-option! grep:command-line)
+> (define t (start! (lambda () (completion:read-or-input "? " (list buffers-like files-like) #f))))
+> (define s (session))
+> (completion:session-categories s)
+(#f #f)
+> (define typed-buffers (completion:source (candidates (vector "notes" "todo")) (title "Buffers") (narrow #\b) (category completion:location-category)))
+> (define typed-files (completion:source (candidates (vector "notes.txt")) (title "Files") (narrow #\f) (category completion:file-category)))
+> (press! "C-g")
+! &quit
+> (define t (start! (lambda () (completion:read-or-input "? " (list typed-buffers typed-files) #f))))
+> (define s (session))
+> (completion:session-categories s)
+(completion:location-category completion:file-category)
+> (type! "f")
+> (press! "SPC")
+> (completion:session-categories s)
+(completion:file-category)
+> (press! "C-g")
+! &quit

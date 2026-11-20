@@ -2,12 +2,17 @@
 
 @layer defaults {
   .completion-list .ui-list {
-    min-block-size: calc(var(--completion-list-rows, 0) * 1lh);
+    min-block-size: calc(var(--completion-list-lines, 0) * 1lh);
   }
 
   .completion-list-count {
     font-family: var(--tuna-font-ui);
     font-size: var(--tuna-font-size-1);
     font-variant-numeric: tabular-nums;
+  }
+
+  .completion-list-narrowed {
+    margin-inline-start: var(--tuna-space-3, 1ch);
+    font-weight: var(--tuna-font-weight-semibold, bold);
   }
 }

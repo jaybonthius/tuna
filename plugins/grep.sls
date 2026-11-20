@@ -173,13 +173,32 @@
       [(projects:find folder) => projects:root]
       [else folder])))
 
+(define (%path-length text path folder)
+  (if (char=? (string-ref text 0) #\/) (string-length path) (fx- (string-length path) (string-length folder))))
+
+;; A file's lines share one path string, so the title is cut from the
+;; first of them only.
+(define (%file-title folder)
+  (let ([path #f] [title #f])
+    (lambda (text location)
+      (unless (eq? (car location) path)
+        (set! path (car location))
+        (set! title (substring text 0 (%path-length text path folder))))
+      title)))
+
+(define (%line-row folder)
+  (lambda (text location)
+    (substring text (fx+ (%path-length text (car location) folder) 1) (string-length text))))
+
 (define (%read-location)
-  (completion:read "Grep: "
-    (list (completion:source
-            (stream (%search-source (%search-folder)))
-            (split %split)
-            (in-order)
-            (category completion:location-category)))))
+  (let ([folder (%search-folder)])
+    (completion:read "Grep: "
+      (list (completion:source
+              (stream (%search-source folder))
+              (split %split)
+              (in-order)
+              (group (%file-title folder) (%line-row folder))
+              (category completion:location-category))))))
 
 (commands:define-command (grep [location (%read-location)])
   "Visits LOCATION, a line found by rg in the files of the current buffer's project, else under its directory."

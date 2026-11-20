@@ -116,6 +116,54 @@
 > (files:path (views:buffer (view)))
 "$HOME/src/many.txt"
 > (views:set-buffer! (view) (files:visit "~/src/text.txt"))
+; Lines group by file, under the path rg printed, each row the line's
+; number and text. A file's lines come together, so the matches of each
+; round of lines go at the end of the same matches.
+> (set-option! grep:command-line (list (string-append (getenv "HOME") "/bin/grouped-rg")))
+> (define t (start! (lambda () (press! "M-s" "r"))))
+> (define s (session))
+> (type! "any")
+> (wait-until (lambda () (= (completion:matches-count (completion:session-matches s)) 1)))
+> (define first-matches (completion:session-matches s))
+> (wait-until (lambda () (= (completion:matches-count (completion:session-matches s)) 3)))
+> (eq? first-matches (completion:session-matches s))
+#t
+> (wait-matches s)
+> (map (lambda (m) (list (completion:title s m) (completion:row-text s m))) (match-list s))
+(("a.txt" "1:one a") ("a.txt" "2:two a") ("sub/b.txt" "1:one b") ("sub/b.txt" "2:two b"))
+; M-w saves a line as rg printed it, without the search, which no line
+; continues.
+> (selected-text s)
+"a.txt:1:one a"
+> (press! "M-w")
+> (kill-ring:text (kill-ring:current))
+"a.txt:1:one a"
+> (type! "#two")
+> (selected-text s)
+"a.txt:2:two a"
+> (press! "M-w")
+> (kill-ring:text (kill-ring:current))
+"a.txt:2:two a"
+> (press! "DEL" "DEL" "DEL" "DEL")
+> (type! "#b")
+> (map (lambda (m) (list (completion:title s m) (completion:row-text s m) (completion:spans s m))) (match-list s))
+(("sub/b.txt" "1:one b" ((6 7 completion.match-0))) ("sub/b.txt" "2:two b" ((6 7 completion.match-0))))
+> (press! "RET")
+> (result t)
+> (views:set-buffer! (view) (files:visit "~/src/text.txt"))
+; Lines of a file that come after another file's are matched again with
+; the earlier ones, so the file's lines stay together.
+> (set-option! grep:command-line (list (string-append (getenv "HOME") "/bin/interleaved-rg")))
+> (define t (start! (lambda () (press! "M-s" "r"))))
+> (define s (session))
+> (type! "any")
+> (wait-until (lambda () (= (completion:matches-count (completion:session-matches s)) 3)))
+> (completion:session-busy? s)
+#t
+> (texts s)
+("a.txt:1:one a" "a.txt:2:two a" "b.txt:1:one b")
+> (press! "C-g")
+! &quit
 ; Without rg, each search says so.
 > (set-option! grep:command-line (list "no-such-rg"))
 > (define t (start! (lambda () (press! "M-s" "r"))))

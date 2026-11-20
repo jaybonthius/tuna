@@ -14,7 +14,7 @@
 (use-plugin layout-float)
 (use-plugin completion-list
   (config
-    (set-option! completion-list:rows 15)))
+    (set-option! completion-list:lines 15)))
 (use-plugin completion-popup
   (config
     (add-hook! python:mode-hook

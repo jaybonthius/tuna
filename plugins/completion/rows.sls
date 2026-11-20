@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (ui) (buffers) (document) (views) (web) (haml))
+(import (completion) (ui) (buffers) (document) (views) (commands) (web) (haml))
 
 ;; Point rests before an atom that draws nothing while nothing is
 ;; selected, since a list's selected row is the row at point: the start
@@ -19,6 +19,8 @@
 
 (define %made 0)
 
+(define %all '())
+
 (define (%next-name)
   (set! %made (fx+ %made 1))
   (string-append " *Completions-" (number->string %made) "*"))
@@ -36,7 +38,9 @@
     (assertion-violation 'completion/rows:make "not a procedure" root))
   (let ([b (buffers:make (%next-name) (root (list (%none '()) (ui:list '()))))])
     (buffers:with-buffer b (set-option-local! views:cursor-visible #f))
-    (make-%rows session b most #f 0 '())))
+    (let ([r (make-%rows session b most #f 0 '())])
+      (set! %all (cons r %all))
+      r)))
 
 (define (rows? v) (%rows? v))
 
@@ -77,26 +81,17 @@
                                   [style (and width (string-append "--completion-column-size:" (number->string width) "ch"))])
           (%column-text c))))
 
-(define (%title-first? s matches k title)
-  (and title (or (fx= k 0) (not (equal? title (completion:title s (completion:matches-ref matches (fx- k 1))))))))
-
-;; A row is a match's place in the matches, so drawing it can tell the
-;; first match of a titled source without walking every match.
 (define (%draw-row r matches k)
-  (let* ([s (%rows-session r)] [m (completion:matches-ref matches k)] [text (completion:text s m)]
-         [title (completion:title s m)] [columns (completion:annotation s m)] [widths (%rows-widths r)])
-    ;; The title sits outside the row, which clips everything after its
-    ;; first line.
-    (list
-      (if (%title-first? s matches k title) (haml (:div.completion-title title)) '())
-      (haml
-        (:div.completion-row
-          (:span.completion-text (%mark text (completion:spans s m)))
-          (let loop ([cs columns] [ws widths] [acc '()])
-            (if (null? cs)
-                (reverse acc)
-                (loop (cdr cs) (if (pair? ws) (cdr ws) '())
-                      (cons (%draw-column (car cs) (and (pair? ws) (car ws))) acc)))))))))
+  (let* ([s (%rows-session r)] [m (completion:matches-ref matches k)] [text (completion:row-text s m)]
+         [columns (completion:annotation s m)] [widths (%rows-widths r)])
+    (haml
+      (:div.completion-row
+        (:span.completion-text (%mark text (completion:spans s m)))
+        (let loop ([cs columns] [ws widths] [acc '()])
+          (if (null? cs)
+              (reverse acc)
+              (loop (cdr cs) (if (pair? ws) (cdr ws) '())
+                    (cons (%draw-column (car cs) (and (pair? ws) (car ws))) acc))))))))
 
 (define (%choose r m)
   (let ([s (%rows-session r)])
@@ -154,7 +149,8 @@
        (ui:set-rows! b (%list-node b) (%indices 0 n)
                      (lambda (k) (%draw-row r matches k))
                      (lambda (k) (%choose r (completion:matches-ref matches k)))
-                     most)]
+                     most
+                     (lambda (k) (completion:title s (completion:matches-ref matches k))))]
       [(fx> n (%rows-count r))
        (ui:add-rows! b (%list-node b) (%indices (%rows-count r) n))
        (%rows-count-set! r n)])
@@ -165,21 +161,36 @@
   (%check 'completion/rows:width r)
   (let ([s (%rows-session r)])
     (fold-left (lambda (w column) (fx+ w 1 column))
-               (fold-left (lambda (w m) (fxmax w (string-length (completion:text s m)))) 0 (%shown r))
+               (fold-left (lambda (w m) (fxmax w (string-length (completion:row-text s m)))) 0 (%shown r))
                (%rows-widths r))))
 
 (define (lines r)
   (%check 'completion/rows:lines r)
-  (let* ([s (%rows-session r)] [matches (completion:session-matches s)] [shown (length (%shown r))])
-    (let loop ([k 0] [titles 0])
-      (if (fx= k shown)
-          (fx+ shown titles)
-          (loop (fx+ k 1)
-                (if (%title-first? s matches k (completion:title s (completion:matches-ref matches k))) (fx+ titles 1) titles))))))
+  (let ([b (%rows-buffer r)])
+    (ui:list-lines b (%list-node b))))
 
 (define (drop! r)
   (%check 'completion/rows:drop! r)
+  (set! %all (remq r %all))
   (buffers:kill! (%rows-buffer r)))
+
+;; A page is as many rows as the session's rows show, which only the
+;; plugin that shows them knows, so the page moves are here.
+(define (%move-page who pages)
+  (let* ([s (or (completion:current-session) (assertion-violation who "no completion session in the selected view"))]
+         [r (find (lambda (r) (eq? (%rows-session r) s)) %all)] [matches (completion:session-matches s)]
+         [n (completion:matches-count matches)] [m (completion:selected s)]
+         [k (or (and m (completion:matches-index matches m)) -1)])
+    (when (and r (fx> n 0))
+      (completion:select! s (completion:matches-ref matches (fxmax 0 (fxmin (fx- n 1) (fx+ k (fx* pages ((%rows-most r)))))))))))
+
+(commands:define-command (scroll-up [n (commands:prefix-number)])
+  "Selects the match N pages of rows after the selected one, stopping at the last."
+  (%move-page 'completion/rows:scroll-up n))
+
+(commands:define-command (scroll-down [n (commands:prefix-number)])
+  "Selects the match N pages of rows before the selected one, stopping at the first."
+  (%move-page 'completion/rows:scroll-down (fx- 0 n)))
 
 ;; The path is relative to this module's own folder, completion/.
 (table-set! web:stylesheets 'completion-rows "rows.css")

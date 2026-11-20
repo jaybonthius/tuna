@@ -1,5 +1,6 @@
 (library (completion matcher)
-  (export pattern? pattern-matcher partial-pattern make-store store? store-add! store-clear! store-sort! store-matches pattern-spans serve)
+  (export pattern? pattern-matcher partial-pattern make-store store? store-add! store-clear! store-sort! store-matches pattern-spans
+          group-order serve)
   (import (chezscheme))
 
   (define (term? t)
@@ -214,11 +215,11 @@
   (define-record-type (store %make-store store?)
     (sealed #t)
     (fields (mutable base) (mutable texts) (mutable ranks) (mutable lengths) (mutable count)
-            (mutable order) (mutable merged) (mutable sorted?)))
+            (mutable order) (mutable merged) (mutable sorted?) (mutable groups)))
 
-  (define (make-empty) (%make-store 0 (vector) (vector) #vu8() 0 (vector) 0 #f))
+  (define (make-empty) (%make-store 0 (vector) (vector) #vu8() 0 (vector) 0 #f #f))
 
-  (define (length-ref lengths i) (bytevector-u32-native-ref lengths (fx* 4 i)))
+  (define (u32-ref v i) (bytevector-u32-native-ref v (fx* 4 i)))
 
   (define (grow v n fill)
     (if (fx>= (vector-length v) n)
@@ -227,7 +228,7 @@
           (do ([i 0 (fx+ i 1)]) ((fx= i (vector-length v)) w)
             (vector-set! w i (vector-ref v i))))))
 
-  (define (grow-lengths v n)
+  (define (grow-u32s v n)
     (let ([k (fxquotient (bytevector-length v) 4)])
       (if (fx>= k n)
           v
@@ -243,7 +244,7 @@
         (let ([ra (vector-ref ranks a)] [rb (vector-ref ranks b)])
           (or (fx< ra rb)
               (and (fx= ra rb)
-                   (let ([la (length-ref lengths a)] [lb (length-ref lengths b)])
+                   (let ([la (u32-ref lengths a)] [lb (u32-ref lengths b)])
                      (or (fx< la lb)
                          (and (fx= la lb)
                               (let* ([ta (vector-ref texts a)] [tb (vector-ref texts b)]
@@ -253,15 +254,23 @@
                                        (let ([x (bytevector-u8-ref ta i)] [y (bytevector-u8-ref tb i)])
                                          (or (fx< x y) (and (fx= x y) (loop (fx+ i 1)))))))))))))))))
 
-  (define (store-add! s texts ranks)
+  (define store-add!
+    (case-lambda
+      [(s texts ranks) (store-add! s texts ranks #f)]
+      [(s texts ranks groups) (add-texts! s texts ranks groups)]))
+
+  (define (add-texts! s texts ranks groups)
     (let* ([n (store-count s)] [k (vector-length texts)] [m (fx+ n k)])
       (store-texts-set! s (grow (store-texts s) m #vu8()))
       (store-ranks-set! s (grow (store-ranks s) m 0))
-      (store-lengths-set! s (grow-lengths (store-lengths s) m))
+      (store-lengths-set! s (grow-u32s (store-lengths s) m))
       (vector-copy! texts 0 (store-texts s) n k)
       (if ranks
           (vector-copy! ranks 0 (store-ranks s) n k)
           (do ([i n (fx+ i 1)]) ((fx= i m)) (vector-set! (store-ranks s) i 0)))
+      (when groups
+        (store-groups-set! s (grow-u32s (or (store-groups s) #vu8()) m))
+        (bytevector-copy! groups 0 (store-groups s) (fx* 4 n) (fx* 4 k)))
       (let ([lengths (store-lengths s)])
         (do ([i 0 (fx+ i 1)]) ((fx= i k))
           (let ([text (vector-ref texts i)])
@@ -278,7 +287,8 @@
     (store-order-set! s (vector))
     (store-count-set! s 0)
     (store-merged-set! s 0)
-    (store-sorted?-set! s #f))
+    (store-sorted?-set! s #f)
+    (store-groups-set! s #f))
 
   (define (merge-added! s)
     (let ([n (store-count s)] [m (store-merged s)])
@@ -318,10 +328,12 @@
     (merge-added! s)
     (let* ([terms (compile-pattern pattern)] [gaps? (and (store-sorted? s) (multi-piece? terms))]
            [order (store-order s)] [n (store-count s)] [texts (store-texts s)] [base (store-base s)]
-           [lowest (fx- from base)])
+           [lowest (fx- from base)] [groups (store-groups s)])
+      (define (by-group v)
+        (if groups (group-order v (lambda (number) (u32-ref groups (fx- number base)))) v))
       (define (numbers found count)
         (let ([v (make-vector count)])
-          (do ([j 0 (fx+ j 1)]) ((fx= j count) v)
+          (do ([j 0 (fx+ j 1)]) ((fx= j count) (by-group v))
             (vector-set! v j (fx+ base (vector-ref found j))))))
       (let loop ([k (if (store-sorted? s) 0 (fxmax 0 lowest))] [found (make-vector 64)]
                  [gaps (if gaps? (make-vector 64) (vector))] [count 0])
@@ -338,7 +350,7 @@
                                 (let ([ga (vector-ref gaps a)] [gb (vector-ref gaps b)])
                                   (or (fx< ga gb) (and (fx= ga gb) (fx< a b))))))))
                    v)
-                 (do ([j 0 (fx+ j 1)]) ((fx= j count) v)
+                 (do ([j 0 (fx+ j 1)]) ((fx= j count) (by-group v))
                    (vector-set! v j (fx+ base (vector-ref found (vector-ref v j))))))
                (numbers found count))]
           [(and stop (fx= (fxand k 4095) 4095) (stop k)) #f]
@@ -374,7 +386,7 @@
       (define (handle! m)
         (when (pair? m)
           (case (car m)
-            [(add) (store-add! s (cadr m) (caddr m))]
+            [(add) (store-add! s (cadr m) (caddr m) (cadddr m))]
             [(clear) (store-clear! s)]
             [(sort) (store-sort! s)]
             [(find) (emit (list 'found (cadr m) (store-find s (caddr m))))])))
@@ -394,11 +406,38 @@
                 (handle! m))
             (loop))))))
 
+  ;; A stream's groups usually come together, so matches whose groups already do are kept as they are, with no
+  ;; second pass.
+  (define (group-order v group-of)
+    (let ([n (vector-length v)] [ordinals (make-eqv-hashtable)])
+      (define (place! count)
+        (let ([starts (make-vector (fx+ count 1) 0)] [w (make-vector n)])
+          (define (ordinal i) (hashtable-ref ordinals (group-of (vector-ref v i)) #f))
+          (do ([i 0 (fx+ i 1)]) ((fx= i n))
+            (let ([k (fx+ (ordinal i) 1)]) (vector-set! starts k (fx+ (vector-ref starts k) 1))))
+          (do ([k 1 (fx+ k 1)]) ((fx> k count))
+            (vector-set! starts k (fx+ (vector-ref starts k) (vector-ref starts (fx- k 1)))))
+          (do ([i 0 (fx+ i 1)]) ((fx= i n) w)
+            (let ([k (ordinal i)])
+              (vector-set! w (vector-ref starts k) (vector-ref v i))
+              (vector-set! starts k (fx+ (vector-ref starts k) 1))))))
+      (let loop ([i 0] [last #f] [together? #t] [count 0])
+        (if (fx= i n)
+            (if together? v (place! count))
+            (let ([g (group-of (vector-ref v i))])
+              (cond
+                [(and (fx> i 0) (eqv? g last)) (loop (fx+ i 1) g together? count)]
+                [(hashtable-contains? ordinals g) (loop (fx+ i 1) g #f count)]
+                [else
+                 (hashtable-set! ordinals g count)
+                 (loop (fx+ i 1) g together? (fx+ count 1))]))))))
+
   (define make-store
     (case-lambda
       [() (make-empty)]
-      [(texts ranks)
+      [(texts ranks) (make-store texts ranks #f)]
+      [(texts ranks groups)
        (let ([s (make-empty)])
-         (store-add! s texts ranks)
+         (store-add! s texts ranks groups)
          (store-sort! s)
          s)])))

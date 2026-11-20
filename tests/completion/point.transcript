@@ -105,8 +105,8 @@
 > (session)
 #f
 ; TAB with nothing selected puts in the longest common start of the
-; matches' whole texts, each its source's prefix and its text, from the
-; region's start, though the region's sources split it differently.
+; inputs the matches make, each its source's prefix and its text, from
+; the region's start, though the region's sources split it differently.
 > (define (after-slash input)
     (let loop ([i (string-length input)])
       (cond [(= i 0) 0] [(char=? (string-ref input (- i 1)) #\/) i] [else (loop (- i 1))])))
@@ -217,12 +217,12 @@
 > (buffers:with-buffer (views:buffer lv) (views:cursor-visible))
 #f
 > (lines-html lv)
-"<div class=\"view-lines\"><div class=\"completion-list\" style=\"--completion-list-rows:4\"><div class=\"node whole\" id=\"v17-1\" data-at=\"1\" data-to=\"2\"><div class=\"completion-list-count\" data-face=\"shadow\">1/4</div></div><div class=\"node whole\" id=\"v17-2\" data-at=\"2\" data-to=\"3\"></div><div class=\"node\" id=\"v17-7\" data-at=\"3\" data-to=\"9\"><ul class=\"ui-list\"><div class=\"node whole\" id=\"v17-3\" data-at=\"4\" data-to=\"5\"><li class=\"ui-list-row\" aria-current=\"true\"><div class=\"completion-title\">Words</div><div class=\"completion-row\"><span class=\"completion-text\">alpha</span></div></li></div><div class=\"node whole\" id=\"v17-4\" data-at=\"5\" data-to=\"6\"><li class=\"ui-list-row\"><div class=\"completion-row\"><span class=\"completion-text\">apple</span></div></li></div><div class=\"node whole\" id=\"v17-5\" data-at=\"6\" data-to=\"7\"><li class=\"ui-list-row\"><div class=\"completion-row\"><span class=\"completion-text\">almond</span></div></li></div><div class=\"node whole\" id=\"v17-6\" data-at=\"7\" data-to=\"8\"><li class=\"ui-list-row\"><div class=\"completion-row\"><span class=\"completion-text\">banana</span></div></li></div></ul></div></div></div></div>"
+"<div class=\"view-lines\"><div class=\"completion-list\" style=\"--completion-list-lines:5\"><div class=\"node whole\" id=\"v17-1\" data-at=\"1\" data-to=\"2\"><div class=\"completion-list-count\" data-face=\"shadow\">1/4</div></div><div class=\"node whole\" id=\"v17-2\" data-at=\"2\" data-to=\"3\"></div><div class=\"node\" id=\"v17-7\" data-at=\"3\" data-to=\"9\"><ul class=\"ui-list\"><li class=\"ui-list-heading\"><span>Words</span></li><div class=\"node whole\" id=\"v17-3\" data-at=\"4\" data-to=\"5\"><li class=\"ui-list-row\" aria-current=\"true\"><div class=\"completion-row\"><span class=\"completion-text\">alpha</span></div></li></div><div class=\"node whole\" id=\"v17-4\" data-at=\"5\" data-to=\"6\"><li class=\"ui-list-row\"><div class=\"completion-row\"><span class=\"completion-text\">apple</span></div></li></div><div class=\"node whole\" id=\"v17-5\" data-at=\"6\" data-to=\"7\"><li class=\"ui-list-row\"><div class=\"completion-row\"><span class=\"completion-text\">almond</span></div></li></div><div class=\"node whole\" id=\"v17-6\" data-at=\"7\" data-to=\"8\"><li class=\"ui-list-row\"><div class=\"completion-row\"><span class=\"completion-text\">banana</span></div></li></div></ul></div></div></div></div>"
 > (click-token! lv (row-position lv 2))
 > (result t)
 "almond"
-; The rows option limits a read's rows.
-> (set-option! completion-list:rows 2)
+; The lines option limits a read's lines.
+> (set-option! completion-list:lines 2)
 > (define t (start! (lambda () (completion:read "Word: " (list (completion:source (candidates (vector "a1" "a2" "a3" "a4")))) h))))
 > (define lv (list-view))
 > (let ([s (html->string (views:draw lv client))]) (let loop ([i 0] [n 0]) (cond [(> (+ i 11) (string-length s)) n] [(string=? (substring s i (+ i 11)) "ui-list-row") (loop (+ i 11) (+ n 1))] [else (loop (+ i 1) n)])))
@@ -230,7 +230,7 @@
 ; The list is as tall as the most rows it has shown in the read, so it
 ; keeps its height as the matches narrow.
 > (define (list-rows)
-    (let* ([s (lines-html lv)] [start (+ 24 (string-length "<div class=\"completion-list\" style=\"--completion-list-rows:"))])
+    (let* ([s (lines-html lv)] [start (+ 24 (string-length "<div class=\"completion-list\" style=\"--completion-list-lines:"))])
       (let loop ([i start]) (if (char-numeric? (string-ref s i)) (loop (+ i 1)) (string->number (substring s start i))))))
 > (list-rows)
 2
@@ -244,9 +244,9 @@
 > (press! "RET")
 > (result t)
 "a4"
-> (set-option! completion-list:rows 15)
+> (set-option! completion-list:lines 15)
 ; The list grows as rows arrive, as Vertico's does by default; with
-; completion-list:fixed-height? it is completion-list:rows tall from its
+; completion-list:fixed-height? it is completion-list:lines tall from its
 ; first draw.
 > (define (read-a1)
     (minibuffer:call-with-setup (lambda (p) (minibuffer:set-input! p "a1"))
@@ -275,3 +275,23 @@
 > (remove-option! completion-list:fixed-height?)
 > (map buffers:name (filter (lambda (b) (char=? (string-ref (buffers:name b) 0) #\space)) (buffers:all)))
 (" *layout*" " *popups*" " *Echo Area*" " *Minibuf*")
+; In a popup, C-v and M-v move the selection a page of the popup's
+; lines; with none selected, counting from before the first match.
+> (set-option! completion-popup:lines 2)
+> (views:set-buffer! (view) notes)
+> (press! "M->" "SPC")
+> (type! "al")
+> (press! "C-M-i")
+> (texts (session))
+("al" "alm" "alp" "alpha" "almond")
+> (press! "C-v")
+> (selected-text (session))
+"alm"
+> (press! "C-v")
+> (selected-text (session))
+"alpha"
+> (press! "M-v")
+> (selected-text (session))
+"alm"
+> (press! "C-g")
+> (remove-option! completion-popup:lines)

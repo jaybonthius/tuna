@@ -12,9 +12,11 @@
 
 (module %internals
   (draw-labelled button-at disabled? list-node? row-atom? list-state set-list-state! add-list-rows! rows-vector rows-count
-   rows-draw rows-choose rows-shown
-   rows-failed? rows-failed?-set! selected-index index-position window-start window-for write-window! list-at
-   current-drawing drawing-rows drawing-selected with-drawing place posn-or-point forget-buffer!)
+   rows-draw rows-choose
+   rows-failed? rows-failed?-set! failure? heading-above lines-taken selected-index index-position window-start
+   place-window write-window! list-at
+   current-drawing drawing-rows drawing-selected drawing-first with-drawing place clicked-posn posn-or-point
+   forget-buffer!)
 
   (define (disabled? node) (and (document:node-attribute node 'disabled #f) #t))
 
@@ -52,8 +54,8 @@
   ;; may still hold.
   (define-record-type rows
     (sealed #t)
-    (fields (mutable vector) (mutable count) (mutable owned?) (mutable draw) (mutable choose) (mutable shown)
-            (mutable generation) (mutable failed?)))
+    (fields (mutable vector) (mutable count) (mutable owned?) (mutable draw) (mutable heading) (mutable choose)
+            (mutable shown) (mutable generation) (mutable failed?)))
 
   ;; Only an anchor right after a node's opening reports the node's deletion.
   (define lists (make-eq-hashtable))
@@ -80,7 +82,7 @@
 
   ;; A list met afresh, as after this module reloads, may hold rows a
   ;; previous instance wrote, so its first generation is past theirs.
-  (define (set-list-state! b node vector draw choose shown)
+  (define (set-list-state! b node vector draw heading choose shown)
     (let ([state (list-state b node)])
       (if state
           (begin
@@ -90,12 +92,14 @@
             (rows-count-set! state (vector-length vector))
             (rows-owned?-set! state #f)
             (rows-draw-set! state draw)
+            (rows-heading-set! state heading)
             (rows-choose-set! state choose)
             (rows-shown-set! state shown)
             (rows-failed?-set! state #f)
             state)
           (let* ([key (first-key (buffers:document b) node)]
-                 [state (make-rows vector (vector-length vector) #f draw choose shown (if key (fx+ (car key) 1) 0) #f)])
+                 [state (make-rows vector (vector-length vector) #f draw heading choose shown
+                                   (if key (fx+ (car key) 1) 0) #f)])
             (eq-hashtable-set! lists b
               (cons (cons (buffers:anchor b (fx+ (document:node-start node) 1)) state) (entries-of b)))
             state))))
@@ -137,13 +141,74 @@
   (define (generation-of doc node)
     (let ([key (first-key doc node)]) (and key (car key))))
 
-  (define (window-for i first count shown)
-    (let ([first (cond
-                   [(not i) first]
-                   [(fx< i first) i]
-                   [(fx>= i (fx+ first shown)) (fx- i (fx- shown 1))]
-                   [else first])])
-      (fxmax 0 (fxmin first (fx- count shown)))))
+  (define (warning-only? c)
+    (and (warning? c) (not (serious-condition? c))))
+
+  (define (failure? c)
+    (not (or (quit-condition? c) (warning-only? c))))
+
+  (define (heading-of state i)
+    (and (not (rows-failed? state))
+         (guard (c [(failure? c) (rows-failed?-set! state #t) (report c) #f])
+           (let ([h ((rows-heading state) (vector-ref (rows-vector state) i))])
+             (unless (or (not h) (string? h))
+               (assertion-violation 'ui:set-rows! "a heading procedure returned neither a string nor #f" h))
+             h))))
+
+  (define (new-heading? before h)
+    (and h (not (and before (string=? before h)))))
+
+  ;; The window's first row draws its heading whatever the row before it,
+  ;; so a window that starts inside a group still names it.
+  (define (heading-above state first i)
+    (let ([h (heading-of state i)])
+      (and (or (fx= i first) (new-heading? (heading-of state (fx- i 1)) h)) h)))
+
+  ;; Moving a window's first row earlier never takes fewer lines for the
+  ;; same last row, since the heading the old first row loses is at most
+  ;; the one the new first row brings; so the earliest first row that
+  ;; fits is found walking back from the last.
+  (define (earliest-first state last shown)
+    (let loop ([f last] [h (heading-of state last)] [inner 0])
+      (if (fx= f 0)
+          0
+          (let* ([before (heading-of state (fx- f 1))]
+                 [inner (fx+ inner 1 (if (new-heading? before h) 1 0))])
+            (if (fx> (fx+ inner 1 (if before 1 0)) shown)
+                f
+                (loop (fx- f 1) before inner))))))
+
+  (define (rows-from state first shown)
+    (let ([count (rows-count state)] [h (heading-of state first)])
+      (let loop ([i (fx+ first 1)] [h h] [lines (if h 2 1)])
+        (if (fx= i count)
+            (fx- i first)
+            (let* ([next (heading-of state i)] [lines (fx+ lines 1 (if (new-heading? h next) 1 0))])
+              (if (fx> lines shown)
+                  (fx- i first)
+                  (loop (fx+ i 1) next lines)))))))
+
+  ;; A window may end a line short, where the next row brings a heading,
+  ;; so a list that cannot show all its rows takes all its shown lines.
+  (define (lines-taken state)
+    (let ([count (rows-count state)] [shown (rows-shown state)])
+      (cond
+        [(fx= count 0) 0]
+        [(fx= (rows-from state 0 shown) count)
+         (let loop ([i 0] [lines 0])
+           (if (fx= i count) lines (loop (fx+ i 1) (fx+ lines (if (heading-above state 0 i) 2 1)))))]
+        [else shown])))
+
+  (define (place-window state first i)
+    (let ([count (rows-count state)] [shown (rows-shown state)])
+      (if (fx= count 0)
+          (values 0 0)
+          (let* ([first (cond
+                          [(not i) (fxmin first (fx- count 1))]
+                          [(fx< i first) i]
+                          [else (fxmax first (earliest-first state i shown))])]
+                 [first (fxmin first (earliest-first state (fx- count 1) shown))])
+            (values first (rows-from state first shown))))))
 
   (define (index-position node first n i)
     (fx+ (document:node-start node) 1 (if (fx= n 0) 0 (fx- (fxmax first (fxmin i (fx+ first n -1))) first))))
@@ -176,11 +241,11 @@
             (for-each (lambda (sel) (views:set-point! (car sel) (index-position node first n (cdr sel))))
                       selections))))))
 
-  (define (list-at v)
+  (define (list-at v p)
     (let ([b (views:buffer v)])
       (and b
            (let ([doc (buffers:document b)])
-             (let loop ([n (document:enclosing doc (views:point v))])
+             (let loop ([n (document:enclosing doc p)])
                (cond
                  [(not n) #f]
                  [(list-node? n) n]
@@ -188,13 +253,14 @@
 
   (define-record-type drawing
     (sealed #t)
-    (fields rows selected))
+    (fields rows selected first))
 
   (define current-drawing (make-thread-parameter #f))
 
   (define (with-drawing node view thunk)
     (let* ([b (views:buffer view)] [doc (buffers:document b)])
-      (parameterize ([current-drawing (make-drawing (list-state b node) (selected-index doc node (views:point view)))])
+      (parameterize ([current-drawing (make-drawing (list-state b node) (selected-index doc node (views:point view))
+                                                    (window-start doc node))])
         (thunk))))
 
   (define (place posn)
@@ -202,9 +268,11 @@
         (values (views:posn-view posn) (views:posn-point posn))
         (let ([v (views:current)]) (values v (and v (views:buffer v) (views:point v))))))
 
-  (define (posn-or-point)
+  (define (clicked-posn)
     (let ([e (keys:command-event)])
-      (place (and (keys:event? e) (keys:event-start e))))))
+      (and (keys:event? e) (keys:event-start e))))
+
+  (define (posn-or-point) (place (clicked-posn))))
 
 (import %internals)
 
@@ -273,11 +341,15 @@
   (for-each (lambda (item) (unless (html? item) (assertion-violation 'ui:row "not HTML" item))) items)
   (haml (:div.ui-row items)))
 
-(define (%warning-only? c)
-  (and (warning? c) (not (serious-condition? c))))
-
-(define (%failure? c)
-  (not (or (quit-condition? c) (%warning-only? c))))
+;; A heading goes beside its row's element, not inside it: that element
+;; carries the row's position, so a click on the heading would choose the
+;; row and the cursor's outline would surround the heading too.
+(define (%with-heading child html)
+  (let* ([d (current-drawing)] [state (and d (drawing-rows d))]
+         [key (and (row-atom? child) (document:node-attribute child 'key))] [i (and (pair? key) (cdr key))]
+         [heading (and state (not (rows-failed? state)) (fixnum? i) (fx< i (rows-count state))
+                       (heading-above state (drawing-first d) i))])
+    (if heading `(,(haml (:li.ui-list-heading (:span heading))) ,html) html)))
 
 ;; Rows drawn before one that raised are drawn again, as nothing, so the
 ;; list is drawn empty from the draw that failed.
@@ -285,16 +357,16 @@
   (with-drawing node view
     (lambda ()
       (let* ([state (drawing-rows (current-drawing))] [failed? (and state (rows-failed? state))]
-             [html (haml (:ul.ui-list (views:draw-children view node)))])
+             [html (haml (:ul.ui-list (views:draw-children view node %with-heading)))])
         (if (and state (not failed?) (rows-failed? state))
-            (haml (:ul.ui-list (views:draw-children view node)))
+            (haml (:ul.ui-list (views:draw-children view node %with-heading)))
             html)))))
 
 (define (%draw-list-row node view)
   (let* ([d (current-drawing)] [state (and d (drawing-rows d))] [key (document:node-attribute node 'key)]
          [i (and (pair? key) (cdr key))])
     (if (and state (not (rows-failed? state)) (fixnum? i) (fx< i (rows-count state)))
-        (guard (c [(%failure? c) (rows-failed?-set! state #t) (report c) '()])
+        (guard (c [(failure? c) (rows-failed?-set! state #t) (report c) '()])
           (haml (:li.ui-list-row ([aria-current (and (eqv? i (drawing-selected d)) "true")])
                   ((rows-draw state) (vector-ref (rows-vector state) i)))))
         '())))
@@ -332,10 +404,13 @@
   (or (views:buffer view)
       (assertion-violation who "the view shows no buffer" view)))
 
+(define (%no-heading row) #f)
+
 (define set-rows!
   (case-lambda
     [(buffer node rows draw-row choose) (set-rows! buffer node rows draw-row choose 10)]
-    [(buffer node rows draw-row choose shown)
+    [(buffer node rows draw-row choose shown) (set-rows! buffer node rows draw-row choose shown %no-heading)]
+    [(buffer node rows draw-row choose shown heading)
      (unless (buffers:buffer? buffer)
        (assertion-violation 'ui:set-rows! "not a buffer" buffer))
      (unless (vector? rows)
@@ -346,14 +421,16 @@
        (assertion-violation 'ui:set-rows! "not a procedure" choose))
      (unless (and (fixnum? shown) (fx> shown 0))
        (assertion-violation 'ui:set-rows! "not a positive count" shown))
+     (unless (procedure? heading)
+       (assertion-violation 'ui:set-rows! "not a procedure" heading))
      (let ([node (%check-list 'ui:set-rows! buffer node)])
-       (%write-rows! buffer node (set-list-state! buffer node rows draw-row choose shown)))]))
+       (%write-rows! buffer node (set-list-state! buffer node rows draw-row heading choose shown)))]))
 
 (define (%write-rows! buffer node state)
-  (let* ([doc (buffers:document buffer)] [count (rows-count state)] [shown (rows-shown state)] [v (views:current)]
+  (let* ([doc (buffers:document buffer)] [count (rows-count state)] [v (views:current)]
          [i (and v (eq? (views:buffer v) buffer) (selected-index doc node (views:point v)))])
-    (let ([first (window-for (and i (fxmin i (fx- count 1))) (window-start doc node) count shown)])
-      (write-window! buffer node state first (fxmin shown (fx- count first))))))
+    (let-values ([(first n) (place-window state (window-start doc node) (and i (fxmin i (fx- count 1))))])
+      (write-window! buffer node state first n))))
 
 (define (add-rows! buffer node rows)
   (unless (buffers:buffer? buffer)
@@ -376,12 +453,17 @@
     (let* ([node (%check-list 'ui:select-row! b node)] [state (list-state b node)]
            [count (if state (rows-count state) 0)])
       (unless (fx= count 0)
-        (let* ([i (fxmin index (fx- count 1))] [shown (rows-shown state)]
-               [first (window-for i (window-start (buffers:document b) node) count shown)]
-               [n (fxmin shown (fx- count first))])
+        (let*-values ([(i) (fxmin index (fx- count 1))]
+                      [(first n) (place-window state (window-start (buffers:document b) node) i)])
           (write-window! b node state first n)
           (let ([node (document:token (buffers:document b) (document:node-start node))])
             (views:set-point! view (index-position node first n i))))))))
+
+(define (list-lines buffer node)
+  (unless (buffers:buffer? buffer)
+    (assertion-violation 'ui:list-lines "not a buffer" buffer))
+  (let ([state (list-state buffer (%check-list 'ui:list-lines buffer node))])
+    (if state (lines-taken state) 0)))
 
 (define (describe-list node view)
   (let* ([b (%check-view 'ui:describe-list view)] [node (%check-list 'ui:describe-list b node)]
@@ -393,7 +475,7 @@
   (let ([v (views:current)])
     (unless v
       (assertion-violation who "no view is current"))
-    (let ([node (list-at v)])
+    (let ([node (list-at v (views:point v))])
       (unless node
         (assertion-violation who "the cursor is in no list"))
       (values v node))))
@@ -413,18 +495,31 @@
   "Selects the row n before the selected one in the list holding the cursor, stopping at the first."
   (%move-row 'ui:previous-row (fx- 0 n)))
 
+(define (%choose! v node i)
+  (let ([state (list-state (views:buffer v) node)])
+    (when (and state (not (rows-failed? state)) (fx< i (rows-count state)))
+      (with-exception-handler
+        (lambda (c)
+          (when (failure? c) (rows-failed?-set! state #t))
+          (raise-continuable c))
+        (lambda () ((rows-choose state) (vector-ref (rows-vector state) i)))))))
+
+;; A click on a heading names the list's own node, whose position views
+;; gives as its first row's, so the clicked node, not the position, tells
+;; a row from a heading.
 (commands:define-command (choose-row)
-  "Calls the list's choose procedure with its selected row; run by a click, first selects the row clicked."
-  (let-values ([(v p) (posn-or-point)])
-    (when (and v p) (views:set-point! v p))
-    (let-values ([(v node) (%list-here 'ui:choose-row)])
-      (let ([state (list-state (views:buffer v) node)] [i (selected-row node v)])
-        (when (and state (not (rows-failed? state)) i (fx< i (rows-count state)))
-          (with-exception-handler
-            (lambda (c)
-              (when (%failure? c) (rows-failed?-set! state #t))
-              (raise-continuable c))
-            (lambda () ((rows-choose state) (vector-ref (rows-vector state) i)))))))))
+  "Calls the list's choose procedure with its selected row; run by a click, selects and chooses the row clicked, and does nothing for a click on no row, such as on a heading."
+  (let ([posn (clicked-posn)])
+    (if posn
+        (let* ([v (views:posn-view posn)] [p (views:posn-point posn)] [b (views:buffer v)]
+               [node (and b p (row-atom? (views:posn-node posn)) (list-at v p))]
+               [i (and node (selected-index (buffers:document b) node p))])
+          (when i
+            (views:set-point! v p)
+            (%choose! v node i)))
+        (let-values ([(v node) (%list-here 'ui:choose-row)])
+          (let ([i (selected-row node v)])
+            (when i (%choose! v node i)))))))
 
 (define (%draw-showcase node view)
   (haml (:article (views:draw-children view node))))
@@ -486,6 +581,9 @@
       (vector-set! v i (cons (string-append "Row " (number->string (fx+ i 1)))
                              (string-append (number->string (fx+ i 1)) " of 300"))))))
 
+(define (%showcase-group r)
+  (if (member (car r) '("init.ss" "notes.org" "todo.txt")) "Notes" "Project"))
+
 (define (%draw-showcase-row r)
   (row (label (car r)) (label (cdr r) "ui-showcase-muted")))
 
@@ -510,7 +608,7 @@
 
 (define (%fill-showcase! b)
   (let ([choose (lambda (r) (%show-chosen! b r))])
-    (set-rows! b (%showcase-list b 'short) %short-rows %draw-showcase-row choose 5)
+    (set-rows! b (%showcase-list b 'short) %short-rows %draw-showcase-row choose 6 %showcase-group)
     (set-rows! b (%showcase-list b 'long) %long-rows %draw-showcase-row choose (vector-length %long-rows))))
 
 (define (%showcase-datum)
@@ -539,8 +637,9 @@
       (%helper-sample '((of . row))) "\n")
     (%showcase-heading '() "Lists: ui:list\n")
     (%showcase-text '()
-      "C-n and C-p move, RET or a click chooses. Eight rows, five shown:\n"
-      "moving past them slides the rows. Each window on this buffer selects\n"
+      "C-n and C-p move, RET or a click chooses. Eight rows under two\n"
+      "headings, in six lines: moving past them slides the rows, and the\n"
+      "first row shown names its heading. Each window on this buffer selects\n"
       "its own row; split the window to see a list in a window without focus.\n")
     (list '((rows . short)))
     (%showcase-text '() "chosen    " (%chosen '()) "\n\n")
@@ -593,6 +692,11 @@
 (keys:bind! list-keys "RET" choose-row)
 (keys:bind! list-keys "<mouse-1>" choose-row)
 (keys:bind! list-keys "<mouse-2>" choose-row)
+;; A press would move point where it lands, and a press on a heading
+;; lands on the window's first row, so the release alone selects.
+(keys:bind! list-keys "<down-mouse-1>" keys:ignore)
+(keys:bind! list-keys "<drag-mouse-1>" keys:ignore)
+(keys:bind! list-keys "<drag-mouse-2>" keys:ignore)
 (keys:bind! disabled-keys "<mouse-1>" keys:ignore)
 (keys:bind! disabled-keys "<mouse-2>" keys:ignore)
 (keys:bind! disabled-keys "RET" keys:ignore)

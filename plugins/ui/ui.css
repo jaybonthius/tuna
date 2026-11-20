@@ -158,6 +158,26 @@
     cursor: pointer;
   }
 
+  /* A heading takes one line of the list's own height, as a row does, so
+     a list shown in a number of lines holds them; its text is smaller
+     inside that line. */
+  .ui-list-heading {
+    display: flex;
+    align-items: center;
+    block-size: 1lh;
+    padding-inline: var(--ui-list-row-padding, var(--tuna-space-2));
+  }
+
+  .ui-list-heading > span {
+    font-family: var(--tuna-font-ui);
+    font-size: var(--tuna-font-size-1);
+    font-weight: var(--tuna-font-weight-semibold, bold);
+    color: var(--tuna-text-muted);
+    white-space: pre;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   /* The weight marks the row where its colour is not seen. Faint text,
      such as a completion's annotation, falls under 4.5:1 on the
      selection, and a theme may put muted text there too, so the row draws

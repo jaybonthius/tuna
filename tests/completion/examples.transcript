@@ -12,7 +12,7 @@
 ((completion:buffer-category ((starts "a b")) ((contains "a b"))) (completion:location-category ((contains "a b"))) (completion:command-category ((starts "a b")) ((contains "a b"))) (line-picker:line-category ((contains "a b"))))
 > (entries completion:category-styles)
 ((completion:file-category ((starts "a" " b"))))
-> (completion-list:rows)
+> (completion-list:lines)
 15
 ; completion:read, with a history.
 > (define-saved fruit-history '() list?)

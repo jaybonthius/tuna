@@ -312,7 +312,7 @@ fruit
 > (jobs:define-worker (slow-match input emit receive)
     (import (completion matcher))
     (serve emit (case-lambda [() (let ([m (receive)]) (sleep (make-time 'time-duration 200000000 0)) m)] [(s) (receive s)])))
-> (set-option! completion:matcher (completion:make-matcher (lambda (pattern texts ranks) (store-matches (make-store texts ranks) pattern)) pattern-spans slow-match))
+> (set-option! completion:matcher (completion:make-matcher (lambda (pattern texts ranks groups) (store-matches (make-store texts ranks groups) pattern)) pattern-spans slow-match))
 > (define emitter #f)
 > (define (held emit) (set! emitter emit) (lambda (prefix) (void)))
 > (define t (start! (lambda () (completion:read "? " (list (completion:source (stream held))) h))))
@@ -461,7 +461,7 @@ fruit
 > (press! "C-g")
 ! &quit
 ; A replacement matcher: every candidate matches, in reverse.
-> (define (reverse-match pattern texts ranks)
+> (define (reverse-match pattern texts ranks groups)
     (list->vector (reverse (iota (vector-length texts)))))
 > (define (no-spans pattern text) '())
 > (jobs:define-worker (plain-worker input emit receive) (import (completion matcher)) (serve emit receive))

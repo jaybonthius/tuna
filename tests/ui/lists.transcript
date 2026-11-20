@@ -213,3 +213,85 @@
 #f
 > (raised (lambda () (ui:describe-list (lst) (view))))
 (ui:describe-list "not a list of the buffer")
+; A heading procedure gives each row's heading, a string or #f. A
+; heading is drawn above the window's first row and above each row whose
+; heading differs from the row before, outside the rows, and takes one
+; of the lines shown, so the window holds fewer rows.
+> (define h (buffers:make "*headed*" (ui:list '())))
+> (define (hl) (document:token (buffers:document h) 0))
+> (define (band n) (cond [(< n 3) "low"] [(< n 9) "mid"] [else "high"]))
+> (define (headed-keys) (map (lambda (a) (cdr (cdr (assq 'key (vector-ref a 1))))) (cddr (car (datums h)))))
+> (define (headings v)
+    (let ([s (html v)] [open "<li class=\"ui-list-heading\"><span>"])
+      (let loop ([i 0] [acc '()])
+        (cond
+          [(> (+ i (string-length open)) (string-length s)) (reverse acc)]
+          [(string=? (substring s i (+ i (string-length open))) open)
+           (let* ([from (+ i (string-length open))]
+                  [to (let find ([j from]) (if (char=? (string-ref s j) #\<) j (find (+ j 1))))])
+             (loop to (cons (substring s from to) acc)))]
+          [else (loop (+ i 1) acc)]))))
+> (show! h)
+> (ui:set-rows! h (hl) (list->vector (iota 12)) number-row choose 5 band)
+> (list (headed-keys) (headings (view)) (ui:list-lines h (hl)))
+((0 1 2) ("low") 5)
+> (element (view) "<li class=\"ui-list-heading\"" "li")
+"<li class=\"ui-list-heading\"><span>low</span></li>"
+> (ui:select-row! (hl) (view) 5)
+> (list (headed-keys) (headings (view)))
+((3 4 5 6) ("mid"))
+; A heading is drawn beside its row's element, which carries the row's
+; position and the cursor's outline, so the outline never surrounds it.
+> (ui:select-row! (hl) (view) 3)
+> (element (view) "<div class=\"node whole at-cursor" "div")
+"<div class=\"node whole at-cursor primary\" id=\"v1-36\" data-at=\"1\" data-to=\"2\"><li class=\"ui-list-row\" aria-current=\"true\"><span class=\"ui-label\">3</span></li></div>"
+> (element (view) "<li class=\"ui-list-heading\"" "div")
+"<li class=\"ui-list-heading\"><span>mid</span></li><div class=\"node whole at-cursor primary\" id=\"v1-36\" data-at=\"1\" data-to=\"2\"><li class=\"ui-list-row\" aria-current=\"true\"><span class=\"ui-label\">3</span></li></div>"
+; A press and a release on a heading name the list's own node, not a
+; row, so they choose nothing and leave point, here on row 5, past the
+; window's first row; a click on a row, the fourth shown here, chooses it.
+> (set! chosen '())
+> (ui:select-row! (hl) (view) 5)
+> (define p0 (views:point (view)))
+> (mouse-in! (view) "down" `(("token" . ,(document:node-start (hl)))))
+> (list chosen (ui:selected-row (hl) (view)) (= p0 (views:point (view))))
+(() 5 #t)
+> (mouse-in! (view) "click" `(("token" . ,(document:node-start (hl)))))
+> (list chosen (ui:selected-row (hl) (view)) (= p0 (views:point (view))))
+(() 5 #t)
+> (click-token! (view) 4)
+> (list chosen (ui:selected-row (hl) (view)))
+((6) 6)
+> (set! chosen '())
+; A window that starts inside a group names it.
+> (ui:select-row! (hl) (view) 10)
+> (list (headed-keys) (headings (view)))
+((8 9 10) ("mid" "high"))
+> (ui:select-row! (hl) (view) 11)
+> (list (headed-keys) (headings (view)))
+((9 10 11) ("high"))
+> (ui:select-row! (hl) (view) 4)
+> (list (headed-keys) (headings (view)))
+((4 5 6 7) ("mid"))
+; ui:list-lines gives the lines all the rows take, at most those shown.
+> (ui:set-rows! h (hl) (vector 0 1 3) number-row choose 5 band)
+> (ui:list-lines h (hl))
+5
+> (ui:set-rows! h (hl) (vector 0 3 9) number-row choose 5 band)
+> (list (headed-keys) (ui:list-lines h (hl)))
+((0 1) 5)
+> (ui:set-rows! h (hl) (vector 0 1) number-row choose 5)
+> (list (headings (view)) (ui:list-lines h (hl)))
+(() 2)
+> (ui:list-lines e (document:token (buffers:document e) 0))
+0
+; A heading procedure that raises, or returns what is neither a string
+; nor #f, fails the list as a draw procedure does.
+> (ui:set-rows! h (hl) (vector 0 1) number-row choose 5 (lambda (n) 'x))
+! ui:set-rows!: a heading procedure returned neither a string nor #f with irritant x
+> (element (view) "<li" "li")
+#f
+> (raised (lambda () (ui:set-rows! h (hl) (vector) number-row choose 5 'x)))
+(ui:set-rows! "not a procedure")
+> (raised (lambda () (ui:list-lines 'b (hl))))
+(ui:list-lines "not a buffer")

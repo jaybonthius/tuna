@@ -66,6 +66,7 @@
       (cond
         [(string=? prefix "") (emit (list->vector (entries (expand prefix) "")))]
         [(directory? (expand prefix))
+         (emit (list 'base (string-length prefix)))
          (emit 'prefer-input)
          (emit (list->vector (entries (expand prefix) "")))]
         [else

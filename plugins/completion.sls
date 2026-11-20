@@ -1,6 +1,7 @@
 #!tuna
 ;; This plugin's substring is a style, so Chez's goes by another name.
-(import (minibuffer) (buffers) (document) (views) (layout) (keys) (commands) (jobs) (web) (completion matcher)
+(import (minibuffer) (buffers) (document) (views) (layout) (keys) (commands) (jobs) (web) (editing) (kill-ring)
+        (completion matcher)
         (rename (only (chezscheme) substring) (substring string-part)))
 
 (define-hook started "Called with a session when it starts, before its first matches.")
@@ -30,6 +31,14 @@
 (define-table region-keymap "The temporary keymap of a session at point.")
 
 (define-table region-selected-keymap "The temporary keymap of a session at point while a match is selected.")
+
+(define-table narrowing-keymap "Added to the prompt of each read whose sources have narrow characters.")
+
+(define-table narrow-key-keymap "Narrows by the character typed; a prefix key in completion:narrowing-keymap leads to it.")
+
+(define-table narrow-keymap "Searched in a read while its input is one of its sources' narrow characters.")
+
+(define-table widen-keymap "Searched in a narrowed read while its input is empty.")
 
 (define-syntax define-category
   (lambda (x)
@@ -75,9 +84,9 @@
 
 (define-record-type (%source %make-source source?)
   (sealed #t)
-  (fields candidates stream category title split in-order? rank preview styles))
+  (fields candidates stream category title split in-order? rank preview styles group row narrow))
 
-(define (%check-source candidates stream category title split in-order? rank preview styles)
+(define (%check-source candidates stream category title split in-order? rank preview styles group row narrow)
   (define who 'completion:source)
   (unless (or (not category) (symbol? category))
     (assertion-violation who "not a category" category))
@@ -92,7 +101,13 @@
     (assertion-violation who "not a procedure" preview))
   (unless (or (not styles) (and (list? styles) (for-all procedure? styles)))
     (assertion-violation who "not a list of styles" styles))
-  (%make-source candidates stream category title split in-order? rank preview styles))
+  (unless (or (not group) (procedure? group))
+    (assertion-violation who "not a procedure" group))
+  (unless (or (not row) (procedure? row))
+    (assertion-violation who "neither a procedure nor #f" row))
+  (unless (or (not narrow) (and (char? narrow) (not (char=? narrow #\space))))
+    (assertion-violation who "neither a character other than a space nor #f" narrow))
+  (%make-source candidates stream category title split in-order? rank preview styles group row narrow))
 
 (define (%candidates-clause candidates)
   (unless (or (procedure? candidates) (%candidates? candidates))
@@ -125,7 +140,8 @@
                                 #,(if stream #`(%stream-clause #,(cdr stream)) #'#f)
                                 #,(given-or-false 'category) #,(given-or-false 'title) #,(given-or-false 'split)
                                 #,(given-or-false 'in-order) #,(given-or-false 'rank) #,(given-or-false 'preview)
-                                #,(given-or-false 'styles)))
+                                #,(given-or-false 'styles) #,(given-or-false 'group) #,(given-or-false 'row)
+                                #,(given-or-false 'narrow)))
              (let* ([c (car clauses)]
                     [name (syntax-case c () [(k . _) (identifier? #'k) (syntax->datum #'k)] [_ (invalid c)])])
                (when (assq name given)
@@ -134,14 +150,19 @@
                           (exists (lambda (k) (assq k given)) '(candidates job stream)))
                  (syntax-violation 'completion:source "more than one of the candidates, job and stream clauses" x))
                (loop (cdr clauses)
-                     (cons (cons name
-                                 (case name
-                                   [(candidates stream category title split rank preview styles)
-                                    (syntax-case c () [(_ e) #'e] [_ (invalid c)])]
-                                   [(job) (syntax-case c () [(_ w i) #'(%job-stream w i)] [_ (invalid c)])]
-                                   [(in-order) (syntax-case c () [(_) #'#t] [_ (invalid c)])]
-                                   [else (invalid c)]))
-                           given)))))])))
+                     (append
+                       (case name
+                         [(candidates stream category title split rank preview styles narrow)
+                          (syntax-case c () [(_ e) (list (cons name #'e))] [_ (invalid c)])]
+                         [(group)
+                          (syntax-case c ()
+                            [(_ t) (list (cons 'group #'t))]
+                            [(_ t r) (list (cons 'group #'t) (cons 'row #'r))]
+                            [_ (invalid c)])]
+                         [(job) (syntax-case c () [(_ w i) (list (cons name #'(%job-stream w i)))] [_ (invalid c)])]
+                         [(in-order) (syntax-case c () [(_) (list (cons name #'#t))] [_ (invalid c)])]
+                         [else (invalid c)])
+                       given)))))])))
 
 (define (%job-stream worker input)
   (unless (jobs:worker? worker)
@@ -245,13 +266,13 @@
 ;; store made for them, folded and sorted, is kept for the next key.
 (define %stores (make-weak-eq-hashtable))
 
-(define (%default-match pattern texts ranks)
+(define (%default-match pattern texts ranks groups)
   (let ([kept (eq-hashtable-ref %stores texts #f)])
     (store-matches
-      (if (and kept (eq? (car kept) ranks))
-          (cdr kept)
-          (let ([s (make-store texts ranks)])
-            (eq-hashtable-set! %stores texts (cons ranks s))
+      (if (and kept (eq? (vector-ref kept 0) ranks) (eq? (vector-ref kept 1) groups))
+          (vector-ref kept 2)
+          (let ([s (make-store texts ranks groups)])
+            (eq-hashtable-set! %stores texts (vector ranks groups s))
             s))
       pattern)))
 
@@ -275,10 +296,10 @@
   (check-main-thread check-session session-record? make-session session-record-view session-record-ended?
    session-record-matches session-record-selected session-record-input session-record-input-set!
    session-record-bounds session-record-prompt candidate-match?
-   session-record-states session-categories-of session-record-accept session-record-default sessions open-session! start-session!
-   end-session! input-of rematch! select-match! match-text match-whole-text match-value match-title match-category
-   match-spans match-annotation
-   busy? query-start find-named! sole-match? common-whole-start
+   session-record-states session-categories-of session-record-accept session-record-default sessions open-session!
+   start-session! end-session! input-of rematch! select-match! match-text match-value match-title match-category
+   match-row-text match-spans match-annotation match-whole-text busy? query-start find-named! sole-match?
+   common-input-start narrow-chars session-record-narrowed narrowed-title source-title-of narrow! combine!
    match-list? make-match-list match-list-count match-list-ref match-list-index no-matches)
 
   (define main-thread (get-thread-id))
@@ -292,7 +313,7 @@
     (fields view (mutable states) width bounds accept preselect history default prompt
             (mutable input) (mutable matches) (mutable selected) (mutable locked?) (mutable ended?)
             (mutable inline?) (mutable annotators) (mutable next-id) history-ranks (mutable dirty?)
-            (mutable finding)))
+            (mutable finding) (mutable narrowed)))
 
   ;; A source's candidates are numbered on through those it dropped, and
   ;; a match interleaves the numbers of a session's sources, so a match
@@ -307,7 +328,50 @@
             (mutable annotations) (mutable prefix) (mutable receiver) (mutable match-job) (mutable job-dropped)
             (mutable sorted?) (mutable pending) (mutable done?) (mutable matches) (mutable pending-kept) (mutable matched-to)
             (mutable pending-end) (mutable matches-id) (mutable pattern) (mutable style) (mutable query)
-            (mutable base) (mutable more?) (mutable prefers-input?)))
+            (mutable base) (mutable more?) (mutable prefers-input?) (mutable grouping)))
+
+  ;; Each candidate holds its title's number, so a match job orders
+  ;; matches by group without the titles; the numbers sit in a bytevector,
+  ;; which the collector does not scan. A stream's new matches
+  ;; go at the end of its matches only while the numbers do not fall, so
+  ;; the last number of the matches, and of those a match under way
+  ;; keeps, is kept.
+  (define-record-type grouping
+    (sealed #t)
+    (fields (mutable groups) (mutable titles) (mutable count) numbers (mutable last-title) (mutable last-number)
+            (mutable matched-last) (mutable matched-rising?) (mutable kept-last) (mutable kept-rising?)))
+
+  (define (empty-grouping)
+    (make-grouping #vu8() (vector) 0 (make-hashtable string-hash string=?) #f 0 #f #t #f #t))
+
+  (define (group-ref groups i) (bytevector-u32-native-ref groups (fx* 4 i)))
+
+  (define (append-groups-at groups n more)
+    (let* ([at (fx* 4 n)] [need (fx+ at (bytevector-length more))]
+           [groups (if (fx>= (bytevector-length groups) need)
+                       groups
+                       (let ([w (make-bytevector (fxmax need (fx* 2 (bytevector-length groups))))])
+                         (bytevector-copy! groups 0 w 0 at)
+                         w))])
+      (bytevector-copy! more 0 groups at (bytevector-length more))
+      groups))
+
+  (define (group-number! g title)
+    (unless (string? title)
+      (assertion-violation 'completion:source "a group's title procedure returned what is not a string" title))
+    (if (eq? title (grouping-last-title g))
+        (grouping-last-number g)
+        (let ([n (or (hashtable-ref (grouping-numbers g) title #f)
+                     (let ([n (grouping-count g)])
+                       (hashtable-set! (grouping-numbers g) title n)
+                       (grouping-titles-set! g (append-at (grouping-titles g) n (vector title) #f))
+                       (grouping-count-set! g (fx+ n 1))
+                       n))])
+          (grouping-last-title-set! g title)
+          (grouping-last-number-set! g n)
+          n)))
+
+  (define (state-groups st) (let ([g (state-grouping st)]) (and g (grouping-groups g))))
 
   (define-record-type match-list
     (sealed #t)
@@ -393,21 +457,26 @@
 
   (define (add-candidates! s st cands given)
     (let* ([k (vector-length cands)] [texts (make-vector k)] [vals (make-vector k)] [ranks (make-vector k)]
-           [base (state-count st)] [rank-of (ranker s st given)])
+           [base (state-count st)] [rank-of (ranker s st given)] [g (state-grouping st)]
+           [title-of (and g (%source-group (state-source st)))] [groups (and g (make-bytevector (fx* 4 k)))])
       (do ([i 0 (fx+ i 1)]) ((fx= i k))
-        (let* ([c (vector-ref cands i)] [text (candidate-text c)])
+        (let* ([c (vector-ref cands i)] [text (candidate-text c)] [value (candidate-value c)])
           (vector-set! texts i (string->utf8 text))
-          (vector-set! vals i (candidate-value c))
-          (vector-set! ranks i (rank-of i text))))
+          (vector-set! vals i value)
+          (vector-set! ranks i (rank-of i text))
+          (when g (bytevector-u32-native-set! groups (fx* 4 i) (group-number! g (title-of text value))))))
       (state-count-set! st (fx+ base k))
       (if (fx= base 0)
-          (begin (state-texts-set! st texts) (state-vals-set! st vals) (state-ranks-set! st ranks))
+          (begin
+            (state-texts-set! st texts) (state-vals-set! st vals) (state-ranks-set! st ranks)
+            (when g (grouping-groups-set! g groups)))
           (begin
             (state-texts-set! st (append-at (state-texts st) base texts #vu8()))
             (state-vals-set! st (append-at (state-vals st) base vals #f))
-            (state-ranks-set! st (append-at (state-ranks st) base ranks 0))))
+            (state-ranks-set! st (append-at (state-ranks st) base ranks 0))
+            (when g (grouping-groups-set! g (append-groups-at (grouping-groups g) base groups)))))
       (let ([job (state-match-job st)])
-        (when job (jobs:send! job (list 'add (jobs:freeze texts) ranks))))))
+        (when job (jobs:send! job (list 'add (jobs:freeze texts) ranks groups))))))
 
   ;; A streamed source may emit thousands of times, a few candidates
   ;; each, so its texts and ranks grow by doubling, not by a copy per
@@ -418,10 +487,14 @@
       v))
 
   (define (trim-candidates! st)
-    (let ([n (state-count st)])
+    (let ([n (state-count st)] [g (state-grouping st)])
       (unless (fx= (vector-length (state-texts st)) n)
         (state-texts-set! st (vector-copy (state-texts st) 0 n))
-        (state-ranks-set! st (vector-copy (state-ranks st) 0 n)))))
+        (state-ranks-set! st (vector-copy (state-ranks st) 0 n)))
+      (when (and g (not (fx= (bytevector-length (grouping-groups g)) (fx* 4 n))))
+        (let ([w (make-bytevector (fx* 4 n))])
+          (bytevector-copy! (grouping-groups g) 0 w 0 (fx* 4 n))
+          (grouping-groups-set! g w)))))
 
   (define (check-candidates who v)
     (unless (%candidates? v)
@@ -448,6 +521,13 @@
 
   (define (lead st) (string-part (or (state-prefix st) "") 0 (lead-length st)))
 
+  ;; A prefix is a candidate's base only where the source emits one, as
+  ;; for a file's folder: a search typed before a filter is a prefix that
+  ;; no candidate continues.
+  (define (base st)
+    (let ([b (state-base st)])
+      (if b (string-part (or (state-prefix st) "") 0 (fxmin b (state-prefix-length st))) "")))
+
   (define (update-query! s st)
     (let ([input (or (session-record-input s) "")])
       (state-query-set! st (string-part input (fxmin (string-length input) (lead-length st)) (string-length input)))))
@@ -462,7 +542,7 @@
           (state-sorted?-set! st #f)
           (trim-candidates! st)
           (unless (fx= (state-count st) 0)
-            (jobs:send! job (list 'add (jobs:freeze (state-texts st)) (state-ranks st))))
+            (jobs:send! job (list 'add (jobs:freeze (state-texts st)) (state-ranks st) (state-groups st))))
           (when (state-done? st) (send-sort! st))
           job)))
 
@@ -496,6 +576,7 @@
     (state-texts-set! st (vector))
     (state-vals-set! st (vector))
     (state-ranks-set! st (vector))
+    (when (state-grouping st) (state-grouping-set! st (empty-grouping)))
     (state-annotations-set! st (make-eqv-hashtable))
     (set-state-matches! s st (make-match-list (vector) 0)))
 
@@ -541,7 +622,7 @@
     (let ([match (%matcher-match (matcher))] [n (length (state-styles st))])
       (let loop ([k 0])
         (let* ([pattern (pattern-of st k)]
-               [locals (match pattern (state-texts st) (state-ranks st))])
+               [locals (match pattern (state-texts st) (state-ranks st) (state-groups st))])
           (if (and (fx= (vector-length locals) 0) (fx< (fx+ k 1) n))
               (loop (fx+ k 1))
               (begin
@@ -559,7 +640,20 @@
       (state-pending-kept-set! st (if from (match-list-count (state-matches st)) 0))
       (state-matched-to-set! st #f)
       (state-pending-end-set! st (fx- (fx+ (state-dropped st) (state-count st)) (state-job-dropped st)))
+      (let ([g (state-grouping st)])
+        (when g
+          (grouping-kept-last-set! g (and from (grouping-matched-last g)))
+          (grouping-kept-rising?-set! g (or (not from) (grouping-matched-rising? g)))))
       (jobs:send! job (list 'match id pattern (or from 0)))))
+
+  (define (groups-after st numbers)
+    (let* ([g (state-grouping st)] [groups (grouping-groups g)] [offset (fx- (state-job-dropped st) (state-dropped st))]
+           [n (vector-length numbers)])
+      (let loop ([i 0] [last (grouping-kept-last g)] [rising? (grouping-kept-rising? g)])
+        (if (or (fx= i n) (not rising?))
+            (values last rising?)
+            (let ([group (group-ref groups (fx+ offset (vector-ref numbers i)))])
+              (loop (fx+ i 1) group (or (not last) (fx<= last group))))))))
 
   ;; A first part of a match's results is the start of the whole, so the
   ;; whole adds to the matches that took the part.
@@ -569,12 +663,28 @@
       (match-list-count-set! ms kept)
       (match-list-add! ms numbers (state-job-dropped st) (session-record-width s) (state-index st))
       (state-matches-id-set! st id)
+      (let ([g (state-grouping st)])
+        (when (and g (not (state-sorted? st)))
+          (let-values ([(last rising?) (groups-after st numbers)])
+            (grouping-matched-last-set! g last)
+            (grouping-matched-rising?-set! g rising?))))
       (set-state-matches! s st ms)))
+
+  ;; A match that adds to kept matches may find candidates of a group the
+  ;; kept matches hold, and its matches cannot then go at their end
+  ;; without splitting that group, so every candidate is matched again.
+  (define (adds-in-group-order? st numbers)
+    (or (not (state-grouping st))
+        (fx= (state-pending-kept st) 0)
+        (let-values ([(last rising?) (groups-after st numbers)]) rising?)))
 
   (define (matches-arrived! s st id done? numbers)
     (when (eqv? id (state-pending st))
       (when done? (state-matched-to-set! st (state-pending-end st)))
       (cond
+        [(not (adds-in-group-order? st numbers))
+         (state-matched-to-set! st #f)
+         (send-match! s st (state-style st))]
         [(and done? (state-more? st))
          (take-matches! s st id numbers)
          (send-match! s st 0)
@@ -712,14 +822,44 @@
 
   (define (prefers-input? s)
     (exists (lambda (st) (and (state-prefers-input? st) (string=? (state-query st) "")))
+            (shown-states s)))
+
+  (define (shown-states s)
+    (let ([c (session-record-narrowed s)])
+      (if c
+          (filter (lambda (st) (eqv? (%source-narrow (state-source st)) c)) (session-record-states s))
+          (session-record-states s))))
+
+  ;; Narrowing chooses among a read's sources, so a read of one source
+  ;; keeps its narrow character's key for typing.
+  (define (narrow-chars s)
+    (let ([sts (session-record-states s)])
+      (if (and (pair? sts) (pair? (cdr sts)))
+          (fold-right (lambda (st cs) (let ([c (%source-narrow (state-source st))]) (if (and c (not (memv c cs))) (cons c cs) cs)))
+                      '() sts)
+          '())))
+
+  (define (source-title-of s c)
+    (exists (lambda (st) (let ([source (state-source st)])
+                           (and (eqv? (%source-narrow source) c) (%source-title source))))
             (session-record-states s)))
+
+  (define (narrowed-title s)
+    (let ([c (session-record-narrowed s)])
+      (and c (or (source-title-of s c) (string c)))))
+
+  ;; Hidden sources go on matching, so widening shows their matches at
+  ;; once.
+  (define (narrow! s c)
+    (session-record-narrowed-set! s (and (memv c (narrow-chars s)) c))
+    (session-record-dirty?-set! s #t))
 
   ;; Only new matches set the session's matches and select again, so a
   ;; selection cleared while a job matches stays clear until they come.
   (define (combine! s)
     (when (session-record-dirty? s)
       (session-record-dirty?-set! s #f)
-      (let ([matches (let ([sts (session-record-states s)])
+      (let ([matches (let ([sts (shown-states s)])
                        (if (and (pair? sts) (null? (cdr sts)))
                            (state-matches (car sts))
                            (let* ([n (fold-left (lambda (n st) (fx+ n (match-list-count (state-matches st)))) 0 sts)]
@@ -750,14 +890,14 @@
 
   (define (open-session! view sources bounds accept preselect h default prompt)
     (let ([s (make-session view '() (length sources) bounds accept preselect h default prompt
-                           #f #f #f #f #f #t '() 0 (history-ranks h default) #t #f)])
+                           #f #f #f #f #f #t '() 0 (history-ranks h default) #t #f #f)])
       (session-record-states-set! s
         (let loop ([sources sources] [index 0])
           (if (null? sources)
               '()
               (cons (make-state (car sources) (styles-for (car sources)) index 0 0 (vector) (vector) (vector)
                                 (make-eqv-hashtable) #f #f #f 0 #f #f #t (make-match-list (vector) 0) 0 #f #f #f
-                                '() 0 "" #f #f #f)
+                                '() 0 "" #f #f #f (and (%source-group (car sources)) (empty-grouping)))
                     (loop (cdr sources) (fx+ index 1))))))
       (for-each
         (lambda (st)
@@ -808,14 +948,29 @@
   (define (match-bytes s m) (let ([st (owner-of s m)]) (vector-ref (state-texts st) (local-of s st m))))
   (define (match-text s m) (utf8->string (match-bytes s m)))
   (define (match-value s m) (let ([st (owner-of s m)]) (vector-ref (state-vals st) (local-of s st m))))
-  (define (match-title s m) (%source-title (state-source (owner-of s m))))
+  (define (match-title s m)
+    (let* ([st (owner-of s m)] [g (state-grouping st)])
+      (if g
+          (vector-ref (grouping-titles g) (group-ref (grouping-groups g) (local-of s st m)))
+          (%source-title (state-source st)))))
+
+  (define (match-row-text s m)
+    (let* ([st (owner-of s m)] [row (%source-row (state-source st))])
+      (if row
+          (let ([text (row (match-text s m) (match-value s m))])
+            (unless (string? text)
+              (assertion-violation 'completion:source "a group's row procedure returned what is not a string" text))
+            text)
+          (match-text s m))))
+
   (define (match-category s m) (%source-category (state-source (owner-of s m))))
-  (define (session-categories-of s) (map (lambda (st) (%source-category (state-source st))) (session-record-states s)))
-  (define (match-whole-text s m) (string-append (lead (owner-of s m)) (match-text s m)))
+  (define (session-categories-of s) (map (lambda (st) (%source-category (state-source st))) (shown-states s)))
+
+  (define (match-whole-text s m) (string-append (base (owner-of s m)) (match-text s m)))
 
   (define (match-spans s m)
     (let ([st (owner-of s m)])
-      ((%matcher-spans (matcher)) (state-pattern st) (match-text s m))))
+      ((%matcher-spans (matcher)) (state-pattern st) (match-row-text s m))))
 
   (define (match-annotation s m)
     (let* ([st (owner-of s m)] [cache (state-annotations st)])
@@ -830,7 +985,7 @@
             columns))))
 
   (define (busy? s)
-    (exists (lambda (st) (not (and (state-done? st) (not (state-pending st))))) (session-record-states s)))
+    (exists (lambda (st) (not (and (state-done? st) (not (state-pending st))))) (shown-states s)))
 
   (define (same-chars? a a-start b b-start count)
     (let loop ([i 0])
@@ -855,7 +1010,7 @@
                           (if (bytevector=? (vector-ref texts i) query)
                               (match-of s st i)
                               (loop (fx+ i 1)))))))))
-        (session-record-states s))))
+        (shown-states s))))
 
   (define-record-type finding
     (sealed #t)
@@ -875,7 +1030,8 @@
           (for-each
             (lambda (st)
               (let ([lead (lead-length st)])
-                (if (and (fx<= lead n) (same-chars? (state-prefix st) 0 text 0 lead) (fx> (state-count st) 0))
+                (if (and (fx<= lead n) (same-chars? (state-prefix st) 0 text 0 lead) (fx> (state-count st) 0)
+                         (memq st (shown-states s)))
                     (jobs:send! (match-job-of s st) (list 'find id (string->utf8 (string-part text lead n))))
                     (vector-set! (finding-answers f) (state-index st) #f))))
             sts)
@@ -907,40 +1063,39 @@
              (and (fx= (string-length input) (fx+ k (string-length text)))
                   (same-chars? input k text 0 (string-length text)))))))
 
-  ;; A candidate's whole text is its source's lead and then its text, as
-  ;; the input holds it once the candidate is chosen. TAB with nothing
-  ;; selected may compare every match, millions in a broad search, so the
-  ;; whole texts are read in place, as UTF-8, and the scan ends once their
-  ;; common start can no longer pass the input.
-  (define (common-whole-start s input)
+  ;; TAB with nothing selected may compare every match, millions in a
+  ;; broad search, so the inputs they make are read in place, as UTF-8,
+  ;; and the scan ends once their common start can no longer pass the
+  ;; input.
+  (define (common-input-start s input)
     (let* ([matches (or (session-record-matches s) no-matches)] [count (match-list-count matches)]
            [leads (map (lambda (st) (string->utf8 (lead st))) (session-record-states s))]
            [shortest (string-length input)])
       (define (lead-of st) (list-ref leads (state-index st)))
-      (define (whole-length st text) (fx+ (bytevector-length (lead-of st)) (bytevector-length text)))
-      (define (whole-ref st text i)
+      (define (made-length st text) (fx+ (bytevector-length (lead-of st)) (bytevector-length text)))
+      (define (made-ref st text i)
         (let* ([lead (lead-of st)] [n (bytevector-length lead)])
           (if (fx< i n) (bytevector-u8-ref lead i) (bytevector-u8-ref text (fx- i n)))))
       (define (continuation? b) (fx= (fxand b #xC0) #x80))
       (and (fx> count 0)
            (let* ([m0 (match-list-ref matches 0)] [st0 (owner-of s m0)] [t0 (match-bytes s m0)]
-                  [total (whole-length st0 t0)])
+                  [total (made-length st0 t0)])
              (let loop ([i 1] [n total])
                (cond
                  [(fx<= n shortest) #f]
                  [(fx= i count)
                   (let* ([n (let back ([n n])
-                              (if (and (fx< n total) (continuation? (whole-ref st0 t0 n))) (back (fx- n 1)) n))]
+                              (if (and (fx< n total) (continuation? (made-ref st0 t0 n))) (back (fx- n 1)) n))]
                          [common (make-bytevector n)])
                     (do ([k 0 (fx+ k 1)]) ((fx= k n))
-                      (bytevector-u8-set! common k (whole-ref st0 t0 k)))
+                      (bytevector-u8-set! common k (made-ref st0 t0 k)))
                     (let ([c (utf8->string common)]) (and (fx> (string-length c) shortest) c)))]
                  [else
                   (let* ([m (match-list-ref matches i)] [st (owner-of s m)] [t (match-bytes s m)]
-                         [limit (fxmin n (whole-length st t))])
+                         [limit (fxmin n (made-length st t))])
                     (loop (fx+ i 1)
                           (let scan ([k 0])
-                            (if (and (fx< k limit) (fx= (whole-ref st0 t0 k) (whole-ref st t k)))
+                            (if (and (fx< k limit) (fx= (made-ref st0 t0 k) (made-ref st t k)))
                                 (scan (fx+ k 1))
                                 k))))])))))))
 
@@ -1031,6 +1186,14 @@
   (check-session 'completion:session-busy? s)
   (and (not (session-record-ended? s)) (busy? s)))
 
+(define (narrowed s)
+  (check-session 'completion:narrowed s)
+  (narrowed-title s))
+
+(define (narrow-characters s)
+  (check-session 'completion:narrow-characters s)
+  (map (lambda (c) (cons c (source-title-of s c))) (narrow-chars s)))
+
 (define (%check-match who s m)
   (check-session who s)
   (unless (and (fixnum? m) (fx>= m 0) (candidate-match? s m))
@@ -1041,6 +1204,8 @@
 (define (value s m) (%check-match 'completion:value s m) (match-value s m))
 
 (define (title s m) (%check-match 'completion:title s m) (match-title s m))
+
+(define (row-text s m) (%check-match 'completion:row-text s m) (match-row-text s m))
 
 (define (category s m) (%check-match 'completion:category s m) (match-category s m))
 
@@ -1114,6 +1279,8 @@
         (let ([s (open-session! (minibuffer:prompt-view prompt) sources
                    (lambda () (values (minibuffer:input-start prompt) (minibuffer:input-end prompt)))
                    %answer! (read-preselect) h default prompt)])
+          (when (pair? (narrow-chars s))
+            (minibuffer:add-keymap! prompt narrowing-keymap))
           (set! %reads (cons (make-%read-state s prompt task any?) %reads))))
       (lambda () (minibuffer:read question h default)))))
 
@@ -1281,12 +1448,12 @@
   (answer-input! (or (minibuffer:current-prompt) (assertion-violation 'completion:exit-input "no prompt waits"))))
 
 (commands:define-command (complete)
-  "Replaces the query with the selected match's text; with none selected, replaces the input with the longest common start of the matches' whole texts when it is longer."
+  "Replaces the query with the selected match's text; with none selected, replaces the input with the longest common start of the inputs the matches make when it is longer."
   (let* ([s (%current 'completion:complete)] [m (session-record-selected s)])
     (if m
         (%replace! s (query-start s m) (match-text s m))
         (let-values ([(start end) ((session-record-bounds s))])
-          (let ([common (common-whole-start s (input-of s))])
+          (let ([common (common-input-start s (input-of s))])
             (when common (%replace! s start common)))))
     (rematch! s #f)
     (let ([p (%point-of s)])
@@ -1313,6 +1480,99 @@
 (commands:define-command (last)
   "Selects the last match."
   (%move 'completion:last (lambda (k count) (fx- count 1))))
+
+;; Titles are compared by their text, as a list draws a heading wherever
+;; the text changes, so a move stops only at a heading.
+(define (%group-start s matches k)
+  (let ([t (match-title s (match-list-ref matches k))])
+    (let loop ([k k])
+      (if (and (fx> k 0) (equal? (match-title s (match-list-ref matches (fx- k 1))) t)) (loop (fx- k 1)) k))))
+
+(define (%next-group-start s matches k)
+  (let ([n (match-list-count matches)] [t (match-title s (match-list-ref matches k))])
+    (let loop ([j (fx+ k 1)])
+      (cond
+        [(fx= j n) k]
+        [(equal? (match-title s (match-list-ref matches j)) t) (loop (fx+ j 1))]
+        [else j]))))
+
+(define (%previous-group-start s matches k)
+  (let ([start (%group-start s matches k)])
+    (if (fx= start 0) 0 (%group-start s matches (fx- start 1)))))
+
+(define (%move-group who n)
+  (unless (fixnum? n)
+    (assertion-violation who "not a count" n))
+  (let* ([s (%current who)] [matches (session-matches s)] [m (session-record-selected s)]
+         [k (and m (match-list-index matches m))] [step (if (fx< n 0) %previous-group-start %next-group-start)])
+    (unless (fx= (match-list-count matches) 0)
+      (select-match! s (match-list-ref matches
+                         (if k
+                             (let loop ([k k] [n (fxabs n)]) (if (fx= n 0) k (loop (step s matches k) (fx- n 1))))
+                             0))))))
+
+(commands:define-command (next-group [n (commands:prefix-number)])
+  "Selects the first match of the group N after the selected match's, stopping at the last group, or N before with a negative N; with none selected, the first match."
+  (%move-group 'completion:next-group n))
+
+(commands:define-command (previous-group [n (commands:prefix-number)])
+  "Selects the first match of the group N before the selected match's, stopping at the first match, or N after with a negative N; with none selected, the first match."
+  (%move-group 'completion:previous-group (fx- 0 n)))
+
+(define (%current-read who)
+  (let ([r (%read-of (%current who))])
+    (unless r
+      (assertion-violation who "not a read"))
+    r))
+
+(commands:define-command (narrow [c (keys:typed-char)])
+  "Narrows the read to its sources whose narrow character is C, keeping its input; a C no source narrows by widens."
+  (unless c
+    (assertion-violation 'completion:narrow "no character was typed"))
+  (unless (char? c)
+    (assertion-violation 'completion:narrow "not a character" c))
+  (let ([s (%read-state-session (%current-read 'completion:narrow))])
+    (narrow! s c)
+    (combine! s)))
+
+(commands:define-command (narrow-by-input)
+  "Narrows the read to its sources whose narrow character is its input's one character, and clears the input."
+  (let* ([r (%current-read 'completion:narrow-by-input)] [s (%read-state-session r)]
+         [input (minibuffer:input (%read-state-prompt r))])
+    (unless (and (fx= (string-length input) 1) (memv (string-ref input 0) (narrow-chars s)))
+      (assertion-violation 'completion:narrow-by-input "the input is not one narrow character" input))
+    (narrow! s (string-ref input 0))
+    (minibuffer:set-input! (%read-state-prompt r) "")
+    (combine! s)))
+
+(commands:define-command (widen)
+  "Shows the matches of every source of the read again."
+  (let ([s (%read-state-session (%current-read 'completion:widen))])
+    (narrow! s #f)
+    (combine! s)))
+
+;; Point is in the prompt's input, not in its list, so a region there is
+;; text the user marked, which M-w saves as anywhere else.
+(commands:define-command (kill-ring-save)
+  "Puts the selected match's whole text on the kill ring; with none selected, the input, or the read's default when the input is empty; with a region in the session's view, runs editing:kill-ring-save."
+  (let* ([s (%current 'completion:kill-ring-save)] [m (session-record-selected s)])
+    (if (exists views:cursor-mark (views:cursors (session-record-view s)))
+        (editing:kill-ring-save)
+        (kill-ring:push!
+          (list (cond
+                  [m (match-whole-text s m)]
+                  [(and (string=? (input-of s) "") (session-record-default s))]
+                  [else (input-of s)]))))))
+
+(define (%narrowing-keymaps client posn)
+  (let* ([s (and (not posn) (current-session))] [r (and s (%read-of s))])
+    (if (and r (not (session-record-ended? s)) (pair? (narrow-chars s)))
+        (let ([input (minibuffer:input (%read-state-prompt r))])
+          (cond
+            [(and (fx= (string-length input) 1) (memv (string-ref input 0) (narrow-chars s))) (list narrow-keymap)]
+            [(and (string=? input "") (session-record-narrowed s)) (list widen-keymap)]
+            [else '()]))
+        '())))
 
 (commands:define-command (search-history)
   "Replaces the input of the innermost prompt with an entry of its history, read with completion."
@@ -1354,6 +1614,9 @@
 (keys:bind! keymap "TAB" complete)
 (keys:bind! region-keymap "TAB" complete)
 (keys:bind! region-selected-keymap "RET" exit)
+(keys:bind! narrow-keymap "SPC" narrow-by-input)
+(keys:bind! widen-keymap "DEL" widen)
+(keys:bind! narrow-key-keymap "<printing-char>" narrow)
 (keys:bind! keys:global "C-M-i" complete-at-point)
 (keys:bind! keys:global "M-TAB" complete-at-point)
 ;; Exit, complete and the moves stay offered everywhere: they also act on
@@ -1361,10 +1624,15 @@
 ;; session at point, since its own prompt ends that session.
 (table-set! commands:command-modes exit-input (list minibuffer:mode))
 (table-set! commands:command-modes search-history (list minibuffer:mode))
+(table-set! commands:command-modes narrow (list minibuffer:mode))
+(table-set! commands:command-modes narrow-by-input (list minibuffer:mode))
+(table-set! commands:command-modes widen (list minibuffer:mode))
 (add-hook! minibuffer:input-changed %prompt-input-changed)
 (add-hook! minibuffer:prompt-started %prompt-input-changed)
 (add-hook! minibuffer:prompt-ended %prompt-ended)
 (add-hook! updated %sync-keymaps!)
+;; Ahead of the prompt's own keymaps, which hold completion:keymap.
+(add-hook! keys:find-keymaps %narrowing-keymaps 30)
 (add-hook! ended %point-ended)
 (add-hook! commands:after-command %continue-at-point)
 (on-unload %unload)

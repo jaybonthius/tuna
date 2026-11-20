@@ -10,18 +10,6 @@
     overflow: hidden;
   }
 
-  /* Capitals by transform, so the title stays as written for screen
-     readers and copying. */
-  .completion-title {
-    font-family: var(--tuna-font-ui);
-    font-size: var(--tuna-font-size-1);
-    font-weight: var(--tuna-font-weight-semibold, bold);
-    text-transform: uppercase;
-    font-feature-settings: "case";
-    letter-spacing: var(--tuna-letter-spacing-wider);
-    color: var(--tuna-text-muted);
-  }
-
   .completion-text {
     flex: none;
     white-space: pre;

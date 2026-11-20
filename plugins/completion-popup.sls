@@ -1,8 +1,8 @@
 #!tuna
 (import (completion) (completion rows) (buffers) (views) (keys) (commands) (editing) (layout) (layout-float) (web))
 
-(define-option rows 10 (lambda (v) (and (fixnum? v) (fx> v 0)))
-  "How many rows a popup shows.")
+(define-option lines 10 (lambda (v) (and (fixnum? v) (fx> v 0)))
+  "How many lines a popup shows at most, its rows and their group titles.")
 
 (define-option min-width 15 (lambda (v) (and (fixnum? v) (fx> v 0)))
   "How many columns a popup is wide at least.")
@@ -56,7 +56,7 @@
 
 (define (%started s)
   (unless (completion:session-prompt s)
-    (set! %popups (cons (make-%shown (completion/rows:make s rows (lambda (nodes) (apply %root '() nodes))) #f)
+    (set! %popups (cons (make-%shown (completion/rows:make s lines (lambda (nodes) (apply %root '() nodes))) #f)
                         %popups))))
 
 (define (%updated s)
@@ -98,6 +98,8 @@
 (keys:remap! completion:region-keymap editing:previous-line completion:previous)
 (keys:remap! completion:region-keymap editing:beginning-of-buffer completion:first)
 (keys:remap! completion:region-keymap editing:end-of-buffer completion:last)
+(keys:remap! completion:region-keymap views:scroll-up completion/rows:scroll-up)
+(keys:remap! completion:region-keymap views:scroll-down completion/rows:scroll-down)
 (keys:bind! completion:region-keymap "M-n" completion:next)
 (keys:bind! completion:region-keymap "M-p" completion:previous)
 (add-hook! completion:started %started)
