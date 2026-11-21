@@ -142,19 +142,23 @@
          [here (and at-point (at-point (views:current)))])
     (if (and here (not (commands:prefix-argument)) (not (%asks? command)))
         here
-        (ask:line-with-candidates question
+        (ask:line-with-candidates (if here (string-append question " (default " here "): ") (string-append question ": "))
           (let ([identifiers (%backend-identifiers b)])
             (if identifiers (lambda (input) (identifiers input)) '()))
           here))))
 
-(commands:define-command (find-definitions [identifier (%read-identifier 'xref:find-definitions find-definitions "Find definitions of: ")])
+(commands:define-command (find-definitions [identifier (%read-identifier 'xref:find-definitions find-definitions "Find definitions of")])
   "Shows the definitions of IDENTIFIER, by default the one at point, and records the place point left in jump-history."
   (let ([items (%items 'xref:find-definitions (%backend-for 'xref:find-definitions) %backend-definitions "find definitions" identifier)])
     (when (null? items)
       (error 'xref:find-definitions (string-append "No definitions found for: " identifier)))
     (%show! items (string-append "Definitions of " identifier) (definitions-display) (auto-jump-to-first-definition?))))
 
-(commands:define-command (find-references [identifier (%read-identifier 'xref:find-references find-references "Find references of: ")])
+(commands:define-command (find-definitions-other-view [identifier (%read-identifier 'xref:find-definitions-other-view find-definitions-other-view "Find definitions of")])
+  "As xref:find-definitions, in another view, which it selects."
+  (layout:call-with-overriding-action layout:display-in-other-view (lambda () (find-definitions identifier))))
+
+(commands:define-command (find-references [identifier (%read-identifier 'xref:find-references find-references "Find references of")])
   "Shows the places that use IDENTIFIER, by default the one at point, and records the place point left in jump-history."
   (let ([items (%items 'xref:find-references (%backend-for 'xref:find-references) %backend-references "find references" identifier)])
     (when (null? items)
@@ -173,5 +177,6 @@
   "Which commands ask for the identifier when there is one at point: #t for all, #f for none, or a list of commands.")
 
 (keys:bind! keys:global "M-." find-definitions)
+(keys:bind! keys:global "C-x 4 ." find-definitions-other-view)
 (keys:bind! keys:global "M-?" find-references)
 (keys:bind! keys:global "C-M-." find-apropos)

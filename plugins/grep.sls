@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (commands) (editing) (files) (jump-history) (keys) (layout) (processes) (projects) (views))
+(import (completion) (commands) (editing) (files) (jump-history) (keys) (processes) (projects) (views))
 
 (define-option command-line
   (list "rg" "--null" "--line-buffered" "--color=never" "--max-columns=1000" "--path-separator" "/"
@@ -234,12 +234,8 @@
                 (preview-delay (preview-delay))))))))
 
 (commands:define-command (grep [location (%read-location)])
-  "Visits LOCATION, a line found by rg in the files of the current buffer's project, else under its directory, at its match. Records the place point left in jump-history, then calls jump-history:after-jump."
-  (let* ([view (layout:selected-view)] [left (views:buffer view)] [at (views:point view)] [b (files:visit (car location))])
-    (layout:switch-to-buffer b)
-    (let ([view (layout:selected-view)])
-      (views:set-point! view (editing:line-position b (cadr location) (cddr location)))
-      (jump-history:push! left at)
-      (jump-history:after-jump view))))
+  "Visits LOCATION, a line found by rg in the files of the current buffer's project, else under its directory, at its match, in a view already showing its file if there is one, as jump-history:jump-to goes."
+  (let ([b (files:visit (car location))])
+    (jump-history:jump-to b (editing:line-position b (cadr location) (cddr location)))))
 
 (keys:bind! keys:global "M-s r" grep)

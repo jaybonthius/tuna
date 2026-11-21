@@ -1,0 +1,19 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  [data-face="pulse.highlight"] {
+    background-color: var(--pulse-highlight-background, var(--tuna-region));
+  }
+}
+
+@layer preferences {
+  @media (prefers-reduced-motion: no-preference) {
+    [data-face="pulse.highlight"] {
+      animation: pulse-fade var(--pulse-duration, var(--tuna-duration-6)) var(--tuna-ease-3) forwards;
+    }
+  }
+
+  @keyframes pulse-fade {
+    to { background-color: transparent; }
+  }
+}

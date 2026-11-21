@@ -29,7 +29,7 @@
 (("1:1" "2:0" "3:0") 1)
 ; The list's keys run public commands, which a user can bind elsewhere.
 > (map (lambda (b) (cons (car b) (commands:command-name (cdr b)))) (keys:bindings diagnostics-list:keymap))
-(("RET" . diagnostics-list:go-to-diagnostic) ("SPC" . diagnostics-list:show-diagnostic) ("C-o" . diagnostics-list:show-diagnostic) ("n" . diagnostics-list:next-diagnostic) ("p" . diagnostics-list:previous-diagnostic))
+(("RET" . diagnostics-list:go-to-diagnostic) ("SPC" . diagnostics-list:show-diagnostic) ("C-o" . diagnostics-list:show-diagnostic) ("n" . diagnostics-list:next-diagnostic) ("p" . diagnostics-list:previous-diagnostic) ("<mouse-2>" . editing:mouse-set-point))
 ; RET goes to the selected row's diagnostic in another view, recording
 ; the place that view leaves.
 > (define nv (view))

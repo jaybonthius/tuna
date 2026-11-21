@@ -64,3 +64,14 @@ docs-at-point-display:docs-mode
 > (define html (html->string (views:draw (car (views:showing (buffers:find "*Docs*"))) client)))
 > (list (holds? html "<span data-face=\"function\">total</span>") (holds? html "<span data-face=\"highlight\">items</span>") (holds? html "markdown-code-block"))
 (#t #t #t)
+; Where no source answers, C-h . shows *Docs* empty; making *Docs* again
+; calls docs-mode-hook in it.
+> (remove-hook! docs-at-point:sources faced)
+> (define made '())
+> (add-hook! docs-at-point-display:docs-mode-hook (lambda () (set! made (cons (buffers:name (buffers:current)) made))))
+> (buffers:kill! (buffers:find "*Docs*"))
+#t
+> (press! "C-h" ".")
+> (sleep-for 0.3)
+> (list made (and (buffers:find "*Docs*") (pair? (views:showing (buffers:find "*Docs*")))) (and (buffers:find "*Docs*") (text (buffers:find "*Docs*"))))
+(("*Docs*") #t "")

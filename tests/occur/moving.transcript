@@ -45,14 +45,14 @@
 > (views:set-point! (view) (find-text (occur-buffer) "one foo"))
 > (press! "n")
 > (list (where) (wins) (last-message))
-> (define (lit) (filter (lambda (f) (string=? (car f) "occur.visited"))
+> (define (lit) (filter (lambda (f) (string=? (car f) "pulse.highlight"))
                         (faced (html->string (views:draw (find (lambda (v) (eq? (views:buffer v) (buffers:find "src"))) (layout:views)) client)))))
 > (list (lit) (marked))
 > (views:set-point! (view) (find-text (occur-buffer) "one foo"))
 > (press! "2" "n")
 > (list (where) (wins))
 ((3 "foo") (("src" 13 #f) ("*Occur*" 63 #t)) "Next locus from *Occur*")
-((("occur.visited" "foo") ("occur.visited" "foo")) 3)
+((("pulse.highlight" "foo") ("pulse.highlight" "foo")) 3)
 ((3 "foo three foo") (("src" 13 #f) ("*Occur*" 73 #t)))
 ; p from the line's start goes to the previous match, the last on a
 ; line with two.
@@ -66,7 +66,7 @@
 > (press! "n")
 > (where)
 ((3 "foo three foo") (("src" 13 #f) ("*Occur*" 73 #t)) "Previous locus from *Occur*")
-((("occur.visited" "foo") ("occur.visited" "foo")) 3)
+((("pulse.highlight" "foo") ("pulse.highlight" "foo")) 3)
 ! occur:show-previous: No more matches
 ! occur:show-next: No more matches
 (5 "")

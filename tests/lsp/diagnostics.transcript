@@ -86,6 +86,9 @@
 ("R# new line\nimport os\nx = 1\n" 1)
 ; C-u asks for the kind, which goes as the request's only.
 > (define t (start! (lambda () (press! "C-u" "C-c" "a"))))
+> (wait-matches (session))
+> (texts (session))
+("quickfix" "refactor.inline" "refactor.extract" "refactor.rewrite" "source.organizeImports")
 > (type! "refactor.extract")
 > (press! "RET")
 > (wait-until (lambda () (session)))
@@ -94,3 +97,29 @@
 > (result t)
 > (ref (last-of "types" "textDocument/codeAction") "params" "context" "only")
 #("refactor.extract")
+; A connection that a reconnect replaces while the code-action hint is
+; asking the others gives the hint nothing, and the hint does not fail.
+> (configure! "types" `(capabilities ("textDocumentSync" . 2) ("codeActionProvider" . #t))
+                       `(responses ("textDocument/codeAction" . (delay 0.5 #(,(action "Slow")))))
+                       '(name . "types"))
+> (define opened (list (length (of-method "types" "textDocument/didOpen")) (length (of-method "lint" "textDocument/didOpen"))))
+> (for-each (lambda (c) (lsp:reconnect c)) (lsp:connections))
+> (wait-until (lambda () (and (= (+ 1 (car opened)) (length (of-method "types" "textDocument/didOpen")))
+                              (= (+ 1 (cadr opened)) (length (of-method "lint" "textDocument/didOpen"))))))
+> (define hint-source (diagnostics:make-source))
+> (diagnostics:report! hint-source a (list (diagnostics:make-diagnostic 1 3 (diagnostics:severity warning) "here")))
+#t
+> (in-client (lambda () (views:set-point! (view) 2)))
+> (define asked (start! (lambda () (lsp:code-action-hint (view)))))
+> (lsp:reconnect (cadr (lsp:buffer-connections a)))
+> (docs-at-point:doc-text (result asked))
+"Slow (C-c a)"
+; A reconnect leaves the buffer one docs entry of each kind per
+; connection, not the replaced connection's as well.
+> (define (sources) (length (buffers:with-buffer a (hook-entries docs-at-point:sources))))
+> (define before (sources))
+> (for-each (lambda (c) (lsp:reconnect c)) (lsp:connections))
+> (wait-until (lambda () (= 2 (length (lsp:buffer-connections a)))))
+> (sleep-for 0.3)
+> (= before (sources))
+#t

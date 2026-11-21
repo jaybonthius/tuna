@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (web))
+(import (tuna) (tuna plugins) (document) (haml) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -26,6 +26,13 @@
 (define (here) (cons (buffers:name (views:buffer (view))) (views:point (view))))
 
 (define (places) (map (lambda (p) (cons (buffers:name (car p)) (cdr p))) (jump-history:places)))
+
+(define (search-html s sub)
+  (let loop ([i 0])
+    (cond
+      [(> (+ i (string-length sub)) (string-length s)) #f]
+      [(string=? (substring s i (+ i (string-length sub))) sub) i]
+      [else (loop (+ i 1))])))
 
 (define (raised thunk)
   (guard (c [#t (list (if (who-condition? c) (condition-who c) 'none)

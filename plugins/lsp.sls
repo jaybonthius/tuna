@@ -352,6 +352,8 @@
 
 (define (connection? v) (and (jsonrpc:connection? v) (eq-hashtable-ref %by-rpc v #f) #t))
 
+(define (%live? conn) (eq? (eq-hashtable-ref %by-rpc (%conn-rpc conn) #f) conn))
+
 (define (connections) (map %conn-rpc %connections))
 
 (define (%doc-of conn b) (find (lambda (d) (eq? (%doc-buffer d) b)) (%conn-docs conn)))
@@ -947,20 +949,26 @@
             [ran (/ (- (real-time) (%conn-started-at conn)) 1000.0)])
         (set! %connections (remq conn %connections))
         (eq-hashtable-delete! %by-rpc rpc)
+        (for-each (lambda (d) (let ([b (%doc-buffer d)]) (when (buffers:live? b) (%remove-doc-entries! conn b)))) docs)
         (diagnostics:clear! (%conn-source conn))
         (for-each (lambda (d) (let ([b (%doc-buffer d)]) (when (and (buffers:live? b) (null? (%conns-of b))) (%tear-down-buffer! b) (buffers:with-buffer b (managed b))))) docs)
+        (ask:message (%fmt "~a exited with status ~a" (%conn-title conn) status))
         (unless asked?
           (let ([again (autoreconnect)])
-            (if (or (eq? again #t) (and (real? again) (>= ran again)))
-                (let ([new (%start! (%conn-name conn) (table-ref servers (%conn-name conn) (%conn-description conn)) (%conn-root conn))])
-                  (for-each (lambda (d) (let ([b (%doc-buffer d)]) (when (buffers:live? b) (%manage! new b (%doc-path d))))) docs))
-                (ask:message (%fmt "lsp: ~a ended" (%conn-title conn))))))))))
+            (cond
+              [(or (eq? again #t) (and (real? again) (>= ran again)))
+               (ask:message "Reconnecting after unexpected server exit.")
+               (let ([new (%start! (%conn-name conn) (table-ref servers (%conn-name conn) (%conn-description conn)) (%conn-root conn))])
+                 (for-each (lambda (d) (let ([b (%doc-buffer d)]) (when (buffers:live? b) (%manage! new b (%doc-path d))))) docs))
+               (ask:message "Reconnected!")]
+              [again (ask:message "Not auto-reconnecting, last one didn't last long.")])))))))
 
 
 (define (%shutdown! conn)
   (%conn-shutting-down?-set! conn #t)
   (let ([rpc (%conn-rpc conn)])
     (when (jsonrpc:running? rpc)
+      (ask:message (%fmt "Asking ~a politely to terminate" (%conn-title conn)))
       (for-each (lambda (d) (%close! conn d)) (%conn-docs conn))
       (guard (c [(not (quit-condition? c)) (void)])
         (when (%conn-ready? conn)
@@ -992,7 +1000,8 @@
   (let* ([conn (%conn-of 'lsp:reconnect c)] [docs (%conn-docs conn)])
     (%shutdown! conn)
     (let ([new (%start! (%conn-name conn) (table-ref servers (%conn-name conn) (%conn-description conn)) (%conn-root conn))])
-      (for-each (lambda (d) (let ([b (%doc-buffer d)]) (when (buffers:live? b) (%manage! new b (%doc-path d))))) docs))))
+      (for-each (lambda (d) (let ([b (%doc-buffer d)]) (when (buffers:live? b) (%manage! new b (%doc-path d))))) docs)
+      (ask:message "Reconnected!"))))
 
 (commands:define-command (send-configuration [c (%current-conn 'lsp:send-configuration)])
   "Sends connection C its server's configuration as lsp:servers describes it now."
@@ -1520,17 +1529,21 @@
     (map (lambda (d) (and (eq? (diagnostics:diagnostic-source d) source) (diagnostics:diagnostic-data d)))
          (diagnostics:in b start end))))
 
+;; Each request waits, so a connection may end while another answers;
+;; one that has gives nothing.
 (define (%actions-at b start end kind trigger-kind)
   (apply append
     (map (lambda (conn)
-           (let* ([versions (%versions (list conn))]
-                  [result (request (%conn-rpc conn) "textDocument/codeAction"
-                            `(("textDocument" . ,(%doc-identifier conn b))
-                              ("range" . ,(%range-at (buffers:document b) start end (%conn-encoding conn)))
-                              ("context" ("diagnostics" . ,(list->vector (%diagnostic-data b start end (%conn-source conn))))
-                               ,@(if kind `(("only" . ,(vector kind))) '())
-                               ("triggerKind" . ,trigger-kind))))])
-             (map (lambda (a) (list conn a versions)) (%list result))))
+           (if (not (%live? conn))
+               '()
+               (let* ([versions (%versions (list conn))]
+                      [result (request (%conn-rpc conn) "textDocument/codeAction"
+                                `(("textDocument" . ,(%doc-identifier conn b))
+                                  ("range" . ,(%range-at (buffers:document b) start end (%conn-encoding conn)))
+                                  ("context" ("diagnostics" . ,(list->vector (%diagnostic-data b start end (%conn-source conn))))
+                                   ,@(if kind `(("only" . ,(vector kind))) '())
+                                   ("triggerKind" . ,trigger-kind))))])
+                 (map (lambda (a) (list conn a versions)) (%list result)))))
          (%give (%ordered-conns b) 'code-action b))))
 
 (define (%action-label entry several?)
@@ -1564,6 +1577,8 @@
 
 (define %hinted #f)
 
+(define %action-kinds '("quickfix" "refactor.extract" "refactor.inline" "refactor.rewrite" "source.organizeImports"))
+
 (define (%action-range)
   (let* ([event (keys:command-event)]
          [posn (and event (not (string? event)) (keys:event-end event))]
@@ -1580,7 +1595,7 @@
        (let-values ([(s e) (guard (c [(not (quit-condition? c)) (values #f #f)]) (syntax:symbol-bounds b p))])
          (if s (values b s e) (values b p p)))])))
 
-(commands:define-command (code-actions [start #f] [end #f] [kind (and (commands:prefix-argument) (ask:line "Kind of code action: "))])
+(commands:define-command (code-actions [start #f] [end #f] [kind (and (commands:prefix-argument) (ask:line-with-candidates "Action kind: " %action-kinds))])
   "Runs a code action from START to END, by default the region, else the diagnostics at point or at the click, else the symbol at point, chosen among every connection's; with C-u, of a kind asked for."
   (let-values ([(b s e) (if start (values (buffers:current) start (or end start)) (%action-range))])
     (let ([kind (and kind (not (equal? kind "")) kind)])
@@ -1633,16 +1648,17 @@
   (let* ([view (views:current)] [b (views:buffer view)] [conns (%give (%ordered-conns b) 'rename b)])
     (when (null? conns) (error 'lsp:rename "No server renames here"))
     (let* ([conn (car conns)]
-           [prepared (and (%ref (%conn-caps conn) "renameProvider" "prepareProvider")
-                          (guard (c [(not (quit-condition? c)) #f])
-                            (request (%conn-rpc conn) "textDocument/prepareRename" (%point-params conn b (views:point view)))))]
+           [prepare? (%ref (%conn-caps conn) "renameProvider" "prepareProvider")]
+           [prepared (and prepare? (request (%conn-rpc conn) "textDocument/prepareRename" (%point-params conn b (views:point view))))]
            [default (cond
                       [(and (pair? prepared) (string? (%ref prepared "placeholder"))) (%ref prepared "placeholder")]
                       [(and (pair? prepared) (pair? (%ref prepared "start")))
                        (let-values ([(s e) (%bounds-at (buffers:document b) prepared (%conn-encoding conn))])
                          (buffers:text-between (buffers:document b) s e))]
                       [else (or (%identifier-at view) "")])])
-      (ask:line (%fmt "Rename ~a to: " default) default))))
+      (when (and prepare? (not (pair? prepared)))
+        (error 'lsp:rename "Can't rename here"))
+      (ask:line (%fmt "Rename `~a' to: " default) default))))
 
 (commands:define-command (rename [name (%rename-default)])
   "Renames the identifier at point to NAME across the project."

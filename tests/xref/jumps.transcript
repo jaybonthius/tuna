@@ -169,6 +169,47 @@
 > (here)
 ("uses.txt" 1)
 > (in-client (lambda () (layout:switch-to-buffer notes)))
+; A diagnostic of a buffer another view shows goes there and selects that
+; view, recording the place it leaves; the selected view keeps its buffer.
+> (define other (in-client (lambda () (layout-split:display-below uses))))
+> (in-client (lambda () (layout:switch-to-buffer (files:visit (string-append code "/sub/twice.txt")))))
+> (define t (start! (lambda () (press! "C-u" "M-g" "f"))))
+> (define s (session))
+> (wait-matches s)
+> (press! "C-n" "RET")
+> (result t)
+> (list (eq? (view) other) (here) (buffers:name (views:buffer v)) (car (places)))
+(#t ("uses.txt" 2) "twice.txt" ("uses.txt" 1))
+; M-s r goes to a line the same way.
+> (in-client (lambda () (layout:select! v)))
+> (define t (start! (lambda () (press! "M-s" "r"))))
+> (define s (session))
+> (type! "y = average")
+> (wait-matches s)
+> (press! "RET")
+> (result t)
+> (list (eq? (view) other) (here) (buffers:name (views:buffer v)))
+(#t ("uses.txt" 2) "twice.txt")
+> (in-client (lambda () (layout:select! v) (layout:switch-to-buffer notes)))
+; M-g f marks the diagnostic's own range, as a diagnostics list's RET does.
+> (define four (document:line-start (buffers:document notes) 4))
+> (diagnostics:report! source notes (list (diagnostics:make-diagnostic (+ four 1) (+ four 3) (diagnostics:severity error) "ou")))
+#t
+> (define t (start! (lambda () (press! "M-g" "f"))))
+> (wait-matches (session))
+> (press! "RET")
+> (result t)
+> (let ([h (html->string (views:draw (view) #f))])
+    (let* ([i (let find ([i 0]) (if (string=? (substring h i (+ i 27)) "data-face=\"pulse.highlight\"") i (find (+ i 1))))]
+           [open (let find ([j i]) (if (char=? (string-ref h j) #\>) (+ j 1) (find (+ j 1))))])
+      (let loop ([j open] [depth 1] [text '()])
+        (cond
+          [(= depth 0) (list->string (reverse text))]
+          [(and (<= (+ j 7) (string-length h)) (string=? (substring h j (+ j 7)) "</span>")) (loop (+ j 7) (- depth 1) text)]
+          [(and (<= (+ j 5) (string-length h)) (string=? (substring h j (+ j 5)) "<span"))
+           (loop (let find ([k j]) (if (char=? (string-ref h k) #\>) (+ k 1) (find (+ k 1)))) (+ depth 1) text)]
+          [else (loop (+ j 1) depth (cons (string-ref h j) text))]))))
+"ou"
 > (diagnostics:clear! source)
 > (press! "M-g" "f")
 ! diagnostic-picker:diagnostic: No diagnostics

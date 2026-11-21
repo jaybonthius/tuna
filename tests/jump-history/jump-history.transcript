@@ -164,3 +164,94 @@
 > (jump-history:after-jump (view))
 > (list jumped placements)
 ((5) ((5 center)))
+; after-jump and after-return also highlight point's line for a moment.
+> (define (pulsed? v) (and (search-html (html->string (views:draw v #f)) "data-face=\"pulse.highlight\"") #t))
+> (pulsed? (view))
+#t
+> (press! "C-f")
+> (pulsed? (view))
+#f
+> (press! "M-,")
+> (pulsed? (view))
+#t
+; jump-to goes to a place chosen from a list: in a view already showing
+; its buffer, which it selects, recording the place that view leaves;
+; else in the selected view, recording the place it leaves.
+> (define fifth (buffers:make "fifth" "seven\neight\n"))
+> (define sixth (buffers:make "sixth" "nine\n"))
+> (press! "C-x" "1")
+> (layout:switch-to-buffer first)
+> (views:set-point! (view) 2)
+> (define top (view))
+> (define bottom (layout-split:display-below fifth))
+> (views:set-point! bottom 1)
+> (layout:select! top)
+> (jump-history:jump-to fifth 6)
+> (list (eq? (view) bottom) (here) (eq? (views:buffer top) first) (car (places)))
+(#t ("fifth" . 6) #t ("fifth" . 1))
+> (jump-history:jump-to sixth 2)
+> (list (eq? (view) bottom) (here) (car (places)) (pulsed? bottom))
+(#t ("sixth" . 2) ("fifth" . 6) #t)
+> (raised (lambda () (jump-history:jump-to sixth 99)))
+(jump-history:jump-to "not a position in the buffer")
+; One mark at a time: a mark in another view ends the first, and the
+; first's timer does not end the second.
+> (set-option! pulse:duration 0.3)
+> (pulse:highlight! top '((1 3)))
+> (sleep-for 0.2)
+> (pulse:highlight! bottom '((1 3)))
+> (list (pulsed? top) (pulsed? bottom))
+(#f #t)
+> (sleep-for 0.2)
+> (pulsed? bottom)
+#t
+> (sleep-for 0.3)
+> (pulsed? bottom)
+#f
+; A jump's ranges are what it marks; with none, the line from its
+; indentation; an empty list marks nothing.
+> (define indented (buffers:make "indented" "  ten\neleven\n"))
+> (jump-history:jump-to indented 4 '((4 6)))
+> (define (marked v)
+    (let ([h (html->string (views:draw v #f))] [face "data-face=\"pulse.highlight\""])
+      (let loop ([i 0] [stack '()] [text '()] [acc '()])
+        (define (inside?) (memq #t stack))
+        (cond
+          [(= i (string-length h)) (reverse acc)]
+          [(char=? (string-ref h i) #\<)
+           (let* ([j (let find ([j i]) (if (char=? (string-ref h j) #\>) j (find (+ j 1))))] [tag (substring h i (+ j 1))])
+             (cond
+               [(and (> (string-length tag) 5) (string=? (substring tag 0 5) "<span"))
+                (loop (+ j 1) (cons (and (search-html tag face) #t) stack) text acc)]
+               [(string=? tag "</span>")
+                (let ([closing (and (pair? stack) (car stack) (not (memq #t (cdr stack))))])
+                  (loop (+ j 1) (if (pair? stack) (cdr stack) '()) (if closing '() text)
+                        (if closing (cons (list->string (reverse text)) acc) acc)))]
+               [else (loop (+ j 1) stack text acc)]))]
+          [(inside?) (loop (+ i 1) stack (cons (string-ref h i) text) acc)]
+          [else (loop (+ i 1) stack text acc)]))))
+> (marked (view))
+("en")
+> (jump-history:jump-to indented 4)
+> (marked (view))
+("ten")
+> (jump-history:jump-to indented 4 '())
+> (marked (view))
+()
+> (raised (lambda () (jump-history:jump-to indented 4 '(5))))
+(jump-history:jump-to "not a list of ranges in the buffer")
+; A range outside the buffer is refused before anything moves.
+> (define before (here))
+> (raised (lambda () (jump-history:jump-to indented 4 '((4 99)))))
+(jump-history:jump-to "not a list of ranges in the buffer")
+> (equal? before (here))
+#t
+; A line of only spaces is marked from its start through its line break,
+; and so is an empty line.
+> (define blanks (buffers:make "blanks" "a\n   \n\nb"))
+> (jump-history:jump-to blanks 4)
+> (pulse:line-ranges (view))
+((3 7))
+> (jump-history:jump-to blanks 7)
+> (pulse:line-ranges (view))
+((7 8))

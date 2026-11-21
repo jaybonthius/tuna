@@ -114,3 +114,54 @@
 (xref:make-item "not an absolute path")
 > (xref:backend "x" [colour 1])
 ! xref:backend: invalid clause (colour 1) in (xref:backend "x" (colour 1))
+; C-x 4 . shows the definition in another view, which it selects; the
+; view it came from keeps its buffer and point.
+> (in-client (lambda () (layout:switch-to-buffer uses)))
+> (to-word! "average" 2)
+> (define from (view))
+> (define at (views:point from))
+> (press! "C-x" "4" ".")
+> (list (eq? (view) from) (here) (buffers:name (views:buffer from)) (= (views:point from) at))
+(#f ("defs.txt" 2) "uses.txt" #t)
+; The question names the identifier at point as its default, as Emacs's
+; format-prompt does, and plainly where there is none.
+> (define (question)
+    (let find ([d (document:datums (buffers:document (buffers:find " *Minibuf*")))])
+      (cond
+        [(and (pair? d) (eq? (car d) 'minibuffer:question)) (caddr d)]
+        [(pair? d) (or (find (car d)) (find (cdr d)))]
+        [else #f])))
+> (layout:select! from)
+> (to-word! "total" 1)
+> (define t (start! (lambda () (press! "C-u" "M-."))))
+> (question)
+"Find definitions of (default total): "
+> (press! "C-g")
+! &quit
+> (result t)
+> (define t (start! (lambda () (press! "M-?"))))
+> (question)
+"Find references of (default total): "
+> (press! "C-g")
+! &quit
+> (result t)
+> (views:set-point! (view) (document:length (buffers:document uses)))
+> (define t (start! (lambda () (press! "M-."))))
+> (question)
+"Find definitions of: "
+> (press! "C-g")
+! &quit
+> (result t)
+; With several definitions, C-x 4 . asks first, then shows the one chosen
+; in another view.
+> (in-client (lambda () (layout:select! from) (press! "C-x" "1")))
+> (to-word! "total" 1)
+> (define t (start! (lambda () (press! "C-x" "4" "."))))
+> (define s (session))
+> (wait-matches s)
+> (texts s)
+("~/code/defs.txt:1: def total" "~/code/sub/twice.txt:2: def total")
+> (press! "C-n" "RET")
+> (result t)
+> (list (eq? (view) from) (here) (buffers:name (views:buffer from)))
+(#f ("twice.txt" 2) "uses.txt")

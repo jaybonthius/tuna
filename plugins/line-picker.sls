@@ -72,7 +72,8 @@
       (if place
           (begin
             (completion:preview-place view b (car place) (cdr place))
-            (jump-history:after-jump view))
+            (parameterize ([jump-history:place-ranges (and (pair? (cdr place)) (cdr place))])
+              (jump-history:after-jump view)))
           (begin
             (completion:end-preview-place)
             (views:set-point! view point))))
@@ -90,13 +91,14 @@
     (completion:read "Go to line: " (list (%line-source (views:current) from-top?)))))
 
 (commands:define-command (line [place (%read-line)])
-  "Moves point to PLACE, a pair of a position and the buffer ranges of the matches there, as M-s l reads it from the current buffer: the first match's start on the line chosen, or the line's start. Records the place point left in jump-history, then calls jump-history:after-jump."
+  "Moves point to PLACE, a pair of a position and the buffer ranges of the matches there, as M-s l reads it from the current buffer: the first match's start on the line chosen, or the line's start. Records the place point left in jump-history, then calls jump-history:after-jump with the matches as the place's ranges."
   (unless (and (pair? place) (fixnum? (car place)))
     (assertion-violation 'line-picker:line "not a position and its matches" place))
   (let* ([view (views:current)] [left (views:point view)])
     (views:set-point! view (car place))
     (jump-history:push! (views:buffer view) left)
-    (jump-history:after-jump view)))
+    (parameterize ([jump-history:place-ranges (and (pair? (cdr place)) (cdr place))])
+      (jump-history:after-jump view))))
 
 (define (%read-line-number)
   (let* ([view (views:current)] [current (document:line (buffers:document (views:buffer view)) (views:point view))])

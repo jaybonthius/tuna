@@ -5,10 +5,6 @@
     background: var(--occur-match-background, var(--tuna-match));
   }
 
-  [data-face="occur.visited"] {
-    background: var(--occur-visited-background, var(--tuna-region, Highlight));
-  }
-
   .occur-heading {
     text-decoration: underline;
   }

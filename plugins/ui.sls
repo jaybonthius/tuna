@@ -8,14 +8,16 @@
 
 (define-table list-keys "Keys that move through a list and choose its row.")
 
-(define-table row-keys "Keys on a list's row: a click chooses it.")
+(define-table list-click-keys "Clicks on a list whose click chooses: off a row, they run nothing.")
+
+(define-table row-keys "Clicks on a row of a list whose click chooses: a click chooses the row.")
 
 (define-table disabled-keys "Keys that do nothing on a disabled button or link.")
 
 (module %internals
   (draw-labelled button-at disabled? list-node? row-atom? list-state set-list-state! rows-count rows-count-set! rows-draw
    rows-choose rows-generation rows-failed? rows-failed?-set! failure? heading-of row-count selected-index index-position
-   row-datum list-at drawing-rows drawing-selected drawing-start drawing-last drawing-last-set!
+   row-datum list-at chooses? drawing-rows drawing-selected drawing-start drawing-row-mark drawing-last drawing-last-set!
    drawing-last-heading drawing-last-heading-set! current-drawing with-drawing place clicked-posn posn-or-point
    forget-buffer!)
 
@@ -129,6 +131,8 @@
                (assertion-violation 'ui:set-rows! "a heading procedure returned neither a string nor #f" h))
              h))))
 
+  (define (chooses? node) (not (eq? (document:node-attribute node 'click #f) 'select)))
+
   (define (list-at v p)
     (let ([b (views:buffer v)])
       (and b
@@ -144,14 +148,15 @@
   ;; for that row again.
   (define-record-type drawing
     (sealed #t)
-    (fields rows selected start (mutable last) (mutable last-heading)))
+    (fields rows selected start row-mark (mutable last) (mutable last-heading)))
 
   (define current-drawing (make-thread-parameter #f))
 
   (define (with-drawing node view thunk)
     (let ([b (views:buffer view)])
       (parameterize ([current-drawing (make-drawing (list-state b node) (selected-index node (views:point view))
-                                                    (document:node-start node) #f #f)])
+                                                    (document:node-start node)
+                                                    (and (chooses? node) (views:keymap-mark row-keys)) #f #f)])
         (thunk))))
 
   (define (place posn)
@@ -213,6 +218,18 @@
     (or (and v p (button-at v p))
         (assertion-violation 'ui:pushed-button "no button is at the click or at point"))))
 
+;; A list whose click selects leaves every click to the keymaps around it,
+;; so the global map's press selects the view and moves point to the row.
+(define (%choosing-keymaps client posn)
+  (if posn
+      (let-values ([(v p) (place posn)])
+        (let ([node (and v p (list-at v p))])
+          (cond
+            [(not (and node (chooses? node))) '()]
+            [(row-atom? (views:posn-node posn)) `(,row-keys ,list-click-keys)]
+            [else `(,list-click-keys)])))
+      '()))
+
 (define (%disabled-keymaps client posn)
   (let-values ([(v p) (place posn)])
     (let ([button (and v p (button-at v p))])
@@ -254,7 +271,11 @@
 ;; Rows drawn before one that raised are drawn again, as nothing, so the
 ;; list is drawn empty from the draw that failed.
 (define (%draw-list node view)
-  (define (draw) (with-drawing node view (lambda () (haml (:ul.ui-list (views:draw-children view node %with-heading))))))
+  (define (draw)
+    (with-drawing node view
+      (lambda ()
+        (haml (:ul.ui-list ([data-keymap (and (chooses? node) (views:keymap-mark list-click-keys))])
+                (views:draw-children view node %with-heading))))))
   (let* ([state (list-state (views:buffer view) node)] [failed? (and state (rows-failed? state))] [html (draw)])
     (if (and state (not failed?) (rows-failed? state)) (draw) html)))
 
@@ -263,7 +284,7 @@
          [i (and d (fx- (document:node-start node) (drawing-start d) 1))])
     (if (and state (not (rows-failed? state)) (fx< i (rows-count state)))
         (guard (c [(failure? c) (rows-failed?-set! state #t) (report c) '()])
-          (haml (:li.ui-list-row ([aria-current (and (eqv? i (drawing-selected d)) "true")])
+          (haml (:li.ui-list-row ([aria-current (and (eqv? i (drawing-selected d)) "true")] [data-keymap (drawing-row-mark d)])
                   ((rows-draw state) i))))
         '())))
 
@@ -280,7 +301,7 @@
 
 (buffers:define-kind list (content nodes) (consent %keep-rows) (keymap list-keys) (draw %draw-list))
 
-(buffers:define-kind %list-row (content atom) (keymap row-keys) (draw %draw-list-row))
+(buffers:define-kind %list-row (content atom) (draw %draw-list-row))
 
 (define %list-kind (buffers:kind-name (buffers:constructor-kind list)))
 
@@ -292,6 +313,8 @@
                         (and (fx< s (document:length doc)) (document:token doc s))))])
     (unless (and (list-node? current) (fx= (document:node-end current) (document:node-end node)))
       (assertion-violation who "not a list of the buffer" node))
+    (unless (memq (document:node-attribute current 'click 'choose) '(choose select))
+      (assertion-violation who "a list's click is neither choose nor select" (document:node-attribute current 'click #f)))
     current))
 
 (define (%check-view who view)
@@ -608,13 +631,13 @@
 (keys:bind! list-keys "C-p" previous-row)
 (keys:bind! list-keys "<up>" previous-row)
 (keys:bind! list-keys "RET" choose-row)
-(keys:bind! list-keys "<mouse-1>" keys:ignore)
-(keys:bind! list-keys "<mouse-2>" keys:ignore)
+(keys:bind! list-click-keys "<mouse-1>" keys:ignore)
+(keys:bind! list-click-keys "<mouse-2>" keys:ignore)
 ;; A press would move point where it lands, and a press on a heading
 ;; lands on the list's first row, so the release alone selects.
-(keys:bind! list-keys "<down-mouse-1>" keys:ignore)
-(keys:bind! list-keys "<drag-mouse-1>" keys:ignore)
-(keys:bind! list-keys "<drag-mouse-2>" keys:ignore)
+(keys:bind! list-click-keys "<down-mouse-1>" keys:ignore)
+(keys:bind! list-click-keys "<drag-mouse-1>" keys:ignore)
+(keys:bind! list-click-keys "<drag-mouse-2>" keys:ignore)
 (keys:bind! row-keys "<mouse-1>" choose-row)
 (keys:bind! row-keys "<mouse-2>" choose-row)
 (keys:bind! disabled-keys "<mouse-1>" keys:ignore)
@@ -625,6 +648,8 @@
 (keys:bind! disabled-keys "<drag-mouse-2>" keys:ignore)
 ;; Ahead of the entries that find the button kind's own keymap.
 (add-hook! keys:find-keymaps %disabled-keymaps -10)
+;; Ahead of the keymaps found by place, which the list's rows and text sit in.
+(add-hook! keys:find-keymaps %choosing-keymaps -5)
 (table-set! views:position-describers list describe-list)
 (table-set! web:stylesheets 'ui "ui/ui.css")
 (add-hook! buffers:killed forget-buffer!)

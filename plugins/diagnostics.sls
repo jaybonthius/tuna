@@ -601,7 +601,7 @@
     (changed b)))
 
 (define (%move! n)
-  (let* ([skip? (equal? (commands:prefix-argument) '(4))]
+  (let* ([skip? (pair? (commands:prefix-argument))]
          [n (if skip? (if (fx< n 0) -1 1) n)])
     (unless (fx= n 0)
       (let* ([view (views:current)] [b (views:buffer view)] [p (views:point view)]
@@ -616,17 +616,20 @@
              [order (if (wrap-around?) (append ahead behind) ahead)]
              [k (fx- (fxabs n) 1)])
         (unless (fx< k (length order))
-          (error (if forward? 'diagnostics:next 'diagnostics:previous) "No more diagnostics"))
-        (let ([d (list-ref order k)])
-          (views:set-point! view (%start-of d))
-          (ask:message (text d)))))))
+          (error (if forward? 'diagnostics:next 'diagnostics:previous) (if skip? "No more errors or warnings" "No more diagnostics")))
+        (let* ([d (list-ref order k)] [at (%start-of d)])
+          (views:set-point! view at)
+          (ask:message (%join-lines (map text (in b at)))))))))
+
+(define (%join-lines texts)
+  (fold-left (lambda (acc t) (if (string=? acc "") t (string-append acc "\n" t))) "" texts))
 
 (commands:define-command (next [n (commands:prefix-number)])
-  "Moves point to the start of the Nth diagnostic after point and tells its text; C-u alone moves by one, skipping infos and hints."
+  "Moves point to the start of the Nth diagnostic after point and tells the text of each diagnostic there; C-u, or any prefix that is not a number, moves by one, skipping infos and hints."
   (%move! n))
 
 (commands:define-command (previous [n (commands:prefix-number)])
-  "Moves point to the start of the Nth diagnostic before point and tells its text; C-u alone moves by one, skipping infos and hints."
+  "Moves point to the start of the Nth diagnostic before point and tells the text of each diagnostic there; C-u, or any prefix that is not a number, moves by one, skipping infos and hints."
   (%move! (fx- 0 n)))
 
 (table-set! modes:minor-modes mode 0)

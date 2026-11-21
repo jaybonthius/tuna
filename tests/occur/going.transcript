@@ -16,10 +16,10 @@
 ((("src" 13 #t) ("*Occur*" 60 #f)) ((#<buffer src> . 20)) (("src" 13)))
 ; The line's matches are highlighted in the source until the next
 ; command.
-> (filter (lambda (f) (string=? (car f) "occur.visited")) (drawn client))
+> (filter (lambda (f) (string=? (car f) "pulse.highlight")) (drawn client))
 > (press! "C-f")
-> (filter (lambda (f) (string=? (car f) "occur.visited")) (drawn client))
-(("occur.visited" "foo") ("occur.visited" "foo"))
+> (filter (lambda (f) (string=? (car f) "pulse.highlight")) (drawn client))
+(("pulse.highlight" "foo") ("pulse.highlight" "foo"))
 ()
 ; The visited line is marked in *Occur*.
 > (count-of (occur-html) "=&gt;")
@@ -43,7 +43,7 @@
 > (in-occur!)
 > (views:set-point! (view) (find-text (occur-buffer) "foo three"))
 > (press! "o")
-> (list (wins) (car (jump-history:places)) (filter (lambda (f) (string=? (car f) "occur.visited")) (drawn client)))
+> (list (wins) (car (jump-history:places)) (filter (lambda (f) (string=? (car f) "pulse.highlight")) (drawn client)))
 > (marked)
 ((("*Occur*" 60 #f) ("src" 13 #t)) (#<buffer src> . 5) ())
 3
@@ -54,13 +54,13 @@
 > (define places (length (jump-history:places)))
 > (press! "C-o")
 > (define src-view (find (lambda (v) (eq? (views:buffer v) b)) (layout:views)))
-> (list (wins) (= places (length (jump-history:places))) (filter (lambda (f) (string=? (car f) "occur.visited")) (faced (html->string (views:draw src-view client)))))
+> (list (wins) (= places (length (jump-history:places))) (filter (lambda (f) (string=? (car f) "pulse.highlight")) (faced (html->string (views:draw src-view client)))))
 > (marked)
-((("*Occur*" 50 #t) ("src" 5 #f)) #t (("occur.visited" "foo")))
+((("*Occur*" 50 #t) ("src" 5 #f)) #t (("pulse.highlight" "foo")))
 1
 ; The highlight ends after half a second.
 > (sleep-for 0.7)
-> (filter (lambda (f) (string=? (car f) "occur.visited")) (faced (html->string (views:draw src-view client))))
+> (filter (lambda (f) (string=? (car f) "pulse.highlight")) (faced (html->string (views:draw src-view client))))
 ()
 ; A second highlight lasts its own half second, whatever the first's
 ; timer.
@@ -70,10 +70,10 @@
 > (views:set-point! (view) (find-text (occur-buffer) "foo three"))
 > (press! "C-o")
 > (sleep-for 0.3)
-> (filter (lambda (f) (string=? (car f) "occur.visited")) (faced (html->string (views:draw src-view client))))
+> (filter (lambda (f) (string=? (car f) "pulse.highlight")) (faced (html->string (views:draw src-view client))))
 > (sleep-for 0.4)
-> (filter (lambda (f) (string=? (car f) "occur.visited")) (faced (html->string (views:draw src-view client))))
-(("occur.visited" "foo") ("occur.visited" "foo"))
+> (filter (lambda (f) (string=? (car f) "pulse.highlight")) (faced (html->string (views:draw src-view client))))
+(("pulse.highlight" "foo") ("pulse.highlight" "foo"))
 ()
 ; The source's active region stays active and grows to the match.
 > (layout:select! src-view)
@@ -125,3 +125,29 @@
 ! occur:goto-occurrence: No occurrence on this line
 (2 "two")
 ! occur:goto-occurrence: No occurrence on this line
+; RET marks only the line's matches in the source, through pulse, not the
+; rest of the line, and not with *Occur*'s own match face.
+> (only!)
+> (define m (src "foo three foo\n"))
+> (occur! (search:make-query "foo" search:regexp) 0 #f)
+> (in-occur!)
+> (views:set-point! (view) (find-text (occur-buffer) "foo three"))
+> (press! "RET")
+> (drawn client)
+(("pulse.highlight" "foo") ("pulse.highlight" "foo"))
+; C-o, n and p show a place without jumping: they mark its matches but
+; do not recentre the source's view; RET, a jump, recentres it.
+> (define centred '())
+> (advice-add! views:scroll-to! (lambda (orig v p align) (when (eq? align (views:align center)) (set! centred (cons (buffers:name (views:buffer v)) centred))) (orig v p align)))
+> (in-occur!)
+> (views:set-point! (view) (find-text (occur-buffer) "foo three"))
+> (press! "C-o")
+> (define src-view (find (lambda (v) (eq? (views:buffer v) m)) (layout:views)))
+> (list centred (filter (lambda (f) (string=? (car f) "pulse.highlight")) (faced (html->string (views:draw src-view client)))))
+(() (("pulse.highlight" "foo") ("pulse.highlight" "foo")))
+> (press! "M-<" "n")
+> centred
+()
+> (press! "RET")
+> centred
+("src")

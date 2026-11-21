@@ -70,6 +70,9 @@
          [(string=? method "exit") (exit 0)]
          [(string=? method "fake/send") (send! (json->json-rpc-message (ref params "message")))]
          [(string=? method "fake/crash") (exit 3)]
+         [(string=? method "fake/stderr")
+          (put-string (current-error-port) (string-append (ref params "line") "\n"))
+          (flush-output-port (current-error-port))]
          [else (send-after! method)]))]
     [else (void)]))
 

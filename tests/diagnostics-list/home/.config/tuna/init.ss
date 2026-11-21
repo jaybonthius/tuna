@@ -1,5 +1,6 @@
 (import (tuna) (tuna plugins) (document) (haml) (web))
 (use-plugin layout)
+(use-plugin echo-area)
 (use-plugin layout-split)
 (use-plugin editing)
 (use-plugin files)
@@ -95,6 +96,25 @@
              ("showing" . ,(views:shown-count s)) ("token" . ,at)
              ("keymaps" . ,(vector mark (read (open-input-string (views:keymap-mark status-line:keymap)))))))))
       '("down" "click"))))
+
+;; The page sends the keymaps the clicked element and its ancestors are
+;; marked with.
+(define (click-in! v place keymaps button)
+  (for-each
+    (lambda (action)
+      (parameterize ([web:current-client client])
+        ((table-ref web:input-handlers "mouse") client
+         `(("type" . "mouse") ("action" . ,action) ("button" . ,button) ("clicks" . 1) ("modifiers" . #())
+           ("view" . ,(views:id v)) ("version" . ,(buffers:version (views:buffer v)))
+           ("showing" . ,(views:shown-count v)) ,@place
+           ,@(if (null? keymaps) '() `(("keymaps" . ,(list->vector keymaps))))))))
+    '("down" "click")))
+
+(define (row-token v i) `(("token" . ,(+ i 1))))
+
+(define (drawn v) (html->string (views:draw v #f)))
+
+(define (pulsed? v) (and (search (drawn v) "data-face=\"pulse.highlight\"" 0) #t))
 
 (define (word b s)
   (let ([t (text b)])

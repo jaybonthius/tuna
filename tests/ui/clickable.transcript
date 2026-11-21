@@ -19,17 +19,30 @@
 > (show! b)
 > (clicks (view))
 (clickable inert clickable inert)
-; A list's own element is neither: a click on it names its first row's
-; place. A click on a heading runs ui:choose-row, which chooses nothing,
-; since the click named no row.
+; A list whose click chooses draws its rows marked clickable and itself
+; inert, with the keymaps a click there finds. A click on a heading names
+; the list's own node, not a row, so it runs nothing and chooses nothing.
 > (define rows (buffers:make "*rows*" (ui:list '())))
 > (define (lst) (document:token (buffers:document rows) 0))
 > (define chosen '())
 > (show! rows)
 > (ui:set-rows! rows (lst) 3 (lambda (i) (ui:label (number->string i))) (lambda (i) (set! chosen (cons i chosen))) (lambda (i) "odd"))
-> (clicks (view))
-(clickable clickable clickable)
+> (define (marks v)
+    (let ([s (html v)])
+      (let loop ([from 0] [acc '()])
+        (let ([i (let find ([i from])
+                   (cond
+                     [(> (+ i 13) (string-length s)) #f]
+                     [(string=? (substring s i (+ i 13)) "data-keymap=\"") i]
+                     [else (find (+ i 1))]))])
+          (if i
+              (let* ([start (+ i 13)] [end (let find ([j start]) (if (char=? (string-ref s j) #\") j (find (+ j 1))))]
+                     [mark (substring s start end)])
+                (loop end (cons (string->symbol (substring mark (+ 1 (let find ([k 0]) (if (char=? (string-ref mark k) #\space) k (find (+ k 1))))) (string-length mark))) acc)))
+              (reverse acc))))))
+> (list (clicks (view)) (marks (view)))
+(() (inert clickable clickable clickable))
 > (views:set-point! (view) 2)
 > (click-token! (view) 0)
 > (list chosen (views:point (view)) (commands:command-name (commands:last-command)))
-(() 2 ui:choose-row)
+(() 2 keys:ignore)

@@ -1,5 +1,5 @@
 #!tuna
-(import (diagnostics) (completion) (jump-history) (projects) (files) (buffers) (document) (views) (layout) (commands) (keys))
+(import (diagnostics) (completion) (jump-history) (projects) (files) (buffers) (document) (views) (commands) (keys))
 
 (define (%line-and-column d)
   (let ([b (diagnostics:diagnostic-buffer d)] [start (diagnostics:diagnostic-start d)])
@@ -60,16 +60,14 @@
       (cdr (assoc chosen by-value)))))
 
 (commands:define-command (diagnostic [d (%read-diagnostic)])
-  "Goes to D, read from the current buffer's diagnostics, or with C-u from its project's, and records the place point left in jump-history."
+  "Goes to D, read from the current buffer's diagnostics, or with C-u from its project's, in a view already showing its buffer if there is one, as jump-history:jump-to goes."
   (unless (diagnostics:diagnostic? d)
     (assertion-violation 'diagnostic-picker:diagnostic "not a diagnostic" d))
-  (let* ([view (layout:selected-view)] [left (views:buffer view)] [at (views:point view)]
-         [b (or (diagnostics:diagnostic-buffer d) (files:visit (diagnostics:diagnostic-path d)))])
-    (layout:switch-to-buffer b)
-    (let ([view (layout:selected-view)] [start (diagnostics:diagnostic-start d)])
-      (views:set-point! view (if (pair? start) (%line-position b start) start))
-      (jump-history:push! left at)
-      (jump-history:after-jump view))))
+  (let* ([b (or (diagnostics:diagnostic-buffer d) (files:visit (diagnostics:diagnostic-path d)))]
+         [start (diagnostics:diagnostic-start d)]
+         [at (if (pair? start) (%line-position b start) start)]
+         [end (diagnostics:diagnostic-end d)])
+    (jump-history:jump-to b at (if (and (fixnum? end) (fx< at end)) (list (list at end)) #f))))
 
 ;; Visiting the file makes its path diagnostics the buffer's, so a line
 ;; and column is left only for one the visit dropped as empty.

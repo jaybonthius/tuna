@@ -23,6 +23,18 @@
 > (define t (start! (lambda () (press! "C-c" "r"))))
 > (minibuffer:input (minibuffer:current-prompt))
 ""
+> (define (question)
+    (let find ([d (document:datums (buffers:document (buffers:find " *Minibuf*")))])
+      (cond
+        [(and (pair? d) (eq? (car d) 'minibuffer:question)) (caddr d)]
+        [(pair? d) (or (find (car d)) (find (cdr d)))]
+        [else #f])))
+> (question)
+"Rename `total' to: "
+> (press! "M-n")
+> (minibuffer:input (minibuffer:current-prompt))
+"total"
+> (press! "C-a" "C-k")
 > (type! "sum")
 > (press! "RET")
 > (wait-until (lambda () (and (minibuffer:current-prompt) (not (equal? (minibuffer:input (minibuffer:current-prompt)) "sum")))))
@@ -109,6 +121,12 @@
 ; with 1, as invoked.
 > (map (lambda (m) (ref m "params" "context" "triggerKind")) (of-method "types" "textDocument/codeAction"))
 (1 2)
+; With lsp:code-action-hint? off, the hint asks nothing.
+> (define asked (length (of-method "types" "textDocument/codeAction")))
+> (with-options ([lsp:code-action-hint? #f]) (lsp:code-action-hint (view)))
+#f
+> (- (length (of-method "types" "textDocument/codeAction")) asked)
+0
 ; A server's showMessageRequest asks with ask:choice and answers the
 ; action chosen.
 > (lsp:notify c "fake/send"
@@ -119,3 +137,13 @@
 > (wait-until (lambda () (exists (lambda (m) (equal? (ref m "id") "m1")) (received "types"))))
 > (ref (find (lambda (m) (equal? (ref m "id") "m1")) (received "types")) "result")
 (("title" . "No"))
+; A server that answers prepareRename with nothing refuses before any
+; name is asked.
+> (configure! "types" '(capabilities ("textDocumentSync" . 2) ("renameProvider" ("prepareProvider" . #t)))
+                       '(responses ("textDocument/prepareRename" . null))
+                       '(name . "types"))
+> (define opened (length (of-method "types" "textDocument/didOpen")))
+> (lsp:reconnect (car (lsp:connections)))
+> (wait-for "types" "textDocument/didOpen" (+ opened 1))
+> (press! "C-c" "r")
+! lsp:rename: Can't rename here

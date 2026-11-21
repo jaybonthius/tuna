@@ -1,10 +1,17 @@
 #!tuna
-(import (buffers) (views) (layout) (commands) (keys))
+(import (buffers) (document) (views) (layout) (commands) (keys) (pulse))
 
 (define-hook after-return "Called with the view after jump-history:go-back and jump-history:go-forward.")
 
 (define-hook after-jump
-  "Called with the view by a command that jumps to a place the user chose from a list or a lookup, as M-s l does, after it records the place left with jump-history:push!, and by a picker's preview after it shows a place.")
+  "Called with the view by a command that jumps to a place the user chose from a list or a lookup, as M-s l does, after it records the place left with jump-history:push!, and by a picker's preview after it shows a place; jump-history:place-ranges holds the place's ranges.")
+
+(define place-ranges
+  (make-thread-parameter #f
+    (lambda (v)
+      (unless (or (not v) (and (list? v) (for-all (lambda (r) (and (list? r) (fx= (length r) 2) (fixnum? (car r)) (fixnum? (cadr r)))) v)))
+        (assertion-violation 'jump-history:place-ranges "neither #f nor a list of ranges" v))
+      v)))
 
 (define (recenter view) (views:scroll-to! view (views:point view) (views:align center)))
 
@@ -107,7 +114,42 @@
       (%history-forward-set! h (kept (%history-forward h))))
     (cons %shared (vector->list (hashtable-values %keyed)))))
 
+(define jump-to
+  (case-lambda
+    [(buffer position) (jump-to buffer position #f)]
+    [(buffer position ranges)
+     (unless (buffers:buffer? buffer)
+       (assertion-violation 'jump-history:jump-to "not a buffer" buffer))
+     (unless (and (fixnum? position) (fx<= 0 position (document:length (buffers:document buffer))))
+       (assertion-violation 'jump-history:jump-to "not a position in the buffer" position))
+     (unless (or (not ranges)
+                 (and (list? ranges)
+                      (let ([n (document:length (buffers:document buffer))])
+                        (for-all (lambda (r) (and (list? r) (fx= (length r) 2) (fixnum? (car r)) (fixnum? (cadr r)) (fx<= 0 (car r) (cadr r) n)))
+                                 ranges))))
+       (assertion-violation 'jump-history:jump-to "not a list of ranges in the buffer" ranges))
+     (parameterize ([place-ranges ranges])
+       (%jump-to buffer position))]))
+
+(define (%jump-to buffer position)
+  (let ([shown (layout:find-view buffer)])
+    (if shown
+        (begin
+          (layout:select! shown)
+          (push! buffer (views:point shown) shown))
+        (let* ([view (layout:selected-view)] [left (views:buffer view)] [at (views:point view)])
+          (layout:switch-to-buffer buffer)
+          (when (buffers:live? left) (push! left at))))
+    (let ([view (layout:selected-view)])
+      (views:set-point! view position)
+      (after-jump view))))
+
+(define (pulse view)
+  (pulse:highlight! view (or (place-ranges) (pulse:line-ranges view))))
+
 (add-hook! after-jump recenter)
+(add-hook! after-jump pulse)
+(add-hook! after-return pulse:highlight-line!)
 (add-hook! layout:after-switch-to-buffer record-switch)
 (add-hook! buffers:killed %forget-buffer!)
 (keys:bind! keys:global "M-," go-back)

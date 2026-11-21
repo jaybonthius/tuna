@@ -1,6 +1,6 @@
 #!tuna
-(import (diagnostics) (jump-history) (status-line) (ui) (projects) (files) (buffers) (document) (views) (layout)
-        (modes) (commands) (keys) (faces) (haml))
+(import (diagnostics) (jump-history) (next-error) (pulse) (status-line) (ui) (projects) (files) (buffers) (document) (views)
+        (layout) (editing) (modes) (commands) (keys) (faces) (haml))
 
 (define-record-type %list
   (sealed #t)
@@ -9,6 +9,8 @@
 (define %lists (make-weak-eq-hashtable))
 
 (define-table keymap "Keys in diagnostics lists.")
+
+(define-table link-keymap "Clicks on a row's message, and on a project list's file: a click goes to the row's diagnostic.")
 (define-hook mode-hook "Called in each buffer that turns on diagnostics-list:mode.")
 
 (modes:define-major-mode mode (parent modes:special) (lighter "Diagnostics") (keymap keymap) (hook mode-hook))
@@ -32,19 +34,22 @@
 (define (%severity-label s)
   (haml (:span.ui-label ([data-face (%face s)]) (symbol->string s))))
 
+(define (%link text)
+  (haml (:span.ui-label ([data-keymap (views:keymap-mark link-keymap)]) text)))
+
 (define (%draw-row target d)
   (let ([lc (%line-and-column d)] [origin (diagnostics:diagnostic-origin d)] [code (diagnostics:diagnostic-code d)])
     (apply ui:row
       (append
         (if (string? target)
-            (list (ui:label (%relative (or (diagnostics:diagnostic-path d) "") target)))
+            (list (%link (%relative (or (diagnostics:diagnostic-path d) "") target)))
             '())
         (list (ui:label (format "~a:~a" (car lc) (cdr lc)))
               (%severity-label (diagnostics:diagnostic-severity d)))
         (if (or origin code)
             (list (ui:label (string-append (or origin "") (if (and origin code) " " "") (or code ""))))
             '())
-        (list (ui:label (diagnostics:diagnostic-message d)))))))
+        (list (%link (diagnostics:diagnostic-message d)))))))
 
 (define (%diagnostics-of target)
   (if (string? target) (diagnostics:under target) (diagnostics:in target)))
@@ -90,18 +95,37 @@
 (define (%go! d select?)
   (let* ([b (or (diagnostics:diagnostic-buffer d) (files:visit (diagnostics:diagnostic-path d)))]
          [before (map (lambda (v) (cons v (and (views:buffer v) (cons (views:buffer v) (views:point v))))) (layout:views))]
-         [view (layout:display-buffer b layout:display-in-other-view)])
+         [view (layout:display-buffer b layout:display-in-other-view)]
+         [start (%position-of d b)])
     (when select?
       (layout:select! view)
       (let ([left (assq view before)])
         (when (and left (cdr left)) (jump-history:push! (cadr left) (cddr left)))))
-    (views:set-point! view (%position-of d b))))
+    (views:set-point! view start)
+    (let ([ranges (list (list start (%end-of d b start)))])
+      ;; Showing a row's diagnostic is a step, not a jump, so it marks
+      ;; without recentring, as Flymake's flymake-show-diagnostic does.
+      (if select?
+          (parameterize ([jump-history:place-ranges ranges])
+            (jump-history:after-jump view))
+          (pulse:highlight! view ranges)))))
+
+;; A diagnostic of a file no buffer visited has no end in the buffer, so
+;; its line's end serves, as Flymake's does.
+(define (%end-of d b start)
+  (let ([end (diagnostics:diagnostic-end d)] [doc (buffers:document b)])
+    (if (and (fixnum? end) (diagnostics:diagnostic-buffer d) (fx< start end))
+        end
+        (let ([line (document:line doc start)])
+          (if (fx< line (document:line doc (document:length doc)))
+              (fx- (document:line-start doc (fx+ line 1)) 1)
+              (document:length doc))))))
 
 (define (%selected who)
   (let* ([view (views:current)] [b (views:buffer view)] [l (eq-hashtable-ref %lists b #f)]
          [i (and l (ui:selected-row (%list-node b) view))])
     (unless (and i (fx< i (vector-length (%list-rows l))))
-      (error who "No diagnostic here"))
+      (error who "Nothing at point"))
     (vector-ref (%list-rows l) i)))
 
 (commands:define-command (go-to-diagnostic)
@@ -112,21 +136,34 @@
   "Shows the selected row's diagnostic in another view, staying in the list."
   (%go! (%selected 'diagnostics-list:show-diagnostic) #f))
 
+(commands:define-command (mouse-go-to-diagnostic [event (keys:command-event)])
+  "Goes to the diagnostic of the row clicked, as diagnostics-list:go-to-diagnostic does, after selecting the list's view and that row."
+  (unless (keys:event? event)
+    (assertion-violation 'diagnostics-list:mouse-go-to-diagnostic "not a mouse event" event))
+  (let* ([posn (keys:event-end event)] [view (views:posn-view posn)] [p (views:posn-point posn)])
+    (unless (and view p (eq-hashtable-ref %lists (views:buffer view) #f))
+      (error 'diagnostics-list:mouse-go-to-diagnostic "Nothing at point"))
+    (layout:select! view)
+    (views:set-point! view p)
+    (%go! (%selected 'diagnostics-list:mouse-go-to-diagnostic) #t)))
+
 (commands:define-command (next-diagnostic [n (commands:prefix-number)])
   "Selects the row N after the selected one and shows its diagnostic."
   (ui:next-row n)
-  (%go! (%selected 'diagnostics-list:next-diagnostic) #f))
+  (%go! (%selected 'diagnostics-list:next-diagnostic) #f)
+  (next-error:tell-locus (views:buffer (views:current)) n))
 
 (commands:define-command (previous-diagnostic [n (commands:prefix-number)])
   "Selects the row N before the selected one and shows its diagnostic."
   (ui:previous-row n)
-  (%go! (%selected 'diagnostics-list:previous-diagnostic) #f))
+  (%go! (%selected 'diagnostics-list:previous-diagnostic) #f)
+  (next-error:tell-locus (views:buffer (views:current)) (fx- 0 n)))
 
 (define (%list-buffer name target)
   (let ([found (exists (lambda (b) (and (equal? (%list-target (eq-hashtable-ref %lists b #f)) target) b))
                        (filter buffers:live? (vector->list (hashtable-keys %lists))))])
     (or found
-        (let ([b (buffers:make (buffers:free-name name) (ui:list '()))])
+        (let ([b (buffers:make (buffers:free-name name) (ui:list '((click . select))))])
           (eq-hashtable-set! %lists b (make-%list target (vector)))
           (modes:set-major-mode mode b)
           b))))
@@ -159,6 +196,9 @@
       (error 'diagnostics-list:refresh "Not a diagnostics list"))
     (%fill! b)))
 
+;; A buffer being killed visits no file any more, so which project its
+;; diagnostics were under is unknown, and every project's list is built
+;; again.
 (define (%follow-change where)
   (for-each
     (lambda (lb)
@@ -166,8 +206,9 @@
         (let ([target (%list-target (eq-hashtable-ref %lists lb #f))])
           (when (if (string? target)
                     (let ([path (if (string? where) where (files:path where))])
-                      (and path (fx> (string-length path) (string-length target))
-                           (string=? (substring path 0 (string-length target)) target)))
+                      (or (and (not path) (buffers:buffer? where))
+                          (and path (fx> (string-length path) (string-length target))
+                               (string=? (substring path 0 (string-length target)) target))))
                     (eq? target where))
             (%fill! lb)))))
     (vector->list (hashtable-keys %lists))))
@@ -210,5 +251,8 @@
 (keys:bind! keymap "C-o" show-diagnostic)
 (keys:bind! keymap "n" next-diagnostic)
 (keys:bind! keymap "p" previous-diagnostic)
+(keys:bind! keymap "<mouse-2>" editing:mouse-set-point)
+(keys:bind! link-keymap "<mouse-1>" mouse-go-to-diagnostic)
+(keys:bind! link-keymap "<mouse-2>" mouse-go-to-diagnostic)
 (keys:bind! %counts-keymap "<mouse-1>" %show-clicked-diagnostics)
 (table-set! status-line:segments counts (status-line:right 40))

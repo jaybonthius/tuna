@@ -66,6 +66,10 @@
 > (wait-until (lambda () (= 4 (length (of-method "alpha" "textDocument/didOpen")))))
 > (list (length (lsp:connections)) (lsp:managed? a) (lsp:managed? b) (eq? (car (lsp:connections)) first-connection))
 (1 #t #t #f)
+; Shutting down and reconnecting say so, naming the server as the
+; status line does.
+> (filter (lambda (m) (or (string=? m "Reconnected!") (string=? m "fake exited with status 0") (and (> (string-length m) 6) (string=? (substring m 0 6) "Asking")))) (take-said!))
+("Asking fake politely to terminate" "fake exited with status 0" "Reconnected!")
 ; A name removed from a language's list releases its buffers at their
 ; next lsp:ensure.
 > (table-set! lsp:language-servers "otherlang" '())

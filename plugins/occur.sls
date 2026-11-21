@@ -1,6 +1,6 @@
 #!tuna
 (import (search) (isearch) (buffers) (document) (jobs) (views) (layout) (keys) (commands) (modes) (minibuffer)
-        (jump-history) (ask) (faces) (web) (haml))
+        (jump-history) (next-error) (pulse) (ask) (faces) (web) (haml))
 
 (define-option context-lines 0 fixnum?
   "How many lines around each match occur:occur lists without a prefix argument; a negative number lists that many before only.")
@@ -11,8 +11,6 @@
 (define-saved collect-history '("\\1") (lambda (v) (and (list? v) (for-all string? v))))
 
 (define match 'occur.match)
-
-(define visited 'occur.visited)
 
 (define-table keymap "The keys of occur:mode.")
 
@@ -116,8 +114,6 @@
 (buffers:define-layer %matches (priority 0))
 
 (buffers:define-layer %faces (priority -10))
-
-(buffers:define-layer %visited (priority 20))
 
 (define (%line-faces source start end)
   (fold-right
@@ -420,28 +416,6 @@
 (define (%match-start e)
   (buffers:anchor-position (if (pair? (%entry-matches e)) (car (car (%entry-matches e))) (%entry-line e))))
 
-(define %highlighted #f)
-
-(define %highlight-timer #f)
-
-(define (%unhighlight!)
-  (let ([h %highlighted])
-    (when %highlight-timer
-      (cancel-timer! %highlight-timer)
-      (set! %highlight-timer #f))
-    (set! %highlighted #f)
-    (when (and h (buffers:live? h))
-      (buffers:set-spans! (buffers:layer h %visited) 0 (document:length (buffers:document h)) '()))))
-
-(define (%highlight! source e)
-  (%unhighlight!)
-  (buffers:set-spans! (buffers:layer source %visited) 0 (document:length (buffers:document source))
-    (map (lambda (r) (list (buffers:anchor-position (car r)) (buffers:anchor-position (cdr r)) (list (cons 'face visited))))
-         (%entry-matches e)))
-  (set! %highlighted source)
-  (as-module (this-module)
-    (set! %highlight-timer (run-with-timer 0.5 (lambda () (set! %highlight-timer #f) (%unhighlight!))))))
-
 ;; A view split for the source records the source at the point it was
 ;; shown at, so M-, always undoes the jump; a view that showed a buffer
 ;; records that, as diagnostics-list does.
@@ -458,8 +432,15 @@
               (jump-history:push! (cadr left) (cddr left))
               (jump-history:push! source (views:point target)))))
       (views:set-point! target (%match-start e))
-      (when highlight? (%highlight! source e))
-      (when record? (jump-history:after-jump target))
+      (let ([ranges (if highlight?
+                        (map (lambda (m) (list (buffers:anchor-position (car m)) (buffers:anchor-position (cdr m)))) (%entry-matches e))
+                        '())])
+        ;; A show is a step, not a jump, so it marks without recentring,
+        ;; as Emacs's occur-mode-display-occurrence only moves point.
+        (if record?
+            (parameterize ([jump-history:place-ranges ranges])
+              (jump-history:after-jump target))
+            (pulse:highlight! target ranges)))
       target)))
 
 (commands:define-command (goto-occurrence)
@@ -523,7 +504,7 @@
     (unless p (error who "No more matches"))
     (views:set-point! view p)
     (%visit! who view p #f #t #f)
-    (ask:message (string-append (if (> n 0) "Next" "Previous") " locus from " (buffers:name b)))))
+    (next-error:tell-locus b n)))
 
 (commands:define-command (show-next [n (commands:prefix-number)])
   "Moves n matches forward from the line's end and shows that match's line in another view, highlighted; *Occur* stays selected."
@@ -589,8 +570,6 @@
 (add-hook! mode-hook %set-revert)
 (add-hook! edit-mode-hook %as-occur-mode -100)
 (add-hook! buffers:after-edit %mirror!)
-(add-hook! commands:before-command (lambda (command) (%unhighlight!)))
-(on-unload %unhighlight!)
 (keys:bind! keys:global "M-s o" occur)
 (keys:bind! isearch:keymap "M-s o" isearch-occur)
 (keys:bind! keymap "RET" goto-occurrence)

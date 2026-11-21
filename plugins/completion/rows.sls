@@ -14,7 +14,7 @@
 (define %list-kind (buffers:kind-name (buffers:constructor-kind ui:list)))
 
 (define-table mode-keymap
-  "Keys in the rows' buffers. Their views are never selected, so keys reach them only as mouse keys, which ui:list-keys binds.")
+  "Keys in the rows' buffers. Their views are never selected, so keys reach them only as mouse keys, which ui:row-keys and ui:list-click-keys bind.")
 
 (define-hook mode-hook
   "Called with a rows' buffer current when its mode is set, before the hook of the display's own mode.")

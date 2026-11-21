@@ -1,0 +1,118 @@
+> (lsp:define-server types (fake-command "types"))
+> (lsp:define-server style (fake-command "style"))
+> (define a-path (string-append project "/a.fk"))
+> (write-file! a-path "total(1)\n")
+> (configure! "types" '(capabilities ("textDocumentSync" . 2) ("declarationProvider" . #t) ("implementationProvider" . #t) ("typeDefinitionProvider" . #t))
+                      `(responses ("textDocument/declaration" . #((("uri" . ,(lsp:path->uri a-path)) ("range" ("start" ("line" . 0) ("character" . 6)) ("end" ("line" . 0) ("character" . 7))))))
+                                  ("textDocument/implementation" . #((("uri" . ,(lsp:path->uri a-path)) ("range" ("start" ("line" . 0) ("character" . 1)) ("end" ("line" . 0) ("character" . 2))))))
+                                  ("textDocument/typeDefinition" . #((("uri" . ,(lsp:path->uri a-path)) ("range" ("start" ("line" . 0) ("character" . 2)) ("end" ("line" . 0) ("character" . 3)))))))
+                      '(name . "types"))
+> (configure! "style" '(capabilities ("textDocumentSync" . 2)) '(name . "style"))
+> (table-set! lsp:language-servers "fakelang" (list types style))
+> (add-hook! fake-mode-hook lsp:ensure)
+> (define a (visit! a-path))
+> (wait-for "types" "textDocument/didOpen")
+> (wait-for "style" "textDocument/didOpen")
+> (import (haml) (status-line))
+> (define (search-from s sub from)
+    (let loop ([i from])
+      (cond
+        [(> (+ i (string-length sub)) (string-length s)) #f]
+        [(string=? (substring s i (+ i (string-length sub))) sub) i]
+        [else (loop (+ i 1))])))
+> (define (status) (let ([h (lsp:show-status (view))]) (and h (html->string h))))
+; The status line names each server of the buffer, with its work in
+; progress while lsp:report-progress? holds.
+> (status)
+"<span class=\"lsp-status\">types style </span>"
+> (lsp:notify (car (lsp:buffer-connections a)) "fake/send"
+    '(("message" ("jsonrpc" . "2.0") ("method" . "$/progress")
+       ("params" ("token" . "t") ("value" ("kind" . "begin") ("title" . "Indexing") ("percentage" . 10))))))
+> (wait-until (lambda () (equal? (status) "<span class=\"lsp-status\">types Indexing 10% style </span>")))
+> (set-option! lsp:report-progress? #f)
+> (status)
+"<span class=\"lsp-status\">types style </span>"
+> (set-option! lsp:report-progress? #t)
+; initialize carries Tuna's process id, or null with
+; lsp:send-process-id? off.
+> (integer? (ref (last-of "types" "initialize") "params" "processId"))
+#t
+> (set-option! lsp:send-process-id? #f)
+> (lsp:reconnect (cadr (lsp:buffer-connections a)))
+> (wait-until (lambda () (= 2 (length (of-method "style" "initialize")))))
+> (ref (last-of "style" "initialize") "params" "processId")
+null
+> (set-option! lsp:send-process-id? #t)
+> (wait-for "style" "textDocument/didOpen" 2)
+; The declaration, implementation and type definition go as M-. does.
+> (for-each (lambda (pair) (in-client (lambda () (views:set-point! (view) 1) (commands:run (car pair))))
+                         (display (list (commands:command-name (car pair)) (views:point (view)))) (newline))
+            (list (list lsp:find-declaration) (list lsp:find-implementation) (list lsp:find-type-definition)))
+(lsp:find-declaration 7)
+(lsp:find-implementation 2)
+(lsp:find-type-definition 3)
+; In a managed buffer M-? asks no identifier, as Eglot's buffers do.
+> (buffers:with-buffer a (xref:prompt-for-identifier))
+#f
+; With several connections, the commands that act on one ask which,
+; by the names the status line shows.
+> (define t (start! (lambda () (in-client (lambda () (commands:run lsp:show-events))))))
+> (wait-matches (session))
+> (texts (session))
+("types" "style")
+> (press! "C-n" "RET")
+> (buffers:name (views:buffer (result t)))
+"*style events*<2>"
+; lsp:shutdown asks the same, under its own question.
+> (define (question)
+    (let find ([d (document:datums (buffers:document (buffers:find " *Minibuf*")))])
+      (cond
+        [(and (pair? d) (eq? (car d) 'minibuffer:question)) (caddr d)]
+        [(pair? d) (or (find (car d)) (find (cdr d)))]
+        [else #f])))
+> (define t (start! (lambda () (in-client (lambda () (commands:run lsp:shutdown))))))
+> (question)
+"Connection: "
+> (press! "C-g")
+! &quit
+> (result t)
+; What a server writes to its standard error goes to its events log.
+> (lsp:notify (car (lsp:buffer-connections a)) "fake/stderr" '(("line" . "warming up")))
+> (define (logged? b text)
+    (let ([t (document:text (buffers:document b))])
+      (let loop ([i 0])
+        (and (<= (+ i (string-length text)) (string-length t))
+             (or (string=? (substring t i (+ i (string-length text))) text) (loop (+ i 1)))))))
+> (wait-until (lambda () (logged? (buffers:find "*types events*") "stderr: warming up")))
+; A click on the status shows the first connection's events log.
+> (define (status-mark)
+    (let* ([html (html->string (status-line:draw (view) client))]
+           [i (search-from html "data-segment=\"lsp:status\"" 0)]
+           [k (+ (search-from html "data-keymap=\"" i) 13)])
+      (read (open-input-string (substring html k (search-from html "\"" k))))))
+> (let ([s layout:screen-view] [at (document:node-start (layout:view-node (view)))] [mark (status-mark)])
+    (for-each
+      (lambda (action)
+        (parameterize ([web:current-client client])
+          ((table-ref web:input-handlers "mouse") client
+           `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
+             ("view" . ,(views:id s)) ("version" . ,(buffers:version layout:buffer))
+             ("showing" . ,(views:shown-count s)) ("token" . ,at)
+             ("keymaps" . ,(vector mark (read (open-input-string (views:keymap-mark status-line:keymap)))))))))
+      '("down" "click")))
+> (and (buffers:find "*types events*") (pair? (views:showing (buffers:find "*types events*"))))
+#t
+; A server that does not answer initialize within lsp:connect-timeout is
+; stopped.
+> (lsp:define-server mute '("sleep" "30"))
+> (table-set! lsp:language-servers "fakelang" (list mute))
+> (set-option! lsp:connect-timeout 0.3)
+> (define b (visit! (begin (write-file! (string-append project "/b.fk") "x\n") (string-append project "/b.fk"))))
+> (sleep-for 1)
+! (lsp) jsonrpc:request: mute gave no answer to initialize in 0.3 s
+> (lsp:buffer-connections b)
+()
+; A connection's events log outlives it, so what the server said before
+; it ended can still be read.
+> (and (buffers:find "*mute events*") (buffers:live? (buffers:find "*mute events*")))
+#t
