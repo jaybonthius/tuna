@@ -39,6 +39,10 @@
 
 (use-plugin treesit)
 
+(define-table initish-keymap "Keys.")
+(define-hook initish-hook "Setup.")
+(modes:define-major-mode initish (keymap initish-keymap) (hook initish-hook) (language "python"))
+
 ;; Chez evaluates a call's arguments in no fixed order, and these read
 ;; what earlier ones waited for.
 (define-syntax in-order

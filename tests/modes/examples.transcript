@@ -19,8 +19,8 @@ python:mode
 #t
 > (local fill:column build)
 79
-> (syntax:mode-word-characters python:mode)
-"_"
+> (list (syntax:mode-word-characters python:mode) (syntax:mode-symbol-characters python:mode))
+("" "_")
 > (modes:ancestry python:mode)
 (python:mode prog:mode)
 > (buffers:with-buffer build (modes:derived? (modes:major-mode (buffers:current)) prog:mode))

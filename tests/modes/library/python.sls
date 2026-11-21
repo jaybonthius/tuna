@@ -14,7 +14,8 @@
   (set-option-local! fill:column 79))
 
 (add-hook! mode-hook setup)
-(table-set! syntax:word-characters mode "_")
+(table-set! syntax:word-characters mode "")
+(table-set! syntax:symbol-characters mode "_")
 (for-each (lambda (name) (table-set! auto-mode:file-names name mode))
           '("py" "pyi" "pyw"))
 (table-set! auto-mode:interpreters "python" mode)

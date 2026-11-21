@@ -9,7 +9,7 @@
     (path-parent (path-parent (car (command-line)))) (substring python-commit 0 12)))
 
 (define shipped-folders
-  (list (string-append library "/treesit/queries")
+  (list (string-append library "/python/queries")
         (string-append library "/treesit/nvim-treesitter/runtime/queries")))
 (define shipped (query-files shipped-folders "python" "highlights"))
 
@@ -41,7 +41,11 @@
   (make-session (make-highlight) (document:from-utf8 (string->utf8 text)) files excluded drawn '()
                 (make-vector (string-length text) #f) '()))
 
-(define (input s) (list grammar "python" (session-files s) (session-excluded s) (session-drawn s)))
+;; A job's input gives each query file with its modification time; these
+;; sessions never rewrite a file, so they give none.
+(define (untimed files) (map (lambda (file) (cons file #f)) files))
+
+(define (input s) (list grammar "python" (untimed (session-files s)) (session-excluded s) (session-drawn s)))
 
 (define (face-of value) (and value (cdr (car value))))
 

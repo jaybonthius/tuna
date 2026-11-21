@@ -23,7 +23,8 @@
 > (list (faces p) (faces r))
 ((("print" function.builtin) ("len" function.builtin)) (("print" function.builtin) ("(" punctuation.bracket) ("len" function.builtin) ("(" punctuation.bracket) ("x" variable) ("))" punctuation.bracket)))
 ; A user's file in the default folder, starting ; extends, is used with
-; no setting, after Python's and Tuna's own, so its patterns win.
+; no setting, after nvim-treesitter's and the python plugin's, so its
+; patterns win.
 > (write-file (string-append home "/.config/tuna/queries/python/highlights.scm")
     "; extends\n((identifier) @keyword.debug (#eq? @keyword.debug \"print\"))\n")
 > (define u (python "u.py" text))
@@ -39,15 +40,15 @@
 > (set-option! treesit:query-folders '("~/.config/tuna/queries/"))
 > (faces u)
 (("print" keyword.debug) ("(" punctuation.bracket) ("len" function.builtin) ("(" punctuation.bracket) ("))" punctuation.bracket))
-; A query file edited on disk is read again when the buffer's mode is set
-; again, which restarts its job; until then the job keeps what it read.
+; A query file edited on disk is read again the next time the buffer's
+; input is, with no new job; setting the mode again restarts the job.
 > (job-events)
 (start start start start start)
 > (write-file (string-append home "/.config/tuna/queries/python/highlights.scm")
     "; extends\n((identifier) @string.special (#eq? @string.special \"print\"))\n")
 > (syntax-highlighting:update! u)
-> (faces u)
-(("print" keyword.debug) ("(" punctuation.bracket) ("len" function.builtin) ("(" punctuation.bracket) ("))" punctuation.bracket))
+> (in-order (faces u) (job-events))
+((("print" string.special) ("(" punctuation.bracket) ("len" function.builtin) ("(" punctuation.bracket) ("))" punctuation.bracket)) ())
 > (modes:set-major-mode python:mode u)
 > (faces u)
 (("print" string.special) ("(" punctuation.bracket) ("len" function.builtin) ("(" punctuation.bracket) ("))" punctuation.bracket))

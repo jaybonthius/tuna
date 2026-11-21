@@ -1030,7 +1030,11 @@
   (define (highlighter-input? given)
     (and (list? given) (fx= (length given) 5)
          (string? (list-ref given 0)) (string? (list-ref given 1))
-         (list? (list-ref given 2)) (for-all string? (list-ref given 2))
+         (list? (list-ref given 2))
+         (for-all (lambda (f)
+                    (and (pair? f) (string? (car f))
+                         (or (not (cdr f)) (and (pair? (cdr f)) (integer? (cadr f)) (integer? (cddr f))))))
+                  (list-ref given 2))
          (list? (list-ref given 3)) (for-all symbol? (list-ref given 3))
          (list? (list-ref given 4))
          (for-all (lambda (r) (and (pair? r) (fixnum? (car r)) (fixnum? (cdr r)))) (list-ref given 4))))
@@ -1049,7 +1053,7 @@
         (guard (c [(or (language-load-error? c) (language-version-error? c))
                    (set! problems (list (list 'grammar-error file (condition-message c))))])
           (set! language (load-language file name))
-          (let-values ([(h ps) (compile-highlights language files)])
+          (let-values ([(h ps) (compile-highlights language (map car files))])
             (set! highlights h)
             (set! problems ps))
           (set! parser (make-parser language))))
@@ -1127,7 +1131,7 @@
                          (flat-spans winners from to excluded)))))))
       (lambda (doc given since)
         (unless (or (not given) (highlighter-input? given))
-          (assertion-violation 'make-highlight "not a grammar file, its name, query files, excluded captures and drawn ranges" given))
+          (assertion-violation 'make-highlight "not a grammar file, its name, query files with their times, excluded captures and drawn ranges" given))
         (cond
           [(not given) (reset!) (values (list '#()) #f)]
           [else

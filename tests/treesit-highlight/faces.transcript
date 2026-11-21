@@ -35,7 +35,7 @@
 ; text's characters.
 > (define doc (document:from-datum '(code () "x = 'a" #(pic ()) "é'\n" "y = 1\n" "z = 2\n")))
 > (define h (make-highlight))
-> (define (piece drawn) (let-values ([(layers data more) (h doc (list grammar "python" shipped default-excluded drawn) '())]) (car layers)))
+> (define (piece drawn) (let-values ([(layers data more) (h doc (list grammar "python" (untimed shipped) default-excluded drawn) '())]) (car layers)))
 > (document:text doc)
 "x = 'a￼é'\ny = 1\nz = 2\n"
 > (define y (+ 1 (offset-of (document:text doc) "y")))

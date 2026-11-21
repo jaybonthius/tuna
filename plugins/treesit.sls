@@ -17,11 +17,12 @@
 
 (define-option query-folders '("~/.config/tuna/queries/")
   (lambda (v) (and (list? v) (for-all string? v)))
-  "Folders searched first for a language's query files, before the plugin's own and nvim-treesitter's."
+  "Folders searched first for a language's query files, before those of the plugins that declare the language and nvim-treesitter's."
   (lambda (v) (syntax-highlighting:update!)))
 
 (module %internals
-  (check-name grammars-folder shipped-query-folders expanded tell-once! tell-once-for! problem-text)
+  (check-name grammars-folder nvim-treesitter-queries language-query-folders stamped expanded tell-once!
+   tell-once-for! problem-text)
 
   (define (check-name who name)
     (unless (and (string? name) (fx> (string-length name) 0)
@@ -32,16 +33,37 @@
   (define (grammars-folder)
     (string-append (or (getenv "HOME") "") "/.local/share/tuna/grammars"))
 
-  ;; The plugin's own files sit in its folder beside this module, where
-  ;; Chez finds the module's source.
-  (define plugin-folder
+  ;; A plugin's own files sit in its folder beside its module, where Chez
+  ;; finds the module's source.
+  (define (plugin-folder module)
     (let-values ([(source object found?)
-                  ((library-search-handler) 'treesit '(treesit) (library-directories) (library-extensions))])
-      (string-append (path-parent source) "/treesit")))
+                  ((library-search-handler) 'treesit module (library-directories) (library-extensions))])
+      (and source (string-append (path-parent source) "/" (symbol->string (car (last-pair module)))))))
 
-  (define shipped-query-folders
-    (list (string-append plugin-folder "/queries")
-          (string-append plugin-folder "/nvim-treesitter/runtime/queries")))
+  (define nvim-treesitter-queries
+    (string-append (plugin-folder '(treesit)) "/nvim-treesitter/runtime/queries"))
+
+  ;; The plugin that declares a language owns its mode's entry in
+  ;; modes:languages, so a language plugin ships its query files without
+  ;; importing treesit. The configuration and the REPL can own entries
+  ;; too; they are not modules and have no folder.
+  (define (language-query-folders language)
+    (fold-left
+      (lambda (folders entry)
+        (let* ([owner (and (equal? (cdr entry) language) (table-owner modes:languages (car entry)))]
+               [folder (and owner (member owner (loaded-modules)) (plugin-folder owner))]
+               [queries (and folder (string-append folder "/queries"))])
+          (if (and queries (not (member queries folders))) (append folders (list queries)) folders)))
+      '() (table-entries modes:languages)))
+
+  ;; A job compiles its query files again only when what it is sent
+  ;; changes, so a file edited in place must change the input. A file gone
+  ;; since it was found has no time; the job reports it when reading it.
+  (define (stamped file)
+    (cons file
+          (guard (c [(i/o-error? c) #f])
+            (let ([t (file-modification-time file)])
+              (cons (time-second t) (time-nanosecond t))))))
 
   (define (expanded folder)
     (if (and (fx>= (string-length folder) 2) (string=? (substring folder 0 2) "~/"))
@@ -148,23 +170,34 @@
        #f]
       [else
        (list (grammar-file grammar) (grammar-name grammar)
-             (query-files (append (map expanded (query-folders)) shipped-query-folders)
-                          (grammar-name grammar) "highlights")
+             (map stamped
+                  (query-files (append (map expanded (query-folders)) (language-query-folders language)
+                                       (list nvim-treesitter-queries))
+                               (grammar-name grammar) "highlights"))
              (excluded-captures)
              (%drawn-ranges buffer))])))
 
 (define highlighter
   (syntax-highlighting:make-highlighter %highlighter (list syntax-highlighting:faces) %highlight-input))
 
-;; A scroll needs only the input read again; update! would also start
-;; again a buffer whose highlighter raised, and report it at every scroll.
-(define (%drawn-ranges-changed view buffer)
+(define (%input-changed! buffer)
   (let ([language (modes:language (modes:major-mode buffer))])
     (when (and language (table-ref grammars language #f))
       (syntax-highlighting:input-changed! buffer))))
+
+;; A scroll needs only the input read again; update! would also start
+;; again a buffer whose highlighter raised, and report it at every scroll.
+(define (%drawn-ranges-changed view buffer) (%input-changed! buffer))
+
+;; A plugin that loads or reloads may declare a language, or change its
+;; query files, under buffers already open.
+(define (%module-loaded loaded name)
+  (loaded name)
+  (for-each %input-changed! (buffers:all)))
 
 (table-set! grammars "python"
   (make-grammar "python" "https://github.com/tree-sitter/tree-sitter-python"
                 "293fdc02038ee2bf0e2e206711b69c90ac0d413f"))
 (table-set! syntax-highlighting:highlighters "python" highlighter)
 (add-hook! views:drawn-ranges-changed %drawn-ranges-changed)
+(advice-add! module-loaded %module-loaded)

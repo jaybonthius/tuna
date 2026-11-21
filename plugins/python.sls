@@ -15,4 +15,5 @@
 (for-each (lambda (name) (table-set! auto-mode:file-names name mode))
           '("py" "pyi" "pyw" "SConstruct" "SConscript"))
 (table-set! auto-mode:interpreters "python" mode)
-(table-set! syntax:word-characters mode "_")
+(table-set! syntax:word-characters mode "")
+(table-set! syntax:symbol-characters mode "_")

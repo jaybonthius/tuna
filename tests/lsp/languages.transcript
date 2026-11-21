@@ -18,6 +18,13 @@ python:mode
 > (buffers:with-buffer plain (lsp:ensure))
 > (take-said!)
 ("lsp: modes:fundamental has no language")
-; "_" is a word character in Python, so M-f goes over total_ordering.
-> (syntax:mode-word-characters python:mode)
-"_"
+; As in Emacs's python-mode, "_" is a symbol character and no other
+; ASCII character besides letters and digits, "$" and "%" included, is part of
+; a word or a symbol: M-f stops at the "_" of total_ordering, and the
+; symbol at x in total=x+y-z is x alone.
+> (list (syntax:mode-word-characters python:mode) (syntax:mode-symbol-characters python:mode))
+("" "_")
+> (define code (buffers:make "code.py" "total=x+y-z total_ordering $a %b"))
+> (modes:set-major-mode python:mode code)
+> (map (lambda (position) (call-with-values (lambda () (syntax:symbol-bounds code position)) list)) '(7 16 29 32))
+((7 8) (13 27) (29 30) (32 33))
