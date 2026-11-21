@@ -52,6 +52,9 @@
 ;; thumb lies in.
 (define-enumeration bar-part (above-handle below-handle before-handle after-handle) %bar-parts)
 
+(define-hook drawn-ranges-changed
+  "Called with a view and a buffer, current, when the view's drawn ranges of the buffer differ from what they were after the previous screens.")
+
 (module %internals
   (check-main-thread check-view check-cursor check-node check-option check-position check-live-buffer shown-buffer
    current-view make-new-view! find-view views-showing bound-buffer show-buffer! drop-view! with-view-bound
@@ -71,7 +74,7 @@
    rows-shown-in hscroll-column-of hscroll-line-of set-hscroll-in! move-to-row! row-start-in
    face-attributes title-attributes text-spans-html
    anchor-record? anchor-record-id anchor-record-view anchor-record-spot anchor-record-gone?
-   new-anchor! forget-anchor! anchor-of-id anchor-drawn-for?
+   new-anchor! forget-anchor! anchor-of-id anchor-drawn-for? drawn-ranges-of
    scroller-record? scroller-record-id scroller-record-dropped? make-new-scroller! set-scroller-place!
    scroller-client scroller-record-clients scroller-state-number scroller-state-reported scroller-state-in-view
    scroller-state-whole
@@ -118,14 +121,19 @@
     (sealed #t)
     (fields above-lines above-chars below-lines below-chars side))
 
+  ;; RANGE-BUFFER is the buffer whose drawn ranges the hook was last told
+  ;; hold this client's range. A range can go with no draw to notice it,
+  ;; when its client leaves, its view shows another buffer or a screen
+  ;; leaves its view out, and this tells each such loss once.
   (define-record-type client-view
     (sealed #t)
     (fields (mutable number) (mutable placement) (mutable facts) (mutable measured)
-            (mutable from) (mutable to) (mutable reported) (mutable drawn-batch) (mutable wanted) (mutable sized))
+            (mutable from) (mutable to) (mutable reported) (mutable drawn-batch) (mutable wanted) (mutable sized)
+            (mutable range-buffer))
     (protocol
       (lambda (new)
         (lambda ()
-          (new 0 #f #f #f #f #f 0 -1 initial-wanted #f)))))
+          (new 0 #f #f #f #f #f 0 -1 initial-wanted #f #f)))))
 
   (define-record-type facts
     (sealed #t)
@@ -394,6 +402,54 @@
            (fx<= (spot-position (client-view-from cs)) (spot-position (anchor-record-spot a))
                  (spot-position (client-view-to cs))))))
 
+  (define (drawn-ranges-of v)
+    (let ([b (view-record-buffer v)])
+      (fold-left
+        (lambda (acc s)
+          (if (and b (eq? (client-view-range-buffer s) b) (fx= (client-view-drawn-batch s) batches)
+                   (client-view-from s))
+              (cons (cons (spot-position (client-view-from s)) (spot-position (client-view-to s))) acc)
+              acc))
+        '() (vector->list (hashtable-values (view-record-clients v))))))
+
+  (define changed-ranges '())
+  (define ranges-task-posted? #f)
+
+  ;; Views' end of batch comes before the batch's screens are drawn, so
+  ;; a change found while drawing is told by a task, which runs once every
+  ;; screen is. The drawing may be batch-ended's, which acts for no
+  ;; module.
+  (define (ranges-changed! v b)
+    (unless (exists (lambda (p) (and (eq? (car p) v) (eq? (cdr p) b))) changed-ranges)
+      (set! changed-ranges (cons (cons v b) changed-ranges)))
+    (unless ranges-task-posted?
+      (as-module (this-module) (post! tell-ranges-changed!))
+      (set! ranges-task-posted? #t)))
+
+  (define (tell-ranges-changed!)
+    (let ([pairs (reverse changed-ranges)])
+      (set! changed-ranges '())
+      (set! ranges-task-posted? #f)
+      (for-each
+        (lambda (p)
+          (let ([b (cdr p)])
+            (when (buffers:live? b)
+              (buffers:with-buffer b (drawn-ranges-changed (car p) b)))))
+        pairs)))
+
+  (define (forget-range! v cs)
+    (let ([b (client-view-range-buffer cs)])
+      (when b
+        (client-view-range-buffer-set! cs #f)
+        (ranges-changed! v b))))
+
+  ;; A screen that leaves a view out does not draw it, so the range it no
+  ;; longer holds is found at the end of the next batch.
+  (define (forget-undrawn-ranges! v)
+    (for-each-client-view
+      (lambda (c cs) (when (fx< (client-view-drawn-batch cs) batches) (forget-range! v cs)))
+      v))
+
   (define (make-new-scroller! on-rest)
     (let ([s (make-scroller-record (next-number!) #f 'nearest #f (make-eq-hashtable) on-rest #f)])
       (hashtable-set! scrollers (scroller-record-id s) s)
@@ -520,7 +576,13 @@
     (for-each (lambda (v) (when (eq? (view-record-leader v) c) (view-record-leader-set! v #f))) views)
     (eq-hashtable-delete! presses c)
     (vector-for-each (lambda (s) (hashtable-delete! (scroller-record-clients s) c)) (hashtable-values scrollers))
-    (for-each (lambda (v) (hashtable-delete! (view-record-clients v) c)) views))
+    (for-each
+      (lambda (v)
+        (let ([cs (hashtable-ref (view-record-clients v) c #f)])
+          (when cs
+            (forget-range! v cs)
+            (hashtable-delete! (view-record-clients v) c))))
+      views))
 
   (define (reset-view! v b)
     (let* ([n (if b (buffer-length b) 0)]
@@ -549,6 +611,7 @@
           (when b (hashtable-update! by-buffer b (lambda (vs) (cons v vs)) '()))
           (view-record-buffer-set! v b)
           (view-record-shown-count-set! v (fx+ (view-record-shown-count v) 1)))
+        (for-each-client-view (lambda (c cs) (forget-range! v cs)) v)
         (forget-items! v)
         (for-each forget-anchor! (hashtable-ref anchors-by-view v '())))))
 
@@ -1181,14 +1244,21 @@
                 (if (fx>= e hi) hi (item-end-from v doc e))))))
 
   ;; A quit between the two edges would leave a run with one, so both
-  ;; are made before either is set.
-  (define (set-edges! v cs ws we)
+  ;; are made before either is set. A run that reaches HI, the last
+  ;; position drawn, ends at an anchor that stays after text inserted
+  ;; there, so typing at the buffer's end keeps the run whole rather than
+  ;; leaving it short; an anchor keeps its kind, so the end is made anew.
+  (define (set-edges! v cs ws we hi)
     (let ([b (view-record-buffer v)])
-      (define (edge s p) (if s (move-spot s b p #f) (make-spot b p #f)))
-      (let ([from (edge (client-view-from cs) ws)] [to (edge (client-view-to cs) we)])
-        (with-interrupts-disabled
-          (client-view-from-set! cs from)
-          (client-view-to-set! cs to)))))
+      (let ([moved? (not (and (client-view-from cs) (fx= (spot-position (client-view-from cs)) ws)
+                              (fx= (spot-position (client-view-to cs)) we)))])
+        (let ([from (let ([s (client-view-from cs)]) (if s (move-spot s b ws #f) (make-spot b ws #f)))]
+              [to (make-spot b we (fx= we hi))])
+          (with-interrupts-disabled
+            (client-view-from-set! cs from)
+            (client-view-to-set! cs to)))
+        (when (and moved? (client-view-range-buffer cs))
+          (ranges-changed! v (client-view-range-buffer cs))))))
 
   ;; A page that has not reported under its newest placement will show
   ;; the placement's place; one that follows point goes to point however
@@ -1220,7 +1290,7 @@
                        (and (fx<= far-s ws0) (fx<= we0 far-e))))
                 (values ws0 we0)
                 (begin
-                  (set-edges! v cs near-s near-e)
+                  (set-edges! v cs near-s near-e hi)
                   (values near-s near-e))))))))
 
   ;; Lines of other widths show other positions at one scroll offset, so
@@ -2714,6 +2784,9 @@
                   (parameterize ([current-context ctx] [in-line? #f] [drawing (cons v (drawing))])
                     (let ([cs (view-client v client)])
                       (client-view-drawn-batch-set! cs batches)
+                      (when (and client (not (client-view-range-buffer cs)))
+                        (client-view-range-buffer-set! cs b)
+                        (ranges-changed! v b))
                       (view-html v doc ctx cs (node-html ctx (context-root ctx) #f)))))))))))
 
   (define (top-position v doc c)
@@ -3092,6 +3165,7 @@
   (define (after-batch ended)
     (ended)
     (for-each drop-undrawn-items! views)
+    (for-each forget-undrawn-ranges! views)
     (set! batches (fx+ batches 1))
     (hashtable-clear! claims)
     (let ([bs edited])
@@ -3648,6 +3722,10 @@
   (unless (web:client? client)
     (assertion-violation 'views:rows-shown "not a client" client))
   (rows-shown-in view client))
+
+(define (drawn-ranges view)
+  (check-view 'views:drawn-ranges view)
+  (drawn-ranges-of view))
 
 (define (hscroll view)
   (check-view 'views:hscroll view)
