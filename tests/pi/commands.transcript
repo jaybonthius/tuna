@@ -16,7 +16,7 @@
 > (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
 > (in-client (lambda () (layout:switch-to-buffer file-buffer)))
 > (run! pi-chat:open)
-> (list (length (pi:chats)) (eq? (pi-chat:chat-of (views:buffer (view))) chat))
+> (list (length (pi:chats)) (eq? (chat:conversation-of (views:buffer (view))) chat))
 (1 #t)
 ; A file in a git submodule belongs to the parent repository's project,
 ; so the same chat shows there.
@@ -26,13 +26,13 @@
 > (in-client (lambda () (layout:switch-to-buffer (files:visit (string-append project "/libs/sub/b.txt")))))
 > (define sub-buffer (views:buffer (view)))
 > (run! pi-chat:open)
-> (list (length (pi:chats)) (eq? (pi-chat:chat-of (views:buffer (view))) chat) (pi-chat:folder-for sub-buffer))
+> (list (length (pi:chats)) (eq? (chat:conversation-of (views:buffer (view))) chat) (chat:folder-for sub-buffer))
 (1 #t "$HOME/src/tuna/")
 > (in-client (lambda () (buffers:kill! sub-buffer) (void)))
 ; With C-u, always a new one.
 > (in-client (lambda () (parameterize ([commands:prefix-argument '(4)]) (commands:run pi-chat:open))))
 > (define second (cadr (pi:chats)))
-> (list (length (pi:chats)) (buffers:name (pi-chat:buffer second)) (eq? (car (pi-chat:chats-for file-buffer)) second))
+> (list (length (pi:chats)) (buffers:name (chat:buffer second)) (eq? (car (chat:chats-for file-buffer)) second))
 (2 "*pi: tuna*<2>" #t)
 > (pi:stop! second)
 > (sleep-for 0.1)
@@ -42,23 +42,23 @@
 ; one, is in the project's group.
 > (define inside (pi:start (string-append project "/lib")))
 > (define elsewhere (pi:start (getenv "HOME")))
-> (map pi:chat-directory (pi-chat:chats-for file-buffer))
+> (map pi:chat-directory (chat:chats-for file-buffer))
 ("$HOME/src/tuna/" "$HOME/src/tuna/lib" "$HOME")
 > (for-each pi:stop! (list inside elsewhere))
 > (wait-until (lambda () (= (length (pi:chats)) 1)))
 ; C-c a t removes the view showing the chat, or shows it.
 > (in-client (lambda () (layout:switch-to-buffer file-buffer)))
-> (run! pi-chat:toggle)
+> (run! chat:toggle)
 > (buffers:name (views:buffer (view)))
 "*pi: tuna*"
-> (run! pi-chat:toggle)
+> (run! chat:toggle)
 > (buffers:name (views:buffer (view)))
 "a.txt"
 ; Hiding a chat in a view that cannot go shows what the view showed
 ; before its chats, not another chat.
 > (define other-chat (pi:start project))
-> (in-client (lambda () (layout:switch-to-buffer (pi-chat:buffer other-chat)) (layout:switch-to-buffer (pi-chat:buffer chat))))
-> (run! pi-chat:toggle)
+> (in-client (lambda () (layout:switch-to-buffer (chat:buffer other-chat)) (layout:switch-to-buffer (chat:buffer chat))))
+> (run! chat:toggle)
 > (buffers:name (views:buffer (view)))
 "a.txt"
 > (pi:stop! other-chat)
@@ -66,28 +66,28 @@
 ; C-c a r adds the region to the prompt: a reference the agent reads for
 ; an unmodified file buffer, the text in a fence for any other.
 > (in-client (lambda () (views:set-point! (view) 5) (views:set-mark! (view) 15)))
-> (run! pi-chat:add-region)
+> (run! chat:add-region)
 > (shown chat)
 "lib/a.txt:2-3\n"
 > (in-client (lambda () (layout:switch-to-buffer file-buffer) (views:set-point! (view) 1)))
 > (press! "x")
 > (in-client (lambda () (views:set-point! (view) 1) (views:set-mark! (view) 6)))
-> (run! pi-chat:add-region)
+> (run! chat:add-region)
 > (shown chat)
 "lib/a.txt:2-3\n```a.txt lines 1-1\nxone\n```\n"
 ; An atom in the region goes as its text: a raw byte as U+FFFD.
 > (in-client (lambda () (layout:switch-to-buffer file-buffer)))
 > (in-client (lambda () (buffers:splice! file-buffer 2 2 (document:from-utf8 #vu8(#xFF))) (void)))
 > (in-client (lambda () (views:set-point! (view) 1) (views:set-mark! (view) 4)))
-> (run! pi-chat:add-region)
+> (run! chat:add-region)
 > (string=? (shown chat) "lib/a.txt:2-3\n```a.txt lines 1-1\nxone\n```\n```a.txt lines 1-1\nx\xFFFD;o\n```\n")
 #t
 ; Pi's terminal commands typed at the prompt's start run the chat's own
 ; procedures, with what follows the name; Pi's others are refused, since
 ; sent to Pi they would reach the model as text; Pi's own commands go to
 ; Pi.
-> (define b (pi-chat:buffer chat))
-> (in-client (lambda () (pi-chat:show! chat)))
+> (define b (chat:buffer chat))
+> (in-client (lambda () (chat:show! chat)))
 > (define t (start! (lambda () (press! "RET"))))
 > (result t)
 > (ref (last-request f "prompt") "message")
@@ -157,29 +157,29 @@
 ("a.txt" 3)
 ; The link's jump records the place it left in the chat, so M-, returns.
 > (press! "M-,")
-> (list (eq? (views:buffer (view)) (pi-chat:buffer chat)) (= (views:point (view)) link))
+> (list (eq? (views:buffer (view)) (chat:buffer chat)) (= (views:point (view)) link))
 (#t #t)
-> (in-client (lambda () (pi-chat:show! chat)))
+> (in-client (lambda () (chat:show! chat)))
 ; A line past the file's last goes to its end.
 > (point-at! chat "lib/a.txt:99")
 > (define t (start! (lambda () (press! "RET"))))
 > (result t)
 > (let ([v (view)]) (list (buffers:name (views:buffer v)) (= (views:point v) (- (document:length (buffers:document (views:buffer v))) 1))))
 ("a.txt" #t)
-> (in-client (lambda () (pi-chat:show! chat)))
+> (in-client (lambda () (chat:show! chat)))
 > (point-at! chat "read")
 > (define t (start! (lambda () (press! "RET"))))
 > (result t)
 > (let ([v (view)]) (list (buffers:name (views:buffer v)) (document:line (buffers:document (views:buffer v)) (views:point v))))
 ("a.txt" 2)
-> (in-client (lambda () (pi-chat:show! chat)))
+> (in-client (lambda () (chat:show! chat)))
 > (answer! f "fork" (lambda (f r) '(("text" . "Second") ("cancelled" . #f))))
 > (point-at! chat "Second")
 > (define t (start! (lambda () (press! "f"))))
 > (result t)
 > (list (ref (last-request f "fork") "entryId") (substring (shown chat) (- (string-length (shown chat)) 7) (string-length (shown chat))))
 ("u2" "Second\n")
-> (in-client (lambda () (pi-chat:show! chat)))
+> (in-client (lambda () (chat:show! chat)))
 > (press! "C-a" "C-k")
 ; Session commands that stop a working Pi ask first.
 > (say! f (event "agent_start"))
@@ -198,7 +198,7 @@
 "new_session"
 ; Copying Pi's last reply, exporting, naming and Pi's own compaction.
 > (answer! f "get_last_assistant_text" (lambda (f r) '(("text" . "Done."))))
-> (define t (start! (lambda () (run! pi-chat:copy-last-reply))))
+> (define t (start! (lambda () (run! chat:copy-last-reply))))
 > (result t)
 > (kill-ring:text (kill-ring:current))
 "Done."
@@ -225,10 +225,10 @@
         (event "queue_update" '("steering" . #("x")) '("followUp" . #()))
         '(("type" . "extension_ui_request") ("id" . "s1") ("method" . "setStatus") ("statusKey" . "pool") ("statusText" . "1 pool(s)")))
 > (wait-until (lambda () (pair? (pi:chat-statuses chat))))
-> (pi-chat:show-status (view))
+> (chat:show-status (view))
 "Fake Model · medium · thinking · 23% · $0.41 · 1 queued · 1 pool(s)"
 > (in-client (lambda () (layout:switch-to-buffer file-buffer)))
-> (pi-chat:show-status (view))
+> (chat:show-status (view))
 #f
 ; After Pi's edit or write tool ends, an unmodified buffer visiting the
 ; file is reverted; a modified one is left as it is, with a notice.
@@ -269,7 +269,7 @@
 > (define old (pi:start project "old-session"))
 > (define g (fake-of old))
 > (wait-until (lambda () (= 2 (length (filter pi:item-entry-id (pi:chat-transcript old))))))
-> (in-client (lambda () (pi-chat:show! old)))
+> (in-client (lambda () (chat:show! old)))
 > (sleep-for 0.2)
 > (list (text file-buffer) (filter (lambda (d) (eq? (car d) 'notice)) (drawn old)))
 ("xedited by Pi\n" ())
@@ -282,7 +282,7 @@
 #t
 ; Ending the chat asks first while Pi works; killing its buffer ends Pi at
 ; once.
-> (in-client (lambda () (pi-chat:show! chat)))
+> (in-client (lambda () (chat:show! chat)))
 > (pi:chat-activity chat)
 thinking
 > (define t (start! (lambda () (run! pi-chat:stop))))
@@ -300,7 +300,7 @@ thinking
 > (run! pi-chat:open)
 > (define chat (car (pi:chats)))
 > (define process (pi:chat-process chat))
-> (buffers:kill! (pi-chat:buffer chat))
+> (buffers:kill! (chat:buffer chat))
 #t
 > (wait-until (lambda () (processes:status process)))
 > (list (pi:chats) (processes:status process))
@@ -312,7 +312,7 @@ thinking
 > (write-file! (string-append project "/lib/c.txt") "c\n")
 > (in-client (lambda () (layout:switch-to-buffer (files:visit (string-append project "/lib/c.txt")))))
 > (in-client (lambda () (views:set-point! (view) 1) (views:set-mark! (view) 2)))
-> (run! pi-chat:add-region)
+> (run! chat:add-region)
 > (list questions (pi:chats))
 (("Start a Pi chat in ~/src/tuna/? ") ())
 > (remove-option! ask:y-or-n-reader)

@@ -1,7 +1,7 @@
 > (define chat (pi:start (getenv "HOME")))
 > (define f (fake-of chat))
 > (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
-> (in-client (lambda () (pi-chat:show! chat)))
+> (in-client (lambda () (chat:show! chat)))
 ; Your messages and Pi's replies are Markdown as buffer content.
 > (run-turn! f "u1" "a1" "Show **this**" '("A *reply*:\n\n" "- one\n- two"))
 > (wait-until (lambda () (= 2 (length (filter pi:item-entry-id (pi:chat-transcript chat))))))
@@ -22,7 +22,7 @@
 ; long session. Point in the prompt follows the reply as it grows.
 > (define reconciled '())
 > (define (note-reconcile reconcile! b node children)
-    (when (eq? b (pi-chat:buffer chat))
+    (when (eq? b (chat:buffer chat))
       (set! reconciled (cons (document:node-kind node) reconciled)))
     (reconcile! b node children))
 > (advice-add! buffers:reconcile! note-reconcile)
@@ -36,7 +36,7 @@
 > (say! f (update '(("type" . "thinking_delta") ("contentIndex" . 0) ("delta" . " and y"))))
 > (wait-until (lambda () (pair? reconciled)))
 > (sleep-for 0.1)
-> (list (place-kind) (memq 'pi-chat:transcript reconciled) (and (memq 'pi-chat:%item reconciled) #t))
+> (list (place-kind) (memq 'chat:transcript reconciled) (and (memq 'chat:%item reconciled) #t))
 ("top" #f #t)
 > (advice-remove! buffers:reconcile! note-reconcile)
 > (say! f (update '(("type" . "thinking_end") ("contentIndex" . 0) ("content" . "Consider *x*")))
@@ -98,8 +98,8 @@
 > (sleep-for 0.1)
 > (map (lambda (d) (car (last-pair d))) (list-tail (drawn chat) 2))
 ((notice (level . error) "Stopped: Operation aborted\n") (notice (level . error) "Failed: 529 overloaded\n"))
-; Finished thinking stays unfolded with pi-chat:thinking-shown?.
-> (set-option! pi-chat:thinking-shown? #t)
+; Finished thinking stays unfolded with chat:thinking-shown?.
+> (set-option! chat:thinking-shown? #t)
 > (append-entry! f (entry "a2" "a1" (assistant-message "toolUse" (thinking-block "Consider *x*") (text-block "Some **bol**")
                                      (tool-block "t1" "bash" '(("command" . "make test")))
                                      (tool-block "t2" "edit" '(("path" . "a.txt") ("edits" . #((("oldText" . "old\nline") ("newText" . "new")))))))))
@@ -114,7 +114,7 @@
 > (sleep-for 0.1)
 > (opens (list-ref (drawn chat) 2))
 (#t #t #t)
-> (remove-option! pi-chat:thinking-shown?)
+> (remove-option! chat:thinking-shown?)
 ; Extensions' messages show under their type, folded when long; Pi's
 ; summaries are folded; notices are lines of their own.
 > (append-entry! f '(("type" . "custom_message") ("id" . "c1") ("parentId" . "a4") ("customType" . "subagent-notify")
@@ -135,18 +135,18 @@
 > (say! f '(("type" . "extension_ui_request") ("id" . "w1") ("method" . "setWidget") ("widgetKey" . "plan") ("widgetLines" . #("Step 1" "Step 2")))
         '(("type" . "extension_ui_request") ("id" . "w2") ("method" . "setWidget") ("widgetKey" . "foot") ("widgetLines" . #("below"))
           ("widgetPlacement" . "belowEditor")))
-> (wait-until (lambda () (pair? (part-datums chat 'pi-chat:%widgets))))
+> (wait-until (lambda () (pair? (part-datums chat 'chat:%source-parts))))
 > (sleep-for 0.1)
-> (list (map short (part-datums chat 'pi-chat:%widgets)) (substring (shown chat) (- (string-length (shown chat)) 21) (string-length (shown chat))))
+> (list (map short (part-datums chat 'chat:%source-parts)) (substring (shown chat) (- (string-length (shown chat)) 21) (string-length (shown chat))))
 (((widget "Step 1\nStep 2\n")) "Step 1\nStep 2\n\nbelow\n")
 ; A widget's machine data is not drawn, nor a widget of only that.
 > (say! f '(("type" . "extension_ui_request") ("id" . "w3") ("method" . "setWidget") ("widgetKey" . "subagent-async")
             ("widgetLines" . #("PI_SUBAGENT_ASYNC_JSON:{\"kind\":\"pi-subagents.async-status-snapshot\",\"version\":1,\"runs\":[]}")))
         '(("type" . "extension_ui_request") ("id" . "w4") ("method" . "setWidget") ("widgetKey" . "mixed")
           ("widgetLines" . #("Running" "RUN_JSON:{\"n\": 1}" "NOTE: {x}" "{\"a\": 1}"))))
-> (wait-until (lambda () (= 2 (length (part-datums chat 'pi-chat:%widgets)))))
+> (wait-until (lambda () (= 2 (length (part-datums chat 'chat:%source-parts)))))
 > (sleep-for 0.1)
-> (map short (part-datums chat 'pi-chat:%widgets))
+> (map short (part-datums chat 'chat:%source-parts))
 ((widget "Step 1\nStep 2\n") (widget "Running\nNOTE: {x}\n{\"a\": 1}\n"))
 ; When Pi exits the chat says so, with a button that restarts it.
 > (call-with-output-file (string-append (fake-dir f) "/exit") (lambda (p) (display "1" p)))

@@ -29,7 +29,7 @@ expect() {
 # A quit ends Pi, as processes ends user processes at a quit.
 output=$(run '(define chat (pi:start (getenv "HOME") "kept-session"))
 (wait-until (lambda () (eq? (pi:chat-activity chat) (quote idle))))
-(in-client (lambda () (pi-chat:show! chat)))
+(in-client (lambda () (chat:show! chat)))
 (type! "unsent words")
 (sleep-for 0.2)
 (pi:chat-session-id chat)')

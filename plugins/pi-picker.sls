@@ -1,15 +1,11 @@
 #!tuna
-(import (pi) (pi-chat) (projects) (completion) (minibuffer) (ask) (commands) (keys) (views) (buffers) (document)
-        (faces) (files))
-
-(completion:define-category chat-category "Live Pi chats, valued by the chat.")
+(import (pi) (pi-chat) (chat) (completion) (minibuffer) (ask) (commands) (keys) (views) (faces))
 
 (completion:define-category session-category "Pi's sessions of a folder, valued by the session.")
 
 (completion:define-category model-category "Pi's models, valued by the model.")
 
-(completion:define-category command-category
-  "Pi's commands and the chat's own slash commands, valued by Pi's command or by the name.")
+(completion:define-category command-category "Pi's commands, valued by the command.")
 
 (define (%current-buffer)
   (let ([v (views:current)])
@@ -51,51 +47,6 @@
     (error who none))
   choices)
 
-(define (%chat-choices chats)
-  (map (lambda (chat) (cons (buffers:name (pi-chat:buffer chat)) chat)) chats))
-
-(define (%chat-preview view)
-  (lambda (chat)
-    (if chat (views:preview-buffer! view (pi-chat:buffer chat)) (views:end-preview! view))))
-
-(define (%chats-for b)
-  (if b (pi-chat:chats-for b) (reverse (pi:chats))))
-
-(define (%read-switch)
-  (let* ([b (%current-buffer)] [current (pi-chat:current-chat)] [chats (%chats-for b)]
-         [ordered (if current (append (remq current chats) (list current)) chats)])
-    (%choose "Switch to chat: "
-      (%check-choices 'pi-picker:switch-to-chat (%chat-choices ordered) "no Pi chat is open")
-      chat-category (%chat-preview (views:current)) #f #f)))
-
-(commands:define-command (switch-to-chat [chat (%read-switch)])
-  "Shows CHAT, read with a preview of each."
-  (%check-chat 'pi-picker:switch-to-chat chat)
-  (pi-chat:show! chat))
-
-(define (%check-chat who v)
-  (unless (pi:chat? v)
-    (assertion-violation who "not a chat" v)))
-
-(define (%region who)
-  (let* ([v (views:current)] [mark (and v (views:mark v))])
-    (unless mark
-      (error who "the region is empty"))
-    (values (views:buffer v) (fxmin mark (views:point v)) (fxmax mark (views:point v)))))
-
-(define (%read-region-chat)
-  (let-values ([(b start end) (%region 'pi-picker:add-region-to)])
-    (%choose "Add the region to chat: "
-      (%check-choices 'pi-picker:add-region-to (%chat-choices (%chats-for b)) "no Pi chat is open")
-      chat-category #f #f #f)))
-
-(commands:define-command (add-region-to [chat (%read-region-chat)])
-  "Adds the region to the prompt of CHAT, as pi-chat:add-region does, and shows the chat."
-  (%check-chat 'pi-picker:add-region-to chat)
-  (let-values ([(b start end) (%region 'pi-picker:add-region-to)])
-    (pi-chat:add-to-prompt! chat (pi-chat:region-text chat b start end))
-    (pi-chat:show! chat)))
-
 (define (%session-text s)
   (let ([name (pi:session-name s)] [message (pi:session-first-message s)])
     (cond
@@ -106,7 +57,7 @@
 (define (%folder who)
   (let ([b (%current-buffer)])
     (unless b (error who "no buffer is current"))
-    (pi-chat:folder-for b)))
+    (chat:folder-for b)))
 
 (define (%read-session folder input)
   (%choose "Resume session: "
@@ -120,8 +71,8 @@
 (define (%resume! chat folder session)
   (let ([live (find (lambda (c) (string=? (pi:chat-session-id c) (pi:session-id session))) (pi:chats))])
     (cond
-      [live (pi-chat:show! live)]
-      [(not chat) (pi-chat:show! (pi:start folder (pi:session-id session)))]
+      [live (chat:show! live)]
+      [(not chat) (chat:show! (pi:start folder (pi:session-id session)))]
       [(%ask-while-working chat "Pi is working; stop it and resume another session? ")
        (pi:switch-session! chat (pi:session-file session))])))
 
@@ -140,8 +91,8 @@
 
 (define (%fork! chat entry-id)
   (when (%ask-while-working chat "Pi is working; stop it and fork? ")
-    (pi-chat:set-prompt! chat (pi:fork! chat entry-id))
-    (pi-chat:show! chat)))
+    (chat:set-prompt! chat (pi:fork! chat entry-id))
+    (chat:show! chat)))
 
 (commands:define-command (fork [entry-id (%read-fork-message (%current-chat 'pi-picker:fork) #f)])
   "Goes on in a new session holding what came before your message ENTRY-ID, that message in the prompt; asks first while Pi works."
@@ -209,113 +160,6 @@
          [arguments (ask:line (string-append "Arguments for /" name " (empty for none): "))])
     (pi:send! chat (if (string=? arguments "") (string-append "/" name) (string-append "/" name " " arguments)))))
 
-(define (%word-start doc from point)
-  (let loop ([i point])
-    (if (and (fx> i from) (not (char-whitespace? (document:token doc (fx- i 1)))))
-        (loop (fx- i 1))
-        i)))
-
-(define (%word-end doc point to)
-  (let loop ([i point])
-    (if (and (fx< i to) (not (char-whitespace? (document:token doc i))))
-        (loop (fx+ i 1))
-        i)))
-
-(define (%with-slash dir)
-  (if (and (fx> (string-length dir) 0) (char=? (string-ref dir (fx- (string-length dir) 1)) #\/))
-      dir
-      (string-append dir "/")))
-
-(define (%starts-with? s part)
-  (let ([n (string-length part)])
-    (and (fx<= n (string-length s))
-         (let loop ([i 0])
-           (or (fx= i n) (and (char=? (string-ref s i) (string-ref part i)) (loop (fx+ i 1))))))))
-
-(define (%last-slash text before)
-  (let loop ([i (fx- before 1)])
-    (cond
-      [(fx< i 0) #f]
-      [(char=? (string-ref text i) #\/) i]
-      [else (loop (fx- i 1))])))
-
-(define (%mention-receiver emit root folder)
-  (let ([under (and (%starts-with? folder root) (substring folder (string-length root) (string-length folder)))]
-        [seen (make-hashtable string-hash string=?)])
-    ;; A folder is seen only with every folder above it, so the walk up
-    ;; ends at the first one seen.
-    (define (add-folders text slash found)
-      (let ([shown (substring text 0 (fx+ slash 1))])
-        (if (hashtable-contains? seen shown)
-            found
-            (let ([above (%last-slash text slash)])
-              (hashtable-set! seen shown #t)
-              (cons (cons shown (string-append folder shown))
-                    (if above (add-folders text above found) found))))))
-    (lambda (files)
-      (cond
-        [(eof-object? files) (emit 'done)]
-        [under
-         (let ([found '()])
-           (vector-for-each
-             (lambda (path)
-               (when (%starts-with? path under)
-                 (let* ([text (if (string=? under "") path (substring path (string-length under) (string-length path)))]
-                        [slash (%last-slash text (string-length text))])
-                   (set! found (cons (cons text (string-append root path))
-                                     (if slash (add-folders text slash found) found))))))
-             files)
-           (unless (null? found) (emit (list->vector (reverse found)))))]))))
-
-(define (%mention-stream folder)
-  (lambda (emit)
-    (let ([stop #f])
-      (lambda (prefix)
-        (cond
-          [(eof-object? prefix) (when stop (stop))]
-          [(projects:find folder)
-           => (lambda (project)
-                (set! stop
-                  (as-module (this-module)
-                    (projects:list-files project (%mention-receiver emit (projects:root project) folder)))))]
-          [else (emit 'done)])))))
-
-(define (%point-in-prompt chat)
-  (let ([point (views:point (views:current))])
-    (and (fx<= (pi-chat:prompt-start chat) point (pi-chat:prompt-end chat)) point)))
-
-;; An @ inside a word, as in an address, starts no mention.
-(define (complete-mention)
-  (let* ([chat (pi-chat:current-chat)] [point (and chat (%point-in-prompt chat))])
-    (and point
-         (let* ([doc (buffers:document (pi-chat:buffer chat))]
-                [start (%word-start doc (pi-chat:prompt-start chat) point)])
-           (and (fx< start point)
-                (eqv? (document:token doc start) #\@)
-                (completion:region (fx+ start 1) (%word-end doc point (pi-chat:prompt-end chat))
-                  (list (completion:source
-                          (stream (%mention-stream (%with-slash (pi:chat-directory chat))))
-                          (category completion:file-category)))))))))
-
-(define (%command-choices chat)
-  (let ([pi-commands (map (lambda (c) (cons (string-append "/" (pi:slash-command-name c)) c)) (pi:chat-commands chat))])
-    (list->vector
-      (append pi-commands
-              (map (lambda (name) (cons name name))
-                   (list-sort string<?
-                     (remp (lambda (name) (assoc name pi-commands)) (map car (table-entries pi-chat:slash-commands)))))))))
-
-(define (complete-command)
-  (let* ([chat (pi-chat:current-chat)] [point (and chat (%point-in-prompt chat))])
-    (and point
-         (let ([doc (buffers:document (pi-chat:buffer chat))] [start (pi-chat:prompt-start chat)])
-           (and (eqv? (document:token doc start) #\/)
-                (fx= (%word-start doc start point) start)
-                (completion:region start (%word-end doc point (pi-chat:prompt-end chat))
-                  (list (completion:source
-                          (candidates (lambda (prefix) (%command-choices chat)))
-                          (category command-category)))))))))
-
 (define (%age t)
   (let ([seconds (max 0 (time-second (time-difference (current-time 'time-utc) t)))])
     (cond
@@ -333,11 +177,6 @@
     [(>= n 1000) (string-append (number->string (quotient n 1000)) "k tokens")]
     [else (string-append (number->string n) " tokens")]))
 
-(define (annotate-chat session)
-  (lambda (chat details)
-    (list (cons faces:shadow (files:abbreviated-path (pi:chat-directory chat)))
-          (cons faces:shadow (symbol->string (pi:chat-activity chat))))))
-
 (define (annotate-session session)
   (lambda (s details)
     (list (cons faces:shadow (%age (pi:session-modified s)))
@@ -354,13 +193,9 @@
         (list (cons faces:shadow (%first-line (pi:slash-command-description c))))
         '())))
 
-(table-set! completion:annotators chat-category annotate-chat)
 (table-set! completion:annotators session-category annotate-session)
 (table-set! completion:annotators model-category annotate-model)
 (table-set! completion:annotators command-category annotate-command)
-
-(add-hook! completion:find-region complete-mention)
-(add-hook! completion:find-region complete-command)
 
 (table-set! pi-chat:slash-commands "/model"
   (lambda (chat argument) (pi:set-model! chat (%read-model chat argument))))
@@ -372,7 +207,6 @@
 (table-set! pi-chat:slash-commands "/fork"
   (lambda (chat argument) (%fork! chat (%read-fork-message chat argument))))
 
-(keys:bind! pi-chat:prompt-keymap "TAB" completion:complete-at-point)
 (keys:bind! pi-chat:keymap "C-c C-r" resume)
 (keys:bind! pi-chat:keymap "C-c C-m" select-model)
 
@@ -380,4 +214,3 @@
 (table-set! commands:command-modes select-model (list pi-chat:mode))
 (table-set! commands:command-modes select-thinking-level (list pi-chat:mode))
 (table-set! commands:command-modes run-command (list pi-chat:mode))
-(table-set! commands:region-commands add-region-to #t)

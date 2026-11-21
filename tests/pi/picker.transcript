@@ -12,7 +12,7 @@
       (let ([s (text (buffers:find " *Minibuf*"))] [n (string-length question)])
         (and (>= (string-length s) n) (string=? (substring s 0 n) question)))))
 > (define asking? (asking "Pi is working"))
-> (define (clear!) (in-client (lambda () (pi-chat:set-prompt! chat ""))))
+> (define (clear!) (in-client (lambda () (chat:set-prompt! chat ""))))
 > (define (working! f) (fake-state-set! f '(("isStreaming" . #t))) (say! f (event "agent_start")))
 > (define (settled! f) (fake-state-set! f '()) (say! f (event "agent_settled" '("aborted" . #f))))
 > (define project (string-append (getenv "HOME") "/src/tuna"))
@@ -34,10 +34,10 @@
 > (define other (pi:start (getenv "HOME")))
 > (define g (fake-of other))
 > (wait-until (lambda () (eq? (pi:chat-activity other) 'idle)))
-; pi-picker:switch-to-chat chooses a live chat, previewing each in the
+; chat-picker:switch-to-chat chooses a live chat, previewing each in the
 ; selected view; the current chat comes last. C-g puts back what the
 ; view showed.
-> (define t (start! (lambda () (run! pi-picker:switch-to-chat))))
+> (define t (start! (lambda () (run! chat-picker:switch-to-chat))))
 > (define s (session))
 > (wait-matches s)
 > (rows s)
@@ -49,20 +49,20 @@
 > (result t)
 > (buffers:name (views:buffer (main-view)))
 "*pi: tuna*"
-> (define t (start! (lambda () (run! pi-picker:switch-to-chat))))
+> (define t (start! (lambda () (run! chat-picker:switch-to-chat))))
 > (wait-matches (session))
 > (press! "RET")
 > (result t)
-> (eq? (pi-chat:chat-of (views:buffer (view))) other)
+> (eq? (chat:conversation-of (views:buffer (view))) other)
 #t
-; pi-picker:add-region-to adds the region to a chosen chat's prompt, as
-; pi-chat:add-region does, the buffer's project's chats first.
+; chat-picker:add-region-to adds the region to a chosen chat's prompt, as
+; chat:add-region does, the buffer's project's chats first.
 > (in-client (lambda () (layout:switch-to-buffer file-buffer)))
 > (in-client (lambda () (views:set-mark! (view) #f)))
-> (raised (lambda () (run! pi-picker:add-region-to)))
-! pi-picker:add-region-to: the region is empty
+> (raised (lambda () (run! chat-picker:add-region-to)))
+! chat-picker:add-region-to: the region is empty
 > (in-client (lambda () (views:set-point! (view) 4) (views:set-mark! (view) 13)))
-> (define t (start! (lambda () (run! pi-picker:add-region-to))))
+> (define t (start! (lambda () (run! chat-picker:add-region-to))))
 > (wait-matches (session))
 > (texts (session))
 ("*pi: tuna*" "*pi: home*")
@@ -92,7 +92,7 @@
                                          '(("type" . "session_info") ("id" . "i") ("parentId" . "a") ("name" . "Build fix")))
                               "2020-01-01 10:00"))
 > (define bbb (write-session! "bbb" (list (entry "u" #f (user-message "Review the parser"))) "2020-01-02 10:00"))
-> (in-client (lambda () (pi-chat:show! chat)))
+> (in-client (lambda () (chat:show! chat)))
 > (define t (start! (lambda () (press! "C-c" "C-r"))))
 > (define s (session))
 > (wait-matches s)
@@ -139,7 +139,7 @@
 ("Review the parser" "Build fix")
 > (press! "RET")
 > (result t)
-> (define resumed (pi-chat:chat-of (views:buffer (view))))
+> (define resumed (chat:conversation-of (views:buffer (view))))
 > (list (length (pi:chats)) (pi:chat-session-id resumed) (pi:chat-directory resumed))
 (3 "bbb" "$HOME/src/tuna/")
 > (in-client (lambda () (layout:switch-to-buffer file-buffer)))
@@ -147,12 +147,12 @@
 > (wait-matches (session))
 > (press! "RET")
 > (result t)
-> (list (length (pi:chats)) (eq? (pi-chat:chat-of (views:buffer (view))) resumed))
+> (list (length (pi:chats)) (eq? (chat:conversation-of (views:buffer (view))) resumed))
 (3 #t)
 > (pi:stop! resumed)
 ; /resume takes what follows it: a session's name or first message
 ; resumes it at once; other text starts the choice with it.
-> (in-client (lambda () (pi-chat:show! chat)))
+> (in-client (lambda () (chat:show! chat)))
 > (type! "/resume Review the parser")
 > (define t (start! (lambda () (press! "RET"))))
 > (result t)
@@ -363,14 +363,14 @@
 ! pi-picker:select-model: not in a Pi chat
 > (raised (lambda () (in-client (lambda () (pi-picker:resume 'session)))))
 (raised "not a session")
-> (in-client (lambda () (pi-chat:show! chat)))
+> (in-client (lambda () (chat:show! chat)))
 > (raised (lambda () (in-client (lambda () (pi-picker:fork 'u1)))))
 (raised "not an entry id")
 > (raised (lambda () (in-client (lambda () (pi-picker:run-command "review")))))
 (raised "not one of Pi's commands")
-> (raised (lambda () (in-client (lambda () (pi-picker:switch-to-chat 'chat)))))
+> (raised (lambda () (in-client (lambda () (chat-picker:switch-to-chat 'chat)))))
 (raised "not a chat")
-> (raised (lambda () (in-client (lambda () (pi-picker:add-region-to 'chat)))))
+> (raised (lambda () (in-client (lambda () (chat-picker:add-region-to 'chat)))))
 (raised "not a chat")
 > (raised (lambda () (in-client (lambda () (pi-picker:select-model "p/m1")))))
 (raised "not a model")
@@ -380,32 +380,32 @@
 ; folder a chat for a buffer works in, the text the region adds to a
 ; prompt, the prompt's text range, replacing the prompt, and showing or
 ; folding Pi's finished thinking in every chat.
-> (eq? (in-client pi-chat:current-chat) chat)
+> (eq? (in-client chat:current) chat)
 #t
-> (list (pi-chat:folder-for file-buffer) (pi-chat:folder-for (pi-chat:buffer other)))
+> (list (chat:folder-for file-buffer) (chat:folder-for (chat:buffer other)))
 ("$HOME/src/tuna/" "$HOME")
-> (pi-chat:region-text chat file-buffer 1 5)
+> (chat:region-text chat file-buffer 1 5)
 "lib/a.txt:1"
 > (in-client (lambda () (layout:switch-to-buffer file-buffer) (views:set-point! (view) 1)))
-> (in-client pi-chat:current-chat)
+> (in-client chat:current)
 #f
 > (press! "x")
-> (pi-chat:region-text chat file-buffer 1 5)
+> (chat:region-text chat file-buffer 1 5)
 "```a.txt lines 1-1\nxone\n```"
-> (raised (lambda () (pi-chat:region-text chat file-buffer 5 1)))
+> (raised (lambda () (chat:region-text chat file-buffer 5 1)))
 (raised "not a start and an end in the buffer")
-> (raised (lambda () (pi-chat:folder-for 'b)))
+> (raised (lambda () (chat:folder-for 'b)))
 (raised "not a buffer")
-> (pi-chat:set-prompt! chat "Replaced\nwhole")
+> (chat:set-prompt! chat "Replaced\nwhole")
 > (shown chat)
 "Replaced\nwhole\n"
-> (document:text (buffers:document (pi-chat:buffer chat)) (pi-chat:prompt-start chat) (pi-chat:prompt-end chat))
+> (document:text (buffers:document (chat:buffer chat)) (chat:prompt-start chat) (chat:prompt-end chat))
 "Replaced\nwhole"
-> (raised (lambda () (pi-chat:prompt-start 'x)))
+> (raised (lambda () (chat:prompt-start 'x)))
 (raised "not a chat")
-> (raised (lambda () (pi-chat:prompt-end 'x)))
+> (raised (lambda () (chat:prompt-end 'x)))
 (raised "not a chat")
-> (raised (lambda () (pi-chat:set-prompt! chat 'x)))
+> (raised (lambda () (chat:set-prompt! chat 'x)))
 (raised "not a string")
 > (clear!)
 > (append-entry! f (entry "t1" #f (user-message "Think")))
@@ -415,17 +415,17 @@
 > (wait-until (lambda () (= 2 (length (drawn chat)))))
 > (opens (cadr (drawn chat)))
 (#f)
-> (define t (start! (lambda () (run! pi-chat:toggle-thinking))))
-! Pi's finished thinking is shown
+> (define t (start! (lambda () (run! chat:toggle-thinking))))
+! Finished thinking is shown
 > (result t)
 > (wait-until (lambda () (equal? (opens (cadr (drawn chat))) '(#t))))
-> (list (pi-chat:thinking-shown?) (opens (cadr (drawn chat))))
+> (list (chat:thinking-shown?) (opens (cadr (drawn chat))))
 (#t (#t))
-> (set-option! pi-chat:thinking-shown? #f)
+> (set-option! chat:thinking-shown? #f)
 > (wait-until (lambda () (equal? (opens (cadr (drawn chat))) '(#f))))
 > (opens (cadr (drawn chat)))
 (#f)
 ; With no chat open there is nothing to choose.
 > (for-each pi:stop! (pi:chats))
-> (raised (lambda () (run! pi-picker:switch-to-chat)))
-! pi-picker:switch-to-chat: no Pi chat is open
+> (raised (lambda () (run! chat-picker:switch-to-chat)))
+! chat-picker:switch-to-chat: no chat is open

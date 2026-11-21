@@ -1,0 +1,149 @@
+; A source names every clause chat needs; a missing one, one given twice
+; and question clauses given in part are syntax errors.
+> (chat:source (title "x"))
+! chat:source: the conversation? clause is required (chat:source (title "x"))
+> (chat:source (title "x") (title "y"))
+! chat:source: clause given twice (title "y") in (chat:source (title "x") (title "y"))
+> (chat:source (conversation? values) (conversations list) (title "x") (mode 'm) (directory values) (session values) (start values) (items values) (item-key values) (draw-item values) (activity values) (working? values) (history fake-agents:echo-history) (drafts fake-agents:echo-drafts) (send values) (cancel values) (questions values))
+! chat:source: the question clauses are given all or none (chat:source (conversation? values) (conversations list) (title "x") (mode (quote m)) (directory values) ...)
+; A value no loaded source accepts is not a chat.
+> (raised (lambda () (chat:buffer 'x)))
+(raised "not a chat")
+> (raised (lambda () (chat:show! "talk")))
+(raised "not a chat")
+; Each source's chats share chat's buffer, keys and segments.
+> (define e (fake-talks:start 'echo (getenv "HOME")))
+> (in-client (lambda () (chat:show! e)))
+> (list (buffers:name (views:buffer (view))) (eq? (in-client chat:current) e) (modes:major-mode (views:buffer (view))))
+("*echo: home*" #t fake-agents:mode)
+> (type! "hello")
+> (press! "RET")
+> (settle)
+> (list (fake-talks:talk-sent e) (fake-agents:echo-history) (shown e))
+(((send . "hello")) ("hello") "\n")
+; C-RET takes the text into a running turn when the source can; with no
+; turn running it sends as RET does.
+> (fake-talks:working! e #t)
+> (type! "now")
+> (press! "C-RET")
+> (fake-talks:working! e #f)
+> (type! "idle")
+> (press! "C-RET")
+> (fake-talks:talk-sent e)
+((send . "idle") (send-now . "now") (send . "hello"))
+; A source without send-now refuses C-RET while its agent works, and the
+; text stays; idle, C-RET sends.
+> (define p (fake-talks:start 'parrot (getenv "HOME")))
+> (in-client (lambda () (chat:show! p)))
+> (fake-talks:working! p #t)
+> (type! "wait")
+> (press! "C-RET")
+! chat:send-now: Parrot takes no text into a running turn
+> (settle)
+> (shown p)
+"wait\n"
+> (fake-talks:working! p #f)
+> (press! "C-RET")
+> (list (fake-talks:talk-sent p) (fake-agents:parrot-history) (fake-agents:echo-history))
+(((send . "wait")) ("wait") ("idle" "now" "hello"))
+; Without a follow-up clause M-RET sends as RET does.
+> (type! "later")
+> (press! "M-RET")
+> (fake-talks:talk-sent p)
+((send . "later") (send . "wait"))
+; The status segment shows the source's status, else its activity.
+> (list (chat:show-status (view)) (begin (in-client (lambda () (chat:show! e))) (chat:show-status (view))))
+("Parrot · idle" "idle")
+; Questions of two sources: one waiting segment counts them all.
+> (fake-talks:ask! p "p1" "Proceed?" '(((label . "Go") (key . #f) (value . go))))
+> (settle)
+> (html->string (chat:show-waiting (view)))
+"<span class=\"chat-waiting\" title=\"Parrot waits for an answer; click to go to the question\">Parrot asks</span>"
+> (fake-talks:ask! e "e1" "Allow?" '(((label . "Yes") (key . "y") (value . yes)) ((label . "No") (key . "n") (value . no))))
+> (settle)
+> (html->string (chat:show-waiting (view)))
+"<span class=\"chat-waiting\" title=\"Agents wait for an answer; click to go to the question\">Agents ask 2 questions</span>"
+; chat:next-question goes to the oldest; on an answer, a key answers with
+; the answer that has it.
+> (run! chat:next-question)
+> (eq? (in-client chat:current) p)
+#t
+> (press! "y")
+! chat:answer-by-key: no answer on y
+> (press! "RET")
+> (settle)
+> (list (fake-talks:talk-answered p) (html->string (chat:show-waiting (view))))
+((("p1" . go)) "<span class=\"chat-waiting\" title=\"Echo waits for an answer; click to go to the question\">Echo asks</span>")
+> (run! chat:next-question)
+> (eq? (in-client chat:current) e)
+#t
+> (press! "x")
+! chat:answer-by-key: no answer on x
+> (press! "n")
+> (settle)
+> (list (fake-talks:talk-answered e) (chat:show-waiting (view)))
+((("e1" . no)) #f)
+; Without a fork clause, f raises; without last-reply, the last reply
+; drawn is copied.
+> (raised (lambda () (run! chat:fork)))
+! chat:fork: Echo cannot fork
+> (raised (lambda () (run! chat:copy-last-reply)))
+! chat:copy-last-reply: Echo has not replied yet
+> (fake-talks:reply! e "Done *now*")
+> (settle)
+> (run! chat:copy-last-reply)
+> (kill-ring:text (kill-ring:current))
+"Done *now*"
+; Without item-text either, there is nothing to copy, though Parrot has
+; replied.
+> (fake-talks:reply! p "Polly")
+> (in-client (lambda () (chat:show! p)))
+> (settle)
+> (raised (lambda () (run! chat:copy-last-reply)))
+! chat:copy-last-reply: nothing to copy
+; A click on a chat's status segment selects its window and runs its
+; source's entry of chat:status-menus there; a source with none only
+; selects.
+> (define menus '())
+> (commands:define-command (echo-menu) "Notes the menu shown." (set! menus (cons (chat:current) menus)))
+> (table-set! chat:status-menus 'fake-agents:echo echo-menu)
+> (define parrot-window (view))
+> (define echo-window (layout-split:split-view! parrot-window (layout-split:direction row)))
+> (views:set-buffer! echo-window (chat:buffer e))
+> (list (eq? (view) parrot-window) (eq? (in-client chat:current) p))
+(#t #t)
+> (click-status! echo-window chat:status-keymap)
+> (list (length menus) (eq? (car menus) e) (eq? (view) echo-window))
+(1 #t #t)
+> (click-status! parrot-window chat:status-keymap)
+> (list (length menus) (eq? (view) parrot-window))
+(1 #t)
+; chat:conversation? accepts a loaded source's conversation, and
+; chat:chats-for gives every live one for no buffer.
+> (list (chat:conversation? e) (chat:conversation? p) (chat:conversation? 'x) (length (chat:chats-for #f)))
+(#t #t #f 2)
+; With no chat in the buffer's project, chat:toggle starts one of
+; chat:default-source.
+> (set-option! chat:default-source 'fake-agents:parrot)
+> (system (string-append "mkdir -p " (getenv "HOME") "/other && echo a > " (getenv "HOME") "/other/notes.txt"))
+0
+> (in-client (lambda () (layout:switch-to-buffer (files:visit (string-append (getenv "HOME") "/other/notes.txt")))))
+> (run! chat:toggle)
+> (list (fake-talks:talk-kind (in-client chat:current)) (eq? (in-client chat:current) p) (fake-talks:talk-directory (in-client chat:current)) (length (chat:chats-for (chat:buffer e))) (length (chat:chats-for (chat:buffer e) 'fake-agents:echo)))
+(parrot #f "$HOME/other/" 3 1)
+; Each chat's root is marked with its source and session, rewritten when
+; the conversation goes on in another session, so a reload of chat finds
+; every buffer again, its prompt kept.
+> (define echo-buffer (chat:buffer e))
+> (in-client (lambda () (chat:show! e)))
+> (type! "draft")
+> (fake-talks:talk-session-set! e "echo-moved")
+> (chat:changed! e)
+> (settle)
+> (let ([root (document:token (buffers:document echo-buffer) 0)])
+    (list (document:node-attribute root 'source #f) (document:node-attribute root 'session #f)))
+(fake-agents:echo "echo-moved")
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/chat.sls"))
+> (settle)
+> (list (eq? (chat:buffer e) echo-buffer) (shown e) (eq? (chat:conversation-of echo-buffer) e))
+(#t "Done now\ndraft\n" #t)

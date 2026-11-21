@@ -66,7 +66,7 @@
 > (eq? (pi:chat-process chat) process)
 #t
 > (load-module! '(pi-chat))
-> (buffers:name (pi-chat:buffer chat))
+> (buffers:name (chat:buffer chat))
 "*pi: home*"
 ; A widget saved as its key, placement and lines restores.
 > (eval-in-module '(set-saved! %chats (map (lambda (v) (let ([v (vector-copy v)]) (vector-set! v 5 '(#("plan" above ("Step 1")))) v)) (%chats))) '(pi))

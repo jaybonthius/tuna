@@ -1,12 +1,12 @@
 > (define chat (pi:start (getenv "HOME")))
 > (define f (fake-of chat))
 > (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
-> (in-client (lambda () (pi-chat:show! chat)))
-> (define b (pi-chat:buffer chat))
+> (in-client (lambda () (chat:show! chat)))
+> (define b (chat:buffer chat))
 ; The chat is a buffer of its own mode, named after its folder, and
 ; linked to Pi's process. Its prompt's edits are history; the
 ; conversation's rewrites are silent.
-> (list (buffers:name b) (modes:major-mode b) (eq? (pi-chat:chat-of b) chat) (eq? (processes:buffer (pi:chat-process chat)) b))
+> (list (buffers:name b) (modes:major-mode b) (eq? (chat:conversation-of b) chat) (eq? (processes:buffer (pi:chat-process chat)) b))
 ("*pi: home*" pi-chat:mode #t #t)
 > (buffers:silent? b)
 #f
@@ -59,7 +59,7 @@
 ; The transcript refuses edits; typing goes only into the prompt.
 > (in-client (lambda () (views:set-point! (view) 2)))
 > (press! "x")
-! buffers:replace!: a read-only span refuses the edit with irritant pi-chat:%read-only
+! buffers:replace!: a read-only span refuses the edit with irritant chat:%read-only
 > (shown chat)
 "Pi refused the prompt: Cannot submit a prompt while compaction is in progress\nThen\ntest\nmore\n"
 ; An unsent prompt is saved data, by the chat's session.
@@ -149,7 +149,7 @@
 ; prompt edits leave it.
 > (define other (pi:start (getenv "HOME")))
 > (wait-until (lambda () (eq? (pi:chat-activity other) 'idle)))
-> (in-client (lambda () (pi-chat:show! other)))
+> (in-client (lambda () (chat:show! other)))
 > (type! "x")
 > (sleep-for 0.1)
 > (map cdr (pi-chat:drafts))
@@ -164,7 +164,7 @@
 > (sleep-for 0.1)
 > (list (shown other) (assoc other-id (pi-chat:drafts)) (assoc "s-new" (pi-chat:drafts)))
 ("x\n" #f ("s-new" . "x"))
-> (in-client (lambda () (pi-chat:set-prompt! other "")))
+> (in-client (lambda () (chat:set-prompt! other "")))
 > (sleep-for 0.1)
 > (map cdr (pi-chat:drafts))
 ("unsent")
@@ -173,10 +173,10 @@
 > (shown again)
 "\n"
 ; A reload of the plugin keeps the draft moving with its chat.
-> (in-client (lambda () (pi-chat:show! again)))
+> (in-client (lambda () (chat:show! again)))
 > (type! "kept")
 > (sleep-for 0.1)
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/pi-chat.sls"))
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/chat.sls"))
 > (fake-state-set! (fake-of again) '(("sessionId" . "s-after")))
 > (result (start! (lambda () (pi:new-session! again))))
 > (wait-until (lambda () (equal? (pi:chat-session-id again) "s-after")))
@@ -186,7 +186,7 @@
 ; A chat killed in the batch it moves into a session that keeps a draft
 ; saves that draft before its own prompt's text.
 > (define chat-id (pi:chat-session-id chat))
-> (define again-buffer (pi-chat:buffer again))
+> (define again-buffer (chat:buffer again))
 > (add-hook! pi:chat-changed (lambda (c) (when (and (eq? c again) (equal? (pi:chat-session-id c) chat-id) (buffers:live? again-buffer)) (buffers:kill! again-buffer))))
 > (fake-state-set! (fake-of again) (list (cons "sessionId" chat-id)))
 > (define moving (start! (lambda () (pi:switch-session! again (string-append "/sessions/" chat-id ".jsonl")))))
@@ -196,7 +196,7 @@
 ("unsent\nkept" #f)
 ; Resuming that session in another chat puts its draft back in the
 ; prompt, before the text there.
-> (in-client (lambda () (pi-chat:show! other)))
+> (in-client (lambda () (chat:show! other)))
 > (type! "typed")
 > (fake-state-set! (fake-of other) (list (cons "sessionId" chat-id)))
 > (result (start! (lambda () (pi:switch-session! other (string-append "/sessions/" chat-id ".jsonl")))))
@@ -211,18 +211,18 @@
 > (define edges (pi:start (getenv "HOME")))
 > (define ef (fake-of edges))
 > (wait-until (lambda () (eq? (pi:chat-activity edges) 'idle)))
-> (in-client (lambda () (pi-chat:show! edges)))
+> (in-client (lambda () (chat:show! edges)))
 > (define (node-of chat kind)
-    (let* ([doc (buffers:document (pi-chat:buffer chat))] [n (document:length doc)])
+    (let* ([doc (buffers:document (chat:buffer chat))] [n (document:length doc)])
       (let loop ([p 0])
         (and (< p n)
              (let ([t (document:token doc p)])
                (if (and (document:node? t) (eq? (document:node-kind t) kind)) t (loop (+ p 1))))))))
-> (define (sent) (document:text (buffers:document (pi-chat:buffer edges)) (pi-chat:prompt-start edges) (pi-chat:prompt-end edges)))
+> (define (sent) (document:text (buffers:document (chat:buffer edges)) (chat:prompt-start edges) (chat:prompt-end edges)))
 > (define (on-prompt offset . keys)
-    (in-client (lambda () (pi-chat:set-prompt! edges "hi there") (views:set-point! (view) (+ (pi-chat:prompt-start edges) offset))))
+    (in-client (lambda () (chat:set-prompt! edges "hi there") (views:set-point! (view) (+ (chat:prompt-start edges) offset))))
     (apply press! keys)
-    (list (sent) (- (views:point (view)) (pi-chat:prompt-start edges))))
+    (list (sent) (- (views:point (view)) (chat:prompt-start edges))))
 > (define (each-case) (map (lambda (case) (apply on-prompt case)) '((8 "C-d") (0 "DEL") (6 "C-u" "5" "C-d") (8 "C-k") (3 "C-u" "2" "C-k") (3 "C-S-DEL") (8 "M-d") (0 "M-DEL") (8 "M-u") (8 "C-t") (3 "M-t") (0 "M-^"))))
 > (each-case)
 ! editing:kill-line: end of buffer
@@ -248,30 +248,30 @@
 > (on-prompt 0 "C-x" "C-t")
 ! buffers:insert!: the node refuses the edit with irritant pi-chat:widget
 ("w1hi there" 0)
-> (in-client (lambda () (pi-chat:set-prompt! edges "hi there") (views:set-point! (view) (+ (pi-chat:prompt-start edges) 3)) (views:set-mark! (view) (+ (document:node-start (node-of edges 'pi-chat:widget)) 1))))
+> (in-client (lambda () (chat:set-prompt! edges "hi there") (views:set-point! (view) (+ (chat:prompt-start edges) 3)) (views:set-mark! (view) (+ (document:node-start (node-of edges 'pi-chat:widget)) 1))))
 > (press! "C-w")
-! buffers:replace!: the node refuses the edit with irritant pi-chat:%chat
+! buffers:replace!: the node refuses the edit with irritant chat:%chat
 > (sent)
 "hi there"
 ; Code that inserts after the prompt's final line break is refused, so
 ; the text sent stays what is before it.
 > (guard (c [(buffers:refused? c) (condition-message c)])
-    (buffers:insert! (pi-chat:buffer edges) (+ (pi-chat:prompt-end edges) 1) "x"))
+    (buffers:insert! (chat:buffer edges) (+ (chat:prompt-end edges) 1) "x"))
 "the edit would leave a block without its final line break"
 > (sent)
 "hi there"
 ; A question's field is isolating too.
 > (say! ef (ui-request "q1" "input" '("title" . "Name?")))
-> (wait-until (lambda () (node-of edges 'pi-chat:%field)))
-> (define (field-text) (let ([n (node-of edges 'pi-chat:%field)]) (document:text (buffers:document (pi-chat:buffer edges)) (+ (document:node-start n) 1) (- (document:node-end n) 2))))
+> (wait-until (lambda () (node-of edges 'chat:field)))
+> (define (field-text) (let ([n (node-of edges 'chat:field)]) (document:text (buffers:document (chat:buffer edges)) (+ (document:node-start n) 1) (- (document:node-end n) 2))))
 > (define (on-field offset . keys)
     (in-client
       (lambda ()
-        (let ([n (node-of edges 'pi-chat:%field)])
-          (buffers:replace! (pi-chat:buffer edges) (+ (document:node-start n) 1) (- (document:node-end n) 2) "ab cd"))
-        (views:set-point! (view) (+ (document:node-start (node-of edges 'pi-chat:%field)) 1 offset))))
+        (let ([n (node-of edges 'chat:field)])
+          (buffers:replace! (chat:buffer edges) (+ (document:node-start n) 1) (- (document:node-end n) 2) "ab cd"))
+        (views:set-point! (view) (+ (document:node-start (node-of edges 'chat:field)) 1 offset))))
     (apply press! keys)
-    (list (field-text) (- (views:point (view)) (document:node-start (node-of edges 'pi-chat:%field)) 1)))
+    (list (field-text) (- (views:point (view)) (document:node-start (node-of edges 'chat:field)) 1)))
 > (map (lambda (case) (apply on-field case))
        '((5 "C-d") (0 "DEL") (5 "C-k") (0 "C-u" "2" "C-k") (1 "C-S-DEL") (5 "M-d") (0 "M-DEL") (2 "M-t") (5 "C-t") (0 "M-u")))
 (("ab cd" 5) ("ab cd" 0) ("ab cd" 5) ("" 0) ("" 0) ("ab cd" 5) ("ab cd" 0) ("cd ab" 5) ("ab dc" 5) ("AB cd" 2))
@@ -280,13 +280,13 @@
 ("xyab cd" 2)
 > (kill-ring:push! (list "x\ny"))
 > (on-field 0 "C-y")
-! buffers:insert!: the node refuses the edit with irritant pi-chat:%field
+! buffers:insert!: the node refuses the edit with irritant chat:field
 ("ab cd" 0)
 > (on-field 0 "C-x" "C-t")
-! buffers:insert!: the node refuses the edit with irritant pi-chat:%header
+! buffers:insert!: the node refuses the edit with irritant chat:header
 ("Name?ab cd" 0)
-> (in-client (lambda () (views:set-mark! (view) (+ (document:node-start (node-of edges 'pi-chat:%header)) 1))))
+> (in-client (lambda () (views:set-mark! (view) (+ (document:node-start (node-of edges 'chat:header)) 1))))
 > (press! "C-w")
-! buffers:replace!: the node refuses the edit with irritant pi-chat:dialog
+! buffers:replace!: the node refuses the edit with irritant chat:question
 > (field-text)
 "Name?ab cd"

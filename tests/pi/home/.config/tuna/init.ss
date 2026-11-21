@@ -26,6 +26,7 @@
 (use-plugin pi-chat)
 (use-plugin completion)
 (use-plugin pi-picker)
+(use-plugin chat-picker)
 (use-plugin pi-menu)
 
 (define (wait-until done?)
@@ -292,7 +293,7 @@
 
 (define (html v) (html->string (views:draw v client)))
 
-(define (shown chat) (text (pi-chat:buffer chat)))
+(define (shown chat) (text (chat:buffer chat)))
 
 (define (echo) (echo-area:current-message))
 
@@ -308,12 +309,13 @@
     [else
      (let ([attributes (filter (lambda (a) (memq (car a) '(open state stop level method kind placement))) (cadr d))]
            [kind (let* ([name (symbol->string (car d))]
-                        [name (if (and (> (string-length name) 8) (string=? (substring name 0 8) "pi-chat:")) (substring name 8 (string-length name)) name)])
+                        [name (if (and (> (string-length name) 8) (string=? (substring name 0 8) "pi-chat:")) (substring name 8 (string-length name)) name)]
+                        [name (if (and (> (string-length name) 5) (string=? (substring name 0 5) "chat:")) (substring name 5 (string-length name)) name)])
                    (string->symbol (if (char=? (string-ref name 0) #\%) (substring name 1 (string-length name)) name)))])
        (cons kind (append attributes (map short (cddr d)))))]))
 
 (define (part-datums chat kind)
-  (let* ([doc (buffers:document (pi-chat:buffer chat))] [root (document:token doc 0)] [found #f])
+  (let* ([doc (buffers:document (chat:buffer chat))] [root (document:token doc 0)] [found #f])
     (document:for-each-child root 1 (- (document:length doc) 1)
       (lambda (c at)
         (when (and (not found) (document:node? c) (eq? (document:node-kind c) kind))
@@ -321,7 +323,7 @@
     (or found '())))
 
 (define (point-in! chat kind)
-  (let* ([doc (buffers:document (pi-chat:buffer chat))] [n (document:length doc)])
+  (let* ([doc (buffers:document (chat:buffer chat))] [n (document:length doc)])
     (let loop ([p 0])
       (cond
         [(>= p n) (error 'point-in! "not found" kind)]
@@ -330,7 +332,7 @@
         [else (loop (+ p 1))]))))
 
 (define (point-at! chat text)
-  (let* ([doc (buffers:document (pi-chat:buffer chat))] [n (document:length doc)] [k (string-length text)])
+  (let* ([doc (buffers:document (chat:buffer chat))] [n (document:length doc)] [k (string-length text)])
     (let loop ([p 0])
       (cond
         [(>= p n) (error 'point-at! "not found" text)]
@@ -340,12 +342,12 @@
          (in-client (lambda () (views:set-point! (view) p)))]
         [else (loop (+ p 1))]))))
 
-(define (drawn chat) (map (lambda (wrapper) (short (caddr wrapper))) (part-datums chat 'pi-chat:transcript)))
+(define (drawn chat) (map (lambda (wrapper) (short (caddr wrapper))) (part-datums chat 'chat:transcript)))
 
 (define (opens d)
   (map (lambda (c) (cdr (assq 'open (cdr c))))
        (filter (lambda (c) (and (pair? c) (memq (car c) '(thinking tool-call summary extension-message)))) (cdr d))))
 
-(define (drawn-dialogs chat) (map short (part-datums chat 'pi-chat:%dialogs)))
+(define (drawn-dialogs chat) (map short (part-datums chat 'chat:%questions)))
 
 (import (console))

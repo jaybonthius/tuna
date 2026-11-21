@@ -3,8 +3,8 @@
 > (define chat (pi:start (getenv "HOME")))
 > (define f (fake-of chat))
 > (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
-> (in-client (lambda () (pi-chat:show! chat)))
-> (define b (pi-chat:buffer chat))
+> (in-client (lambda () (chat:show! chat)))
+> (define b (chat:buffer chat))
 > (define opening (assistant-message "stop" (text-block "Hello")))
 > (say! f (event "agent_start") (event "message_start" (cons "message" opening)) (event "message_end" (cons "message" opening)))
 > (append-entry! f (entry "a0" #f opening))
@@ -26,10 +26,10 @@
 ; n and p in the conversation go from message to message.
 > (views:set-point! (view) (at "Hello"))
 > (define (moved command) (in-client (lambda () (commands:run command))) (where))
-> (map moved (list pi-chat:next-message pi-chat:next-message pi-chat:previous-message))
+> (map moved (list chat:next-message chat:next-message chat:previous-message))
 ("message 1 of 2" "message 2 of 2" "message 1 of 2")
-> (in-client (lambda () (commands:run pi-chat:previous-message)))
-! pi-chat:previous-message: no earlier message
+> (in-client (lambda () (commands:run chat:previous-message)))
+! chat:previous-message: no earlier message
 ; M-> goes to the end of the prompt's text, where typing goes, and C-k
 ; there is at the end of the buffer: the prompt keeps the line break it
 ; is read up to.

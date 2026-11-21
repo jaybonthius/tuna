@@ -1,5 +1,5 @@
 #!tuna
-(import (pi) (pi-chat) (pi-picker) (transient) (commands) (keys))
+(import (pi) (chat) (pi-chat) (pi-picker) (transient) (commands) (keys))
 
 (define (%title)
   (let ([chat (pi-chat:current-chat)])
@@ -24,7 +24,7 @@
 (define (%auto-compaction chat) (if (pi:chat-auto-compaction? chat) "on" "off"))
 
 (define (%thinking-shown)
-  (if (pi-chat:thinking-shown?) "Finished thinking (shown)" "Finished thinking (folded)"))
+  (if (chat:thinking-shown?) "Finished thinking (shown)" "Finished thinking (folded)"))
 
 ;; q is left out, since a user may bind it to close menus, as Emacs's
 ;; transient does.
@@ -92,8 +92,8 @@
   (transient:command "m" (%with-state "Model" %model-name) pi-picker:select-model)
   (transient:command "t" (%with-state "Thinking level" %thinking-level) pi-picker:select-thinking-level))
 (transient:add! menu "Display"
-  (transient:staying-command "T" %thinking-shown pi-chat:toggle-thinking)
-  (transient:staying-command "o" "Fold or unfold every block" pi-chat:toggle-all-blocks))
+  (transient:staying-command "T" %thinking-shown chat:toggle-thinking)
+  (transient:staying-command "o" "Fold or unfold every block" chat:toggle-all-blocks))
 (transient:add-computed! menu "Pi's commands" %kind-entries)
 (transient:add-computed! skills #f (%command-entries 'skill))
 (transient:add-computed! prompt-templates #f (%command-entries 'prompt))

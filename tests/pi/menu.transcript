@@ -30,7 +30,7 @@
 > (define chat (pi:start project))
 > (define f (fake-of chat))
 > (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
-> (in-client (lambda () (pi-chat:show! chat)))
+> (in-client (lambda () (chat:show! chat)))
 ; C-c C-p shows it: Session, Context, Model and Display, the current
 ; model, thinking level and settings in the descriptions, and Pi's
 ; commands, computed from the chat's each time it shows: a kind of
@@ -57,11 +57,11 @@
 > (list (ref (last-request f "set_auto_compaction") "enabled") (group "Context"))
 (#f ("Context" ("c" "Compact") ("a" "Pi's own compaction (off)")))
 > (press! "T")
-! Pi's finished thinking is shown
-> (list (pi-chat:thinking-shown?) (group "Display"))
+! Finished thinking is shown
+> (list (chat:thinking-shown?) (group "Display"))
 (#t ("Display" ("T" "Finished thinking (shown)") ("o" "Fold or unfold every block")))
 > (press! "T")
-! Pi's finished thinking is folded
+! Finished thinking is folded
 > (press! "C-g")
 ; An entry that is not a toggle closes the menu and runs its command,
 ; in the chat: Model chooses with pi-picker.
