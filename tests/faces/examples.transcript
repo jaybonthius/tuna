@@ -6,6 +6,10 @@
 ; deprecated code struck through.
 > (list faces:diagnostic.unnecessary faces:diagnostic.deprecated)
 (diagnostic.unnecessary diagnostic.deprecated)
+; A definition, a docstring and a constructor have faces of their own,
+; so a variable's definition is drawn apart from its uses.
+> (list faces:variable.definition faces:string.documentation faces:constructor)
+(variable.definition string.documentation constructor)
 ; A highlighter's spans name faces; views draws each as data-face.
 > (buffers:define-layer highlights)
 > (define buffer (buffers:make "greet.scm" "(define name \"Tuna\")\n"))

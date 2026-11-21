@@ -1038,10 +1038,11 @@
   (define (make-highlight)
     (let ([setup #f] [language #f] [highlights #f] [problems '()] [excluded #f]
           [parser #f] [tree #f] [source #f]
-          [pending '()] [done '()] [records '()] [drawn '()])
+          [pending '()] [done '()] [records '()] [drawn '()] [drawn-given #f])
       (define (reset!)
         (set! setup #f) (set! language #f) (set! highlights #f) (set! problems '()) (set! excluded #f)
-        (set! parser #f) (set! tree #f) (set! source #f) (set! pending '()) (set! done '()) (set! records '()))
+        (set! parser #f) (set! tree #f) (set! source #f) (set! pending '()) (set! done '()) (set! records '())
+        (set! drawn '()) (set! drawn-given #f))
       (define (start! file name files)
         (reset!)
         (set! setup (list file name files))
@@ -1069,6 +1070,9 @@
                [n (source-length new)])
           (set! source new)
           (set! tree parsed)
+          ;; The drawn ranges given are positions from before the edit,
+          ;; which views' anchors have moved since.
+          (set! drawn (ranges-moved drawn start old-end new-end))
           (set! records (fold-left (lambda (acc r)
                                      (let ([a (moved-start (car r) start old-end new-end)] [b (moved-end (cdr r) start old-end new-end)])
                                        (if (fx< a b) (cons (cons a b) acc) acc)))
@@ -1136,10 +1140,18 @@
                   (set! excluded (list-ref given 3))
                   (when source (whole!)))
                 (cond
-                  [(not tree) (parse! doc)]
-                  [(pair? since) (edit! doc since)])
-                (set! drawn (drawn-bytes doc (list-ref given 4)))
-                (if (null? pending)
-                    (values (list (list 0 0 '#())) (told problems) #f)
-                    (let ([answer (answer-piece!)])
-                      (values (list answer) (told problems) (pair? pending))))]))])))))
+                  ;; Ranges drawn while the query compiled and the text
+                  ;; parsed are in the input the next call reads, so the
+                  ;; first piece waits for it.
+                  [(not tree)
+                   (parse! doc)
+                   (values (list (list 0 0 '#())) (told problems) #t)]
+                  [else
+                   (when (pair? since) (edit! doc since))
+                   (unless (equal? drawn-given (list-ref given 4))
+                     (set! drawn-given (list-ref given 4))
+                     (set! drawn (drawn-bytes doc drawn-given)))
+                   (if (null? pending)
+                       (values (list (list 0 0 '#())) (told problems) #f)
+                       (let ([answer (answer-piece!)])
+                         (values (list answer) (told problems) (pair? pending))))])]))])))))

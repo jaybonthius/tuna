@@ -14,7 +14,7 @@
 (module %internals
   (make-highlighter-record highlighter-record? check-main-thread note-faces-changed! note-mode-set!
    note-mode-set-delaying-hooks! note-module-loaded! stop-stale! start-pending! stop! forget-buffer! send-edit!
-   update-buffer! update-all! stop-all!)
+   update-buffer! reread-input! update-all! stop-all!)
 
   (define main-thread (get-thread-id))
 
@@ -233,6 +233,10 @@
          (eq-hashtable-delete! failed buffer)
          (eq-hashtable-set! restarts buffer #t)])))
 
+  (define (reread-input! buffer)
+    (let ([s (eq-hashtable-ref running buffer #f)])
+      (when s (send-input! s))))
+
   (define (update-all!)
     (vector-for-each send-input! (hashtable-values running)))
 
@@ -270,6 +274,12 @@
      (unless (buffers:buffer? buffer)
        (assertion-violation 'syntax-highlighting:update! "not a buffer" buffer))
      (update-buffer! buffer)]))
+
+(define (input-changed! buffer)
+  (check-main-thread 'syntax-highlighting:input-changed!)
+  (unless (buffers:buffer? buffer)
+    (assertion-violation 'syntax-highlighting:input-changed! "not a buffer" buffer))
+  (reread-input! buffer))
 
 (define (%note-faces-changed!) (note-faces-changed!))
 

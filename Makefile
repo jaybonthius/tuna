@@ -37,7 +37,7 @@ $(PYTHON_GRAMMAR):
 	sh tests/build-grammar.sh libraries/chez-treesitter/vendor/tree-sitter-python \
 	  293fdc02038ee2bf0e2e206711b69c90ac0d413f $@
 
-$(filter run/tests/treesit-highlight/%,$(TRANSCRIPTS:%=run/%)): $(PYTHON_GRAMMAR)
+$(filter run/tests/treesit-highlight/% run/tests/treesit/%,$(TRANSCRIPTS:%=run/%)): $(PYTHON_GRAMMAR)
 
 # Every benchmark runs, so that one failure hides none of the others. Tuna
 # reports an error in init.ss and goes on, so a benchmark shows a crash by

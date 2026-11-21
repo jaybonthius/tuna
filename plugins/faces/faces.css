@@ -8,7 +8,8 @@
     color: var(--faces-comment-color, var(--tuna-gray-11));
   }
 
-  [data-face="comment.documentation"], :where([data-face^="comment.documentation."]) {
+  [data-face="comment.documentation"], :where([data-face^="comment.documentation."]),
+  [data-face="string.documentation"], :where([data-face^="string.documentation."]) {
     color: var(--faces-comment-documentation-color, var(--tuna-green-11));
   }
 
@@ -67,6 +68,18 @@
     color: var(--faces-variable-color, var(--tuna-text));
   }
 
+  [data-face="variable.member"], :where([data-face^="variable.member."]) {
+    color: var(--faces-variable-member-color, var(--faces-variable-color, var(--tuna-text)));
+  }
+
+  /* Emacs's default theme draws a definition sienna on light
+     backgrounds and light goldenrod on dark; brown is the palette's
+     nearest. */
+  [data-face="variable.definition"], :where([data-face^="variable.definition."]),
+  [data-face="variable.parameter"], :where([data-face^="variable.parameter."]) {
+    color: var(--faces-variable-definition-color, var(--tuna-brown-11));
+  }
+
   [data-face="property"], :where([data-face^="property."]) {
     color: var(--faces-property-color, var(--tuna-indigo-11));
   }
@@ -85,6 +98,12 @@
 
   [data-face$=".builtin"] {
     color: var(--faces-builtin-color, var(--tuna-cyan-11));
+  }
+
+  /* Emacs colours builtin types and exceptions as types, and a
+     constructor names a class. */
+  [data-face="type.builtin"], [data-face="constructor"], :where([data-face^="constructor."]) {
+    color: var(--faces-type-color, var(--tuna-teal-11));
   }
 
   [data-face="markup.heading"], :where([data-face^="markup.heading."]) {

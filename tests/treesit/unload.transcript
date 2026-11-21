@@ -1,0 +1,18 @@
+; Turning treesit off takes every tree-sitter colour away at the end of
+; the batch and stops the jobs; Python buffers keep their mode and keys.
+; Loading it again colours them again.
+> (define p (python "p.py" "def f(x):\n    return x\n"))
+> (faces p)
+(("def" keyword.function) ("f" function) ("x" variable.parameter) ("return" keyword.return))
+> (job-events)
+(start)
+> (unload-module! '(treesit))
+> (in-order (spans-of p) (modes:major-mode p) (job-events))
+(() python:mode (stop))
+> (map (lambda (name) (and (member name (loaded-modules)) #t)) '((treesit) (python) (syntax-highlighting)))
+(#f #t #t)
+> (eq? (table-ref modes:keymaps python:mode #f) python:keymap)
+#t
+> (import (treesit))
+> (in-order (faces p) (job-events))
+((("def" keyword.function) ("f" function) ("x" variable.parameter) ("return" keyword.return)) (start))

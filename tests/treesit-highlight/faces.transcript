@@ -39,6 +39,10 @@
 > (document:text doc)
 "x = 'a￼é'\ny = 1\nz = 2\n"
 > (define y (+ 1 (offset-of (document:text doc) "y")))
+; The first call loads the grammar, compiles the query and parses, and
+; answers nothing, so the ranges drawn meanwhile are coloured first.
+> (piece '())
+(0 0 #())
 > (piece (list (cons y (+ y 6))))
 (10 16 #((10 11 ((face . variable.definition))) (14 15 ((face . number)))))
 > (piece '())

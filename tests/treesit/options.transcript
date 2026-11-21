@@ -1,0 +1,66 @@
+; By default calls and uses are plain; a local setting in Python's mode
+; hook changes Python buffers only, not another mode's buffers of the
+; same language.
+> (define text "print(len(x))\n")
+> (define (pyish name) (let ([b (buffers:make name text)]) (modes:set-major-mode pyish:mode b) b))
+> (define p (python "p.py" text))
+> (define q (pyish "q"))
+> (list (faces p) (faces q))
+((("print" function.builtin) ("len" function.builtin)) (("print" function.builtin) ("len" function.builtin)))
+> (add-hook! python:mode-hook (lambda () (set-option-local! treesit:excluded-captures '(variable))))
+> (define r (python "r.py" text))
+> (define s (pyish "s"))
+> (list (faces r) (faces s) (faces p))
+((("print" function.builtin) ("(" punctuation.bracket) ("len" function.builtin) ("(" punctuation.bracket) ("))" punctuation.bracket)) (("print" function.builtin) ("len" function.builtin)) (("print" function.builtin) ("len" function.builtin)))
+; A change of the option while buffers are open highlights them again.
+> (set-option! treesit:excluded-captures (cons 'function.builtin (option-default treesit:excluded-captures)))
+> (list (faces p) (faces q) (faces r) (faces s))
+(() () (("print" function.builtin) ("(" punctuation.bracket) ("len" function.builtin) ("(" punctuation.bracket) ("))" punctuation.bracket)) ())
+> (remove-option! treesit:excluded-captures)
+> (list (faces p) (faces q))
+((("print" function.builtin) ("len" function.builtin)) (("print" function.builtin) ("len" function.builtin)))
+> (buffers:with-buffer r (set-option-local! treesit:excluded-captures '()))
+> (list (faces p) (faces r))
+((("print" function.builtin) ("len" function.builtin)) (("print" function.builtin) ("(" punctuation.bracket) ("len" function.builtin) ("(" punctuation.bracket) ("x" variable) ("))" punctuation.bracket)))
+; A user's file in the default folder, starting ; extends, is used with
+; no setting, after Python's and Tuna's own, so its patterns win.
+> (write-file (string-append home "/.config/tuna/queries/python/highlights.scm")
+    "; extends\n((identifier) @keyword.debug (#eq? @keyword.debug \"print\"))\n")
+> (define u (python "u.py" text))
+> (faces u)
+(("print" keyword.debug) ("(" punctuation.bracket) ("len" function.builtin) ("(" punctuation.bracket) ("))" punctuation.bracket))
+; Another folder in the option is searched instead, and open buffers
+; read it at once.
+> (write-file (string-append home "/mine/python/highlights.scm")
+    "; extends\n((identifier) @constant (#eq? @constant \"print\"))\n")
+> (set-option! treesit:query-folders (list (string-append home "/mine")))
+> (faces u)
+(("print" constant) ("(" punctuation.bracket) ("len" function.builtin) ("(" punctuation.bracket) ("))" punctuation.bracket))
+> (set-option! treesit:query-folders '("~/.config/tuna/queries/"))
+> (faces u)
+(("print" keyword.debug) ("(" punctuation.bracket) ("len" function.builtin) ("(" punctuation.bracket) ("))" punctuation.bracket))
+; A query file edited on disk is read again when the buffer's mode is set
+; again, which restarts its job; until then the job keeps what it read.
+> (job-events)
+(start start start start start)
+> (write-file (string-append home "/.config/tuna/queries/python/highlights.scm")
+    "; extends\n((identifier) @string.special (#eq? @string.special \"print\"))\n")
+> (syntax-highlighting:update! u)
+> (faces u)
+(("print" keyword.debug) ("(" punctuation.bracket) ("len" function.builtin) ("(" punctuation.bracket) ("))" punctuation.bracket))
+> (modes:set-major-mode python:mode u)
+> (faces u)
+(("print" string.special) ("(" punctuation.bracket) ("len" function.builtin) ("(" punctuation.bracket) ("))" punctuation.bracket))
+> (job-events)
+(stop start)
+> (auto-mode:normal-mode u)
+> (in-order (modes:major-mode u) (faces u) (job-events))
+(python:mode (("print" string.special) ("(" punctuation.bracket) ("len" function.builtin) ("(" punctuation.bracket) ("))" punctuation.bracket)) (stop start))
+; A user's file that does not compile is left out, and told once, with
+; its row and column.
+> (write-file (string-append home "/.config/tuna/queries/python/highlights.scm")
+    "; extends\n(no_such_node) @error\n")
+> (define v (python "v.py" text))
+> (define w (python "w.py" text))
+> (in-order (faces v) (faces w) (told-messages))
+((("print" function.builtin) ("(" punctuation.bracket) ("len" function.builtin) ("(" punctuation.bracket) ("))" punctuation.bracket)) (("print" function.builtin) ("(" punctuation.bracket) ("len" function.builtin) ("(" punctuation.bracket) ("))" punctuation.bracket)) ("Python highlights query: invalid node type at row 2, column 1 (~/.config/tuna/queries/python/highlights.scm)"))

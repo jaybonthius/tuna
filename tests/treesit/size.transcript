@@ -1,0 +1,31 @@
+; No size limit: a file of 42 MB, over Emacs's 40 MB, is parsed, and
+; what views has drawn is coloured first.
+> (define b (buffers:make "huge.py" (grown-text 42000000)))
+> (let ([doc (buffers:document b)]) (document:offset doc (document:length doc) (document:unit bytes)))
+42000266
+> (define v (views:make b))
+> (begin (watch! b) (show! desktop v) (modes:set-major-mode python:mode b))
+> (let loop ([n 0]) (when (and (< n 3000) (null? set-log)) (sleep-for 0.01) (loop (+ n 1))))
+> (map (lambda (s) (list (line-of b (car s)) (line-of b (- (cadr s) 1)))) (sets))
+((1 101))
+> (drawn-lines v)
+((1 101))
+> (faces-now b 0 (line-start b 3))
+(("#!/usr/bin/env python3" comment) ("\"\"\"A sample of Python for Tuna's highlighting tests.\"\"\"" string.documentation))
+> (buffers:kill! b)
+#t
+; tree-sitter counts bytes in 32 bits, so a text of more than 4 GiB is
+; plain, and the user is told once. The size is the one thing that
+; stands in here.
+> (define huge (lambda (bytes buffer) (expt 2 32)))
+> ((eval-in-module '(lambda (p) (advice-add! %text-bytes p)) '(treesit)) huge)
+> (define c (python "c.py" "x = 1\n"))
+> (in-order (faces c) (told-messages))
+(() ("Tree-sitter cannot parse c.py: its text is more than 4 GiB"))
+> (syntax-highlighting:update! c)
+> (in-order (faces c) (told-messages))
+(() ())
+> ((eval-in-module '(lambda (p) (advice-remove! %text-bytes p)) '(treesit)) huge)
+> (syntax-highlighting:update! c)
+> (in-order (faces c) (told-messages))
+((("x" variable.definition) ("1" number)) ())

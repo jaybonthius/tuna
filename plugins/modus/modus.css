@@ -219,6 +219,14 @@
     /* scheme-mode colours a library's name as a type. */
     --faces-module-color: var(--modus-type);
     --faces-constant-color: var(--modus-constant);
+    --faces-variable-definition-color: var(--modus-variable);
+    --faces-variable-color: var(--modus-variable-use);
+    --faces-variable-member-color: var(--modus-property);
+    --faces-function-call-color: var(--modus-fnname-call);
+    --faces-string-regexp-color: var(--modus-string);
+    --faces-attribute-color: var(--modus-type);
+    --faces-property-color: var(--modus-property);
+    --faces-tag-color: var(--modus-fnname);
     --faces-markup-heading-color: var(--modus-fg-heading-1);
     --faces-markup-raw-color: var(--modus-fg-prose-code);
     --minibuffer-prompt-color: var(--modus-fg-prompt);

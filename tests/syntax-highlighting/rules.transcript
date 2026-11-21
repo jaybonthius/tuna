@@ -78,6 +78,21 @@
 (("a.mk" (4 ()) 1) ("a.mk" (5 ()) 1) ("b.mk" (1 ()) 0) ("b.mk" (2 ()) 0))
 > (syntax-highlighting:update! 'a)
 ! syntax-highlighting:update!: not a buffer with irritant a
+; input-changed! reads a running job's input again, and sends it only
+; when it changed, as update! does.
+> (buffers:with-buffer a (set-option-local! marks:mark "x"))
+> (syntax-highlighting:input-changed! a)
+> (list (faces a) (marks:inputs))
+(() (("a.mk" (5 ()) 1) ("a.mk" (6 ()) 1)))
+> (syntax-highlighting:input-changed! a)
+> (marks:inputs)
+(("a.mk" (6 ()) 1))
+> (buffers:with-buffer a (set-option-local! marks:mark "#"))
+> (syntax-highlighting:input-changed! a)
+> (list (faces a) (marks:inputs))
+((("#onex!" comment) ("#2" comment) ("#three" comment)) (("a.mk" (6 ()) 1) ("a.mk" (7 ()) 1)))
+> (syntax-highlighting:input-changed! 'a)
+! syntax-highlighting:input-changed!: not a buffer with irritant a
 ; A buffer's highlighter is the entry of the first mode in its mode's
 ; ancestry that has one, else its mode's language's: a derived mode is
 ; highlighted through its parent's language, and a mode's own entry wins
@@ -154,6 +169,11 @@
 > (syntax-highlighting:update! r)
 > (job-events)
 ! (syntax-highlighting) marks:input: the input raised
+()
+; input-changed! leaves a buffer whose input raised as it is: no job
+; starts, and nothing is reported again.
+> (syntax-highlighting:input-changed! r)
+> (begin (sleep-for 0.2) (job-events))
 ()
 > (buffers:with-buffer r (set-option-local! marks:input-raises? #f))
 > (syntax-highlighting:update! r)
