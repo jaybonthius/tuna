@@ -1,0 +1,94 @@
+; Text written to a port from echo-area:open-output-port on the main
+; thread joins the echo area's printed text: writes since the last
+; message show as one message, and the log joins its last line until a
+; line break.
+> (define port (echo-area:open-output-port))
+> (echo-area:message! "Before")
+> (parameterize ([current-output-port port])
+    (display "out")
+    (write 7))
+> (echo-area:current-message)
+"out7"
+> (messages)
+"Before\nout7\n"
+> (port-position port)
+4
+> (display "\nnext" port)
+> (list (echo-area:current-message) (messages) (port-position port))
+("out7\nnext" "Before\nout7\nnext\n" 9)
+; A message ends the printed message: the next write starts a new one,
+; and a new log line after the partial one.
+> (echo-area:message! "Middle")
+> (display "after" port)
+> (list (echo-area:current-message) (echo-area:current-face) (messages))
+("after" #f "Before\nout7\nnext\nMiddle\nafter\n")
+; So does the next typed key, which clears the echo area. Two equal
+; prints log as two lines; once a later message ends the second, it
+; counts as a repeat of the first, as a message does.
+> (press! "C-g")
+> (display "a" port)
+> (press! "C-a")
+> (display "a" port)
+> (list (echo-area:current-message) (messages))
+("a" "Before\nout7\nnext\nMiddle\nafter\nQuit\na\na\n")
+> (echo-area:message! "m")
+> (messages)
+"Before\nout7\nnext\nMiddle\nafter\nQuit\na [2 times]\nm\n"
+; A printed line that a line break ended is not a repeat.
+> (display "m\n" port)
+> (echo-area:message! "z")
+> (messages)
+"Before\nout7\nnext\nMiddle\nafter\nQuit\na [2 times]\nm\nm\nz\n"
+; Reports queued before a write show before it, so writes, messages and
+; reports appear in the order they happened.
+> (report (make-message-condition "Disk full"))
+! Disk full
+> (display "later" port)
+> (list (echo-area:current-message) (messages))
+("later" "Before\nout7\nnext\nMiddle\nafter\nQuit\na [2 times]\nm\nm\nz\nDisk full\nlater\n")
+; A report ends the printed message, as a message does.
+> (report (make-message-condition "Disk full again"))
+! Disk full again
+> (echo-area:message! "")
+> (messages)
+"Before\nout7\nnext\nMiddle\nafter\nQuit\na [2 times]\nm\nm\nz\nDisk full\nlater\nDisk full again\n"
+; A fresh port starts at the start of a line, and fresh-line writes a line
+; break only after text that has none.
+> (define fresh (echo-area:open-output-port))
+> (fresh-line fresh)
+> (port-position fresh)
+0
+> (display "x" fresh)
+> (fresh-line fresh)
+> (fresh-line fresh)
+> (list (port-position fresh) (echo-area:current-message))
+(2 "x\n")
+; With echo-area:log-max 0 nothing is logged; the echo area shows it.
+> (echo-area:message! "")
+> (define before (messages))
+> (with-options ([echo-area:log-max 0]) (display "quiet" port))
+> (list (echo-area:current-message) (string=? before (messages)))
+("quiet" #t)
+; Text written on another thread goes to Tuna's standard output.
+> (echo-area:message! "")
+> (on-thread (lambda () (display "from a thread\n" port) (flush-output-port port) 'done))
+from a thread
+done
+> (echo-area:current-message)
+#f
+; Only the main thread's writes are counted.
+> (define counted (echo-area:open-output-port))
+> (on-thread (lambda () (display "elsewhere\n" counted) (flush-output-port counted) (port-position counted)))
+elsewhere
+0
+; A closed port takes no more writes.
+> (close-port counted)
+> (raised (lambda () (display "late" counted)))
+(display "not permitted on closed port ~s")
+> (echo-area:current-message)
+#f
+; The port cannot be positioned, and takes no other operation.
+> (raised (lambda () (set-port-position! port 0)))
+(echo-area:open-output-port "the port cannot be positioned")
+> (port-name port)
+"echo area"

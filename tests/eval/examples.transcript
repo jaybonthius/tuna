@@ -1,0 +1,16 @@
+; The page's examples.
+> (eval:expression "(values 1 \"two\")" #f)
+> (echo-area:current-message)
+"1\n\"two\""
+> (eval:show-result (current-output-port) (list 42 (void) "two"))
+42
+"two"
+; Arguments are checked where they cross into the plugin.
+> (eval:show-result 'port '())
+! eval:show-result: not a textual output port with irritant port
+> (eval:region (buffers:make "r" "1") 0 9)
+! eval:region: not a range of the buffer with irritant (0 9)
+> (eval:buffer "notes")
+! eval:buffer: not a buffer with irritant "notes"
+> (eval:expression 'x #f)
+! eval:expression: not a string with irritant x

@@ -66,14 +66,16 @@
   (plugin-only #t))
 
 (module %internals
-  (check-main-thread echo-buffer messages-buffer shown? shown-spans show! log! queue-report! flushing? flush-reports! report-text
-   make-queued-report
+  (check-main-thread main-thread? echo-buffer messages-buffer shown? shown-spans show! log! queue-report! flushing? flush-reports! report-text
+   make-queued-report print! end-printed!
    echo-text-prompt echo-text-keys echo-text-waiting? shown-echo uncover-echo! follow-key! follow-echoes! forget-echo!)
 
   (define main-thread (get-thread-id))
 
+  (define (main-thread?) (fx= (get-thread-id) main-thread))
+
   (define (check-main-thread who)
-    (unless (fx= (get-thread-id) main-thread)
+    (unless (main-thread?)
       (assertion-violation who "not on the main thread")))
 
   (define echo-buffer
@@ -244,6 +246,12 @@
            (if (and (fixnum? count) (fx> count 1)) count 0))]
         [else 0])))
 
+  (define (trim-log! b max)
+    (let* ([doc (buffers:document b)] [end (fx- (document:length doc) 1)]
+           [lines (fx- (document:line doc end) 1)])
+      (when (> lines max)
+        (buffers:splice! b 1 (document:line-start doc (+ (- lines max) 1)) (document:from-datum "")))))
+
   ;; As Emacs does, a repeated message is found by reading the log's last
   ;; entry, so a count survives a reload of the plugin.
   (define (log! text)
@@ -257,10 +265,51 @@
               (buffers:splice! b (fxmax start 1) end
                 (document:from-datum (format "~a [~a times]\n" text (fx+ times 1))))
               (buffers:splice! b end end (document:from-datum (string-append text "\n"))))
-          (let* ([doc (buffers:document b)] [end (fx- (document:length doc) 1)]
-                 [lines (fx- (document:line doc end) 1)])
-            (when (> lines max)
-              (buffers:splice! b 1 (document:line-start doc (+ (- lines max) 1)) (document:from-datum ""))))))))
+          (trim-log! b max)))))
+
+  (define printing? #f)
+
+  ;; The log keeps a line break after an unended printed line all the
+  ;; same, so a message never has to end it, and a write goes in before it.
+  (define open-log #f)
+
+  (define (print! text)
+    (if printing?
+        (let ([end (fx- (document:length (buffers:document echo-buffer)) 1)])
+          (buffers:splice! echo-buffer end end (document:from-datum text)))
+        (begin
+          (show! text #f '())
+          (set! printing? #t)))
+    (let ([max (log-max)])
+      (when (> max 0)
+        (let* ([b (messages-buffer)] [end (fx- (document:length (buffers:document b)) 1)]
+               [n (string-length text)] [ends-line? (char=? (string-ref text (fx- n 1)) #\newline)])
+          (if (eq? open-log b)
+              (let ([joined (if ends-line? (substring text 0 (fx- n 1)) text)])
+                (unless (string=? joined "")
+                  (buffers:splice! b (fx- end 1) (fx- end 1) (document:from-datum joined))))
+              (buffers:splice! b end end (document:from-datum (if ends-line? text (string-append text "\n")))))
+          (set! open-log (and (not ends-line?) b))
+          (trim-log! b max)))))
+
+  ;; An ended printed line counts as a repeat of the line before it, as a
+  ;; message does, and Emacs checks for the repeat only when it ends the
+  ;; line.
+  (define (end-printed!)
+    (set! printing? #f)
+    (let ([b open-log])
+      (set! open-log #f)
+      (when (and b (buffers:live? b))
+        (let* ([doc (buffers:document b)] [end (fx- (document:length doc) 1)]
+               [lines (fx- (document:line doc end) 1)])
+          (when (fx>= lines 2)
+            (let* ([start (fxmax (document:line-start doc lines) 1)]
+                   [before (fxmax (document:line-start doc (fx- lines 1)) 1)]
+                   [text (document:text doc start (fx- end 1))]
+                   [times (times-logged (document:text doc before start) text)])
+              (when (fx> times 0)
+                (buffers:splice! b before end
+                  (document:from-datum (format "~a [~a times]\n" text (fx+ times 1)))))))))))
 
   ;; Report runs on whichever thread raised, so the queue is a box changed
   ;; only by compare-and-swap.
@@ -356,9 +405,58 @@
     (assertion-violation 'echo-area:message! "not a string" format-string))
   (unless flushing? (flush-reports!))
   (let ([text (apply format format-string vs)])
+    (end-printed!)
     (show! text (face) (spans))
     (unless (string=? text "") (log! (string-append (%log-prefix) text)))
     (void)))
+
+(define (%print text)
+  (unless flushing? (flush-reports!))
+  (print! text))
+
+;; The port keeps no buffer, so its handler sees every write as it
+;; happens, in order with messages and reports, and a write from another
+;; thread never touches a buffer the main thread is writing. Only the main
+;; thread counts and keeps the line state, since a count shared by threads
+;; would lose writes. Chez keeps no line state for a generic port, so the
+;; handler keeps it; otherwise fresh-line, which report calls on the
+;; current output port, would log an empty line before every report.
+(define (open-output-port)
+  (let* ([count 0]
+         [port (make-output-port
+                 (lambda (message . args)
+                   (case message
+                     [(write-char)
+                      (let ([c (car args)])
+                        (if (main-thread?)
+                            (begin
+                              (set! count (+ count 1))
+                              (set-port-bol! (cadr args) (char=? c #\newline))
+                              (%print (string c)))
+                            (put-char (console-output-port) c)))]
+                     [(block-write)
+                      (let ([n (caddr args)])
+                        (when (fx> n 0)
+                          (let ([text (substring (cadr args) 0 n)])
+                            (if (main-thread?)
+                                (begin
+                                  (set! count (+ count n))
+                                  (set-port-bol! (car args) (char=? (string-ref text (fx- n 1)) #\newline))
+                                  (%print text))
+                                (put-string (console-output-port) text)))))]
+                     [(file-position)
+                      (if (null? (cdr args))
+                          count
+                          (assertion-violation 'echo-area:open-output-port "the port cannot be positioned" (cadr args)))]
+                     [(flush-output-port)
+                      (unless (main-thread?) (flush-output-port (console-output-port)))]
+                     [(clear-output-port) (void)]
+                     [(close-port) (mark-port-closed! (car args))]
+                     [(port-name) "echo area"]
+                     [else (assertion-violation 'echo-area:open-output-port "not an operation of the port" message)]))
+                 "")])
+    (set-port-bol! port #t)
+    port))
 
 (define (current-message)
   (check-main-thread 'echo-area:current-message)
@@ -395,8 +493,9 @@
 ;; Cleared before the key's command runs, so the command's own message
 ;; shows.
 (define (%clear-on-key press client key)
-  (when (and shown? (string? key))
-    (show! "" #f '()))
+  (when (string? key)
+    (end-printed!)
+    (when shown? (show! "" #f '())))
   (press client key))
 
 (define (keys-text client)

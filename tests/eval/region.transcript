@@ -1,0 +1,123 @@
+; C-c C-r in a Scheme buffer evaluates the forms of the region in order
+; and shows the last one's value; point and the region stay.
+> (define code (show! (buffers:make "code.ss" "(define (f x) (* x 2))\n\n(+ 40 2)\n\n(f 5)\n")))
+> (modes:set-major-mode chez-scheme:mode code)
+> (at! code "(define" 0)
+> (views:set-mark! (view) (position-of code "\n\n(+" 0))
+> (press! "C-c" "C-r")
+> (message)
+"f"
+> (at! code "(+ 40" 0)
+> (views:set-mark! (view) (position-of code "(f 5)" 5))
+> (define spots (list (views:point (view)) (views:mark (view))))
+> (press! "C-c" "C-r")
+> (list (message) (log-tail 1) (equal? spots (list (views:point (view)) (views:mark (view)))))
+("10" ("10") #t)
+; A prefix argument changes nothing.
+> (press! "C-u" "C-c" "C-r")
+> (list (message) (point-text))
+("10" "(define (f x) (* x 2))\n\n-!-(+ 40 2)\n\n(f 5)\n")
+; What the forms write shows; void is left out, and No value is not
+; written after output.
+> (define out (show! (buffers:make "out.ss" "(display \"x\")\n")))
+> (modes:set-major-mode chez-scheme:mode out)
+> (views:set-point! (view) 1)
+> (views:set-mark! (view) (position-of out "\n" 0))
+> (press! "C-c" "C-r")
+> (message)
+"x"
+; With no mark there is no region.
+> (views:set-mark! (view) #f)
+> (press! "C-c" "C-r")
+! eval:region: the mark is not set, so there is no region
+> (message)
+"the mark is not set, so there is no region"
+; An error stops the forms: those after it do not run.
+> (define bad (show! (buffers:make "bad.ss" "(car 1) (define y 2)")))
+> (modes:set-major-mode chez-scheme:mode bad)
+> (views:set-point! (view) 1)
+> (views:set-mark! (view) (position-of bad "2)" 2))
+> (press! "C-c" "C-r")
+! car: 1 is not a pair
+> (list (message) (guard (c [#t 'unbound]) (eval 'y)))
+("1 is not a pair" unbound)
+; A read error counts its position from the region's start.
+> (define open (show! (buffers:make "open.ss" "(+ 1")))
+> (modes:set-major-mode chez-scheme:mode open)
+> (views:set-point! (view) 1)
+> (views:set-mark! (view) (position-of open "1" 1))
+> (press! "C-c" "C-r")
+! read: unexpected end-of-file reading list at char 0 of #<input port string>
+> (message)
+"unexpected end-of-file reading list at char 0 of #<input port string>"
+; A definition shows its name, after any plugin's prefix.
+> (define cmd (show! (buffers:make "cmd.ss" "(commands:define-command (say-hello) \"Says hello.\" (echo-area:message! \"Hello\"))\n")))
+> (modes:set-major-mode chez-scheme:mode cmd)
+> (views:set-point! (view) 1)
+> (views:set-mark! (view) (position-of cmd "\n" 0))
+> (press! "C-c" "C-r")
+> (message)
+"say-hello"
+; In a loaded module's file, the region evaluates in the module: a
+; define of one of its names redefines it.
+> (import (greet))
+> (define greet-file (show! (files:visit (at ".config/tuna/lib/greet.sls"))))
+> (begin (buffers:insert! greet-file (- (document:length (buffers:document greet-file)) 1) "(define (text n) (string-append \"Hi, \" n))\n") (void))
+> (at! greet-file "(define (text n) (string-append \"Hi" 0)
+> (views:set-mark! (view) (position-of greet-file "n))\n" 4))
+> (press! "C-c" "C-r")
+> (list (message) (greet:text "a"))
+("text" "Hi, a")
+; e in the actions on a region runs eval:region on it, as C-c C-r does.
+> (begin (show! code) (void))
+> (at! code "(+ 40" 0)
+> (views:set-mark! (view) (position-of code "(f 5)" 5))
+> (define a (act! "C-."))
+> (press! "e")
+> (finish a)
+#t
+> (message)
+"10"
+; On an expression in a Scheme buffer, e and RET evaluate it.
+> (define nested (show! (buffers:make "nested.ss" "(list (+ 1 2))\n")))
+> (modes:set-major-mode chez-scheme:mode nested)
+> (at! nested "(+ 1" 0)
+> (define a (act! "C-."))
+> (press! "e")
+> (finish a)
+#t
+> (message)
+"3"
+> (echo-area:message! "")
+> (finish (act! "C-;"))
+#t
+> (message)
+"3"
+; On a top-level definition, e evaluates it and shows its name.
+> (begin (show! code) (void))
+> (views:set-mark! (view) #f)
+> (at! code "(define" 0)
+> (define a (act! "C-."))
+> (press! "e")
+> (finish a)
+#t
+> (message)
+"f"
+; A click on the echo area shows *Messages*, which holds the result.
+> (memq (buffers:find "*Messages*") (map views:buffer (layout:views)))
+#f
+> (click-at! (echo-view) 1)
+> (list (and (memq (buffers:find "*Messages*") (map views:buffer (layout:views))) #t) (log-tail 1))
+(#t ("f"))
+; On a Scheme name, e evaluates the name and shows its value.
+> (define names (show! (buffers:make "names.ss" "(list chez-scheme:mode)\n")))
+> (modes:set-major-mode chez-scheme:mode names)
+> (at! names "mode)" 1)
+> (define a (act! "C-."))
+> (keys:reading-prompt client)
+"Act on chez-scheme:mode: "
+> (press! "e")
+> (finish a)
+#t
+> (message)
+"chez-scheme:mode"
