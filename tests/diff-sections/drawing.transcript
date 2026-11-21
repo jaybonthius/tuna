@@ -1,0 +1,118 @@
+; A file section's heading is its status word, padded to 11 characters,
+; and its path; its body is a hunk section per hunk, whose heading is
+; the @@ line and whose body is the lines, as text.
+> (define files (parse
+    "diff --git a/a.py b/a.py\nindex 1..2 100644\n--- a/a.py\n+++ b/a.py\n@@ -1,3 +1,3 @@ def\n one\n-two\n+TWO\n three\n@@ -9 +9 @@\n-nine\n+NINE\n"
+    "diff --git a/old.txt b/new.txt\nsimilarity index 90%\nrename from old.txt\nrename to new.txt\nindex 1..2 100644\n--- a/old.txt\n+++ b/new.txt\n@@ -1 +1 @@\n-o\n+n\n"
+    "diff --git a/n.txt b/n.txt\nnew file mode 100644\nindex 0000000..3\n--- /dev/null\n+++ b/n.txt\n@@ -0,0 +1 @@\n+hello\n\\ No newline at end of file\n"
+    "diff --git a/x.bin b/x.bin\nindex 1..2 100644\nBinary files a/x.bin and b/x.bin differ\n"
+    "diff --git \"a/caf\\351.txt\" \"b/caf\\351.txt\"\ndeleted file mode 100644\nindex 4..0000000\n--- \"a/caf\\351.txt\"\n+++ /dev/null\n@@ -1 +0,0 @@\n-cr" #xe8 "me\n"))
+> (define b (apply show-sections! "*diff*" (map diff-sections:file-section files)))
+> (display (text b))
+modified   a.py
+@@ -1,3 +1,3 @@ def
+ one
+-two
++TWO
+ three
+@@ -9 +9 @@
+-nine
++NINE
+renamed    old.txt -> new.txt
+@@ -1 +1 @@
+-o
++n
+new file   n.txt
+@@ -0,0 +1 @@
++hello
+modified   x.bin
+Binary files differ
+deleted    caf￼.txt
+@@ -1 +0,0 @@
+-cr￼me
+> (map diff-sections:status-word files)
+("modified" "renamed" "new file" "modified" "deleted")
+; The section keeps its file diff, the hunk section its hunk.
+> (define a-file (ui:find-section b '((file . "a.py"))))
+> (equal? (diff-sections:file a-file) (car files))
+#t
+> (define a-hunk (ui:find-section b '((hunk . "@@ -1,3 +1,3 @@ def") (file . "a.py"))))
+> (equal? (diff-sections:hunk a-hunk) (car (diff:file-hunks (car files))))
+#t
+> (equal? (diff-sections:file a-hunk b) (car files))
+#t
+> (diff-sections:file a-hunk)
+! diff-sections:file: a hunk section's file needs its buffer with irritant #f
+> (diff-sections:hunk a-file)
+! diff-sections:hunk: not a hunk section with irritant #<node ui:%section 1>
+; A byte that is not UTF-8 is a raw-byte atom, its byte the line's own.
+> (raw-bytes b)
+(#(document:raw-byte ((byte . 233))) #(document:raw-byte ((byte . 232))))
+; Rebuilding from the same diffs edits nothing, a combined diff's
+; columns included.
+> (define conflicted (parse "diff --cc f.txt\nindex 1,2..0\n--- a/f.txt\n+++ b/f.txt\n@@@ -1,3 -1,3 +1,4 @@@\n  one\n++<<<<<<< HEAD\n +MINE\n+ OTHER\n  three\n"))
+> (define (rebuild-edits! buffer datums)
+    (let ([edits 0])
+      (define (count! edited edit) (when (eq? edited buffer) (set! edits (+ edits 1))))
+      (add-hook! buffers:after-edit count!)
+      (buffers:reconcile! buffer (document:token (buffers:document buffer) 0) datums)
+      (remove-hook! buffers:after-edit count!)
+      edits))
+> (rebuild-edits! b (map diff-sections:file-section files))
+0
+> (define cc (show-sections! "*cc*" (diff-sections:file-section (car conflicted))))
+> (rebuild-edits! cc (list (diff-sections:file-section (car conflicted))))
+0
+> (views:set-buffer! (view) b)
+; Added and removed lines are drawn in diff.plus and diff.minus, context
+; lines in diff-sections.context; the no-newline marker is drawn, not
+; text.
+> (define drawn (html (view)))
+> (map (lambda (face) (occurrences drawn (string-append "data-face=\"" face "\""))) '("diff.plus" "diff.minus" "diff-sections.context"))
+(4 4 2)
+> (occurrences drawn "No newline at end of file")
+1
+> (occurrences (text b) "No newline")
+0
+; The gutter of line numbers is drawn only when asked for.
+> (occurrences drawn "diff-sections-numbers")
+0
+> (set-option! diff-sections:line-numbers? #t)
+> (occurrences (html (view)) "diff-sections-numbers")
+10
+> (remove-option! diff-sections:line-numbers?)
+; A file section takes extra attributes, such as its first visibility.
+> (define hidden-file (diff-sections:file-section (car files) '((hidden . #t))))
+> (define c (show-sections! "*hidden*" hidden-file))
+> (ui:section-hidden? (view) (ui:find-section c '((file . "a.py"))))
+#t
+> (diff-sections:file-section 'x)
+! diff-sections:file-section: not a file diff with irritant x
+; A rename's old path that is not UTF-8 is drawn with its byte.
+> (define moved (parse "diff --git \"a/old\\351.txt\" b/new.txt\nsimilarity index 100%\nrename from \"old\\351.txt\"\nrename to new.txt\n"))
+> (diff:file-old-path-bytes (car moved))
+#vu8(111 108 100 233 46 116 120 116)
+> (define m (show-sections! "*moved*" (diff-sections:file-section (car moved))))
+> (display (text m))
+renamed    old￼.txt -> new.txt
+> (raw-bytes m)
+(#(document:raw-byte ((byte . 233))))
+; A hunk added to a hidden file section stays hidden with it.
+> (define one-hunk (parse "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n"))
+> (define two-hunks (parse "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1,3 +1,3 @@\n one\n-two\n+TWO\n three\n@@ -20,3 +20,3 @@\n x\n-y\n+Y\n z\n"))
+> (define grown (show-sections! "*grown*" (diff-sections:file-section (car one-hunk))))
+> (ui:hide-section! (view) (ui:find-section grown '((file . "a.py"))))
+> (buffers:reconcile! grown (document:token (buffers:document grown) 0) (list (diff-sections:file-section (car two-hunks))))
+> (define (shown-lines v)
+    (let* ([doc (buffers:document (views:buffer v))] [n (document:length doc)])
+      (let loop ([p 0] [line '()] [acc '()])
+        (cond
+          [(= p n) (reverse acc)]
+          [(char? (document:token doc p))
+           (let ([c (document:token doc p)])
+             (if (char=? c #\newline)
+                 (loop (+ p 1) '() (if (and (pair? line) (not (views:folded? v (- p 1)))) (cons (list->string (reverse line)) acc) acc))
+                 (loop (+ p 1) (cons c line) acc)))]
+          [else (loop (+ p 1) line acc)]))))
+> (list (ui:section-hidden? (view) (ui:find-section grown '((file . "a.py")))) (shown-lines (view)))
+(#t ("modified   a.py"))

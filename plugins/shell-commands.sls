@@ -54,7 +54,7 @@
       (views:set-point! v (fx- (document:length (buffers:document b)) 1)))
     b))
 
-(define (save-buffers) (files:save-some-buffers))
+(define (save-buffers) (files:save-some-buffers (lambda (buffer) #t)))
 
 (commands:define-command (compile [line (%read-line "Compile command: " (compile-command) compile-history)])
   "Runs LINE in the buffer shell-commands:compile-buffer-name names, after saving buffers, and offers it the next time."

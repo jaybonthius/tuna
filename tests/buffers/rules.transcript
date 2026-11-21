@@ -519,6 +519,11 @@ mark-keys
 > (reconcile! '((md:para ((key . b)) "beta\n") (md:para ((key . a) (x . 1)) "alpha!\n")))
 > (buffers:version s)
 4
+; Text split into other strings, at any depth, is the same text.
+> (define split (fresh '(md:doc () (md:para () "Some " (md:link () "bold") " text\n"))))
+> (buffers:reconcile! split (document:token (buffers:document split) 0) '((md:para () "So" "me " (md:link () "bo" "" "ld") " text" "\n")))
+> (buffers:version split)
+0
 > (reconcile! '("text among blocks"))
 ! buffers:reconcile!: the content does not fit here
 > (buffers:reconcile! s (document:token (document:from-datum '(md:doc ())) 0) '())

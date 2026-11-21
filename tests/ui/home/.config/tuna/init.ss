@@ -2,6 +2,7 @@
 (use-plugin ui)
 (use-plugin editing)
 (use-plugin layout)
+(use-plugin layout-split)
 (use-plugin files)
 (use-plugin undo)
 

@@ -1,0 +1,46 @@
+; Configuration, remotes, upstreams, the push remote and the user.
+> (sample-repository! "repo")
+> (define repo (git:find-repository (at "repo")))
+> (git:config repo "remote.origin.url")
+"../origin-repo.git"
+> (git:config repo "no.such-key")
+#f
+> (git:set-config! repo "tuna.test" "yes")
+> (git:config repo "tuna.test")
+"yes"
+> (git:set-config! repo "tuna.test" #f)
+> (git:config repo "tuna.test")
+#f
+> (git:set-config! repo "tuna.test" #f)
+> (git:remotes repo)
+("origin")
+> (sh "cd repo && git remote add fork ../origin-repo.git && git fetch -q fork")
+> (git:remotes repo)
+("fork" "origin")
+> (git:remote-branches repo)
+("fork/main" "origin/main")
+> (git:upstream repo "main")
+"origin/main"
+> (git:upstream repo "nowhere")
+#f
+> (git:push-remote repo "main")
+#f
+> (git:set-config! repo "remote.pushDefault" "origin")
+> (git:push-remote repo "main")
+"origin"
+> (git:set-config! repo "branch.main.pushRemote" "fork")
+> (git:push-remote repo "main")
+"fork"
+> (git:user repo)
+#f
+#f
+> (sh "cd repo && git config user.name Ada && git config user.email ada@example.org")
+> (git:user repo)
+"Ada"
+"ada@example.org"
+; git:init makes the folder and a repository in it, logged as a command.
+> (define made (git:init (at "fresh/new")))
+> (equal? (git:repository-root made) (at "fresh/new/"))
+#t
+> (log-lines made)
+((0 ("init")))

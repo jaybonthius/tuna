@@ -1,0 +1,30 @@
+; A reload of with-editor keeps which buffer each waiting program is
+; answered from: C-c C-c in a message buffer opened before the reload
+; finishes the commit, and killing one cancels it.
+> (import (tuna eval))
+> (define (reload! name) (eval-file (string-append (getenv "TUNA_LIBRARY") "/" name ".sls")))
+> (sh "git init -q -b main repo && cd repo && echo a > a.txt && git add a.txt")
+> (define repo (git:find-repository (at "repo")))
+> (define (commit!)
+    (git:start repo '("commit") (lambda (c) #f)
+               (processes:options [environment (with-editor:environment "GIT_EDITOR")]) (with-editor:output-wrapper)))
+> (define commit (commit!))
+> (wait-until (lambda () (equal? (shown) "COMMIT_EDITMSG")))
+> (define message (views:buffer (layout:selected-view)))
+> (reload! "with-editor")
+> (buffers:replace! message 1 1 "First commit\n")
+#<edit 1>
+> (press! "C-c" "C-c")
+> (wait-until (lambda () (git:command-exit commit)))
+> (list (git:command-exit commit) (buffers:live? message) (subjects repo))
+(0 #f "First commit\n")
+> (sh "cd repo && echo b > b.txt && git add b.txt")
+> (define commit (commit!))
+> (wait-until (lambda () (equal? (shown) "COMMIT_EDITMSG")))
+> (define message (views:buffer (layout:selected-view)))
+> (reload! "with-editor")
+> (buffers:kill! message)
+#t
+> (wait-until (lambda () (git:command-exit commit)))
+> (list (git:command-exit commit) (subjects repo) (request-folders))
+(1 "First commit\n" ())

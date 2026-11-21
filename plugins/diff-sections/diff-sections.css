@@ -1,0 +1,39 @@
+@layer defaults {
+  .ui-section[data-type="file"] > .node > .ui-section-heading {
+    font-weight: var(--tuna-font-weight-semibold);
+    color: var(--diff-sections-file-heading-text, var(--tuna-text));
+  }
+
+  .ui-section[data-type="hunk"] > .node > .ui-section-heading {
+    background: var(--diff-sections-hunk-heading-background, var(--tuna-surface-subtle));
+    color: var(--diff-sections-hunk-heading-text, var(--tuna-text-muted));
+  }
+
+  .ui-section.current[data-type="hunk"] > .node > .ui-section-heading {
+    background: var(--diff-sections-hunk-heading-current-background, var(--tuna-selected));
+    color: var(--diff-sections-hunk-heading-current-text, var(--tuna-on-selected, var(--tuna-text)));
+  }
+
+  .diff-sections-line {
+    display: flex;
+  }
+
+  .diff-sections-text {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .diff-sections-numbers {
+    display: flex;
+    flex: none;
+    gap: var(--tuna-space-2);
+    padding-inline-end: var(--tuna-space-2);
+    color: var(--diff-sections-line-number-text, var(--tuna-text-faint));
+    font-variant-numeric: tabular-nums;
+  }
+
+  .diff-sections-numbers > span {
+    min-width: 4ch;
+    text-align: end;
+  }
+}

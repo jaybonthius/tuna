@@ -1,0 +1,25 @@
+; git:find-repository asks git for the working tree's root and its git
+; folder, each ending in /.
+> (sample-repository! "repo")
+> (define repo (git:find-repository (at "repo")))
+> (git:repository? repo)
+#t
+> (equal? (git:repository-root repo) (at "repo/"))
+#t
+> (equal? (git:repository-git-folder repo) (at "repo/.git/"))
+#t
+> (git:repository-name repo)
+"repo"
+> (sh "mkdir -p repo/deep/er")
+> (equal? (git:find-repository (at "repo/deep/er")) repo)
+#t
+> (git:find-repository (at "elsewhere"))
+#f
+> (sh "mkdir plain")
+> (git:find-repository (at "plain"))
+#f
+> (git:find-repository "repo")
+! git:find-repository: not an absolute path with irritant "repo"
+; A repository is plain data.
+> (plain-data? repo)
+#t

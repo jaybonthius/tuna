@@ -1,0 +1,6 @@
+; Random selections of lines and hunks, staged, unstaged and discarded,
+; over rounds of random edits: CRLF files, files without a final
+; newline, renames, new and deleted files, and staged and unstaged
+; changes in one file.
+> (let ([r (run-random! "random" 1 8 40)]) (list (> (cadr r) 250) (cadddr r)))
+(#t ())

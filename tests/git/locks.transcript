@@ -1,0 +1,36 @@
+; A query takes no optional lock: git status does not refresh the index
+; of a file whose time changed.
+> (sh "rm -rf lk && mkdir lk && cd lk && git init -q -b main && for i in $(seq 1 300); do echo $i > f$i.txt; done && git add -A && git commit -qm base")
+> (define repo (git:find-repository (at "lk")))
+> (define (index-bytes) (call-with-port (open-file-input-port (at "lk/.git/index")) get-bytevector-all))
+> (define before (index-bytes))
+> (sh "sleep 1 && touch lk/f1.txt")
+> (git:status-entries (git:status repo))
+()
+> (equal? before (index-bytes))
+#t
+; Queries in a loop beside 150 commands make none of them fail on the
+; index lock.
+> (define stop? #f)
+> (define query-failures '())
+> (define (status-loop)
+    (let loop ()
+      (unless stop?
+        (guard (c [(git:failed-condition? c) (set! query-failures (cons (git:failure-summary c) query-failures))])
+          (git:status repo))
+        (loop))))
+> (define readers (map (lambda (i) (spawn-task status-loop)) '(1 2 3)))
+> (define command-failures '())
+> (define (file i) (string-append "f" (number->string (+ 1 (mod i 300))) ".txt"))
+> (define writer
+    (spawn-task
+      (lambda ()
+        (do ([i 0 (+ i 1)]) ((= i 150))
+          (write-file! (string-append "lk/" (file i)) (format "v~a\n" i))
+          (guard (c [(git:failed-condition? c) (set! command-failures (cons (git:failure-summary c) command-failures))])
+            (git:stage repo (list (file i))))))))
+> (join-task writer)
+> (set! stop? #t)
+> (for-each join-task readers)
+> (list command-failures query-failures)
+(() ())

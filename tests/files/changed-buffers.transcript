@@ -1,0 +1,54 @@
+; files:save-some-buffers asks only about the modified file buffers its
+; predicate accepts, in the order they were visited.
+> (import (commands))
+> (define asked '())
+> (define (answer reply) (lambda (question) (set! asked (cons question asked)) reply))
+> (define (questions) (let ([q (reverse asked)]) (set! asked '()) q))
+> (disk-checks:folder! "~/repo")
+> (disk-checks:write-text! "~/repo/a.py" "a\n")
+> (disk-checks:write-text! "~/repo/b.py" "b\n")
+> (disk-checks:write-text! "~/other.txt" "o\n")
+> (define a (files:visit "~/repo/a.py"))
+> (define other (files:visit "~/other.txt"))
+> (define b (files:visit "~/repo/b.py"))
+> (for-each (lambda (x) (buffers:replace! x 1 1 "edit ")) (list a other b))
+#<edit 1>
+> (define (in-repo? buffer) (let ([p (files:path buffer)]) (and p (string=? (substring p 0 (min (string-length p) (string-length (disk-checks:expand "~/repo/")))) (disk-checks:expand "~/repo/")))))
+> (set-option! ask:y-or-n-reader (answer #t))
+> (files:save-some-buffers in-repo?)
+> (list (questions) (map buffers:modified? (list a other b)))
+(("Save file ~/repo/a.py? " "Save file ~/repo/b.py? ") (#f #t #f))
+; Run by a key, it accepts every file buffer.
+> (commands:run files:save-some-buffers)
+> (list (questions) (buffers:modified? other))
+(("Save file ~/other.txt? ") #f)
+> (files:save-some-buffers 'all)
+! files:save-some-buffers: not a procedure with irritant all
+; files:revert-changed-buffers reverts each unmodified file buffer the
+; predicate accepts whose file changed on disk, asking nothing; a
+; modified buffer keeps its edits, and one whose file is gone stays.
+> (disk-checks:write-text! "~/repo/gone.py" "g\n")
+> (define gone (files:visit "~/repo/gone.py"))
+> (buffers:replace! a 1 1 "unsaved ")
+#<edit 2>
+> (disk-checks:write-text! "~/repo/a.py" "git wrote a\n")
+> (disk-checks:write-text! "~/repo/b.py" "git wrote b\n")
+> (disk-checks:write-text! "~/other.txt" "changed too\n")
+> (system (string-append "rm " (disk-checks:expand "~/repo/gone.py")))
+0
+> (files:revert-changed-buffers in-repo?)
+> (map (lambda (x) (list (text x) (buffers:modified? x))) (list a b other gone))
+(("unsaved edit a\n" #t) ("git wrote b\n" #f) ("edit o\n" #f) ("g\n" #f))
+> (questions)
+()
+; An unchanged file's buffer is not read again.
+> (define reverts 0)
+> (add-hook! files:after-revert (lambda (buffer) (set! reverts (+ reverts 1))))
+> (files:revert-changed-buffers in-repo?)
+> reverts
+0
+> (files:revert-changed-buffers (lambda (buffer) #t))
+> (list reverts (text other))
+(1 "changed too\n")
+> (files:revert-changed-buffers #f)
+! files:revert-changed-buffers: not a procedure with irritant #f

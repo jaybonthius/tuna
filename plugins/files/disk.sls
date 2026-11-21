@@ -3,7 +3,8 @@
           failure failure? failure-violation? failure-message failure-irritants failure-format? failure-filename
           failure-already-exists?
           rename-path copy-path delete-path trash-path make-new-folder
-          contents-document contents-length contents-hash contents-bom? contents-crlf? contents-missing?)
+          contents-document contents-length contents-hash contents-bom? contents-crlf? contents-missing?
+          changed-on-disk?)
   (import (chezscheme) (document) (files attributes) (files system) (files paths))
 
   ;; Each call that can wait on a slow or network file system lets other

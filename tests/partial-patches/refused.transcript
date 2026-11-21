@@ -1,0 +1,57 @@
+; A conflicted file's combined diff parses, and no partial patch is built
+; for it.
+> (define d (fresh "conflict"))
+> (write-file! d "f.txt" "one\ntwo\nthree\n")
+> (sh d "git add . && git commit -qm base && git checkout -q -b other && sed -i s/two/OTHER/ f.txt && git commit -qam other && git checkout -q - && sed -i s/two/MINE/ f.txt && git commit -qam mine && (git merge -q other || true)")
+> (define repo (repository-of d))
+> (define f (car (git:diff repo '())))
+> (list (diff:file-path f) (diff:file-status f) (diff:file-combined? f) (length (diff:file-hunks f)))
+("f.txt" unmerged #t 1)
+> (define h (car (diff:file-hunks f)))
+> (utf8->string (diff:hunk-heading h))
+"@@@ -1,3 -1,3 +1,7 @@@"
+> (map (lambda (l) (list (diff:line-kind l) (utf8->string (diff:line-prefix l)) (utf8->string (diff:line-bytes l))))
+       (vector->list (diff:hunk-lines h)))
+((context "  " "one") (added "++" "<<<<<<< HEAD") (added " +" "MINE") (added "++" "=======") (added "+ " "OTHER") (added "++" ">>>>>>> other") (context "  " "three"))
+> (diff:line-numbers h 2)
+2
+3
+> (diff:lines-patch f h 1 1)
+! diff:lines-patch: Cannot un-/stage resolution hunks.  Stage the whole file
+> (diff:hunks-patch f (list h))
+! diff:hunks-patch: Cannot un-/stage resolution hunks.  Stage the whole file
+> (diff:reverse-lines-patch f h 1 1)
+! diff:reverse-lines-patch: Cannot un-/stage resolution hunks.  Stage the whole file
+> (diff:file-patch f)
+! diff:file-patch: Cannot un-/stage resolution hunks.  Stage the whole file
+> (map (lambda (f) (list (diff:file-path f) (diff:file-status f) (diff:file-combined? f))) (git:diff repo '("--cached")))
+(("f.txt" unmerged #t))
+; A binary file has no hunks and gets no patch.
+> (define d (fresh "binary"))
+> (write-file! d "x.bin" (bytes 0 1 2))
+> (sh d "git add . && git commit -qm c")
+> (write-file! d "x.bin" (bytes 0 1 3))
+> (define f (car (git:diff (repository-of d) '())))
+> (list (diff:file-binary? f) (diff:file-hunks f))
+(#t ())
+> (diff:file-patch f)
+! diff:file-patch: binary files have no hunks
+> (diff:hunks-patch f '())
+! diff:hunks-patch: binary files have no hunks
+; A selection holding no change, and hunks that are not the file's, are
+; refused; a hunk equal to one of the file's is the file's.
+> (define d (fresh "plain"))
+> (write-file! d "p.txt" "one\ntwo\nthree\n")
+> (sh d "git add . && git commit -qm c")
+> (write-file! d "p.txt" "one\nTWO\nthree\n")
+> (define f (car (git:diff (repository-of d) '())))
+> (define h (car (diff:file-hunks f)))
+> (diff:lines-patch f h 0 0)
+! diff:lines-patch: no change in these lines
+> (diff:lines-patch f h 2 9)
+! diff:lines-patch: not a range of the hunk's lines with irritant (2 . 9)
+> (define other (car (diff:file-hunks (car (diff:parse (string->utf8 "diff --git a/q b/q\n--- a/q\n+++ b/q\n@@ -5 +5 @@\n-x\n+y\n"))))))
+> (guard (c [#t (condition-message c)]) (diff:hunks-patch f (list other)))
+"not hunks of this file"
+> (bytevector? (diff:hunks-patch f (list (car (diff:file-hunks (car (git:diff (repository-of d) '())))))))
+#t

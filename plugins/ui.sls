@@ -457,6 +457,713 @@
           (let ([i (selected-row node v)])
             (when i (%choose! v node i)))))))
 
+(define-table section-initial-visibility
+  "Section types, as keys, to show or hide: the visibility a section of that type starts with in a view when it has no hidden attribute.")
+
+(define-hook section-visibility-choosers
+  "Called with a view and a section; the first entry that returns show or hide, not #f, decides the visibility the view first gives the section.")
+
+(define-hook section-moved
+  "Called with the view and the section at point, or #f, after each section motion command and each other command that changed the section at point.")
+
+(define-option highlight-current-section? #t boolean? "Whether the section at point is highlighted.")
+
+(define-table section-keymap "Keys in buffers of ui:section-mode and of the modes derived from it.")
+
+(define-table %section-chevron-keys)
+
+(define-hook section-mode-hook "Called in each buffer that turns on ui:section-mode.")
+
+(modes:define-major-mode section-mode
+  (parent modes:special)
+  (lighter "Sections")
+  (keymap section-keymap)
+  (hook section-mode-hook)
+  (plugin-only #t))
+
+(module %sections
+  (section-node? section-at-position enclosing-section heading-node heading-start heading-end section-sections
+   top-sections next-sibling previous-sibling identity-of walk-sections folded-at? hidden-in? hide! show!
+   settle-visibility! repair-after-edit! in-heading? record-section! current-section-of)
+
+  (define (section-node? n)
+    (and (document:node? n) (not (document:atom? n)) (eq? (document:node-kind n) %section-kind)))
+
+  (define (enclosing-section doc p)
+    (let loop ([n (and (fx< p (document:length doc)) (document:enclosing doc p))])
+      (cond
+        [(not n) #f]
+        [(section-node? n) n]
+        [else (loop (document:enclosing doc (document:node-start n)))])))
+
+  ;; A position before a section's opening is its parent's, so the
+  ;; innermost section holding a position is the one whose content does.
+  (define (section-at-position doc p) (enclosing-section doc p))
+
+  (define (heading-node section)
+    (let ([first #f] [at (fx+ (document:node-start section) 1)])
+      (document:for-each-child section at (fx+ at 1) (lambda (child at) (set! first child)))
+      first))
+
+  (define (heading-start section) (fx+ (document:node-start (heading-node section)) 1))
+
+  ;; The heading's line break, where a hidden section's fold starts, so
+  ;; the cursor can rest at the end of the heading and nowhere in the
+  ;; body.
+  (define (heading-end section) (fx- (document:node-end (heading-node section)) 2))
+
+  (define (in-heading? section p)
+    (fx<= (heading-start section) p (heading-end section)))
+
+  ;; A section is a block, and a node holding text holds no block, so a
+  ;; walk leaves a node at its first text.
+  (define (for-each-block n start end proc)
+    (call/1cc
+      (lambda (k)
+        (document:for-each-child n start end
+          (lambda (child at)
+            (cond
+              [(string? child) (k (void))]
+              [(not (document:atom? child)) (proc child)]))))))
+
+  (define (sections-below node)
+    (let ([found '()])
+      (let walk ([n node])
+        (for-each-block n (document:node-start n) (document:node-end n)
+          (lambda (child)
+            (if (section-node? child)
+                (set! found (cons child found))
+                (walk child)))))
+      (reverse found)))
+
+  (define (section-sections section) (sections-below section))
+
+  (define (top-sections doc)
+    (if (fx= (document:length doc) 0) '() (sections-below (document:token doc 0))))
+
+  (define (siblings doc section)
+    (let ([parent (enclosing-section doc (document:node-start section))])
+      (if parent (section-sections parent) (top-sections doc))))
+
+  (define (same? a b) (fx= (document:node-start a) (document:node-start b)))
+
+  (define (next-sibling doc section)
+    (let loop ([ss (siblings doc section)])
+      (cond
+        [(null? ss) #f]
+        [(same? (car ss) section) (and (pair? (cdr ss)) (cadr ss))]
+        [else (loop (cdr ss))])))
+
+  (define (previous-sibling doc section)
+    (let loop ([ss (siblings doc section)] [before #f])
+      (cond
+        [(null? ss) #f]
+        [(same? (car ss) section) before]
+        [else (loop (cdr ss) (car ss))])))
+
+  (define (key-of section)
+    (cons (document:node-attribute section 'type) (document:node-attribute section 'value)))
+
+  (define (identity-of doc section)
+    (let loop ([s section] [acc '()])
+      (if s
+          (loop (enclosing-section doc (document:node-start s)) (cons (key-of s) acc))
+          (reverse acc))))
+
+  (define (walk-below node identity proc)
+    (let walk ([n node] [identity identity])
+      (for-each-block n (document:node-start n) (document:node-end n)
+        (lambda (child)
+          (if (section-node? child)
+              (let ([identity (cons (key-of child) identity)])
+                (proc child identity)
+                (walk child identity))
+              (walk child identity))))))
+
+  (define (walk-sections doc proc)
+    (when (fx> (document:length doc) 0)
+      (walk-below (document:token doc 0) '() proc)))
+
+  (define (folds-of view section) (views:folds-at view (heading-end section)))
+
+  (define (own-fold? section folds)
+    (let ([start (heading-end section)])
+      (exists (lambda (f) (fx= (car f) start)) folds)))
+
+  (define (folded-at? view section) (own-fold? section (folds-of view section)))
+
+  (define (add-fold! view section)
+    (let ([start (heading-end section)] [end (fx- (document:node-end section) 1)])
+      (when (fx< start (views:point view) end)
+        (views:set-point! view (heading-start section)))
+      (views:fold! view start end)))
+
+  ;; views:unfold! opens every fold holding the position, so the others
+  ;; are put back.
+  (define (remove-fold! view section folds)
+    (let ([start (heading-end section)])
+      (views:unfold! view start)
+      (for-each (lambda (f) (unless (fx= (car f) start) (views:fold! view (car f) (cdr f)))) folds)))
+
+  ;; Each view's visibility of each section of a buffer, by identity, as
+  ;; Magit keeps it: folds alone lose it, since a refresh that replaces a
+  ;; heading's line break or a closing moves or drops the fold, and a
+  ;; section that goes and comes back has none. The version is the
+  ;; buffer's, once the view's folds follow the record.
+  (define-record-type visibilities
+    (sealed #t)
+    (fields table (mutable version)))
+
+  (define records (make-weak-eq-hashtable))
+
+  (define (visibilities-of view buffer)
+    (let ([buffers (or (eq-hashtable-ref records view #f)
+                       (let ([t (make-weak-eq-hashtable)]) (eq-hashtable-set! records view t) t))])
+      (or (eq-hashtable-ref buffers buffer #f)
+          (let ([r (make-visibilities (make-hashtable equal-hash equal?) #f)])
+            (eq-hashtable-set! buffers buffer r)
+            r))))
+
+  (define (first-visibility view section)
+    (or (exists (lambda (entry)
+                  (let ([v (entry view section)])
+                    (and (memq v '(show hide)) v)))
+                (hook-entries section-visibility-choosers))
+        (let ([hidden (document:node-attribute section 'hidden 'none)])
+          (cond
+            [(eq? hidden 'none) (table-ref section-initial-visibility (document:node-attribute section 'type) 'show)]
+            [hidden 'hide]
+            [else 'show]))))
+
+  ;; A section with no record keeps a fold the view already has, as one
+  ;; views restores with a buffer it showed before, or one made before
+  ;; this module was reloaded.
+  (define (visibility view record section identity folds)
+    (let ([table (visibilities-table record)])
+      (or (hashtable-ref table identity #f)
+          (let ([v (if (own-fold? section (or folds (folds-of view section))) 'hide (first-visibility view section))])
+            (hashtable-set! table identity v)
+            v))))
+
+  (define (record! view section v)
+    (let ([b (views:buffer view)])
+      (hashtable-set! (visibilities-table (visibilities-of view b)) (identity-of (buffers:document b) section) v)))
+
+  ;; Folds inside a hidden section are left as they are: showing it
+  ;; derives them again.
+  (define (derive! view record section identity hidden-above?)
+    (if hidden-above?
+        (begin (visibility view record section identity #f) #t)
+        (let* ([folds (folds-of view section)] [folded? (own-fold? section folds)]
+               [hidden? (eq? (visibility view record section identity folds) 'hide)])
+          (cond
+            [(and hidden? (not folded?)) (add-fold! view section)]
+            [(and folded? (not hidden?)) (remove-fold! view section folds)])
+          hidden?)))
+
+  (define (derive-below! view record node identity)
+    (let walk ([n node] [identity identity])
+      (for-each-block n (document:node-start n) (document:node-end n)
+        (lambda (child)
+          (if (section-node? child)
+              (let ([identity (cons (key-of child) identity)])
+                (unless (derive! view record child identity #f)
+                  (walk child identity)))
+              (walk child identity))))))
+
+  ;; A view's fold answers for what it shows, since views opens a fold
+  ;; that holds a cursor; the record answers inside a hidden section.
+  (define (hidden-in? view section)
+    (or (folded-at? view section)
+        (let* ([b (views:buffer view)] [doc (buffers:document b)])
+          (and (eq? (visibility view (visibilities-of view b) section (identity-of doc section) #f) 'hide)
+               (let up ([s (enclosing-section doc (document:node-start section))])
+                 (and s (or (hidden-in? view s) (up (enclosing-section doc (document:node-start s))))))))))
+
+  (define (hide! view section)
+    (record! view section 'hide)
+    (unless (folded-at? view section)
+      (add-fold! view section)))
+
+  ;; As magit-section-show, the children take the visibility the view
+  ;; recorded for them.
+  (define (show! view section)
+    (let* ([b (views:buffer view)] [record (visibilities-of view b)] [table (visibilities-table record)]
+           [identity (identity-of (buffers:document b) section)] [folds (folds-of view section)]
+           [folded? (own-fold? section folds)]
+           [hidden? (or folded? (eq? (hashtable-ref table identity #f) 'hide))])
+      (hashtable-set! table identity 'show)
+      (when hidden?
+        (when folded? (remove-fold! view section folds))
+        (derive-below! view record section identity))))
+
+  ;; An edit moves or strands folds only where it begins and ends, so the
+  ;; folds there are opened and derived again for the sections holding
+  ;; the start, and for those whose opening the edit inserted, with every
+  ;; section inside each of them, whose identities follow it; a section
+  ;; the edit only enters keeps its identity.
+  (define (repair! view record doc start end same-key?)
+    (let ([n (document:length doc)])
+      (views:unfold! view start)
+      (views:unfold! view end)
+      (when (fx< start n)
+        (let walk ([node (document:token doc 0)] [identity '()] [hidden-above? #f])
+          (for-each-block node start (fxmin n (fxmax end (fx+ start 1)))
+            (lambda (child)
+              (let ([at (document:node-start child)])
+                (cond
+                  [(fx>= at end) (void)]
+                  [(not (section-node? child)) (walk child identity hidden-above?)]
+                  [(fx< at start)
+                   (let ([identity (cons (key-of child) identity)])
+                     (walk child identity (derive! view record child identity hidden-above?)))]
+                  [else
+                   (let ([identity (cons (key-of child) identity)])
+                     (unless (or (derive! view record child identity hidden-above?) same-key?)
+                       (derive-below! view record child identity)))]))))))))
+
+  ;; An edit that replaces only a section's opening, keeping its type and
+  ;; value, changes no identity inside it.
+  (define (same-key-opening? edit)
+    (let ([removed (buffers:piece-document (buffers:edit-removed edit))]
+          [inserted (buffers:piece-document (buffers:edit-inserted edit))])
+      (and (fx= (document:length removed) 1) (fx= (document:length inserted) 1)
+           (let ([old (document:token removed 0)] [new (document:token inserted 0)])
+             (and (section-node? old) (section-node? new) (equal? (key-of old) (key-of new)))))))
+
+  (define (repair-after-edit! view buffer edit)
+    (let ([record (visibilities-of view buffer)] [version (buffers:edit-version edit)])
+      (when (eqv? (visibilities-version record) (fx- version 1))
+        (when (buffers:edit-moves? edit)
+          (let ([start (buffers:edit-start edit)])
+            (repair! view record (buffers:document buffer) start
+                     (fx+ start (buffers:piece-length (buffers:edit-inserted edit)))
+                     (same-key-opening? edit))))
+        (visibilities-version-set! record version))))
+
+  ;; views keeps the folds of a buffer a view showed before, moved by the
+  ;; edits made since, so those edits can have stranded them as any edit
+  ;; can.
+  (define (settle-visibility! view)
+    (let ([b (views:buffer view)])
+      (when b
+        (let ([record (visibilities-of view b)] [now (buffers:version b)])
+          (unless (eqv? (visibilities-version record) now)
+            (let ([doc (buffers:document b)]
+                  [missed (and (visibilities-version record) (buffers:edits-since b (visibilities-version record)))])
+              (cond
+                [missed
+                 (for-each
+                   (lambda (e)
+                     (when (buffers:edit-moves? e)
+                       (let ([start (buffers:edit-start e)] [version (buffers:edit-version e)])
+                         (repair! view record doc (buffers:map-position b start version)
+                                  (buffers:map-position b (fx+ start (buffers:piece-length (buffers:edit-inserted e))) version)
+                                  #f))))
+                   missed)]
+                [(fx> (document:length doc) 0) (derive-below! view record (document:token doc 0) '())]))
+            (visibilities-version-set! record now))))))
+
+  (define last-sections (make-weak-eq-hashtable))
+
+  (define (current-section-of view)
+    (let ([b (views:buffer view)])
+      (and b (section-at-position (buffers:document b) (views:point view)))))
+
+  (define (record-section! view)
+    (let* ([b (views:buffer view)] [s (current-section-of view)]
+           [identity (and s (identity-of (buffers:document b) s))]
+           [changed? (not (equal? identity (eq-hashtable-ref last-sections view 'none)))])
+      (eq-hashtable-set! last-sections view identity)
+      changed?)))
+
+(import %sections)
+
+(define (%section-buffer? b)
+  (and b (buffers:live? b) (modes:derived? (modes:major-mode b) section-mode)))
+
+(define (%draw-section node view)
+  (let* ([b (views:buffer view)]
+         [current? (and (highlight-current-section?) b
+                        (let ([s (section-at-position (buffers:document b) (views:point view))])
+                          (and s (fx= (document:node-start s) (document:node-start node)))))]
+         [hidden? (folded-at? view node)])
+    (haml (:section ([class (string-append "ui-section" (if current? " current" "") (if hidden? " hidden" ""))]
+                     [data-type (symbol->string (document:node-attribute node 'type))])
+            (views:draw-children view node)))))
+
+(define (%draw-section-heading node view)
+  (let* ([b (views:buffer view)]
+         [section (and b (enclosing-section (buffers:document b) (document:node-start node)))]
+         [hidden? (and section (folded-at? view section))]
+         [ellipsis (if hidden? (haml (:span.ui-section-ellipsis "…")) '())])
+    (haml (:div.ui-section-heading
+            (:span.ui-section-chevron ([data-keymap (views:keymap-mark %section-chevron-keys)] [aria-hidden "true"])
+              (if hidden? "▸" "▾"))
+            (views:draw-children view node)
+            ellipsis))))
+
+(buffers:define-kind %section (content nodes) (draw %draw-section))
+
+(buffers:define-kind %section-heading (draw %draw-section-heading))
+
+(buffers:define-kind %section-text)
+
+(define %section-kind (buffers:kind-name (buffers:constructor-kind %section)))
+
+(define (%with-newline s)
+  (if (and (fx> (string-length s) 0) (char=? (string-ref s (fx- (string-length s) 1)) #\newline))
+      s
+      (string-append s "\n")))
+
+(define (section attributes heading . body)
+  (unless (and (list? attributes) (for-all (lambda (a) (and (pair? a) (symbol? (car a)))) attributes))
+    (assertion-violation 'ui:section "not an association list of attributes" attributes))
+  (let ([type (assq 'type attributes)])
+    (unless (and type (symbol? (cdr type)))
+      (assertion-violation 'ui:section "a section's type is not a symbol" (and type (cdr type))))
+    (unless (or (string? heading) (list? heading))
+      (assertion-violation 'ui:section "not a heading's text or inline content" heading))
+    (let* ([value (cond [(assq 'value attributes) => cdr] [else #f])]
+           [attributes (if (assq 'value attributes) attributes (append attributes '((value . #f))))]
+           [attributes (if (assq 'key attributes) attributes (append attributes `((key . (,(cdr type) . ,value)))))])
+      (apply %section attributes
+             (apply %section-heading '() (append (if (string? heading) `(,heading) heading) '("\n")))
+             (map (lambda (item) (if (string? item) (%section-text '() (%with-newline item)) item)) body)))))
+
+(define (%check-view-buffer who view)
+  (unless (views:view? view)
+    (assertion-violation who "not a view" view))
+  (or (views:buffer view)
+      (assertion-violation who "the view shows no buffer" view)))
+
+(define (%check-section who section)
+  (unless (section-node? section)
+    (assertion-violation who "not a section" section)))
+
+(define section-at
+  (case-lambda
+    [(view)
+     (%check-view-buffer 'ui:section-at view)
+     (section-at view (views:point view))]
+    [(view position)
+     (let ([b (%check-view-buffer 'ui:section-at view)])
+       (unless (and (fixnum? position) (fx<= 0 position (document:length (buffers:document b))))
+         (assertion-violation 'ui:section-at "not a position of the buffer" position))
+       (section-at-position (buffers:document b) position))]))
+
+(define (section-type section)
+  (%check-section 'ui:section-type section)
+  (document:node-attribute section 'type))
+
+(define (section-value section)
+  (%check-section 'ui:section-value section)
+  (document:node-attribute section 'value))
+
+(define (section-parent section buffer)
+  (%check-section 'ui:section-parent section)
+  (enclosing-section (buffers:document buffer) (document:node-start section)))
+
+(define (section-children section)
+  (%check-section 'ui:section-children section)
+  (section-sections section))
+
+(define (section-identity section buffer)
+  (%check-section 'ui:section-identity section)
+  (identity-of (buffers:document buffer) section))
+
+(define (find-section buffer identity)
+  (unless (buffers:buffer? buffer)
+    (assertion-violation 'ui:find-section "not a buffer" buffer))
+  (call/1cc
+    (lambda (k)
+      (walk-sections (buffers:document buffer)
+        (lambda (section found) (when (equal? found identity) (k section))))
+      #f)))
+
+(define (section-heading-start section)
+  (%check-section 'ui:section-heading-start section)
+  (heading-start section))
+
+;; As Magit's magit-region-sections: the region starts in one section's
+;; heading and ends in a later sibling's.
+(define (section-selection view)
+  (let* ([b (%check-view-buffer 'ui:section-selection view)] [doc (buffers:document b)]
+         [ranges (views:region-bounds view)])
+    (and (pair? ranges)
+         (let* ([start (caar ranges)] [end (cdar ranges)]
+                [first (section-at-position doc start)] [last (section-at-position doc end)])
+           (and first last (not (fx= (document:node-start first) (document:node-start last)))
+                (in-heading? first start) (in-heading? last end)
+                (let loop ([s first] [acc '()])
+                  (cond
+                    [(not s) #f]
+                    [(fx= (document:node-start s) (document:node-start last)) (reverse (cons s acc))]
+                    [else (loop (next-sibling doc s) (cons s acc))])))))))
+
+(define (section-hidden? view section)
+  (%check-view-buffer 'ui:section-hidden? view)
+  (%check-section 'ui:section-hidden? section)
+  (settle-visibility! view)
+  (hidden-in? view section))
+
+(define (hide-section! view section)
+  (%check-view-buffer 'ui:hide-section! view)
+  (%check-section 'ui:hide-section! section)
+  (settle-visibility! view)
+  (hide! view section))
+
+(define (show-section! view section)
+  (%check-view-buffer 'ui:show-section! view)
+  (%check-section 'ui:show-section! section)
+  (settle-visibility! view)
+  (show! view section))
+
+;; A view's folds follow its record from its first draw of the buffer,
+;; so a command or a question before then settles them first.
+(define (%section-view who)
+  (let ([v (views:current)])
+    (unless (and v (views:buffer v))
+      (assertion-violation who "no view is current"))
+    (settle-visibility! v)
+    v))
+
+(define (%moved! view)
+  (record-section! view)
+  (section-moved view (current-section-of view)))
+
+(define (%goto! view section) (views:set-point! view (heading-start section)))
+
+(define (%last-shown view section)
+  (let loop ([s section])
+    (let ([children (section-sections s)])
+      (if (or (null? children) (hidden-in? view s))
+          s
+          (loop (car (reverse children)))))))
+
+(define (%forward-target view doc)
+  (let* ([p (views:point view)] [s (section-at-position doc p)])
+    (or (if s
+            (let ([children (section-sections s)])
+              (or (and (pair? children) (not (hidden-in? view s)) (car children))
+                  (let up ([s s])
+                    (and s (or (next-sibling doc s) (up (enclosing-section doc (document:node-start s))))))))
+            (find (lambda (t) (fx> (heading-start t) p)) (top-sections doc)))
+        (error 'ui:section-forward "No next section"))))
+
+(define (%backward-target view doc)
+  (let* ([p (views:point view)] [s (section-at-position doc p)])
+    (cond
+      [(and s (not (fx= p (heading-start s)))) s]
+      [else
+       (let ([previous (if s
+                           (previous-sibling doc s)
+                           (let ([before (filter (lambda (t) (fx< (heading-start t) p)) (top-sections doc))])
+                             (and (pair? before) (car (reverse before)))))])
+         (cond
+           [previous (%last-shown view previous)]
+           [(and s (enclosing-section doc (document:node-start s)))]
+           [else (error 'ui:section-backward "No previous section")]))])))
+
+;; Each step moves point, so a count that runs past the last section
+;; stops there with the error.
+(define (%move-sections! who n forward backward)
+  (unless (fixnum? n)
+    (assertion-violation who "not a count" n))
+  (let ([v (%section-view who)] [moved? #f])
+    (dynamic-wind
+      void
+      (lambda ()
+        (let loop ([k (fxabs n)])
+          (unless (fx= k 0)
+            (let ([doc (buffers:document (views:buffer v))])
+              (%goto! v ((if (fx>= n 0) forward backward) v doc))
+              (set! moved? #t)
+              (loop (fx- k 1))))))
+      (lambda () (when moved? (%moved! v))))))
+
+(define (%forward-sibling-target view doc)
+  (let ([s (section-at-position doc (views:point view))])
+    (or (and s (next-sibling doc s)) (%forward-target view doc))))
+
+(define (%backward-sibling-target view doc)
+  (let ([s (section-at-position doc (views:point view))])
+    (or (and s (previous-sibling doc s)) (%backward-target view doc))))
+
+(commands:define-command (section-forward [n (commands:prefix-number)])
+  "Moves point to the next visible section's heading: the first child of a shown section, else the next sibling, else the parent's next sibling; n times."
+  (%move-sections! 'ui:section-forward n %forward-target %backward-target))
+
+(commands:define-command (section-backward [n (commands:prefix-number)])
+  "Moves point to the start of the section holding it; at that start, to the previous visible section; n times."
+  (%move-sections! 'ui:section-backward n %backward-target %forward-target))
+
+(commands:define-command (section-forward-sibling [n (commands:prefix-number)])
+  "Moves point to the next sibling section's heading, or as ui:section-forward when there is none; n times."
+  (%move-sections! 'ui:section-forward-sibling n %forward-sibling-target %backward-sibling-target))
+
+(commands:define-command (section-backward-sibling [n (commands:prefix-number)])
+  "Moves point to the previous sibling section's heading, or as ui:section-backward when there is none; n times."
+  (%move-sections! 'ui:section-backward-sibling n %backward-sibling-target %forward-sibling-target))
+
+(commands:define-command (section-up)
+  "Moves point to the parent section's heading; from a top-level section, to the start of the buffer."
+  (let* ([v (%section-view 'ui:section-up)] [doc (buffers:document (views:buffer v))]
+         [s (section-at-position doc (views:point v))])
+    (unless s
+      (error 'ui:section-up "No parent section"))
+    (let ([parent (enclosing-section doc (document:node-start s))])
+      (if parent
+          (%goto! v parent)
+          (views:set-point! v (or (views:next-stop v 0) 0))))
+    (%moved! v)))
+
+(define (%section-here who)
+  (let* ([v (%section-view who)] [s (section-at-position (buffers:document (views:buffer v)) (views:point v))])
+    (values v s)))
+
+(commands:define-command (section-toggle)
+  "Shows the section at point when hidden, else hides it."
+  (let-values ([(v s) (%section-here 'ui:section-toggle)])
+    (cond
+      [(not s) (error 'ui:section-toggle "Cannot hide root section")]
+      [(hidden-in? v s) (show! v s)]
+      [else (hide! v s)])))
+
+(define (%show-children! v children depth)
+  (for-each
+    (lambda (child)
+      (show! v child)
+      (cond
+        [(not depth) (%show-children! v (section-sections child) #f)]
+        [(fx> depth 0) (%show-children! v (section-sections child) (fx- depth 1))]
+        [else (hide! v child)]))
+    children))
+
+(define (%show-headings! v children)
+  (for-each
+    (lambda (child)
+      (show! v child)
+      (when (or (pair? (section-sections child)) (not (%has-body? child)))
+        (%show-headings! v (section-sections child))))
+    children))
+
+(define (%has-body? section)
+  (fx> (fx- (document:node-end section) 1) (fx+ (heading-end section) 2)))
+
+(define (%hidden-body? v section)
+  (let ([children (section-sections section)])
+    (if (pair? children)
+        (exists (lambda (c) (%hidden-body? v c)) children)
+        (and (%has-body? section) (hidden-in? v section)))))
+
+(define (%cycle-children! v children hide-all!)
+  (cond
+    [(and (exists (lambda (c) (hidden-in? v c)) children)
+          (exists (lambda (c) (pair? (section-sections c))) children))
+     (%show-headings! v children)]
+    [(exists (lambda (c) (%hidden-body? v c)) children)
+     (%show-children! v children #f)]
+    [else (hide-all!)]))
+
+(define (%cycle-global! v)
+  (let ([tops (top-sections (buffers:document (views:buffer v)))])
+    (%cycle-children! v tops (lambda () (for-each (lambda (s) (hide! v s)) tops)))))
+
+(commands:define-command (section-cycle)
+  "Cycles the section at point: hidden, then shown with its children hidden, then its children's headings shown, then everything shown."
+  (let-values ([(v s) (%section-here 'ui:section-cycle)])
+    (cond
+      [(not s) (%cycle-global! v)]
+      [(hidden-in? v s)
+       (show! v s)
+       (for-each (lambda (c) (hide! v c)) (section-sections s))]
+      [else (%cycle-children! v (section-sections s) (lambda () (hide! v s)))])))
+
+(commands:define-command (section-cycle-global)
+  "Cycles every top-level section: their headings shown, everything shown, or all hidden, as Magit's rule picks."
+  (%cycle-global! (%section-view 'ui:section-cycle-global)))
+
+(define (%typed-level)
+  (let* ([key (keys:command-event)]
+         [c (and (string? key) (fx> (string-length key) 0) (string-ref key (fx- (string-length key) 1)))])
+    (or (and c (char<=? #\1 c #\9) (fx- (char->integer c) (char->integer #\0)))
+        (assertion-violation 'ui:section-show-level "no digit typed" key))))
+
+(define (%level-of doc section) (length (identity-of doc section)))
+
+(define (%check-level who level)
+  (unless (and (fixnum? level) (fx> level 0))
+    (assertion-violation who "not a level" level)))
+
+(commands:define-command (section-show-level [level (%typed-level)])
+  "Shows the sections around point down to LEVEL and hides deeper ones; point moves to the enclosing section of that level."
+  (%check-level 'ui:section-show-level level)
+  (let-values ([(v s) (%section-here 'ui:section-show-level)])
+    (let ([doc (buffers:document (views:buffer v))])
+      (let loop ([s s] [i (if s (%level-of doc s) 0)])
+        (cond
+          [(not s)
+           (%show-children! v (top-sections doc) (fx- level 1))
+           (views:set-point! v (or (views:next-stop v 0) 0))]
+          [(fx< i level)
+           (show! v s)
+           (%show-children! v (section-sections s) (fx- (fx- level i) 1))
+           (%goto! v s)]
+          [(fx= i level) (hide! v s) (%goto! v s)]
+          [else (loop (enclosing-section doc (document:node-start s)) (fx- i 1))])))))
+
+(commands:define-command (section-show-level-everywhere [level (%typed-level)])
+  "Shows every section of the buffer down to LEVEL and hides deeper ones; point moves to the enclosing section of that level."
+  (%check-level 'ui:section-show-level-everywhere level)
+  (let-values ([(v s) (%section-here 'ui:section-show-level-everywhere)])
+    (let ([doc (buffers:document (views:buffer v))])
+      (let loop ([s s])
+        (when (and s (fx> (%level-of doc s) level))
+          (let ([parent (enclosing-section doc (document:node-start s))])
+            (%goto! v parent)
+            (loop parent))))
+      (%show-children! v (top-sections doc) (fx- level 1)))))
+
+(commands:define-command (section-mouse-toggle [event (keys:command-event)])
+  "Toggles the section whose heading's chevron was clicked."
+  (let* ([posn (and (keys:event? event) (keys:event-start event))]
+         [v (and posn (views:posn-view posn))] [p (and posn (views:posn-point posn))]
+         [b (and v (views:buffer v))]
+         [s (and b p (section-at-position (buffers:document b) p))])
+    (when s
+      (settle-visibility! v)
+      (views:set-point! v (heading-start s))
+      (if (hidden-in? v s) (show! v s) (hide! v s)))))
+
+(define (%settle-after-edit buffer edit)
+  (when (%section-buffer? buffer)
+    (for-each (lambda (v) (repair-after-edit! v buffer edit)) (views:showing buffer))))
+
+(define %section-buffers (make-weak-eq-hashtable))
+
+;; A dropped view is no longer among the views showing a buffer, so the
+;; views a hook is handed are looked for there, never asked for their
+;; buffer.
+(define (%settle-when-drawn view buffer)
+  (when (and (%section-buffer? buffer) (memq view (views:showing buffer)))
+    (settle-visibility! view)))
+
+(define (%settle-on-mode)
+  (let ([b (buffers:current)])
+    (when b
+      (eq-hashtable-set! %section-buffers b #t)
+      (for-each settle-visibility! (views:showing b)))))
+
+(define (%note-section-change command)
+  (let ([v (views:current)])
+    (when v
+      (vector-for-each
+        (lambda (b)
+          (when (and (%section-buffer? b) (memq v (views:showing b)) (record-section! v))
+            (section-moved v (current-section-of v))))
+        (hashtable-keys %section-buffers)))))
+
 (define (%draw-showcase node view)
   (haml (:article (views:draw-children view node))))
 
@@ -626,6 +1333,26 @@
         (select-row! (%showcase-list b 'short) v 0)
         (views:scroll-to! v 0 (views:align top))))))
 
+(keys:bind! section-keymap "n" section-forward)
+(keys:bind! section-keymap "p" section-backward)
+(keys:bind! section-keymap "^" section-up)
+(keys:bind! section-keymap "M-n" section-forward-sibling)
+(keys:bind! section-keymap "M-p" section-backward-sibling)
+(keys:bind! section-keymap "TAB" section-toggle)
+(keys:bind! section-keymap "C-TAB" section-cycle)
+(keys:bind! section-keymap "C-c TAB" section-cycle)
+(keys:bind! section-keymap "M-TAB" section-cycle)
+(keys:bind! section-keymap "S-TAB" section-cycle-global)
+(for-each (lambda (digit)
+            (keys:bind! section-keymap digit section-show-level)
+            (keys:bind! section-keymap (string-append "M-" digit) section-show-level-everywhere))
+          '("1" "2" "3" "4"))
+(keys:bind! %section-chevron-keys "<mouse-1>" section-mouse-toggle)
+(table-set! section-initial-visibility 'stashes 'hide)
+(add-hook! section-mode-hook %settle-on-mode)
+(add-hook! buffers:after-edit %settle-after-edit)
+(add-hook! views:drawn-ranges-changed %settle-when-drawn)
+(add-hook! commands:after-command %note-section-change)
 (keys:bind! showcase-keymap "g" keys:undefined)
 (keys:bind! list-keys "C-n" next-row)
 (keys:bind! list-keys "<down>" next-row)

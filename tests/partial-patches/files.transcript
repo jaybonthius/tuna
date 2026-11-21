@@ -1,0 +1,22 @@
+; Lines and hunks of renamed, new, intent-to-add and deleted files, and
+; of a file whose mode changed.
+> (run-edges! '(rename-two-hunks new-file-staged new-file-intent-to-add))
+(trials 46 failures ())
+> (run-edges! '(deleted-unstaged deleted-staged mode-change))
+(trials 46 failures ())
+; Staging one hunk of a file whose mode changed keeps the old mode.
+> (define d (fresh "mode"))
+> ((cdr (assq 'mode-change edges)) d)
+("m.sh" stage discard)
+> (define repo (repository-of d))
+> (let ([f (car (git:diff repo '()))]) (git:apply repo (diff:hunks-patch f (list (car (diff:file-hunks f)))) '("--cached")))
+> (utf8->string (git:query repo '("ls-files" "-s")))
+"100644 1567f14bd849f5b32f4393d226b06801cfa8a25b 0\tm.sh\n"
+; The rename stays staged when a hunk of it is unstaged.
+> (define d (fresh "rename"))
+> ((cdr (assq 'rename-two-hunks edges)) d)
+("new.txt" unstage discard-staged)
+> (define repo (repository-of d))
+> (let ([f (car (git:diff repo '("--cached")))]) (git:apply repo (diff:reverse-hunks-patch f (list (cadr (diff:file-hunks f)))) '("--reverse" "--cached")))
+> (utf8->string (git:query repo '("status" "--short")))
+"RM old.txt -> new.txt\n"

@@ -1,0 +1,5 @@
+; Paths git quotes, a path that is not UTF-8, and paths holding spaces.
+> (run-edges! '(quoted-tab quoted-quote-and-backslash latin1-path))
+(trials 42 failures ())
+> (run-edges! '(space-file space-folder-staged space-and-quote space-new-file space-deleted-file))
+(trials 70 failures ())

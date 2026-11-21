@@ -188,6 +188,12 @@
   (import (files disk))
   (emit (guard (c [#t (failure c)]) (make-new-folder path))))
 
+;; A file that cannot be read counts as unchanged, so its buffer is left
+;; as a gone file's is.
+(jobs:define-worker (%change-checker files emit)
+  (import (files disk))
+  (emit (map (lambda (f) (guard (c [#t #f]) (apply changed-on-disk? f))) files)))
+
 (module %internals
   (check-main-thread check-buffer check-path check-task file-entry entry-of entry-path entry-length entry-hash
    entry-live? visited-buffers buffer-at open-buffer! remember-read! take-read!
@@ -857,16 +863,39 @@
           (when (entry-live? e)
             (save! 'files:write-file e #f)))))))
 
-(commands:define-command (save-some-buffers)
-  "Asks, for each modified file buffer, whether to save it, and saves each answered y."
+(define (%every-buffer buffer) #t)
+
+(commands:define-command (save-some-buffers [predicate %every-buffer])
+  "Asks, for each modified file buffer PREDICATE accepts, whether to save it, and saves each answered y."
   (check-main-thread 'files:save-some-buffers)
+  (unless (procedure? predicate)
+    (assertion-violation 'files:save-some-buffers "not a procedure" predicate))
   (for-each
     (lambda (b)
-      (when (and (entry-of b) (buffers:modified? b)
+      (when (and (entry-of b) (buffers:modified? b) (predicate b)
                  (ask:y-or-n? (format "Save file ~a? " (abbreviated-path (path b))))
                  (entry-of b))
         (save-buffer b)))
     (visited-buffers)))
+
+(define (revert-changed-buffers predicate)
+  (check-main-thread 'files:revert-changed-buffers)
+  (unless (procedure? predicate)
+    (assertion-violation 'files:revert-changed-buffers "not a procedure" predicate))
+  (check-task 'files:revert-changed-buffers)
+  (let ([candidates (filter (lambda (b) (and (not (buffers:modified? b)) (predicate b))) (visited-buffers))])
+    (unless (null? candidates)
+      (let ([changed (run-operation 'files:revert-changed-buffers %change-checker
+                       (map (lambda (b)
+                              (let ([e (entry-of b)]) (list (entry-path e) (entry-length e) (entry-hash e))))
+                            candidates))])
+        ;; Typing goes on while a worker reads the files, so a buffer is
+        ;; checked again here and one modified meanwhile keeps its edits.
+        (for-each
+          (lambda (b changed?)
+            (when (and changed? (buffers:live? b) (entry-of b) (not (buffers:modified? b)))
+              (revert-from-file b)))
+          candidates changed)))))
 
 (commands:define-command (revert-from-file [buffer (buffers:current)])
   "Reads BUFFER's file again and replaces the part of the text that differs, as one edit."

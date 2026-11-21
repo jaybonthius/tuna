@@ -1,0 +1,92 @@
+; Neither a newline on the program's standard input nor RET typed on its
+; terminal answers for the user.
+> (sh "git init -q -b main repo && cd repo && echo a > a.txt && git add a.txt")
+> (define repo (git:find-repository (at "repo")))
+> (define (committing options)
+    (let* ([editing (with-editor:output-wrapper)] [status #f]
+           [process (processes:start "git" '("commit" "-q") (editing (lambda (bytes end) (void)))
+                      (lambda (s) (set! status s)) options)])
+      (lambda (message) (if message (begin (processes:send! process message) process) status))))
+> (define piped
+    (committing (processes:options [directory (at "repo")] [environment (with-editor:environment "GIT_EDITOR")])))
+> (wait-until (lambda () (equal? (shown) "COMMIT_EDITMSG")))
+> (piped "\n")
+#<process 2 git>
+> (sleep-for 0.3)
+> (list (shown) (piped #f))
+("COMMIT_EDITMSG" #f)
+> (buffers:replace! (views:buffer (layout:selected-view)) 1 1 "Through a pipe\n")
+#<edit 1>
+> (press! "C-c" "C-c")
+> (wait-until (lambda () (piped #f)))
+> (list (piped #f) (subjects repo))
+(0 "Through a pipe\n")
+> (sh "cd repo && echo b > b.txt && git add b.txt")
+> (define on-terminal
+    (committing (processes:options [directory (at "repo")] [environment (with-editor:environment "GIT_EDITOR")]
+                                   [terminal '(24 . 80)])))
+> (wait-until (lambda () (equal? (shown) "COMMIT_EDITMSG")))
+> (on-terminal "\r")
+#<process 4 git>
+> (sleep-for 0.3)
+> (list (shown) (on-terminal #f))
+("COMMIT_EDITMSG" #f)
+> (buffers:replace! (views:buffer (layout:selected-view)) 1 1 "On a terminal\n")
+#<edit 1>
+> (press! "C-c" "C-c")
+> (wait-until (lambda () (on-terminal #f)))
+> (list (on-terminal #f) (subjects repo))
+(0 "On a terminal\nThrough a pipe\n")
+; A request split across pieces of output is put together; one with
+; another token passes through; a relative file is found from the
+; request's folder.
+> (define received '())
+> (define receive (lambda (bytes end) (set! received (cons (if (eof-object? bytes) 'eof (utf8->string bytes)) received))))
+> (define editing (with-editor:output-wrapper))
+> (define filter-output (editing receive))
+> (sh "mkdir -p tmp/request sub && printf '%s\\n%s\\n' \"$HOME/sub\" notes.txt > tmp/request/request && echo old > sub/notes.txt")
+> (define token (cdr (assoc "TUNA_EDIT_TOKEN" (with-editor:environment "EDITOR"))))
+> (define request (string-append "\x1b;]7563;tuna-edit;" token ";" (at "tmp/request") "\a\n"))
+> (filter-output (string->utf8 (string-append "before " (substring request 0 9))) 10)
+> (filter-output (string->utf8 (string-append (substring request 9 (string-length request)) "after\n")) 20)
+> (filter-output (string->utf8 "\x1b;]7563;tuna-edit;other-token;/tmp/x\a\n") 30)
+> (filter-output (string->utf8 "\x1b;[1m bold\n") 40)
+> (filter-output (eof-object) 40)
+> (map (lambda (r) (if (string? r) (string->list r) r)) (reverse received))
+((#\b #\e #\f #\o #\r #\e #\space) (#\a #\f #\t #\e #\r #\newline) (#\esc #\] #\7 #\5 #\6 #\3 #\; #\t #\u #\n #\a #\- #\e #\d #\i #\t #\; #\o #\t #\h #\e #\r #\- #\t #\o #\k #\e #\n #\; #\/ #\t #\m #\p #\/ #\x #\alarm #\newline) (#\esc #\[ #\1 #\m #\space #\b #\o #\l #\d #\newline) eof)
+> (wait-until (lambda () (equal? (shown) "notes.txt")))
+> (equal? (files:path (views:buffer (layout:selected-view))) (at "sub/notes.txt"))
+#t
+> (press! "C-c" "C-c")
+> (call-with-input-file (at "tmp/request/answer") get-line)
+"done"
+; When the program has ended, C-c C-c saves and says so; a later request
+; for the same file reads it again, so the stale text goes.
+> (sh "rm -f tmp/request/answer && echo fresh > sub/notes.txt")
+> (filter-output (string->utf8 request) 50)
+> (wait-until (lambda () (equal? (shown) "notes.txt")))
+> (define notes (views:buffer (layout:selected-view)))
+> (buffers:replace! notes 1 1 "stale ")
+#<edit 1>
+> (sh "rm -rf tmp/request")
+> (set! said '())
+> (press! "C-c" "C-c")
+> (list (take-said!) (buffers:live? notes) (text notes))
+(("Wrote ~/sub/notes.txt" "The program that asked for this file has ended") #t "stale fresh\n")
+> (sh "mkdir -p tmp/request && printf '%s\\n%s\\n' \"$HOME/sub\" notes.txt > tmp/request/request && echo rewritten > sub/notes.txt")
+> (filter-output (string->utf8 request) 60)
+> (wait-until (lambda () (equal? (text notes) "rewritten\n")))
+> (text notes)
+"rewritten\n"
+> (press! "C-c" "C-k")
+> (call-with-input-file (at "tmp/request/answer") get-line)
+"cancel"
+; The script gives up when Tuna's process is gone.
+> (sh "mkdir -p dead")
+> (let-values ([(status out err)
+                (processes:run "sh" (list (at ".cache/tuna/with-editor.sh") "file.txt") #f
+                  (processes:options [directory (at "dead")]
+                                     [environment (list (cons "TUNA_PID" "999999999") (cons "TUNA_EDIT_TOKEN" "t")
+                                                        (cons "TMPDIR" (at "dead")))]))])
+    (list status (directory-list (at "dead"))))
+(1 ())

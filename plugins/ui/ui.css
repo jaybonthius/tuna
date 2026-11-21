@@ -194,6 +194,31 @@
   .ui-showcase-faint {
     color: var(--tuna-text-faint);
   }
+  .ui-section-heading {
+    display: flex;
+    align-items: baseline;
+  }
+
+  .ui-section-heading > :not(.ui-section-chevron, .ui-section-ellipsis) {
+    min-width: 0;
+  }
+
+  .ui-section-chevron {
+    flex: none;
+    width: 1.25em;
+    color: var(--ui-section-chevron-text, var(--tuna-text-muted));
+    cursor: pointer;
+  }
+
+  /* The heading draws the ellipsis of a hidden section itself, so the
+     line a view gives the fold's own ellipsis would be an empty row. */
+  .ui-section > .line:has(> .fold) {
+    display: none;
+  }
+
+  .ui-section.current {
+    background: var(--ui-section-current-background, var(--tuna-surface-subtle));
+  }
 }
 
 @layer preferences {

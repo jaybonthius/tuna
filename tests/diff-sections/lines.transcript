@@ -1,0 +1,48 @@
+; diff-sections:line-at gives the hunk section and the index of the line
+; at a position; a heading or a drawn marker is no line.
+> (define files (parse "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1,4 +1,4 @@\n one\n-two\n+TWO\n three\n-four\n+FOUR\n"
+                       "diff --git a/b.py b/b.py\n--- a/b.py\n+++ b/b.py\n@@ -1 +1 @@\n-b\n+B\n"))
+> (define b (apply show-sections! "*lines*" (map diff-sections:file-section files)))
+> (define v (view))
+> (define (at line column) (+ (line-position b line) column))
+> (define (line-at p) (call-with-values (lambda () (diff-sections:line-at v p)) (lambda (h i) (list (and h (ui:section-value h)) i))))
+> (map (lambda (line) (line-at (at line 1))) '("modified   a.py" "@@ -1,4 +1,4 @@" " one" "-two" "+TWO" "+FOUR" "modified   b.py" "-b"))
+((#f #f) (#f #f) ("@@ -1,4 +1,4 @@" 0) ("@@ -1,4 +1,4 @@" 1) ("@@ -1,4 +1,4 @@" 2) ("@@ -1,4 +1,4 @@" 5) (#f #f) ("@@ -1 +1 @@" 0))
+> (views:set-point! v (at "-two" 2))
+> (call-with-values (lambda () (diff-sections:line-at v)) (lambda (h i) (list (ui:section-type h) i)))
+(hunk 1)
+; diff-sections:selected-lines gives the hunk and the first and last
+; lines the region touches; a line holding the region's end counts only
+; when the region reaches into its text.
+> (define (selected from to)
+    (views:set-mark! v from)
+    (views:set-point! v to)
+    (call-with-values (lambda () (diff-sections:selected-lines v)) (lambda (h first last) (list (and h (ui:section-value h)) first last))))
+> (selected (at "-two" 0) (at "+TWO" 2))
+("@@ -1,4 +1,4 @@" 1 2)
+> (selected (at "-two" 1) (at " three" 0))
+("@@ -1,4 +1,4 @@" 1 2)
+> (selected (at " one" 0) (at "-four" 1))
+("@@ -1,4 +1,4 @@" 0 4)
+> (selected (at "-two" 0) (at "-b" 1))
+(#f #f #f)
+> (selected (at "@@ -1,4 +1,4 @@" 0) (at "-two" 1))
+(#f #f #f)
+> (views:set-mark! v #f)
+> (call-with-values (lambda () (diff-sections:selected-lines v)) list)
+(#f #f #f)
+; The selection gives what a partial patch takes: the hunk read back
+; from the buffer, and its file.
+> (selected (at "-two" 0) (at "+TWO" 2))
+("@@ -1,4 +1,4 @@" 1 2)
+> (let-values ([(h first last) (diff-sections:selected-lines v)])
+    (display (utf8->string (diff:lines-patch (diff-sections:file h b) (diff-sections:hunk h) first last))))
+diff --git a/a.py b/a.py
+--- a/a.py
++++ b/a.py
+@@ -1,4 +1,4 @@
+ one
+-two
++TWO
+ three
+ four

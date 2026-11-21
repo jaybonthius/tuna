@@ -1319,14 +1319,23 @@
   ;; Reconciling compares datums, read once for the whole node, so
   ;; unchanged children cost an equal? each.
 
+  ;; Strings are joined at every depth, as the document holds them, so a
+  ;; node whose new datum splits its text differently is not edited.
   (define (normalize datums)
-    (let loop ([ds datums] [acc '()])
+    (define (node d)
+      (if (pair? d)
+          (let ([content (normalize (cddr d))])
+            (if (eq? content (cddr d)) d (cons* (car d) (cadr d) content)))
+          d))
+    (let loop ([ds datums] [acc '()] [same? #t])
       (cond
-        [(null? ds) (reverse acc)]
-        [(and (string? (car ds)) (string=? (car ds) "")) (loop (cdr ds) acc)]
-        [(and (string? (car ds)) (pair? acc) (string? (car acc)))
-         (loop (cdr ds) (cons (string-append (car acc) (car ds)) (cdr acc)))]
-        [else (loop (cdr ds) (cons (car ds) acc))])))
+        [(null? ds) (if same? datums (reverse acc))]
+        [(not (string? (car ds)))
+         (let ([d (node (car ds))]) (loop (cdr ds) (cons d acc) (and same? (eq? d (car ds)))))]
+        [(string=? (car ds) "") (loop (cdr ds) acc #f)]
+        [(and (pair? acc) (string? (car acc)))
+         (loop (cdr ds) (cons (string-append (car acc) (car ds)) (cdr acc)) #f)]
+        [else (loop (cdr ds) (cons (car ds) acc) same?)])))
 
   (define (datum-length d)
     (cond
@@ -1370,7 +1379,7 @@
       [else
        (unless (equal? (cadr old) (cadr new))
          (splice-content! who b at (fx+ at 1) (boundaries 0 '() (list (cons (car new) (cadr new)))) #f))
-       (reconcile-children! who b (fx+ at 1) (cddr old) (normalize (cddr new)))]))
+       (reconcile-children! who b (fx+ at 1) (cddr old) (cddr new))]))
 
   ;; Only nodes of one kind and attributes are entered, so the count is of
   ;; tokens the two lists have in common.

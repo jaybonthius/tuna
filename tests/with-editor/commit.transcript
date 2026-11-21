@@ -1,0 +1,121 @@
+; with-editor:environment names the editor script, written to Tuna's
+; cache folder as the plugin loads, with this Tuna's token and process.
+> (map car (with-editor:environment "GIT_EDITOR"))
+("GIT_EDITOR" "TUNA_EDIT_TOKEN" "TUNA_PID")
+> (equal? (cdr (assoc "GIT_EDITOR" (with-editor:environment "GIT_EDITOR")))
+          (string-append "sh '" home "/.cache/tuna/with-editor.sh'"))
+#t
+> (file-exists? (at ".cache/tuna/with-editor.sh"))
+#t
+; git commit through a pipe asks for its message: the request is taken
+; out of git's output and COMMIT_EDITMSG opens in the selected view.
+> (sh "git init -q -b main repo && cd repo && echo a > a.txt && git add a.txt")
+> (define repo (git:find-repository (at "repo")))
+> (layout:switch-to-buffer (buffers:make "other" ""))
+> (layout:switch-to-buffer (buffers:make "notes" ""))
+> (define editing (with-editor:output-wrapper))
+> (define commit
+    (git:start repo '("commit") (lambda (c) (when (with-editor:canceled? editing) (git:set-command-canceled! c)))
+               (processes:options [environment (with-editor:environment "GIT_EDITOR")]) editing))
+> (wait-until (lambda () (equal? (shown) "COMMIT_EDITMSG")))
+> (shown)
+"COMMIT_EDITMSG"
+> (take-said!)
+("Type C-c C-c to finish, C-c C-k to cancel")
+> (define message (views:buffer (layout:selected-view)))
+> (with-editor:mode)
+#f
+> (buffers:with-buffer message (with-editor:mode))
+#t
+> (git:command-output commit)
+""
+; C-c C-c saves the file, answers done, and kills the buffer, so the
+; view shows the buffer it showed before; the script removes its folder.
+> (buffers:replace! message 1 1 "First commit\n")
+#<edit 1>
+> (press! "C-c" "C-c")
+> (wait-until (lambda () (git:command-exit commit)))
+> (list (git:command-exit commit) (buffers:live? message) (subjects repo) (shown))
+(0 #f "First commit\n" "notes")
+> (request-folders)
+()
+; C-c C-k answers cancel: git gives up, the command is marked canceled,
+; the view shows the buffer it showed before, and git's message names
+; the script in one line.
+> (sh "cd repo && echo b > b.txt && git add b.txt")
+> (layout:switch-to-buffer (buffers:make "draft" ""))
+> (define finished '())
+> (define canceled '())
+> (add-hook! with-editor:finished (lambda (path) (set! finished (cons path finished))))
+> (add-hook! with-editor:canceled (lambda (path) (set! canceled (cons path canceled))))
+> (define editing (with-editor:output-wrapper))
+> (define commit
+    (git:start repo '("commit") (lambda (c) (when (with-editor:canceled? editing) (git:set-command-canceled! c)))
+               (processes:options [environment (with-editor:environment "GIT_EDITOR")]) editing))
+> (wait-until (lambda () (equal? (shown) "COMMIT_EDITMSG")))
+> (define message (views:buffer (layout:selected-view)))
+> (buffers:replace! message 1 1 "Second commit\n")
+#<edit 1>
+> (press! "C-c" "C-k")
+> (wait-until (lambda () (git:command-exit commit)))
+> (list (git:command-exit commit) (git:command-canceled? commit) (buffers:live? message) (subjects repo) (shown))
+(1 #t #f "First commit\n" "draft")
+> (equal? canceled (list (at "repo/.git/COMMIT_EDITMSG")))
+#t
+> (git:command-output commit)
+"error: there was a problem with the editor 'sh '$HOME/.cache/tuna/with-editor.sh''\nPlease supply the message using either -m or -F option.\n"
+; The checks run first: an entry that returns #f keeps the buffer open
+; and git waiting, and C-u skips them.
+> (define editing (with-editor:output-wrapper))
+> (define commit (git:start repo '("commit") (lambda (c) #f)
+                   (processes:options [environment (with-editor:environment "GIT_EDITOR")]) editing))
+> (wait-until (lambda () (equal? (shown) "COMMIT_EDITMSG")))
+> (define message (views:buffer (layout:selected-view)))
+> (buffers:replace! message 1 1 "Third commit\n")
+#<edit 1>
+> (define (refuse buffer) #f)
+> (add-hook! with-editor:finish-checks refuse)
+> (add-hook! with-editor:cancel-checks refuse)
+> (press! "C-c" "C-c")
+> (press! "C-c" "C-k")
+> (list (buffers:live? message) (git:command-exit commit))
+(#t #f)
+> (press! "C-u" "C-c" "C-c")
+> (wait-until (lambda () (git:command-exit commit)))
+> (list (git:command-exit commit) (subjects repo))
+(0 "Third commit\nFirst commit\n")
+> (remove-hook! with-editor:finish-checks refuse)
+> (remove-hook! with-editor:cancel-checks refuse)
+> (equal? (car finished) (at "repo/.git/COMMIT_EDITMSG"))
+#t
+; Killing the buffer another way cancels.
+> (sh "cd repo && echo c > c.txt && git add c.txt")
+> (define editing (with-editor:output-wrapper))
+> (define commit (git:start repo '("commit") (lambda (c) #f)
+                   (processes:options [environment (with-editor:environment "GIT_EDITOR")]) editing))
+> (wait-until (lambda () (equal? (shown) "COMMIT_EDITMSG")))
+> (define message (views:buffer (layout:selected-view)))
+> (buffers:kill! message)
+#t
+> (wait-until (lambda () (git:command-exit commit)))
+> (list (git:command-exit commit) (with-editor:canceled? editing) (length canceled))
+(1 #t 2)
+; C-u C-c C-k cancels without asking the cancel checks.
+> (define editing (with-editor:output-wrapper))
+> (define commit (git:start repo '("commit") (lambda (c) #f)
+                   (processes:options [environment (with-editor:environment "GIT_EDITOR")]) editing))
+> (wait-until (lambda () (equal? (shown) "COMMIT_EDITMSG")))
+> (define message (views:buffer (layout:selected-view)))
+> (add-hook! with-editor:cancel-checks refuse)
+> (press! "C-c" "C-k")
+> (buffers:live? message)
+#t
+> (press! "C-u" "C-c" "C-k")
+> (wait-until (lambda () (git:command-exit commit)))
+> (list (git:command-exit commit) (buffers:live? message))
+(1 #f)
+> (remove-hook! with-editor:cancel-checks refuse)
+; C-c C-c in a buffer no program waits for is an error.
+> (define plain (buffers:make "plain" "text\n"))
+> (buffers:with-buffer plain (with-editor:finish #f))
+! with-editor:finish: no program waits for this buffer

@@ -1,0 +1,24 @@
+; A file whose lines repeat near a hunk: git apply looks for the hunk
+; from the start the patch gives, so the start on the side the patch
+; applies to must be git's, or an identical place nearer it is patched
+; instead. The second hunk deletes a line below ten lines the first adds.
+> (run-edges! '(repeated-lines repeated-lines-staged))
+(trials 236 failures ())
+> (define d (fresh "repeated"))
+> ((cdr (assq 'repeated-lines-staged edges)) d)
+("r.txt" unstage discard-staged)
+> (define f (car (git:diff (repository-of d) '("--cached"))))
+> (map (lambda (h) (utf8->string (diff:hunk-heading h))) (diff:file-hunks f))
+("@@ -1,4 +1,14 @@" "@@ -19,7 +29,6 @@ x")
+> (display (utf8->string (diff:reverse-hunks-patch f (list (cadr (diff:file-hunks f))))))
+diff --git a/r.txt b/r.txt
+--- a/r.txt
++++ b/r.txt
+@@ -29,7 +29,6 @@ x
+ x
+ x
+ x
+-DEL
+ x
+ x
+ x
