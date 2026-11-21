@@ -136,8 +136,8 @@
     (parameterize ([web:current-client client])
       ((table-ref web:input-handlers "scroll") client
        `(("type" . "scroll") ("view" . ,(views:id v)) ("placement" . ,(number-after "data-placement=\""))
-         ("report" . 1) ("version" . ,(number-after "data-version=\"")) ("slotVersion" . 0) ("top" . null) ("fraction" . 0)
+         ("report" . 1) ("version" . ,(number-after "data-version=\"")) ("top" . null) ("fraction" . 0)
          ("spacer" . #f) ("left" . null) ("past" . 0) ("sides" . #()) ("start" . null) ("end" . null) ("atStart" . #f) ("atEnd" . #t)
          ("columns" . ,(quotient width 10)) ("rows" . ,(quotient height 20)) ("pointVisible" . #t)
-         ("wanted" . null) ("hand" . #f) ("settled" . #f) ("edge" . "top"))))))
+         ("wanted" . (("aboveLines" . 100) ("aboveChars" . 20000) ("belowLines" . 100) ("belowChars" . 20000) ("side" . 2000))) ("hand" . #f) ("settled" . #f) ("edge" . "top"))))))
 (import (console))

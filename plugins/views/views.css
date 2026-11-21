@@ -24,10 +24,10 @@
        long word also breaks inside a box sized by its content, such as an
        item of a row. */
     overflow-wrap: anywhere;
-    scrollbar-color: var(--tuna-border-strong) transparent;
-    /* Room for the bar stays reserved, so a bar that appears changes no
-       width, which would make the page forget its heights. */
-    scrollbar-gutter: stable;
+    /* The page draws the view's scroll bars from the text in view; the
+       browser's measure pixels, and those of text never drawn are
+       guesses. */
+    scrollbar-width: none;
     /* A swipe across a view goes on to a row strip around it, and a
        column strip sets the variable so that a swipe past a view's end
        scrolls the strip. */
@@ -35,21 +35,95 @@
     overscroll-behavior-inline: auto;
   }
 
-  /* Lines that do not wrap keep their heights at any width, so a bar
-     that appears costs them nothing; and Chromium stops the sideways
-     scroll of a view whose text fits its height a gutter's width short,
-     hiding the end of its longest line under the empty gutter. */
   .view.nowrap {
     white-space: pre;
-    scrollbar-gutter: auto;
   }
 
-  /* The view's padding past the end of its longest line is scrollable
-     only after a box as wide as that line, so point at its end can be
-     shown clear of the padding. */
-  .view.nowrap > .view-lines {
-    inline-size: max-content;
-    min-inline-size: 100%;
+  /* A sticky box keeps its place at the start of the scrolling box, so
+     the bars drawn from it stay over the view as it scrolls, moved by
+     the browser with no script; the page places them from it. */
+  .view > .view-bars {
+    position: sticky;
+    inset-block-start: 0;
+    inset-inline-start: 0;
+    z-index: 1;
+    block-size: 0;
+    inline-size: 0;
+    cursor: default;
+  }
+
+  /* A bar lies over the view's edge, inside its padding, so showing it
+     moves no text. */
+  .view-scroll-bar {
+    position: absolute;
+    visibility: hidden;
+    opacity: 0;
+  }
+
+  .view-scroll-bar[data-scroll-bar="vertical"] {
+    inset-block-start: var(--views-bar-y, 0px);
+    inset-inline-start: calc(var(--views-bar-x, 0px) - var(--views-scroll-bar-size, var(--tuna-space-4, 0.5rem)));
+    block-size: var(--views-bar-length, 0px);
+    inline-size: var(--views-scroll-bar-size, var(--tuna-space-4, 0.5rem));
+  }
+
+  .view-scroll-bar[data-scroll-bar="horizontal"] {
+    inset-block-start: calc(var(--views-bar-y, 0px) - var(--views-scroll-bar-size, var(--tuna-space-4, 0.5rem)));
+    inset-inline-start: var(--views-bar-x, 0px);
+    block-size: var(--views-scroll-bar-size, var(--tuna-space-4, 0.5rem));
+    inline-size: var(--views-bar-length, 0px);
+  }
+
+  .view-bars[data-shown] > .view-scroll-bar {
+    visibility: visible;
+    opacity: 1;
+  }
+
+  .view-scroll-bar[data-fits] {
+    display: none;
+  }
+
+  .view-thumb {
+    position: absolute;
+    border-radius: var(--tuna-radius-full, 9999px);
+    background: var(--views-thumb-background, var(--tuna-border-strong, GrayText));
+    touch-action: none;
+  }
+
+  [data-scroll-bar="vertical"] > .view-thumb {
+    inset-block-start: var(--views-thumb-start, 0px);
+    inset-inline-end: 0;
+    block-size: var(--views-thumb-size, 0px);
+    min-block-size: var(--tuna-space-8, 2rem);
+    inline-size: 50%;
+  }
+
+  [data-scroll-bar="horizontal"] > .view-thumb {
+    inset-inline-start: var(--views-thumb-start, 0px);
+    inset-block-end: 0;
+    inline-size: var(--views-thumb-size, 0px);
+    min-inline-size: var(--tuna-space-8, 2rem);
+    block-size: 50%;
+  }
+
+  [data-scroll-bar="vertical"]:is(:hover, [data-held]) > .view-thumb {
+    inline-size: 100%;
+  }
+
+  [data-scroll-bar="horizontal"]:is(:hover, [data-held]) > .view-thumb {
+    block-size: 100%;
+  }
+
+  .view-scroll-bar[data-held] > .view-thumb {
+    background-image: linear-gradient(var(--views-thumb-held-background, var(--tuna-hover)),
+                                      var(--views-thumb-held-background, var(--tuna-hover)));
+  }
+
+  /* A finger needs more room than the thin line a phone's bar shows. */
+  .view-bars[data-shown="touch"] > .view-scroll-bar > .view-thumb::before {
+    content: "";
+    position: absolute;
+    inset: calc(-1 * var(--tuna-space-6, 1rem));
   }
 
   /* A spacer has no margins, which would fall outside what the page
@@ -154,11 +228,9 @@
     outline-color: var(--tuna-cursor, CanvasText);
   }
 
-  /* A placement's place in text, and point where no cursor is drawn: a
-     row's box, as the cursor has, with no width, so the text does not
-     shift around it. */
-  .view-place,
-  .view-point {
+  /* A placement's place in text: a row's box, as the cursor has, with no
+     width, so the text does not shift around it. */
+  .view-place {
     display: inline-block;
     block-size: 1lh;
     vertical-align: top;
@@ -251,6 +323,18 @@
 }
 
 @layer preferences {
+  @media (prefers-reduced-motion: no-preference) {
+    /* A bar fades once its view stops scrolling, as a phone's does. */
+    .view-scroll-bar {
+      transition: opacity var(--tuna-duration-5, 300ms) var(--tuna-ease-1, ease) var(--tuna-duration-6, 500ms),
+                  visibility 0s linear calc(var(--tuna-duration-5, 300ms) + var(--tuna-duration-6, 500ms));
+    }
+
+    .view-bars[data-shown] > .view-scroll-bar {
+      transition: opacity var(--tuna-duration-2, 100ms) var(--tuna-ease-1, ease);
+    }
+  }
+
   /* Forced colours drop backgrounds, which are all a cursor and the region
      show. A theme's blend mode survives them, and would turn a CanvasText
      cursor into the page's own colour. */

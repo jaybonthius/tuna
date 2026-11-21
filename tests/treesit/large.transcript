@@ -16,9 +16,9 @@
     (modes:set-major-mode python:mode b))
 > (let loop () (unless first-runs (sleep-for 0.01) (loop)))
 > (drawn-lines v)
-((19940 20060))
+((19900 20100))
 > (map (lambda (s) (list (line-of b (car s)) (line-of b (- (cadr s) 1)))) (list-head (sets) 1))
-((19940 20060))
+((19900 20098))
 > (null? (faces-now b 0 (line-start b 100)))
 #t
 > (settle b)

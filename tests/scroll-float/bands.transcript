@@ -50,7 +50,7 @@
 > (let ([html (screen-of desktop)])
     (let ([i (search html "<button class=\"strip-edge start\"" 0)])
       (substring html i (search html ">" i))))
-"<button class=\"strip-edge start\" type=\"button\" tabindex=\"-1\" aria-label=\"b, and 1 more\" data-at=\"3\" data-to=\"4\" data-keymap=\"1 clickable\""
+"<button class=\"strip-edge start\" type=\"button\" tabindex=\"-1\" aria-label=\"b, and 1 more\" data-at=\"3\" data-to=\"4\" data-keymap=\"2 clickable\""
 ; The band carries the layout's keymap, the one its click is looked up in,
 ; so it shows as clickable; a click on it, which the page sends with that
 ; keymap's number, selects b.

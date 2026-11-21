@@ -16,7 +16,7 @@
 > (report! desktop v 603)
 > (settle b)
 > (in-order (drawn-lines v) (spans-of b) (job-events))
-(((545 680)) () ())
+(((564 661)) () ())
 > (table-set! treesit:grammars "python" python-grammar)
 > (syntax-highlighting:update! b)
 > (in-order (null? (faces b)) (job-events))

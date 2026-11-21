@@ -18,6 +18,16 @@
 (define-option point-after-insertion? #f boolean?
   "Whether a view's point where text is inserted stays after the text, and the view follows it; read when the view shows the buffer, and set locally by a buffer's mode.")
 
+(define-option vertical-scroll-bar #t boolean?
+  "Whether a view draws a scroll bar at its side when its text is taller than it.")
+(define-option horizontal-scroll-bar #f boolean?
+  "Whether a view whose lines do not wrap draws a scroll bar along its foot when a line is wider than it.")
+
+(define-table scroll-bar-keymap
+  "The keymap of a view's vertical scroll bar: a press there off the thumb is a mouse key at the place in the text at the press's share of the bar.")
+(define-table horizontal-scroll-bar-keymap
+  "The keymap of a view's horizontal scroll bar: a press there off the thumb is a mouse key at the place on the line in view at the press's share of the bar.")
+
 (define-table span-properties
   "Maps a key of a span's value to a procedure that returns attributes for the span's element.")
 
@@ -38,6 +48,10 @@
 
 (define-enumeration axis (row column) %axes)
 
+;; Named as Emacs's scroll bar events name the parts a press off the
+;; thumb lies in.
+(define-enumeration bar-part (above-handle below-handle before-handle after-handle) %bar-parts)
+
 (define-hook drawn-ranges-changed
   "Called with a view and a buffer, current, when the view's drawn ranges of the buffer differ from what they were after the previous screens.")
 
@@ -47,7 +61,7 @@
    switch-buffer! previous-buffer-in! next-buffer-in! replace-buffer-in! previous-buffers-of last-point-of set-last-point-of! previewing-in?
    preview-in! end-preview-in!
    view-record? view-record-dropped? view-record-id view-record-cursors view-record-cursors-set! view-record-moved?
-   set-folds! view-record-narrowing-set! view-record-shown-count top-position body-size-in
+   view-record-folds-set! view-record-narrowing-set! view-record-shown-count top-position body-size-in
    cursor-record? cursor-record-view cursor-record-goal cursor-record-goal-set!
    spot-position point-of mark-of set-cursor-spots! move-point! add-cursor-at! primary-moved! mark-dirty!
    bounds-of live-folds add-fold! narrow-view! widen-view! stop-after stop-before
@@ -55,7 +69,7 @@
    scroll-to-place! draw-view current-context context-view context-client in-line? make-context children-html drawing?
    atom-view-of keymaps-at note-edit note-kill after-batch scroll-report mouse-item posn-keymaps forget-client!
    posn-record? make-posn-record posn-record-view posn-record-point posn-record-node posn-record-keymaps
-   posn-record-x posn-record-y posn-record-column posn-record-row keymap-id marked-keymaps click-state
+   posn-record-x posn-record-y posn-record-column posn-record-row posn-record-part keymap-id marked-keymaps click-state
    view-client scroll-page! recenter! follows-point? leader-of region-ranges-of
    rows-shown-in hscroll-column-of hscroll-line-of set-hscroll-in! move-to-row! row-start-in
    face-attributes title-attributes text-spans-html
@@ -75,25 +89,19 @@
   ;; Positions a view keeps are anchors while it shows a live buffer, and
   ;; plain numbers while it waits for one, as views restored from saved
   ;; data do until their buffer is made.
-  ;; SPLICES are the changes to the view's slots since SLOT-BASE, newest
-  ;; first, one a slot version up to SLOT-VERSION; SLOT-DOC is the
-  ;; document the last of them was counted in, since an edit can change
-  ;; slots before it, which only the text before the edit shows.
   (define-record-type view-record
     (sealed #t)
     (fields id (mutable name) (mutable buffer) (mutable cursors) (mutable place) (mutable moved?) clients
             (mutable folds) (mutable narrowing) (mutable options) (mutable states)
             (mutable saved?) (mutable host) (mutable dropped?) (mutable shown-count)
             (mutable items) (mutable items-key) (mutable drawn) (mutable next-item) (mutable leader) (mutable edge)
-            (mutable previous) (mutable next) (mutable preview)
-            (mutable slot-version) (mutable slot-base) (mutable splices) (mutable slot-doc))
+            (mutable previous) (mutable next) (mutable preview))
     (protocol
       (lambda (new)
         (lambda (id name buffer place folds narrowing saved?)
           (new id name buffer '() place #f (make-eq-hashtable)
                folds narrowing '() '() saved? #f #f 0 (make-eqv-hashtable) #f 0 1 #f 'top
-               '() '() #f
-               0 0 '() #f)))))
+               '() '() #f)))))
 
   ;; A place is an intent the page carries out in its own geometry: a
   ;; position, the item holding SPOT at the top with FRACTION of its
@@ -108,34 +116,24 @@
 
   (define (follow-place) (make-place 'follow #f 0.0 0 #f))
 
-  ;; What a page asked to have drawn beyond each edge of what it shows,
-  ;; kept as anchors so that edits since keep it on the same text, with
-  ;; the slots it spanned then, and the characters beyond each side of a
-  ;; line that does not wrap. A run the page did not ask for, drawn from
-  ;; what it would show, is kept the same way, not ASKED?.
-  (define-record-type ask
+  ;; Counted as the spacers are, so the run and the spacers agree.
+  (define-record-type wanted
     (sealed #t)
-    (fields above below slots side asked?))
-
-  (define-record-type splice
-    (sealed #t)
-    (fields version from removed inserted))
+    (fields above-lines above-chars below-lines below-chars side))
 
   ;; RANGE-BUFFER is the buffer whose drawn ranges the hook was last told
   ;; hold this client's range. A range can go with no draw to notice it,
   ;; when its client leaves, its view shows another buffer or a screen
   ;; leaves its view out, and this tells each such loss once.
-  ;; SLOT-VERSION is the slot version of the client's previous screen
-  ;; of the view, which its page's height table counts at if it got it.
   (define-record-type client-view
     (sealed #t)
     (fields (mutable number) (mutable placement) (mutable facts) (mutable measured)
-            (mutable from) (mutable to) (mutable reported) (mutable drawn-batch) (mutable ask) (mutable sized)
-            (mutable range-buffer) (mutable slot-version))
+            (mutable from) (mutable to) (mutable reported) (mutable drawn-batch) (mutable wanted) (mutable sized)
+            (mutable range-buffer))
     (protocol
       (lambda (new)
         (lambda ()
-          (new 0 #f #f #f #f #f 0 -1 #f #f #f #f)))))
+          (new 0 #f #f #f #f #f 0 -1 initial-wanted #f #f)))))
 
   (define-record-type facts
     (sealed #t)
@@ -310,10 +308,9 @@
         (eq-hashtable-set! movers b v)
         (set! history-dirty? #t))))
 
-  (define client-rows (make-weak-eq-hashtable))
-
-  (define first-items 60)
-  (define first-side 2000)
+  ;; What a 1400 by 900 page asks for once it reports, so its first
+  ;; screen needs no second; a larger page's report brings one.
+  (define initial-wanted (make-wanted 100 20000 100 20000 2000))
 
   ;; Placement numbers start at a random base, so a page that applied a
   ;; number before this module reloaded never takes a new placement for
@@ -561,13 +558,12 @@
   ;; preview asks how big the view is.
   (define (forget-measured! v)
     (forget-items! v)
-    (forget-slots! v)
     (for-each-client-view
       (lambda (c cs)
         (when (client-view-facts cs) (client-view-sized-set! cs (client-view-facts cs)))
         (client-view-measured-set! cs #f)
         (client-view-facts-set! cs #f)
-        (client-view-ask-set! cs #f)
+        (client-view-wanted-set! cs initial-wanted)
         (client-view-from-set! cs #f)
         (client-view-to-set! cs #f))
       v))
@@ -579,7 +575,6 @@
   (define (forget-client! c)
     (for-each (lambda (v) (when (eq? (view-record-leader v) c) (view-record-leader-set! v #f))) views)
     (eq-hashtable-delete! presses c)
-    (eq-hashtable-delete! client-rows c)
     (vector-for-each (lambda (s) (hashtable-delete! (scroller-record-clients s) c)) (hashtable-values scrollers))
     (for-each
       (lambda (v)
@@ -616,7 +611,6 @@
           (when b (hashtable-update! by-buffer b (lambda (vs) (cons v vs)) '()))
           (view-record-buffer-set! v b)
           (view-record-shown-count-set! v (fx+ (view-record-shown-count v) 1)))
-        (forget-slots! v)
         (for-each-client-view (lambda (c cs) (forget-range! v cs)) v)
         (forget-items! v)
         (for-each forget-anchor! (hashtable-ref anchors-by-view v '())))))
@@ -925,7 +919,7 @@
                                 (not (exists (lambda (p) (fx< s p e)) points))))
                             (live-folds v))])
           (unless (fx= (length kept) (length (view-record-folds v)))
-            (set-folds! v kept)
+            (view-record-folds-set! v kept)
             (mark-dirty!))))))
 
   (define (merge-cursors! v)
@@ -1072,28 +1066,24 @@
   ;; the token before it, B - 1, is folded.
   (define (line-at v doc p)
     (let-values ([(lo hi) (item-bounds v doc)])
-      (line-at-in doc lo hi (fold-ranges v) p)))
-
-  ;; FOLDS are ranges sorted by their starts, so the items of the text
-  ;; before an edit are found with the folds as they were.
-  (define (line-at-in doc lo hi folds p)
-    (if (null? folds)
-        (item-at doc lo hi p)
-        (let ()
-          (define (folding b) (find-first (lambda (f) (fx< (car f) b (fx+ (cdr f) 1))) folds))
-          (let-values ([(s e n) (item-at doc lo hi p)])
-            (values
-              (let back ([s s])
-                (let ([f (and (fx> s lo) (folding s))])
-                  (if f
-                      (let-values ([(a z m) (item-at doc lo hi (car f))]) (if (fx< a s) (back a) s))
-                      s)))
-              (let forward ([e e])
-                (let ([f (and (fx< e hi) (folding e))])
-                  (if f
-                      (let-values ([(a z m) (item-at doc lo hi (cdr f))]) (if (fx> z e) (forward z) e))
-                      e)))
-              n)))))
+      (let ([folds (fold-ranges v)])
+        (if (null? folds)
+            (item-at doc lo hi p)
+            (let ()
+              (define (folding b) (find-first (lambda (f) (fx< (car f) b (fx+ (cdr f) 1))) folds))
+              (let-values ([(s e n) (item-at doc lo hi p)])
+                (values
+                  (let back ([s s])
+                    (let ([f (and (fx> s lo) (folding s))])
+                      (if f
+                          (let-values ([(a z m) (item-at doc lo hi (car f))]) (if (fx< a s) (back a) s))
+                          s)))
+                  (let forward ([e e])
+                    (let ([f (and (fx< e hi) (folding e))])
+                      (if f
+                          (let-values ([(a z m) (item-at doc lo hi (cdr f))]) (if (fx> z e) (forward z) e))
+                          e)))
+                  n)))))))
 
   ;; A segment's edges are fixed offsets from its line's start, moved on
   ;; past a fold, an inline node or a grapheme cluster that holds one, so
@@ -1137,242 +1127,90 @@
 
   (define (item-start-at v doc p) (let-values ([(s e) (view-item v doc p)]) s))
 
-  ;; P on the tokens before an item, as a node's opening, lies between
-  ;; items already.
   (define (item-end-from v doc p)
-    (let-values ([(s e) (view-item v doc p)]) (if (fx>= s p) p e)))
+    (let-values ([(s e) (view-item v doc p)]) (if (fx= s p) p e)))
+
+  ;; An atom counts as a character: most atoms, a binary's raw bytes,
+  ;; stand in a line.
+  (define (stretch-counts doc a z)
+    (values (fx- (document:line doc z) (document:line doc a)) (stretch-chars doc a z)))
 
   (define (stretch-chars doc a z)
     (let ([characters (document:unit characters)])
       (fx- (document:offset doc z characters) (document:offset doc a characters))))
 
-  ;; A slot numbers a view's items for its page from counts the document
-  ;; keeps, so it costs no walk of the items before it: in text without
-  ;; nodes it is a line. A character and an atom each count one
-  ;; character, so the positions less the characters before P are the
-  ;; node openings and closings.
-  (define (document-slot doc p)
-    (fx+ (fx- (document:line doc p) 1)
-         (fx- (document:offset doc p (document:unit atoms)) (document:offset doc p (document:unit in-line-atoms)))
-         (fx- p (document:offset doc p (document:unit characters)))))
-
-  ;; Folds may overlap, and a slot two of them hide is hidden once.
-  (define (slot-folds folds lo hi)
-    (let loop ([folds folds] [acc '()])
+  (define (folded-counts v doc a z)
+    (let loop ([folds (fold-ranges v)] [lines 0] [chars 0])
       (if (null? folds)
-          (reverse acc)
-          (let ([a (fxmax lo (caar folds))] [z (fxmin hi (cdar folds))])
-            (cond
-              [(fx>= a z) (loop (cdr folds) acc)]
-              [(and (pair? acc) (fx<= a (cdar acc)))
-               (loop (cdr folds) (cons (cons (caar acc) (fxmax z (cdar acc))) (cdr acc)))]
-              [else (loop (cdr folds) (cons (cons a z) acc))])))))
+          (values lines chars)
+          (let ([from (fxmax a (caar folds))] [to (fxmin z (cdar folds))])
+            (if (fx< from to)
+                (let-values ([(l c) (stretch-counts doc from to)])
+                  (loop (cdr folds) (fx+ lines l) (fx+ chars c)))
+                (loop (cdr folds) lines chars))))))
 
-  ;; A fold hides the slots of its tokens, so a position inside it has
-  ;; the slot of the fold's start.
-  (define (slot-counter doc lo folds)
-    (let ([base (document-slot doc lo)]
-          [hidden (map (lambda (f) (fx- (document-slot doc (cdr f)) (document-slot doc (car f)))) folds)])
-      (lambda (p)
-        (let loop ([folds folds] [hidden hidden] [sum 0])
-          (cond
-            [(or (null? folds) (fx>= (caar folds) p)) (fx- (fx- (document-slot doc p) base) sum)]
-            [(fx< (cdar folds) p) (loop (cdr folds) (cdr hidden) (fx+ sum (car hidden)))]
-            [else (fx- (fx- (document-slot doc (caar folds)) base) sum)])))))
+  (define (doubled n) (fxmin most-wanted (fx* 2 n)))
 
-  (define (view-slot-counter v doc)
-    (let-values ([(lo hi) (item-bounds v doc)])
-      (slot-counter doc lo (slot-folds (fold-ranges v) lo hi))))
+  ;; Twice as much past the edge a scroll goes towards, so that asking
+  ;; again reaches the buffer's end in a few steps.
+  (define (further w forward?)
+    (if forward?
+        (make-wanted (wanted-above-lines w) (wanted-above-chars w)
+                     (doubled (wanted-below-lines w)) (doubled (wanted-below-chars w)) (wanted-side w))
+        (make-wanted (doubled (wanted-above-lines w)) (doubled (wanted-above-chars w))
+                     (wanted-below-lines w) (wanted-below-chars w) (wanted-side w))))
 
-  ;; Text with no node, atom or fold between A and Z counts only line
-  ;; breaks, so a drawn run of plain lines finds each item's slot by its
-  ;; line alone: three lookups an item cost a draw of plain lines half
-  ;; as much again.
-  (define (plain-between? v doc a z)
-    (let ([characters (document:unit characters)] [atoms (document:unit atoms)])
-      (and (fx= (fx- z a) (fx- (document:offset doc z characters) (document:offset doc a characters)))
-           (fx= (document:offset doc z atoms) (document:offset doc a atoms))
-           (not (exists (lambda (f) (and (fx< (car f) z) (fx< a (cdr f)))) (fold-ranges v))))))
+  (define (twice w)
+    (make-wanted (doubled (wanted-above-lines w)) (doubled (wanted-above-chars w))
+                 (doubled (wanted-below-lines w)) (doubled (wanted-below-chars w)) (doubled (wanted-side w))))
 
-  (define (run-slot-counter v doc ws we)
-    (let ([count (view-slot-counter v doc)])
-      (if (plain-between? v doc ws we)
-          (let ([base (count ws)] [line (document:line doc ws)])
-            (lambda (p)
-              (if (fx<= ws p we) (fx+ base (fx- (document:line doc p) line)) (count p))))
-          count)))
+  ;; Whichever count the text reaches first fills what the page wants: a
+  ;; row holds no more characters than fit it, and no line is shorter
+  ;; than a row. Each count is found by its own index, so the cost is the
+  ;; same whatever the lines' lengths; a fold shows neither, so a stretch
+  ;; holding one reaches further.
+  (define (back-by v doc lo a lines chars)
+    (if (or (fx<= a lo) (fx<= lines 0) (and chars (fx<= chars 0)))
+        a
+        (let* ([characters (document:unit characters)]
+               [line (document:line doc a)]
+               [by-lines (if (fx<= line lines) lo (document:line-start doc (fx- line lines)))]
+               [before (document:offset doc a characters)]
+               [by-chars (if (or (not chars) (fx>= chars before)) lo (document:position doc (fx- before chars) characters))]
+               [x (fxmin a (fxmax lo by-lines by-chars))])
+          (let-values ([(fl fc) (folded-counts v doc x a)])
+            (if (and (fx= fl 0) (fx= fc 0))
+                x
+                (let-values ([(l c) (stretch-counts doc x a)])
+                  (back-by v doc lo x (fx- lines (fxmax 0 (fx- l fl))) (and chars (fx- chars (fxmax 0 (fx- c fc)))))))))))
 
-  (define (slot-count v doc)
-    (let-values ([(lo hi) (item-bounds v doc)])
-      (fx+ ((view-slot-counter v doc) hi) 1)))
+  (define (forward-by v doc hi z lines chars)
+    (if (or (fx>= z hi) (fx<= lines 0) (and chars (fx<= chars 0)))
+        z
+        (let* ([characters (document:unit characters)]
+               [line (document:line doc z)]
+               [by-lines (if (fx> (fx+ line lines) (document:line doc (document:length doc)))
+                             hi
+                             (document:line-start doc (fx+ line lines)))]
+               [at (document:offset doc z characters)]
+               [by-chars (if (or (not chars) (fx>= chars (fx- (document:offset doc (document:length doc) characters) at)))
+                             hi
+                             (document:position doc (fx+ at chars) characters))]
+               [x (fxmax z (fxmin hi by-lines by-chars))])
+          (let-values ([(fl fc) (folded-counts v doc z x)])
+            (if (and (fx= fl 0) (fx= fc 0))
+                x
+                (let-values ([(l c) (stretch-counts doc z x)])
+                  (forward-by v doc hi x (fx- lines (fxmax 0 (fx- l fl))) (and chars (fx- chars (fxmax 0 (fx- c fc)))))))))))
 
-  ;; Slots never fall as positions grow, so the least position at slot S
-  ;; lies in the item of that slot.
-  (define (slot-position count lo hi s)
-    (let search ([a lo] [z hi])
-      (if (fx< a z)
-          (let ([m (fxquotient (fx+ a z) 2)])
-            (if (fx< (count m) s) (search (fx+ m 1) z) (search a m)))
-          a)))
-
-  ;; The segments of a long line share its slot, so SEGMENT names one in
-  ;; a view that wraps.
-  (define (slot-item v doc s segment)
-    (let-values ([(lo hi) (item-bounds v doc)])
-      (let ([p (slot-position (view-slot-counter v doc) lo hi s)])
-        (let-values ([(a z n) (line-at v doc p)])
-          (if (and segment (wrap-lines) (long-line? n a z))
-              (let-values ([(x y last) (segment-bounds v doc n a z (fx- z 1))])
-                (item-start-at v doc (segment-edge v doc n a z (fxmin segment last))))
-              (item-start-at v doc p))))))
-
-  ;; A slot inside a change goes to the change's start: what it stood for
-  ;; is gone.
-  (define (spliced s sp)
-    (let ([from (splice-from sp)] [removed (splice-removed sp)])
-      (cond
-        [(fx< s from) s]
-        [(fx>= s (fx+ from removed)) (fx+ s (fx- (splice-inserted sp) removed))]
-        [else from])))
-
-  (define (slot-now v s version)
-    (let ([now (view-record-slot-version v)])
-      (cond
-        [(fx= version now) s]
-        [(or (fx< version (view-record-slot-base v)) (fx> version now)) #f]
-        [else (fold-right (lambda (sp s) (if (fx> (splice-version sp) version) (spliced s sp) s))
-                          s (view-record-splices v))])))
-
-  (define (add-splice! v from removed inserted)
-    (let ([version (fx+ (view-record-slot-version v) 1)])
-      (view-record-slot-version-set! v version)
-      (view-record-splices-set! v (cons (make-splice version from removed inserted) (view-record-splices v)))))
-
-  ;; A change of slots no splice describes makes each page forget its
-  ;; heights, which costs a cold table and never a wrong height.
-  (define (forget-slots! v)
-    (let ([version (fx+ (view-record-slot-version v) 1)] [b (view-record-buffer v)])
-      (view-record-slot-version-set! v version)
-      (view-record-slot-base-set! v version)
-      (view-record-splices-set! v '())
-      (view-record-slot-doc-set! v (and b (buffers:live? b) (buffers:document b)))))
-
-  ;; Only pages that showed the view in the last screens can still apply
-  ;; a change, so a hidden view keeps none.
-  (define (drop-applied-splices! v)
-    (let ([least (fold-left
-                   (lambda (least cs)
-                     (let ([version (client-view-slot-version cs)])
-                       (if (and version (fx= (client-view-drawn-batch cs) batches)) (fxmin least version) least)))
-                   (view-record-slot-version v) (vector->list (hashtable-values (view-record-clients v))))])
-      (when (fx> least (view-record-slot-base v))
-        (view-record-slot-base-set! v least)
-        (view-record-splices-set! v (filter (lambda (sp) (fx> (splice-version sp) least)) (view-record-splices v))))))
-
-  (define (slot-edits v version)
-    (and version (fx>= version (view-record-slot-base v)) (fx<= version (view-record-slot-version v))
-         (apply string-append (number->string version)
-                (fold-left
-                  (lambda (acc sp)
-                    (if (fx> (splice-version sp) version)
-                        (cons* " " (number->string (splice-from sp)) " " (number->string (splice-removed sp))
-                               " " (number->string (splice-inserted sp)) acc)
-                        acc))
-                  '() (view-record-splices v)))))
-
-  (define (position-then p s inserted delta)
-    (cond
-      [(fx<= p s) p]
-      [(fx>= p (fx+ s inserted)) (fx- p delta)]
-      [else #f]))
-
-  ;; An edit can change slots before it: a character typed beside an
-  ;; atom standing alone puts the atom in its line. So the change runs
-  ;; over the items holding the edit's ends in the text before the edit
-  ;; and in the text after it. Narrowing or folds the edit reaches into
-  ;; make the pages forget their heights instead.
-  (define (splice-edit! v doc e)
-    (let ([old (view-record-slot-doc v)]
-          [s (buffers:edit-start e)]
-          [removed (buffers:piece-length (buffers:edit-removed e))]
-          [inserted (buffers:piece-length (buffers:edit-inserted e))])
-      (view-record-slot-doc-set! v doc)
-      (let ([delta (fx- inserted removed)])
-        (cond
-          [(not (and old (fx= (document:length old) (fx- (document:length doc) delta))))
-           (forget-slots! v)]
-          ;; Characters typed or deleted within a line of plain text
-          ;; change that line's height at most.
-          [(and (not (view-record-narrowing v)) (null? (view-record-folds v))
-                (fx= (document:line old s) (document:line old (fx+ s removed)))
-                (fx= (document:line doc s) (document:line doc (fx+ s inserted)))
-                (plain-between? v old 1 (fx- (document:length old) 1))
-                (plain-between? v doc 1 (fx- (document:length doc) 1)))
-           (add-splice! v (fx- (document:line doc s) 1) 1 1)]
-          [else
-            (let-values ([(lo hi) (bounds-of v)])
-              (let* ([then (lambda (p) (position-then p s inserted delta))]
-                     [folds (fold-ranges v)]
-                     [folds-then (map (lambda (f) (cons (then (car f)) (then (cdr f)))) folds)]
-                     [lo-then (then lo)] [hi-then (then hi)])
-                ;; A fold the edit emptied is no longer live, but hid text
-                ;; before it.
-                (cond
-                  [(or (not lo-then) (not hi-then)
-                       (exists (lambda (f)
-                                 (let ([a (then (spot-position (car f)))] [z (then (spot-position (cdr f)))])
-                                   (not (and a z (or (fx< z s) (fx> a (fx+ s removed)))))))
-                               (view-record-folds v)))
-                   (forget-slots! v)]
-                  [(or (fx< (fx+ s removed) lo-then) (fx> s hi-then))]
-                  [(or (fx< s lo-then) (fx> (fx+ s removed) hi-then)) (forget-slots! v)]
-                  [else
-                   (let ([lo-then (fxmax lo-then 1)] [hi-then (fxmin hi-then (fx- (document:length old) 1))]
-                         [lo (fxmax lo 1)] [hi (fxmin hi (fx- (document:length doc) 1))])
-                     (define (item doc lo hi folds p) (line-at-in doc lo hi folds (fxmax lo (fxmin hi p))))
-                     (let*-values ([(a0 z0 n0) (item old lo-then hi-then folds-then s)]
-                                   [(a1 z1 n1) (item old lo-then hi-then folds-then (fx+ s removed))]
-                                   [(a2 z2 n2) (item doc lo hi folds s)]
-                                   [(a3 z3 n3) (item doc lo hi folds (fx+ s inserted))])
-                       (let* ([from (fxmin a0 a2)]
-                              [end-then (fxmax z1 (fx- z3 delta))]
-                              [count-then (slot-counter old lo-then (slot-folds folds-then lo-then hi-then))]
-                              [count (slot-counter doc lo (slot-folds folds lo hi))]
-                              [first (count-then from)])
-                         (define (end-slot count hi p) (if (fx>= p hi) (fx+ (count hi) 1) (count p)))
-                         (add-splice! v first (fx- (end-slot count-then hi-then end-then) first)
-                                      (fx- (end-slot count hi (fx+ end-then delta)) first)))))])))]))))
-
-  ;; A fold opened or closed changes the slots of the items it joins.
-  (define (set-folds! v folds)
-    (let ([b (view-record-buffer v)] [before (fold-ranges v)])
-      (view-record-folds-set! v folds)
-      (when (and b (buffers:live? b))
-        (let ([doc (buffers:document b)] [after (fold-ranges v)])
-          (let ([changed (append (remp (lambda (f) (member f after)) before) (remp (lambda (f) (member f before)) after))])
-            (cond
-              [(null? changed)]
-              [(not (eq? doc (view-record-slot-doc v))) (forget-slots! v)]
-              [else
-               (let*-values ([(lo hi) (item-bounds v doc)]
-                             [(start) (fxmax lo (fxmin hi (apply fxmin (map car changed))))]
-                             [(end) (fxmax lo (fxmin hi (apply fxmax (map cdr changed))))]
-                             [(a0 z0 n0) (line-at-in doc lo hi before start)]
-                             [(a1 z1 n1) (line-at-in doc lo hi before end)]
-                             [(a2 z2 n2) (line-at-in doc lo hi after start)]
-                             [(a3 z3 n3) (line-at-in doc lo hi after end)])
-                 (let* ([from (fxmin a0 a2)] [to (fxmax z1 z3)]
-                        [count-before (slot-counter doc lo (slot-folds before lo hi))]
-                        [count-after (slot-counter doc lo (slot-folds after lo hi))]
-                        [first (count-before from)])
-                   (define (end-slot count p) (if (fx>= p hi) (fx+ (count hi) 1) (count p)))
-                   (add-splice! v first (fx- (end-slot count-before to) first) (fx- (end-slot count-after to) first))))]))))))
-
-  ;; Where the stretch to X holds N lines, each holds an item, so no
-  ;; fewer items reach nearer; only where items share lines are they
-  ;; walked, and no further than X: a walk on every draw took about
-  ;; 1.7 ms of a 2.1 ms draw. In a view that wraps, a long line's
-  ;; segments are items.
+  ;; Every line and every node standing alone is a row at least, so as
+  ;; many of them as the lines asked for fill as many rows: a list's rows,
+  ;; each a node on one line, need no more than that. A long line counts
+  ;; once, not once a segment, since the lines asked for are counted at
+  ;; whole lines' heights. Where the stretch X holds as many lines as were
+  ;; asked for, each holds an item, so no fewer items reach nearer; only
+  ;; where items share lines are they walked, and no further than X: a
+  ;; walk on every draw took about 1.7 ms of a 2.1 ms draw.
   (define (items-back v doc a x n)
     (if (fx>= (fx- (document:line doc a) (document:line doc x)) n)
         x
@@ -1380,7 +1218,7 @@
           (cond
             [(fx<= p x) x]
             [(fx<= n 0) p]
-            [else (let-values ([(s e) (view-item v doc (fx- p 1))]) (if (fx< s p) (loop s (fx- n 1)) (loop (fx- p 1) n)))]))))
+            [else (let-values ([(s e m) (line-at v doc (fx- p 1))]) (if (fx< s p) (loop s (fx- n 1)) (loop (fx- p 1) n)))]))))
 
   (define (items-forward v doc z x n)
     (if (fx>= (fx- (document:line doc x) (document:line doc z)) n)
@@ -1389,38 +1227,21 @@
           (cond
             [(fx>= p x) x]
             [(fx<= n 0) p]
-            [else (let-values ([(s e) (view-item v doc p)]) (if (fx> e p) (loop e (fx- n 1)) (loop (fx+ p 1) n)))]))))
+            [else (let-values ([(s e m) (line-at v doc p)]) (if (fx> e p) (loop e (fx- n 1)) (loop (fx+ p 1) n)))]))))
 
-  ;; Where lines wrap, N segments of a long line lie within about N
-  ;; segments' characters; the bound keeps a line of a megabyte from
-  ;; being walked or drawn whole, and a run it leaves short only makes
-  ;; the page ask.
-  (define (characters-bound doc p n forward?)
-    (let* ([unit (document:unit characters)] [at (document:offset doc p unit)] [most (fx* n (fx* 2 segment-length))])
-      (if forward?
-          (let ([last (document:offset doc (document:length doc) unit)])
-            (if (fx>= (fx+ at most) last) (document:length doc) (document:position doc (fx+ at most) unit)))
-          (if (fx<= at most) 0 (document:position doc (fx- at most) unit)))))
-
-  (define (items-before v doc lo a n)
-    (let* ([line (document:line doc a)]
-           [by-lines (if (fx<= line n) lo (fxmax lo (document:line-start doc (fx- line n))))])
-      (items-back v doc a (if (wrap-lines) (fxmax by-lines (characters-bound doc a n #f)) by-lines) n)))
-
-  (define (items-after v doc hi z n)
-    (let* ([line (document:line doc z)]
-           [by-lines (if (fx> (fx+ line n) (document:line doc (document:length doc))) hi (fxmin hi (document:line-start doc (fx+ line n))))])
-      (items-forward v doc z (if (wrap-lines) (fxmin by-lines (characters-bound doc z n #t)) by-lines) n)))
-
-  ;; A page that has reported on no view gets a first run of a constant
-  ;; size; one that has gets as many screens as it keeps of its largest
-  ;; view, since a view it has not reported on may be that large. No run
-  ;; holds more items than the text has positions.
-  (define (first-run-items c doc)
-    (let ([rows (and c (eq-hashtable-ref client-rows c #f))])
-      (if rows
-          (exact (ceiling (min (document:length doc) (* rows (+ (drawn-screens) 1)))))
-          first-items)))
+  ;; A line that does not wrap is one row however long, so there only
+  ;; lines bound the run.
+  (define (run-around v doc a z w)
+    (let-values ([(lo hi) (item-bounds v doc)])
+      (let* ([wrap? (wrap-lines)]
+             [a (item-start-at v doc a)]
+             [z (let-values ([(s e) (view-item v doc z)]) (fxmax e z))]
+             [s (items-back v doc a (back-by v doc lo a (wanted-above-lines w) (and wrap? (wanted-above-chars w)))
+                            (wanted-above-lines w))]
+             [e (items-forward v doc z (forward-by v doc hi z (wanted-below-lines w) (and wrap? (wanted-below-chars w)))
+                               (wanted-below-lines w))])
+        (values (if (fx<= s lo) lo (item-start-at v doc s))
+                (if (fx>= e hi) hi (item-end-from v doc e))))))
 
   ;; A quit between the two edges would leave a run with one, so both
   ;; are made before either is set. A run that reaches HI, the last
@@ -1455,58 +1276,22 @@
           [(eq? (place-kind pl) 'follow) (values p p)]
           [else (let ([at (spot-position (place-spot pl))]) (values at at))]))))
 
-  (define (new-ask v doc above below side asked?)
-    (let ([b (view-record-buffer v)] [count (view-slot-counter v doc)])
-      (make-ask (make-spot b above #f) (make-spot b below #t) (fx- (count below) (count above)) side asked?)))
-
-  ;; Text inserted inside a run, as a list's rows replaced, can make it
-  ;; far more than the page wants; past twice as much, it no longer
-  ;; holds. What the page wants is what it asked for, or the run drawn
-  ;; from what it shows now.
-  (define (run-holds? v doc ask wanted)
-    (let ([count (view-slot-counter v doc)])
-      (fx<= (fx- (count (spot-position (ask-below ask))) (count (spot-position (ask-above ask))))
-            (fx* 2 (fxmax 1 wanted)))))
-
-  ;; A run is what the page asked to have drawn, while what it shows is
-  ;; inside that. A run that far from it is drawn from what the page
-  ;; would show, as many items each way as its screens may need, and
-  ;; kept while it holds that, until the page asks from there.
-  (define (client-run! v doc c cs)
+  ;; A run is kept while it holds what the page wants beyond each edge of
+  ;; what it shows and no more than twice that, so a scroll by a line
+  ;; redraws nothing more than the screen it moved.
+  (define (client-run! v doc cs)
     (let-values ([(lo hi) (item-bounds v doc)])
       (let-values ([(fa fz) (focus-of v cs hi)])
-        (let* ([ask (client-view-ask cs)]
-               [as (and ask (spot-position (ask-above ask)))]
-               [ae (and ask (spot-position (ask-below ask)))]
-               [around (lambda ()
-                         (let ([n (first-run-items c doc)])
-                           (values (items-before v doc lo (item-start-at v doc fa) n)
-                                   (items-after v doc hi (let-values ([(s e) (view-item v doc fz)]) (fxmax e fz)) n))))])
-          (let-values ([(s e) (cond
-                                [(not (and as ae (fx<= as fa) (fx<= fz ae))) (around)]
-                                [(ask-asked? ask) (if (run-holds? v doc ask (ask-slots ask)) (values as ae) (around))]
-                                [else (let-values ([(s e) (around)])
-                                        (let ([count (view-slot-counter v doc)])
-                                          (if (and (fx<= as s) (fx<= e ae) (run-holds? v doc ask (fx- (count e) (count s))))
-                                              (values as ae)
-                                              (values s e))))])])
-            (let ([ws (if (fx<= s lo) lo (item-start-at v doc s))]
-                  [we (if (fx>= e hi) hi (item-end-from v doc e))])
-              (unless (and as ae (fx= as ws) (fx= ae we))
-                (client-view-ask-set! cs (new-ask v doc ws we (if ask (ask-side ask) first-side) #f)))
-              (set-edges! v cs ws we hi)
-              (values ws we)))))))
-
-  (define (further! v doc c cs forward?)
-    (let-values ([(lo hi) (item-bounds v doc)])
-      (let* ([from (client-view-from cs)] [to (client-view-to cs)]
-             [ws (if from (spot-position from) lo)] [we (if to (spot-position to) hi)]
-             [n (first-run-items c doc)] [ask (client-view-ask cs)]
-             [side (if ask (ask-side ask) first-side)])
-        (client-view-ask-set! cs
-          (if forward?
-              (new-ask v doc ws (items-after v doc hi we n) side #t)
-              (new-ask v doc (items-before v doc lo ws n) we side #t))))))
+        (let* ([w (client-view-wanted cs)] [from (client-view-from cs)] [to (client-view-to cs)]
+               [ws0 (and from (spot-position from))] [we0 (and to (spot-position to))])
+          (let-values ([(near-s near-e) (run-around v doc fa fz w)])
+            (if (and ws0 we0 (fx< ws0 we0) (fx<= lo ws0 near-s) (fx<= near-e we0 hi)
+                     (let-values ([(far-s far-e) (run-around v doc fa fz (twice w))])
+                       (and (fx<= far-s ws0) (fx<= we0 far-e))))
+                (values ws0 we0)
+                (begin
+                  (set-edges! v cs near-s near-e hi)
+                  (values near-s near-e))))))))
 
   ;; Lines of other widths show other positions at one scroll offset, so
   ;; each long line the page showed is drawn around the positions it
@@ -1515,7 +1300,7 @@
     (let* ([f (and (eqv? (client-view-measured cs) (client-view-number cs)) (client-view-facts cs))]
            [pl (client-view-placement cs)]
            [column (if f (facts-column f) (or (place-column pl) 0))]
-           [side (let ([ask (client-view-ask cs)]) (if ask (ask-side ask) first-side))]
+           [side (wanted-side (client-view-wanted cs))]
            [width (if (and f (fx> (facts-columns f) 0)) (facts-columns f) side)]
            [own (make-eqv-hashtable)])
       (when f
@@ -1628,11 +1413,11 @@
 
   (define-record-type measured
     (sealed #t)
-    (fields placement version slot-version top spacer? fraction left past sides start end at-start? at-end? columns rows
-            point-visible? lost? ask hand? settled? edge))
+    (fields placement version top spacer? fraction left past sides start end at-start? at-end? columns rows
+            point-visible? lost? wanted hand? settled? edge))
 
-  ;; A place inside a gap is counted in characters, the gap's own unit,
-  ;; since the page has no positions there.
+  ;; A place inside a spacer or a gap is counted in characters, the
+  ;; spacer's own unit, since the page has no positions there.
   (define (mark-position then token at line count chars)
     (let ([base (cond
                   [token token]
@@ -1672,7 +1457,7 @@
   ;; columns past a line's end.
   (define (report-facts v b doc r)
     (let* ([resolve (mark-resolver b (measured-version r))]
-           [position (lambda (mark) (and mark (if (field-or-false mark "slot") (slot-mark-position v doc r mark) (resolve mark))))]
+           [position (lambda (mark) (and mark (resolve mark)))]
            [spot (lambda (p) (and p (make-spot b p #f)))]
            [left (position (measured-left r))]
            [line (and left (item-start-at v doc left))]
@@ -1690,19 +1475,6 @@
                   (measured-at-start? r) (measured-at-end? r)
                   (measured-columns r) (measured-rows r) (measured-point-visible? r) (measured-edge r))))
 
-  ;; A page names a place it has not drawn by its slot, counted at the
-  ;; report's slot version, and in a long line by its segment.
-  (define (slot-mark-position v doc r mark)
-    (let ([s (slot-now v (field-or-false mark "slot") (measured-slot-version r))])
-      (and s (slot-item v doc (fxmin s (fx- (slot-count v doc) 1)) (field-or-false mark "segment")))))
-
-  (define (report-ask v b doc r)
-    (let ([ask (measured-ask r)])
-      (and ask
-           (let ([above (slot-mark-position v doc r (car ask))] [below (slot-mark-position v doc r (cadr ask))])
-             (and above below
-                  (new-ask v doc above (let-values ([(s e) (view-item v doc below)]) (fxmax s e)) (caddr ask) #t))))))
-
   ;; A page moved by hand, or by C-v, shares where it went only once it
   ;; comes to rest, so a fling moves the other clients once; that page
   ;; then leads the view, and point the move left behind goes into the
@@ -1716,17 +1488,15 @@
   ;; jumps back to point. Other pages' reports tell only what they show,
   ;; so devices of different sizes never move point or each other.
   ;; A page whose top edge lies in a spacer shows no text there, so it is
-  ;; placed at the slot its heights gave, once that is drawn.
+  ;; placed at the place the spacer's counts gave, once that is drawn.
   (define (adopt-report! v b c cs r commanded?)
     (let* ([f (report-facts v b (buffers:document b) r)]
            [first? (not (eqv? (client-view-measured cs) (client-view-number cs)))]
            [kind (place-kind (client-view-placement cs))])
-      (let ([ask (report-ask v b (buffers:document b) r)] [rows (measured-rows r)])
-        (with-interrupts-disabled
-          (client-view-facts-set! cs f)
-          (client-view-measured-set! cs (client-view-number cs))
-          (when ask (client-view-ask-set! cs ask))
-          (when (fx> rows (eq-hashtable-ref client-rows c 0)) (eq-hashtable-set! client-rows c rows))))
+      (with-interrupts-disabled
+        (client-view-facts-set! cs f)
+        (client-view-measured-set! cs (client-view-number cs))
+        (client-view-wanted-set! cs (measured-wanted r)))
       (cond
         [(measured-hand? r)
          (when (facts-top f)
@@ -1771,7 +1541,7 @@
             [(eq? (field answer "limit") #t)
              (error who (if forward? "end of buffer" "beginning of buffer"))]
             [(eq? (field answer "more") #t)
-             (with-view-bound v b (lambda () (further! v (buffers:document b) c cs forward?)))
+             (client-view-wanted-set! cs (further (client-view-wanted cs) forward?))
              (mark-dirty!)
              (ask #t)]
             [else
@@ -1809,7 +1579,7 @@
   (define-record-type (context new-context context?)
     (sealed #t)
     (fields view client doc lo hi ws we root cursors anchors regions spans longest folds (mutable shown) item-ids marks? ends
-            marker pieces gaps slot))
+            marker pieces gaps before))
 
   (define-record-type span-entry
     (sealed #t)
@@ -1845,8 +1615,6 @@
     (let loop ([q (fx+ p 1)])
       (if (document:grapheme-boundary? doc q) q (loop (fx+ q 1)))))
 
-  ;; A view that draws no cursor still marks point, unseen, so its page
-  ;; can keep point in view, as a list keeps its selected row.
   (define (cursor-points v doc)
     (if (cursor-visible)
         (by-position
@@ -1855,7 +1623,7 @@
               [(null? cs) '()]
               [(on-character? doc (point-of (car cs))) (loop (cdr cs) #f)]
               [else (cons (cons (point-of (car cs)) primary?) (loop (cdr cs) #f))])))
-        (list (cons (point-of (car (view-record-cursors v))) 'hidden))))
+        '()))
 
   (define (anchor-points v)
     (by-position
@@ -2042,7 +1810,7 @@
             (let ([style (span-styler)])
               (define (span-click keymap s)
                 (and keymap
-                     (let ([state (click-state keymap (make-posn-record (view-record-id v) (car s) #f '() #f #f #f #f))])
+                     (let ([state (click-state keymap (make-posn-record (view-record-id v) (car s) #f '() #f #f #f #f #f))])
                        (and state (symbol->string state)))))
               (let loop ([groups groups] [rank 0] [acc '()])
                 (if (null? groups)
@@ -2161,7 +1929,7 @@
   (define (make-context v b doc client)
     (let-values ([(lo hi) (bounds-of v)])
       (let ([cs (view-client v client)])
-        (let-values ([(ws we) (client-run! v doc client cs)])
+        (let-values ([(ws we) (client-run! v doc cs)])
           (let* ([regions (list->vector (region-ranges-of v doc (view-record-cursors v)))]
                  [spans (window-spans b v client doc regions ws we)] [end (fxmin hi (fx- (document:length doc) 1))]
                  [marker (place-marker v cs)]
@@ -2172,7 +1940,7 @@
                                             (sideways-pieces v doc ws we (side-windows v cs) marks))])
               (new-context v client doc lo hi ws we (document:token doc 0) (shown (cursor-points v doc)) (shown (anchor-points v))
                            regions spans (longest-span spans) (fold-ranges v) '() (item-ids v b) #t (make-eqv-hashtable)
-                           marker pieces gaps (run-slot-counter v doc ws we))))))))
+                           marker pieces gaps (document:offset doc lo (document:unit characters)))))))))
 
   ;; A page scrolled by hand keeps where its hand left it, so a view
   ;; element made anew, as a tab switch makes one, is placed there.
@@ -2197,24 +1965,28 @@
 
   (define (number-text x) (number->string (fl/ (flround (fl* x 10000.0)) 10000.0)))
 
-  ;; The page sizes the spacers from its heights, and the morph leaves an
-  ;; element alone only when the new one is marked too, so every screen
-  ;; marks both.
-  (define (spacer-html v side)
-    (haml (:div.view-spacer ([id "view-" (view-record-id v) "-" side] [data-spacer side]
-                             [data-ignore-morph] [aria-hidden "true"]))))
+  ;; A spacer names where its text starts as an item does, so the page
+  ;; can name a place inside it from its counts.
+  (define (spacer-html side doc a z)
+    (let-values ([(lines chars) (stretch-counts doc a z)])
+      (let ([line (document:line doc a)])
+        (haml (:div.view-spacer ([data-spacer side] [data-line line]
+                                 [data-at (and (not (fx= a (document:line-start doc line))) a)]
+                                 [data-lines lines] [data-chars chars]
+                                 [data-preserve-attr "style"] [aria-hidden "true"]))))))
 
+  ;; The page sizes the spacers and keeps its sizes through the morph,
+  ;; which would otherwise take away a style the server did not send. The
+  ;; view's own counts tell the page by how much the text changed, which
+  ;; is all its height may change by.
   (define (view-html v doc ctx cs root-html)
-    (let-values ([(lo hi) (item-bounds v doc)])
+    (let*-values ([(lo hi) (item-bounds v doc)] [(lines chars) (stretch-counts doc lo hi)])
       (let* ([ws (context-ws ctx)] [we (context-we ctx)]
              [pl (hand-or-own cs)] [kind (place-kind pl)]
              [position (if (eq? kind 'follow) (base-place v cs) (and (eq? kind 'position) pl))]
              [item (and position (item-start-at v doc (spot-position (place-spot position))))]
-             [column-item (and position (not (wrap-lines)) (place-line position) (spot-position (place-line position)))]
-             [version (view-record-slot-version v)]
-             [edits (slot-edits v (client-view-slot-version cs))])
+             [column-item (and position (not (wrap-lines)) (place-line position) (spot-position (place-line position)))])
         (define (line-number-at p) (let ([line (document:line doc p)]) (and (fx= p (document:line-start doc line)) line)))
-        (client-view-slot-version-set! cs version)
         (haml
           (:div.view ([id "view-" (view-record-id v)]
                       [data-view (view-record-id v)]
@@ -2237,15 +2009,25 @@
                       [data-run-at-start (fx<= ws lo)]
                       [data-run-at-end (fx>= we hi)]
                       [data-tail (tail)]
-                      [data-slots (fx+ ((context-slot ctx) hi) 1)]
-                      [data-slot-version version]
-                      [data-slot-edits edits]
+                      [data-lines lines]
+                      [data-chars chars]
                       [class (and (not (wrap-lines)) "nowrap")])
-            (spacer-html v "above")
+            (bars-html)
+            (when (fx> ws lo) (spacer-html "above" doc lo ws))
             ;; The root has no element of its own, so the lines' element
             ;; carries its state.
             (:div.view-lines ([data-click (let ([root (context-root ctx)]) (and root (node-click ctx root)))]) root-html)
-            (spacer-html v "below"))))))
+            (when (fx< we hi) (spacer-html "below" doc we hi)))))))
+
+  ;; The page sets the thumbs and whether the bars show, which the morph
+  ;; would otherwise take away.
+  (define (bars-html)
+    (define (bar axis keymap)
+      (haml (:div.view-scroll-bar ([data-scroll-bar axis] [data-keymap (keymap-id keymap)] [data-preserve-attr "style data-fits data-held"])
+              (:div.view-thumb))))
+    (haml (:div.view-bars ([data-preserve-attr "data-shown"] [aria-hidden "true"])
+            (when (vertical-scroll-bar) (bar "vertical" scroll-bar-keymap))
+            (when (and (horizontal-scroll-bar) (not (wrap-lines))) (bar "horizontal" horizontal-scroll-bar-keymap)))))
 
   (define (empty-view-html v)
     (haml (:div.view ([data-view (view-record-id v)]))))
@@ -2283,7 +2065,7 @@
   ;; elements: as a mark before it, it would take a line of its own.
   (define (mark-node ctx node inline? html cursor)
     (let ([start (document:node-start node)]
-          [at-cursor (case cursor [(primary) "at-cursor primary"] [(other) "at-cursor"] [(hidden) "at-point"] [else #f])])
+          [at-cursor (case cursor [(primary) "at-cursor primary"] [(other) "at-cursor"] [else #f])])
       (cond
         [(not (context-marks? ctx)) html]
         [inline? (haml (:span.node ([data-at start] [data-to (node-end ctx node)] [data-region (atom-in-region? ctx node)]
@@ -2291,7 +2073,7 @@
                          html))]
         [(whole-node? node)
          (haml (:div.node.whole ([id (item-id ctx start)] [class at-cursor] [data-at start] [data-to (node-end ctx node)]
-                                 [data-line (document:line (context-doc ctx) start)] [data-slot (item-slot ctx start)]
+                                 [data-line (document:line (context-doc ctx) start)] [data-before (chars-before ctx start)]
                                  [data-region (atom-in-region? ctx node)] [data-click (node-click ctx node)]
                                  [data-face (covering-face ctx start (node-end ctx node))])
                  html))]
@@ -2308,7 +2090,7 @@
            (let* ([start (document:node-start node)]
                   [state (click-state keymap
                            (make-posn-record (view-record-id (context-view ctx)) (if (document:atom? node) start (fx+ start 1))
-                                             node '() #f #f #f #f))])
+                                             node '() #f #f #f #f #f))])
              (and state (symbol->string state))))))
 
   ;; A node standing alone has no characters for a span to colour, so the
@@ -2497,8 +2279,7 @@
         (cond
           [(not (long-line? n s e)) (one-line run rs re class line at-start? #f acc)]
           [(wrap-lines)
-           (let*-values ([(a z i) (segment-bounds v doc n s e rs)]
-                         [(x y last) (segment-bounds v doc n s e (fx- e 1))])
+           (let-values ([(a z i) (segment-bounds v doc n s e rs)])
              (let loop ([i i] [run run] [from rs] [at-start? at-start?] [acc acc])
                ;; The run's first segment, past its line's start, shares
                ;; its first row with what comes before it, which a gap
@@ -2506,9 +2287,9 @@
                (define (draw run re acc)
                  (if (and (fx= from (context-ws ctx)) (fx> from s))
                      (cons (wrapped from (list (row-gap-html ctx line s from)
-                                               (line-of-run run from re class line at-start? (vector s i (fx+ last 1)))))
+                                               (line-of-run run from re class line at-start? (cons s i))))
                            acc)
-                     (one-line run from re class line at-start? (vector s i (fx+ last 1)) acc)))
+                     (one-line run from re class line at-start? (cons s i) acc)))
                (let ([edge (segment-edge v doc n s e (fx+ i 1))])
                  (cond
                    [(fx>= edge re) (draw run re acc)]
@@ -2573,10 +2354,8 @@
 
   ;; A segment's id is its line's and its index, so an edit inside the
   ;; line before it, which moves its text, keeps the element.
-  ;; SEGMENT is the line's start, the segment's index and, where it is
-  ;; an item, the line's count of segments.
   (define (segment-id ctx segment)
-    (string-append (item-id ctx (vector-ref segment 0)) "-" (number->string (vector-ref segment 1))))
+    (string-append (item-id ctx (car segment)) "-" (number->string (cdr segment))))
 
   ;; Each segment of a line that does not wrap has its id, so the page
   ;; holds it still sideways as it holds an item still.
@@ -2591,7 +2370,7 @@
                 (let ([i (segment-mark-index piece)] [a (segment-mark-at piece)] [z (segment-mark-to piece)])
                   (let-values ([(before after) (split-run run z)])
                     (loop (cdr pieces) after
-                          (cons (haml (:span.segment ([id (and (context-marks? ctx) (segment-id ctx (vector s i #f)))]
+                          (cons (haml (:span.segment ([id (and (context-marks? ctx) (segment-id ctx (cons s i)))]
                                                       [data-segment i] [data-offset (fx- a s)] [data-at a] [data-to z]
                                                       [data-chars (stretch-chars (context-doc ctx) a z)])
                                         (line-content ctx before a (if last? re (fx- z 1)))))
@@ -2607,8 +2386,12 @@
                            [data-chars (stretch-chars (context-doc ctx) a z)] [data-preserve-attr "style"]
                            [aria-hidden "true"]))))
 
-  (define (item-slot ctx p)
-    (and (context-marks? ctx) ((context-slot ctx) p)))
+  ;; Each item names the characters of the shown text before it, so the
+  ;; page finds the place at any share of the text, which is what a
+  ;; scroll bar's thumb shows, from what it drew.
+  (define (chars-before ctx p)
+    (and (context-marks? ctx)
+         (fx- (document:offset (context-doc ctx) p (document:unit characters)) (context-before ctx))))
 
   ;; A line the region holds through its newline, or a folded block it
   ;; holds whole, is marked, so the stylesheet fills the line to its
@@ -2621,9 +2404,8 @@
     (haml (:div.line ([id (and (context-marks? ctx) (if segment (segment-id ctx segment) (item-id ctx rs)))]
                       [class class]
                       [data-line line]
-                      [data-slot (item-slot ctx (if segment (vector-ref segment 0) rs))]
-                      [data-segment (and segment (vector-ref segment 1))]
-                      [data-segments (and segment (vector-ref segment 2))]
+                      [data-before (chars-before ctx rs)]
+                      [data-segment (and segment (cdr segment))]
                       [data-at (and (not at-start?) (context-marks? ctx)
                                     (not (fx= rs (document:line-start (context-doc ctx) line)))
                                     rs)])
@@ -2635,13 +2417,8 @@
   ;; in each browser.
   (define view-place-html (haml (:span.view-place)))
 
-  (define view-point-html (haml (:span.view-point)))
-
   (define (cursor-html primary?)
-    (cond
-      [(eq? primary? 'hidden) view-point-html]
-      [primary? (haml (:span.cursor.primary))]
-      [else (haml (:span.cursor))]))
+    (if primary? (haml (:span.cursor.primary)) (haml (:span.cursor))))
 
   (define (anchor-html a)
     (haml (:span.view-anchor ([style "--views-anchor-name:--view-anchor-" (anchor-record-id a)]))))
@@ -2662,11 +2439,7 @@
           [else (values acc cursors anchors)]))
       (define (cursor-at p cursors cursor)
         (if (and (pair? cursors) (fx= (caar cursors) p))
-            (cursor-at p (cdr cursors)
-                       (cond
-                         [(eq? (cdar cursors) 'hidden) 'hidden]
-                         [(or (eq? cursor 'primary) (cdar cursors)) 'primary]
-                         [else 'other]))
+            (cursor-at p (cdr cursors) (if (or (eq? cursor 'primary) (cdar cursors)) 'primary 'other))
             (values cursors cursor)))
       (define (past p marks)
         (if (and (pair? marks) (fx< (caar marks) p)) (past p (cdr marks)) marks))
@@ -2687,9 +2460,7 @@
                   (let* ([html (node-html ctx item #f)] [on-item? (and cursor (not (no-element? html)))] [end (node-end ctx item)])
                     (loop (cdr items) (past end cursors) (past end anchors)
                           (cons (wrapped item (mark-node ctx item #f html (and on-item? cursor)))
-                                (if (and cursor (not on-item?))
-                                    (cons (cursor-html (case cursor [(primary) #t] [(hidden) 'hidden] [else #f])) acc)
-                                    acc))))))))))
+                                (if (and cursor (not on-item?)) (cons (cursor-html (eq? cursor 'primary)) acc) acc))))))))))
 
   (define (cursors-in ctx lo hi)
     (filter (lambda (m) (fx<= lo (car m) hi)) (context-cursors ctx)))
@@ -2720,7 +2491,7 @@
         datum
         (guard (c [(not (quit-condition? c)) (report c) '()])
           (let* ([doc (document:from-datum datum)] [n (document:length doc)]
-                 [sub (new-context (context-view ctx) (context-client ctx) doc 0 n 0 n #f '() '() '#() '#() 0 '() '() #f #f (make-eqv-hashtable) #f #f '() #f)])
+                 [sub (new-context (context-view ctx) (context-client ctx) doc 0 n 0 n #f '() '() '#() '#() 0 '() '() #f #f (make-eqv-hashtable) #f #f '() 0)])
             (parameterize ([current-context sub])
               (let loop ([p 0] [acc '()])
                 (if (fx>= p n)
@@ -2872,7 +2643,7 @@
                                   (cons (styled-entry (style (caddr s) '() #f) (car s) (cadr s) rank (caddr s)) acc)))))]
            [sorted (list->vector (list-sort (lambda (a b) (fx< (span-entry-start a) (span-entry-start b))) entries))]
            [ctx (new-context v client #f 0 n 0 n #f '() '() '#() sorted (longest-span sorted) '() '() #f #f
-                             (make-eqv-hashtable) #f #f '() #f)])
+                             (make-eqv-hashtable) #f #f '() 0)])
       (parameterize ([current-context ctx] [enclosing-regions '()])
         (line-content ctx (list (make-text-piece 0 text)) 0 n))))
 
@@ -2946,7 +2717,7 @@
 
   (define (add-fold! v start end)
     (let ([b (view-record-buffer v)])
-      (set-folds! v (append (view-record-folds v) (list (cons (make-spot b start #t) (make-spot b end #f)))))
+      (view-record-folds-set! v (append (view-record-folds v) (list (cons (make-spot b start #t) (make-spot b end #f)))))
       (mark-dirty!)))
 
   ;; Narrowing keeps text inserted at either edge inside, as Emacs's
@@ -2954,7 +2725,6 @@
   (define (narrow-view! v start end)
     (let ([b (view-record-buffer v)])
       (view-record-narrowing-set! v (cons (make-spot b start #f) (make-spot b end #t)))
-      (forget-slots! v)
       (for-each
         (lambda (c)
           (let ([p (point-of c)])
@@ -2968,7 +2738,6 @@
 
   (define (widen-view! v)
     (view-record-narrowing-set! v #f)
-    (forget-slots! v)
     (mark-dirty!))
 
   (define (stop-after v b p)
@@ -3366,13 +3135,11 @@
       (unless (null? vs)
         (set! dirty? #t)
         (unless (memq buffer edited) (set! edited (cons buffer edited)))
-        (let ([doc (buffers:document buffer)])
-          (for-each
-            (lambda (v)
-              (splice-edit! v doc edit)
-              (unless (null? (cdr (view-record-cursors v)))
-                (merge-cursors! v)))
-            vs))
+        (for-each
+          (lambda (v)
+            (unless (null? (cdr (view-record-cursors v)))
+              (merge-cursors! v)))
+          vs)
         (let ([inserted (buffers:piece-length (buffers:edit-inserted edit))])
           (when (and (fx> inserted 0) (point-after-insertion?))
             (let ([end (fx+ (buffers:edit-start edit) inserted)])
@@ -3399,7 +3166,6 @@
     (ended)
     (for-each drop-undrawn-items! views)
     (for-each forget-undrawn-ranges! views)
-    (for-each drop-applied-splices! views)
     (set! batches (fx+ batches 1))
     (hashtable-clear! claims)
     (let ([bs edited])
@@ -3431,36 +3197,42 @@
     (define (mark? m)
       (and (list? m) (pair? m)
            (for-all (lambda (e)
-                      (and (pair? e) (member (car e) '("line" "at" "token" "count" "chars" "slot" "segment")) (fixnum? (cdr e))
+                      (and (pair? e) (member (car e) '("line" "at" "token" "count" "chars")) (fixnum? (cdr e))
                            (fx>= (cdr e) (if (equal? (car e) "line") 1 0))))
                     m)))
     (define (mark-or-null? x) (or (eq? x 'null) (mark? x)))
-    (define (slot-mark? m) (and (mark? m) (field-or-false m "slot") #t))
     (define (side? x) (and (vector? x) (fx= (vector-length x) 2) (mark? (vector-ref x 0)) (mark? (vector-ref x 1))))
-    (let ([placement (field item "placement")] [version (field item "version")] [slot-version (field item "slotVersion")]
+    (let ([placement (field item "placement")] [version (field item "version")]
           [top (field item "top")] [spacer (field item "spacer")] [fraction (field item "fraction")]
           [left (field item "left")] [past (field item "past")] [sides (field item "sides")]
           [start (field item "start")] [end (field item "end")]
           [at-start (field item "atStart")] [at-end (field item "atEnd")]
           [columns (field item "columns")] [rows (field item "rows")]
           [point-visible (field item "pointVisible")] [lost (field item "lost")]
-          [wanted (field item "wanted")] [hand (field item "hand")] [settled (field item "settled")]
+          [wanted (wanted-counts (field item "wanted"))] [hand (field item "hand")] [settled (field item "settled")]
           [edge (let ([e (field item "edge")]) (and (string? e) (member e '("top" "center" "bottom")) (string->symbol e)))])
-      (let ([ask (and (list? wanted)
-                      (let ([above (field wanted "above")] [below (field wanted "below")] [side (field wanted "side")])
-                        (and (slot-mark? above) (slot-mark? below) (fixnum? side) (fx> side 0)
-                             (list above below side))))])
-        (unless (and (fixnum? placement) (fixnum? version) (fx>= version 0) (count? slot-version)
-                     (mark-or-null? top) (boolean? spacer) (fraction? fraction)
-                     (mark-or-null? left) (count? past) (vector? sides) (for-all side? (vector->list sides))
-                     (mark-or-null? start) (mark-or-null? end) (boolean? at-start) (boolean? at-end)
-                     (count? columns) (count? rows) (boolean? point-visible) (or (eq? lost 'null) (boolean? lost))
-                     (or (eq? wanted 'null) ask) (boolean? hand) (boolean? settled) edge)
-          (assertion-violation 'views "not a scroll report" item))
-        (make-measured placement version slot-version (and (pair? top) top) spacer (inexact fraction) (and (pair? left) left) past
-                       (map (lambda (x) (cons (vector-ref x 0) (vector-ref x 1))) (vector->list sides))
-                       (and (pair? start) start) (and (pair? end) end) at-start at-end columns rows point-visible
-                       (eq? lost #t) ask hand settled edge))))
+      (unless (and (fixnum? placement) (fixnum? version) (fx>= version 0)
+                   (mark-or-null? top) (boolean? spacer) (fraction? fraction)
+                   (mark-or-null? left) (count? past) (vector? sides) (for-all side? (vector->list sides))
+                   (mark-or-null? start) (mark-or-null? end) (boolean? at-start) (boolean? at-end)
+                   (count? columns) (count? rows) (boolean? point-visible) (or (eq? lost 'null) (boolean? lost))
+                   wanted (boolean? hand) (boolean? settled) edge)
+        (assertion-violation 'views "not a scroll report" item))
+      (make-measured placement version (and (pair? top) top) spacer (inexact fraction) (and (pair? left) left) past
+                     (map (lambda (x) (cons (vector-ref x 0) (vector-ref x 1))) (vector->list sides))
+                     (and (pair? start) start) (and (pair? end) end) at-start at-end columns rows point-visible
+                     (eq? lost #t) wanted hand settled edge)))
+
+  (define (wanted-counts x)
+    (and (list? x) (for-all pair? x)
+         (let ([counts (map (lambda (key) (field-or-false x key))
+                            '("aboveLines" "aboveChars" "belowLines" "belowChars" "side"))])
+           (and (for-all (lambda (n) (and (fixnum? n) (fx< 0 n most-wanted))) counts)
+                (apply make-wanted counts)))))
+
+  ;; More than any page could want past its edges would only make screens
+  ;; no browser can lay out.
+  (define most-wanted 100000000)
 
   ;; A report's number goes back on its client's next screen whatever
   ;; becomes of the report, since its page sends no other until then.
@@ -3498,9 +3270,9 @@
   ;; Nongenerative, so an event made before this module reloads still
   ;; holds a posn its accessors take.
   (define-record-type posn-record
-    (nongenerative views:posn/view/point/node/keymaps/x/y/column/row)
+    (nongenerative views:posn/view/point/node/keymaps/x/y/column/row/part)
     (sealed #t)
-    (fields view point node keymaps x y column row))
+    (fields view point node keymaps x y column row part))
 
   ;; The page holds no Scheme value, so it names a marked keymap by a
   ;; number. Both tables hold the keymap weakly, so a keymap made for a
@@ -3629,11 +3401,15 @@
   (define (item-posn v c id p node item)
     (let ([x (field-or-false item "x")] [y (field-or-false item "y")]
           [column (field-or-false item "column")] [row (field-or-false item "row")]
-          [keymaps (marked-keymaps (field-or-false item "keymaps"))])
+          [keymaps (marked-keymaps (field-or-false item "keymaps"))]
+          [part (let ([part (field-or-false item "part")])
+                  (and (string? part)
+                       (let ([part (string->symbol part)])
+                         (and (enum-set-member? part (enum-set-universe (%bar-parts))) part))))])
       (define (cell n) (and (fixnum? n) (fx>= n 0) n))
       (if (and (real? x) (real? y))
-          (make-posn-record id p node keymaps x y (cell column) (cell row))
-          (make-posn-record id p node keymaps #f #f #f #f))))
+          (make-posn-record id p node keymaps x y (cell column) (cell row) part)
+          (make-posn-record id p node keymaps #f #f #f #f part))))
 
   (define (mouse-item c item)
     (let* ([action (field-or-false item "action")] [id (field-or-false item "view")]
@@ -3677,7 +3453,7 @@
                   (run! (list key
                               (make-posn-record id (and start (buffers:anchor-position start)) (posn-record-node from)
                                                 (posn-record-keymaps from) (posn-record-x from) (posn-record-y from)
-                                                (posn-record-column from) (posn-record-row from))
+                                                (posn-record-column from) (posn-record-row from) (posn-record-part from))
                               (if (eq? p 'stale) (item-posn v c id #f #f item) (posn)))))]
                [else (stale-click)])])))))
 
@@ -4048,6 +3824,23 @@
   "Scrolls the current view's lines right by its width less two columns, as the browser of the client whose key ran it shows them, where lines do not wrap; by COLUMNS columns, the prefix argument, left when negative."
   (%scroll 'views:scroll-right columns #f #t))
 
+(define (%bar-press who event sideways?)
+  (unless (keys:event? event)
+    (assertion-violation who "not an event" event))
+  (let* ([posn (keys:event-start event)] [v (posn-view posn)] [b (and v (bound-buffer v))]
+         [way (case (posn-part posn) [(above-handle before-handle) 'back] [(below-handle after-handle) 'forward] [else #f])])
+    (when (and b way)
+      (let ([c (%commanding-client who v)])
+        (scroll-page! who v b c (view-client v c) (eq? way 'forward) sideways? #f)))))
+
+(commands:define-command (scroll-bar-scroll [event (keys:command-event)])
+  "Scrolls the view whose vertical scroll bar was pressed by its height less two lines toward the part pressed, above or below the thumb as the page drew it, as C-v and M-v do."
+  (%bar-press 'views:scroll-bar-scroll event #f))
+
+(commands:define-command (horizontal-scroll-bar-scroll [event (keys:command-event)])
+  "Scrolls the lines of the view whose horizontal scroll bar was pressed by its width less two columns toward the part pressed, before or after the thumb as the page drew it, as C-x < and C-x > do."
+  (%bar-press 'views:horizontal-scroll-bar-scroll event #t))
+
 (define (fold! view start end)
   (check-view 'views:fold! view)
   (shown-buffer 'views:fold! view)
@@ -4063,7 +3856,7 @@
     (check-position 'views:unfold! view position)
     (let-values ([(opened kept) (partition (lambda (f) (fx<= (spot-position (car f)) position (spot-position (cdr f))))
                                            (live-folds view))])
-      (set-folds! view kept)))
+      (view-record-folds-set! view kept)))
   (mark-dirty!))
 
 (define (folds-at view position)
@@ -4227,7 +4020,7 @@
     (assertion-violation 'views:keymap-mark "not a keymap" keymap))
   (check-main-thread 'views:keymap-mark)
   (let ([id (number->string (keymap-id keymap))])
-    (case (click-state keymap (make-posn-record #f #f #f (list keymap) #f #f #f #f))
+    (case (click-state keymap (make-posn-record #f #f #f (list keymap) #f #f #f #f #f))
       [(clickable) (string-append id " clickable")]
       [(inert) (string-append id " inert")]
       [else id])))
@@ -4242,10 +4035,11 @@
 
 (define %make-posn
   (case-lambda
-    [(view position) (%make-posn view position #f '() #f #f)]
-    [(view position node keymaps column row)
+    [(view position) (%make-posn view position #f '() #f #f #f)]
+    [(view position node keymaps column row) (%make-posn view position node keymaps column row #f)]
+    [(view position node keymaps column row part)
      (check-view 'views:%make-posn view)
-     (make-posn-record (view-record-id view) position node keymaps #f #f column row)]))
+     (make-posn-record (view-record-id view) position node keymaps #f #f column row part)]))
 
 (define (posn-view posn)
   (%check-posn 'views:posn-view posn)
@@ -4266,6 +4060,10 @@
 (define (posn-cell posn)
   (%check-posn 'views:posn-cell posn)
   (values (posn-record-column posn) (posn-record-row posn)))
+
+(define (posn-part posn)
+  (%check-posn 'views:posn-part posn)
+  (posn-record-part posn))
 
 (define (%check-anchor who a)
   (unless (anchor-record? a)
@@ -4409,6 +4207,15 @@
 (keys:bind! keys:global "M-r" move-to-window-line-top-bottom)
 (keys:bind! keys:global "C-x <" scroll-left)
 (keys:bind! keys:global "C-x >" scroll-right)
+(for-each
+  (lambda (keymap command)
+    (keys:bind! keymap "<down-mouse-1>" command)
+    (keys:bind! keymap "<mouse-1>" keys:ignore)
+    (keys:bind! keymap "<drag-mouse-1>" keys:ignore)
+    (keys:bind! keymap "<mouse-2>" keys:ignore)
+    (keys:bind! keymap "<mouse-3>" keys:ignore))
+  (list scroll-bar-keymap horizontal-scroll-bar-keymap)
+  (list scroll-bar-scroll horizontal-scroll-bar-scroll))
 (add-hook! buffers:after-edit note-edit)
 (add-hook! buffers:killed note-kill)
 (advice-add! batch-ended after-batch)

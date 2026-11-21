@@ -23,13 +23,6 @@
     overflow-wrap: anywhere;
   }
 
-  /* The area's view is never scrolled by hand: a message taller than the
-     area scrolls inside it. Room kept for a scroll bar would only narrow
-     its text. */
-  .view:has(> .view-lines > .echo-area-message) {
-    scrollbar-gutter: auto;
-  }
-
   /* A prompt's words are the program's, as the minibuffer's question is,
      so they look like one; the text it shows and the keys after it are
      drawn as typed text is. */

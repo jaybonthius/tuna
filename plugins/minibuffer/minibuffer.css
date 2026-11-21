@@ -19,12 +19,6 @@
     box-shadow: inset 0 calc(-1 * var(--tuna-focus-width)) var(--tuna-focus);
   }
 
-  /* The prompts' view is never scrolled by hand; the candidates' list in
-     it is a view of its own, which keeps its room for a scroll bar. */
-  .view:has(> .view-lines > .minibuffer-prompts) {
-    scrollbar-gutter: auto;
-  }
-
   /* The question is the program's, so it is in the UI font; what the user
      types after it is buffer text, in the code font. */
   .minibuffer-question {

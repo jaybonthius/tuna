@@ -24,18 +24,14 @@
                 (loop k (cons n acc))))
           (reverse acc)))))
 
-;; A page whose lines are 22 px high and 80 cells wide, showing the view
-;; from line TOP of plain lines, where a line's slot is the line less
-;; one, and asking for two view heights beyond each edge.
 (define (make view client top height settled?)
-  (let* ([html (html->string (views:draw view client))]
-         [rows (quotient height 22)]
-         [mark (lambda (line) (list (cons "line" line)))]
-         [lines (+ (* 2 rows) 1)])
+  (let* ([html (html->string (views:draw view client))] [lines (lines-drawn html)]
+         [last (car (reverse lines))]
+         [mark (lambda (line) (list (cons "line" line)))])
     `(("type" . "scroll") ("view" . ,(views:id view)) ("placement" . ,(%number-after html "data-placement=\""))
-      ("report" . 1) ("version" . ,(%number-after html "data-version=\"")) ("slotVersion" . ,(%number-after html "data-slot-version=\"")) ("top" . ,(mark top)) ("spacer" . #f)
-      ("fraction" . 0) ("left" . null) ("past" . 0) ("sides" . #()) ("start" . ,(mark top))
-      ("end" . ,(mark (+ top rows -1))) ("atStart" . #f) ("atEnd" . #f) ("columns" . 80) ("rows" . ,rows)
-      ("pointVisible" . #t) ("lost" . #f)
-      ("wanted" . (("above" ("slot" . ,(max 0 (- top lines 1)))) ("below" ("slot" . ,(+ top rows lines -1))) ("side" . 160)))
-      ("hand" . #t) ("settled" . ,settled?) ("edge" . "top"))))
+      ("report" . 1) ("version" . ,(%number-after html "data-version=\"")) ("top" . ,(mark top)) ("offset" . 0)
+      ("itemHeight" . 22) ("left" . 0) ("start" . ,(mark top)) ("end" . ,(mark (+ top (quotient height 22) -1)))
+      ("spacer" . null) ("spacerDistance" . 0) ("below" . ,(max 0 (- (* 22 (+ 1 (- last top))) height)))
+      ("items" . ,(list->vector (map (lambda (line) (vector (mark line) 22)) lines)))
+      ("lineHeight" . 22) ("charWidth" . 9) ("width" . 800) ("height" . ,height) ("settled" . ,settled?) ("hand" . #f)
+      ("runAtEnd" . #f))))

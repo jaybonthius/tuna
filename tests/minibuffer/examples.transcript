@@ -8,7 +8,7 @@
 > (datums minibuf)
 ((minibuffer:%prompts () (minibuffer:prompt ((depth . 1)) (minibuffer:question () "Find file: ") (minibuffer:input-field () "~/code/tu") "\n" (minibuffer:content ())) (minibuffer:prompt ((depth . 2)) (minibuffer:question () "Rename buffer to: ") (minibuffer:input-field ()) "\n" (minibuffer:content ()))))
 > (html (bar))
-"<div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-6\" data-at=\"30\" data-to=\"57\"><div class=\"minibuffer-prompt\"><span class=\"minibuffer-depth\">[2] </span><div class=\"line\" id=\"v4-4\" data-line=\"2\" data-slot=\"1\" data-at=\"31\"><span class=\"node\" data-at=\"31\" data-to=\"51\"><span class=\"minibuffer-question\"><span data-at=\"32\">Rename buffer to: </span></span></span><span class=\"node\" data-at=\"51\" data-to=\"53\"><span class=\"minibuffer-input\"><span data-at=\"52\"><span class=\"cursor primary\"></span></span></span></span><br></div><div class=\"node\" id=\"v4-5\" data-at=\"54\" data-to=\"56\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
+"<div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-6\" data-at=\"30\" data-to=\"57\"><div class=\"minibuffer-prompt\"><span class=\"minibuffer-depth\">[2] </span><div class=\"line\" id=\"v4-4\" data-line=\"2\" data-before=\"0\" data-at=\"31\"><span class=\"node\" data-at=\"31\" data-to=\"51\"><span class=\"minibuffer-question\"><span data-at=\"32\">Rename buffer to: </span></span></span><span class=\"node\" data-at=\"51\" data-to=\"53\"><span class=\"minibuffer-input\"><span data-at=\"52\"><span class=\"cursor primary\"></span></span></span></span><br></div><div class=\"node\" id=\"v4-5\" data-at=\"54\" data-to=\"56\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
 > (press! "C-g")
 ! &quit
 > (result inner)
@@ -82,7 +82,7 @@
 > (type! "maybe")
 > (press! "RET")
 > (html (bar))
-"<div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-15\" data-at=\"1\" data-to=\"33\"><div class=\"minibuffer-prompt\"><div class=\"line\" id=\"v4-16\" data-line=\"1\" data-slot=\"1\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"27\"><span class=\"minibuffer-question\"><span data-at=\"3\">Delete it? (yes or no) </span></span></span><span class=\"node\" data-at=\"27\" data-to=\"29\"><span class=\"minibuffer-input\"><span data-at=\"28\"><span class=\"cursor primary\"></span></span><span class=\"minibuffer-message\" role=\"status\"> [Please answer yes or no]</span></span></span><br></div><div class=\"node\" id=\"v4-17\" data-at=\"30\" data-to=\"32\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
+"<div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-15\" data-at=\"1\" data-to=\"33\"><div class=\"minibuffer-prompt\"><div class=\"line\" id=\"v4-16\" data-line=\"1\" data-before=\"0\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"27\"><span class=\"minibuffer-question\"><span data-at=\"3\">Delete it? (yes or no) </span></span></span><span class=\"node\" data-at=\"27\" data-to=\"29\"><span class=\"minibuffer-input\"><span data-at=\"28\"><span class=\"cursor primary\"></span></span><span class=\"minibuffer-message\" role=\"status\"> [Please answer yes or no]</span></span></span><br></div><div class=\"node\" id=\"v4-17\" data-at=\"30\" data-to=\"32\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
 > (type! "yes")
 > (press! "RET")
 > (result t)
@@ -92,7 +92,7 @@
 > (input)
 ""
 > (html (bar))
-"<div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-17\" data-at=\"1\" data-to=\"28\"><div class=\"minibuffer-prompt\"><div class=\"line\" id=\"v4-18\" data-line=\"1\" data-slot=\"1\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"22\"><span class=\"minibuffer-question\"><span data-at=\"3\">Save it? (y or n) </span></span></span><span class=\"node\" data-at=\"22\" data-to=\"24\"><span class=\"minibuffer-input\"><span data-at=\"23\"><span class=\"cursor primary\"></span></span><span class=\"minibuffer-message\" role=\"status\"> [Please answer y or n]</span></span></span><br></div><div class=\"node\" id=\"v4-19\" data-at=\"25\" data-to=\"27\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
+"<div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-17\" data-at=\"1\" data-to=\"28\"><div class=\"minibuffer-prompt\"><div class=\"line\" id=\"v4-18\" data-line=\"1\" data-before=\"0\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"22\"><span class=\"minibuffer-question\"><span data-at=\"3\">Save it? (y or n) </span></span></span><span class=\"node\" data-at=\"22\" data-to=\"24\"><span class=\"minibuffer-input\"><span data-at=\"23\"><span class=\"cursor primary\"></span></span><span class=\"minibuffer-message\" role=\"status\"> [Please answer y or n]</span></span></span><br></div><div class=\"node\" id=\"v4-19\" data-at=\"25\" data-to=\"27\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
 > (type! "n")
 > (result t)
 #f
@@ -109,7 +109,7 @@ waiting
 > (result t)
 waiting
 > (html (bar))
-"<div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-21\" data-at=\"1\" data-to=\"28\"><div class=\"minibuffer-prompt\"><div class=\"line\" id=\"v4-22\" data-line=\"1\" data-slot=\"1\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"22\"><span class=\"minibuffer-question\"><span data-at=\"3\">Save it? (y or n) </span></span></span><span class=\"node\" data-at=\"22\" data-to=\"24\"><span class=\"minibuffer-input\"><span data-at=\"23\"><span class=\"cursor primary\"></span></span><span class=\"minibuffer-message\" role=\"status\"> [Please answer y or n]</span></span></span><br></div><div class=\"node\" id=\"v4-23\" data-at=\"25\" data-to=\"27\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
+"<div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-21\" data-at=\"1\" data-to=\"28\"><div class=\"minibuffer-prompt\"><div class=\"line\" id=\"v4-22\" data-line=\"1\" data-before=\"0\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"22\"><span class=\"minibuffer-question\"><span data-at=\"3\">Save it? (y or n) </span></span></span><span class=\"node\" data-at=\"22\" data-to=\"24\"><span class=\"minibuffer-input\"><span data-at=\"23\"><span class=\"cursor primary\"></span></span><span class=\"minibuffer-message\" role=\"status\"> [Please answer y or n]</span></span></span><br></div><div class=\"node\" id=\"v4-23\" data-at=\"25\" data-to=\"27\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
 > (type! "y")
 > (result t)
 #t

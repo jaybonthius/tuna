@@ -11,26 +11,24 @@
                 (list (md:heading '() "Rows\n") (apply rows '() (map (lambda (i) (row '())) (iota 200))) (md:para '() "after\n"))
                 (paras 103 100)))))
 > (define v (views:make b))
-; Stands for the page: lines 20 px high, atoms 30, each spacer 20 px for
-; each slot it stands for, as a page's height table counts slots it has
-; not measured; every redraw keeps the item at the top edge still, then
-; the page carries out a new placement; a place in a spacer is the slot
-; at that height.
+; Stands for the page: lines 20 px high, atoms 30, each spacer a line
+; per row; every redraw keeps the item at the top edge still, then the
+; page carries out a new placement; a place in a spacer is the line its
+; counts put there.
 > (define-record-type item-box (fields mark to top height index))
 > (define (item-box-bottom b) (+ (item-box-top b) (item-box-height b)))
 > (define (number-in html name) (let ([n (numbers-after html (string-append name "=\""))]) (and (pair? n) (car n))))
 > (define (decimal-in html name)
     (let ([i (search html (string-append name "=\"") 0)])
       (if i (let ([from (+ i (string-length name) 2)]) (string->number (substring html from (search html "\"" from)))) 0)))
-> (define (slots-around html)
-    (let ([slots (numbers-after html "data-slot=\"")])
-      (values (car slots) (- (number-in html "data-slots") (car (reverse slots)) 1))))
+> (define (spacer-field html side name)
+    (let ([i (search html (string-append "data-spacer=\"" side "\"") 0)])
+      (and i (number-in (substring html i (search html ">" i)) name))))
 > (define (lay-out html)
-    (let-values ([(above below) (slots-around html)])
     (let loop ([line (search html "<div class=\"line\"" 0)] [whole (search html "<div class=\"node whole" 0)]
-               [y (* 20 above)] [acc '()])
+               [y (* 20 (or (spacer-field html "above" "data-lines") 0))] [acc '()])
       (if (not (or line whole))
-          (values (reverse acc) (+ y (* 20 below)))
+          (values (reverse acc) (+ y (* 20 (or (spacer-field html "below" "data-lines") 0))))
           (let* ([i (if (and line whole) (min line whole) (or line whole))]
                  [tag (substring html i (search html ">" i))]
                  [at (numbers-after tag "data-at=\"")]
@@ -39,7 +37,7 @@
                  [px (if to 30 20)])
             (loop (if (eqv? i line) (search html "<div class=\"line\"" (+ i 1)) line)
                   (if (eqv? i whole) (search html "<div class=\"node whole" (+ i 1)) whole)
-                  (+ y px) (cons (make-item-box mark to y px i) acc)))))))
+                  (+ y px) (cons (make-item-box mark to y px i) acc))))))
 > (define scroll-top 0)
 > (define shown-placement #f)
 > (define shown-boxes '())
@@ -98,15 +96,15 @@
           (set! shown-placement placement))
         (set! shown-boxes boxes)
         html)))
-; A place at Y: an item, or the slot at that height of a spacer.
+; A place at Y: an item, or the line a spacer's counts put there.
 > (define (place-at html boxes y)
-    (let ([first (car boxes)] [last (car (reverse boxes))] [slots (numbers-after html "data-slot=\"")])
+    (let ([first (car boxes)] [last (car (reverse boxes))])
       (cond
-        [(< y (item-box-top first))
-         (values (list (cons "slot" (exact (floor (/ y 20))))) (/ (mod y 20) 20) #t #f)]
-        [(and (>= y (item-box-bottom last)) (< (car (reverse slots)) (- (number-in html "data-slots") 1)))
-         (let ([d (- y (item-box-bottom last))])
-           (values (list (cons "slot" (+ (car (reverse slots)) 1 (exact (floor (/ d 20)))))) (/ (mod d 20) 20) #t #f))]
+        [(and (< y (item-box-top first)) (spacer-field html "above" "data-line"))
+         => (lambda (line) (values (list (cons "line" (+ line (exact (floor (/ y 20)))))) (/ (mod y 20) 20) #t #f))]
+        [(and (>= y (item-box-bottom last)) (spacer-field html "below" "data-line"))
+         => (lambda (line) (let ([d (- y (item-box-bottom last))])
+                             (values (list (cons "line" (+ line (exact (floor (/ d 20)))))) (/ (mod d 20) 20) #t #f)))]
         [else (let ([b (find (lambda (b) (> (item-box-bottom b) y)) boxes)])
                 (values (item-box-mark b) (/ (- y (item-box-top b)) (item-box-height b)) #f b))])))
 > (define (measure v c html hand?)
@@ -123,12 +121,12 @@
            [p (point-box html boxes)])
       (let-values ([(top fraction spacer? b) (place-at html boxes scroll-top)])
         `(("type" . "scroll") ("view" . ,(views:id v)) ("placement" . ,(number-in html "data-placement"))
-          ("version" . ,(number-in html "data-version")) ("slotVersion" . ,(number-in html "data-slot-version"))
+          ("version" . ,(number-in html "data-version"))
           ("top" . ,top) ("spacer" . ,spacer?) ("fraction" . ,fraction) ("left" . null) ("past" . 0) ("sides" . #())
           ("start" . ,(row (+ scroll-top margin) #t)) ("end" . ,(row (- (+ scroll-top h) margin 1) #f))
           ("atStart" . ,(<= scroll-top 0)) ("atEnd" . #f) ("columns" . 80) ("rows" . ,(quotient h 20))
           ("pointVisible" . ,(and p (>= (item-box-top p) scroll-top) (<= (item-box-bottom p) (+ scroll-top h)) #t))
-          ("wanted" . null) ("hand" . ,hand?) ("edge" . "top")))))
+          ("wanted" . (("aboveLines" . 41) ("aboveChars" . 3280) ("belowLines" . 41) ("belowChars" . 3280) ("side" . 160))) ("hand" . ,hand?) ("edge" . "top")))))
 > (define (send! c r settled?)
     (set! reports (+ reports 1))
     ((table-ref web:input-handlers "scroll") c (append r `(("report" . ,reports) ("settled" . ,settled?)))))
@@ -163,8 +161,8 @@
 > (list (line-of v (views:point v)) (line-of v (views:top v desktop)) (point-shown? v))
 (102 100 #t)
 ; Scrolled by hand to 500 px, the view shows the spacer above the drawn
-; run, at slot 25: it stays at line 9, where the hand left it, and point
-; comes into view.
+; run: it stays at line 26, where the hand left it, and point comes into
+; view.
 > (scroll-by-hand! v desktop 500)
 > (list (line-of v (views:point v)) (line-of v (views:top v desktop)) (point-shown? v))
-(25 9 #t)
+(42 26 #t)

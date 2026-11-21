@@ -19,7 +19,7 @@
 #t
 > (define view (views:make buffer))
 > (lines view)
-"<div class=\"line\" id=\"v1-1\" data-line=\"1\" data-slot=\"0\" data-at=\"1\"><span class=\"cursor-on primary\">(</span><span data-face=\"keyword\">define</span> name <span data-face=\"string\">\"Tuna\"</span>)</div><div class=\"line\" id=\"v1-2\" data-line=\"2\" data-slot=\"1\"><br></div></div><div class=\"view-spacer\" id=\"view-1-below\" data-spacer=\"below\" data-ignore-morph aria-hidden=\"true\">"
+"<div class=\"line\" id=\"v1-1\" data-line=\"1\" data-before=\"0\" data-at=\"1\"><span class=\"cursor-on primary\">(</span><span data-face=\"keyword\">define</span> name <span data-face=\"string\">\"Tuna\"</span>)</div><div class=\"line\" id=\"v1-2\" data-line=\"2\" data-before=\"21\"><br></div>"
 ; A list of faces draws as nested elements, the first innermost, so its
 ; rules win: bold and italic from one highlighter, a misspelling over a
 ; keyword.
@@ -28,7 +28,7 @@
           (list 14 20 (list (cons 'face (list faces:markup.strong faces:markup.italic))))))
 #t
 > (lines view)
-"<div class=\"line\" id=\"v1-1\" data-line=\"1\" data-slot=\"0\" data-at=\"1\"><span class=\"cursor-on primary\">(</span><span data-face=\"keyword\"><span data-face=\"spell.misspelled\">define</span></span> name <span data-face=\"markup.italic\"><span data-face=\"markup.strong\">\"Tuna\"</span></span>)</div><div class=\"line\" id=\"v1-2\" data-line=\"2\" data-slot=\"1\"><br></div></div><div class=\"view-spacer\" id=\"view-1-below\" data-spacer=\"below\" data-ignore-morph aria-hidden=\"true\">"
+"<div class=\"line\" id=\"v1-1\" data-line=\"1\" data-before=\"0\" data-at=\"1\"><span class=\"cursor-on primary\">(</span><span data-face=\"keyword\"><span data-face=\"spell.misspelled\">define</span></span> name <span data-face=\"markup.italic\"><span data-face=\"markup.strong\">\"Tuna\"</span></span>)</div><div class=\"line\" id=\"v1-2\" data-line=\"2\" data-before=\"21\"><br></div>"
 ; A face the face entry draws as nothing adds no element, in a list as
 ; alone.
 > (define face-attributes (table-ref views:span-properties 'face #f))
@@ -39,7 +39,7 @@
           (list 14 20 (list (cons 'face 'spell.misspelled)))))
 #t
 > (lines view)
-"<div class=\"line\" id=\"v1-1\" data-line=\"1\" data-slot=\"0\" data-at=\"1\"><span class=\"cursor-on primary\">(</span><span data-face=\"keyword\">define</span> name \"Tuna\")</div><div class=\"line\" id=\"v1-2\" data-line=\"2\" data-slot=\"1\"><br></div></div><div class=\"view-spacer\" id=\"view-1-below\" data-spacer=\"below\" data-ignore-morph aria-hidden=\"true\">"
+"<div class=\"line\" id=\"v1-1\" data-line=\"1\" data-before=\"0\" data-at=\"1\"><span class=\"cursor-on primary\">(</span><span data-face=\"keyword\">define</span> name \"Tuna\")</div><div class=\"line\" id=\"v1-2\" data-line=\"2\" data-before=\"21\"><br></div>"
 > (table-set! views:span-properties 'face face-attributes)
 ; Every face is a top-level definition, and the plugin's stylesheet styles
 ; the families; turning it off takes the stylesheet back.

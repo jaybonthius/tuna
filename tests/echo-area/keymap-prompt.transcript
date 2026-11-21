@@ -16,7 +16,7 @@
 "Pick: "
 ; A string prompt is the prompt part, drawn in the prompt look.
 > (echo-element)
-"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"1 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">Pick: </span></div></div>"
+"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"2 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">Pick: </span></div></div>"
 ; A procedure gives the prompt each time the echo is drawn; a pair of a
 ; face, or #f, and a string is shown text, drawn outside the prompt look.
 > (define typed "fo")
@@ -29,7 +29,7 @@
     (keys:push-keymap! client pick-keymap (lambda (found command) (eq? found pick-keymap))
                        void (lambda () (list "Failing I-search: " (cons #f typed) (cons 'isearch.fail "x")))))
 > (echo-element)
-"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"1 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">Failing I-search: </span>fo<span data-face=\"isearch.fail\">x</span></div></div>"
+"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"2 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">Failing I-search: </span>fo<span data-face=\"isearch.fail\">x</span></div></div>"
 > (set! typed "foo")
 > (echo)
 "Failing I-search: foox"
@@ -52,13 +52,13 @@
 > (define end-shown
     (keys:push-keymap! client pick-keymap (lambda (found command) #t) void (lambda () shown)))
 > (echo-element)
-"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"1 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">[3/17] Query replacing a with b: </span></div></div>"
+"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"2 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">[3/17] Query replacing a with b: </span></div></div>"
 > (set! shown '("Query replacing a\nb with c: "))
 > (echo-element)
-"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"1 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">Query replacing a</span><span data-face=\"escape-glyph\">^J</span><span class=\"echo-area-prompt\">b with c: </span></div></div>"
+"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"2 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">Query replacing a</span><span data-face=\"escape-glyph\">^J</span><span class=\"echo-area-prompt\">b with c: </span></div></div>"
 > (set! shown '("Find: " (#f . "a\tb") (isearch.fail . "c\x7f;")))
 > (echo-element)
-"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"1 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">Find: </span>a<span data-face=\"escape-glyph\">^I</span>b<span data-face=\"isearch.fail\">c<span data-face=\"escape-glyph\">^?</span></span></div></div>"
+"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"2 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">Find: </span>a<span data-face=\"escape-glyph\">^I</span>b<span data-face=\"isearch.fail\">c<span data-face=\"escape-glyph\">^?</span></span></div></div>"
 > (end-shown)
 ; A fixed list is a prompt too, with no procedure around it.
 > (define end-fixed

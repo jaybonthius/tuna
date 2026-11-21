@@ -19,14 +19,14 @@
     (modes:set-major-mode python:mode b))
 > (settle b)
 > (drawn-lines v)
-((940 1060))
+((900 1100))
 > (define first-set (car (sets)))
 > (list (line-of b (car first-set)) (line-of b (- (cadr first-set) 1)))
-(940 1060)
+(900 1099)
 > (equal? first-faces (map (lambda (r) (face-runs b (car r) (cdr r))) (views:drawn-ranges v)))
 #t
 > (length (car first-faces))
-313
+548
 ; Once the buffer is coloured, a scroll that moves the drawn range runs
 ; views' hook, which sends the job one new input, and nothing is coloured.
 > (define inputs 0)
@@ -37,7 +37,7 @@
 > (report! desktop v 1300)
 > (settle b)
 > (list (drawn-lines v) inputs (sets))
-(((1240 1360)) 1 ())
+(((1259 1341)) 1 ())
 ; Right after an edit that changes the structure, the job's first answer
 ; colours the whole drawn range, its margins included, so a short scroll
 ; either way shows current colours. The colours expected are those of a
@@ -74,7 +74,7 @@
 > (settle c)
 > (define ranges (append (views:drawn-ranges v2) (views:drawn-ranges w)))
 > (map (lambda (r) (list (line-of c (car r)) (line-of c (- (cdr r) 1)))) ranges)
-((940 1060) (240 360))
+((900 1100) (200 400))
 > (define (inside? s) (exists (lambda (r) (and (<= (car r) (car s)) (<= (cadr s) (cdr r)))) ranges))
 > (map inside? (list-head (sets) 3))
 (#t #t #f)
