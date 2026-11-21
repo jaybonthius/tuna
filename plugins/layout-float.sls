@@ -2,7 +2,7 @@
 (import (layout) (buffers) (document) (views) (keys) (commands) (web) (haml))
 
 (module %internals
-  (parts float-node? holding-float place-of base-of base-child? length-css view-datum)
+  (parts float-node? holding-float place-of base-of base-child? length-css view-datum by-use)
 
   (define (parts node)
     (let ([acc '()])
@@ -50,6 +50,28 @@
        (string-append "calc(" (number->string (cadr v)) (if (eq? (car v) 'columns) "ch" "lh") " + var(--layout-float-frame))")]
       [else "50%"]))
 
+  (define (view-ids node)
+    (if (document:atom? node)
+        (let ([id (document:node-attribute node 'view #f)]) (if id (list id) '()))
+        (fold-right (lambda (c acc) (append (view-ids c) acc)) '() (parts node))))
+
+  ;; Floats from the one drawn on top: the one holding the view selected
+  ;; last first, a locked view counting, since a float whose selected view
+  ;; is locked is still the one in use; then those never used, the later
+  ;; above the earlier, as the page stacks them.
+  (define (by-use floats)
+    (let* ([order (map views:id (layout:selection-order))]
+           [keyed (map (lambda (c)
+                         (cons c (let ([ids (view-ids c)])
+                                   (let loop ([os order] [k 0])
+                                     (cond
+                                       [(null? os) #f]
+                                       [(memv (car os) ids) k]
+                                       [else (loop (cdr os) (fx+ k 1))])))))
+                       floats)])
+      (append (map car (list-sort (lambda (a b) (fx< (cdr a) (cdr b))) (filter cdr keyed)))
+              (reverse (map car (remp cdr keyed))))))
+
   (define (view-datum v . attributes)
     (vector 'views:view (cons* (cons 'view (views:id v)) (cons 'buffer (buffers:name (views:buffer v))) attributes))))
 
@@ -79,14 +101,8 @@
 ;; Raising a float changes its z-index and not its place in the page, so
 ;; its element is never moved.
 (define (%stacking floats)
-  (let ([order (layout:selection-order)] [n (length floats)])
-    (let ([ranked (list-sort (lambda (a b) (< (cdr a) (cdr b)))
-                             (map (lambda (c k)
-                                    (cons c (let ([m (memq (layout:part-view c) order)])
-                                              (if m (fx- (length order) (length m)) (fx+ (length order) (fx- n k))))))
-                                  floats (iota n)))])
-      (let loop ([ranked ranked] [z (length ranked)] [acc '()])
-        (if (null? ranked) acc (loop (cdr ranked) (fx- z 1) (cons (cons (caar ranked) z) acc)))))))
+  (let loop ([ranked (by-use floats)] [z (length floats)] [acc '()])
+    (if (null? ranked) acc (loop (cdr ranked) (fx- z 1) (cons (cons (car ranked) z) acc)))))
 
 (define (%float-html c place z draw-child)
   (let* ([width (document:node-attribute c 'width 1/2)]
@@ -328,17 +344,16 @@
             (layout:select! new))))))
 
 (commands:define-command (cycle)
-  "Selects the view selected last among the floats when the selected view is not in one, else in the base."
+  "Selects the most recently used view of the float drawn on top, or, from a float, of the base, unless it is locked."
   (let-values ([(atom f child) (%selected-float)])
     (when f
       (let* ([cs (parts f)] [base (base-of cs)] [on-base? (base-child? cs child)]
              [others (filter (lambda (c) (not (eq? (eq? c base) on-base?))) cs)]
-             [order (layout:selection-order)]
-             [views (map layout:part-view others)]
-             [unlocked (filter (lambda (v) (not (layout:locked? (layout:view-node v)))) views)])
-        (unless (null? unlocked)
-          (layout:select!
-            (or (find (lambda (v) (memq v unlocked)) order) (car unlocked))))))))
+             [v (exists (lambda (c)
+                          (let ([v (layout:part-view c)])
+                            (and (not (layout:locked? (layout:view-node v))) v)))
+                        (by-use others))])
+        (when v (layout:select! v))))))
 
 (commands:define-command (wrap-in-float)
   "Wraps the selected part in a float container, as its base."

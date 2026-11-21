@@ -91,5 +91,25 @@ output=$(NO_BUFFERS=1 INTERNAL_BUFFER=1 run "(tree)
 expect "only an internal buffer" "$output" '(layout:level () #(views:view ((view . 1) (buffer . "*scratch*"))))
 (" *internal*" "*scratch*" " *layout*" " *popups*")'
 
+# A saved order headed by a locked part selects the view the user worked
+# in; the locked part keeps its place after it.
+rm -rf "$home/.local"
+mkdir -p "$(dirname "$saved")"
+echo '(layout:level () (layout-split:container ((direction . column)) (layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 2) (buffer . "notes"))))) #(views:view ((view . 3) (buffer . "notes") (depth . 90) (locked . #t)))))' > "$saved"
+echo '((3 1 2) #f)' > "$selection"
+output=$(run "(list (views:id (layout:selected-view)) (map views:id (layout:selection-order)))")
+expect "a saved order headed by a locked part" "$output" '(1 (1 3 2))'
+
+# A placed part that is not locked is a view the user may work in.
+echo '(layout:level () (layout-split:container ((direction . column)) (layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 1) (buffer . "notes"))) #(views:view ((view . 2) (buffer . "notes"))))) #(views:view ((view . 3) (buffer . "notes") (depth . 90)))))' > "$saved"
+echo '((3 1 2) #f)' > "$selection"
+output=$(run "(views:id (layout:selected-view))")
+expect "a saved order headed by a placed part" "$output" '3'
+
+# A saved zoom whose view is gone ends.
+echo '((1 2) (9 . 1))' > "$selection"
+output=$(run "(list (views:id (layout:selected-view)) (layout:zoomed-view))")
+expect "a saved zoom of a view gone" "$output" '(1 #f)'
+
 echo "$0: $failures failures"
 [ "$failures" -eq 0 ]

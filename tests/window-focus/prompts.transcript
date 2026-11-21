@@ -1,0 +1,177 @@
+; A prompt's part is locked: the view the user works in stays the one
+; selected before it, and when that view leaves during the prompt, its
+; successor takes its place for the prompt's end.
+;
+; C-x o from a waiting prompt goes to the first view of that view's level;
+; a deletion there selects the successor, which stays after C-g.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (define t (ask!))
+> (press! "C-x" "o")
+> (selected)
+"a"
+> (press! "C-x" "0")
+> (selected)
+"b"
+> (end! t)
+> (selected)
+"b"
+; The view the prompt started from goes by code while the prompt is
+; selected: the prompt stays selected, and C-g selects the successor
+; chosen when it went, recording no use.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (press! "C-x" "o")
+> (define t (ask!))
+> (layout:delete-part! (layout:view-node b))
+> (selected)
+" *Minibuf*"
+> (define before (front 3))
+> (end! t)
+> (list (selected) (equal? (front 3) before))
+("a" #t)
+; An explorer beside the user's level, used after b was made, is never
+; the successor of a, which left during a prompt.
+> (define a (begin! "a"))
+> (define explorer (explorer!))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (click-part! (layout:view-node explorer))
+> (click-part! (layout:view-node a))
+> (define t (ask!))
+> (layout:delete-part! (layout:view-node a))
+> (order)
+(" *Minibuf*" "b" "explorer")
+; Before C-g, C-x o and C-M-v from the prompt act in b's level.
+> (who (in-client layout:other-view-for-scrolling))
+"b"
+> (press! "C-x" "o")
+> (selected)
+"b"
+> (end! t)
+> (selected)
+"b"
+> (define a (begin! "a"))
+> (define explorer (explorer!))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (click-part! (layout:view-node explorer))
+> (click-part! (layout:view-node a))
+> (define t (ask!))
+> (layout:delete-part! (layout:view-node a))
+> (end! t)
+> (selected)
+"b"
+; The same with a tab closed during the prompt.
+> (define a (view-named "a"))
+> (define b (view-named "b"))
+> (reset! (layout-tabs:container '() (atom a) (atom b)))
+> (define explorer (explorer!))
+> (for-each layout:select! (list b explorer a))
+> (define t (ask!))
+> (layout:delete-part! (layout:view-node a))
+> (end! t)
+> (selected)
+"b"
+; In a palette, the palette's removal selects the successor.
+> (palette-prompts!)
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (define t (ask!))
+> (and (layout:popup-node (prompt-view)) #t)
+#t
+> (layout:delete-part! (layout:view-node a))
+> (end! t)
+> (selected)
+"b"
+> (define a (begin! "a"))
+> (define explorer (explorer!))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (click-part! (layout:view-node explorer))
+> (click-part! (layout:view-node a))
+> (define t (ask!))
+> (layout:delete-part! (layout:view-node a))
+> (end! t)
+> (selected)
+"b"
+> (table-remove! layout:display-rules minibuffer:buffer?)
+; From a prompt opened while the echo area was selected, C-M-v scrolls
+; the view the user worked in, not the echo area, and C-x o lists that
+; view's level.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (press! "C-x" "o")
+> (layout:select! (echo))
+> (define t (ask!))
+> (who (in-client layout:other-view-for-scrolling))
+"b"
+> (press! "C-x" "o")
+> (selected)
+"a"
+> (end! t)
+; C-x 1 from the prompt or the echo area refuses, as from any locked part.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define t (ask!))
+> (raised (lambda () (in-client (lambda () (layout:zoom #f)))))
+(layout:zoom "a locked part")
+> (end! t)
+> (layout:select! (echo))
+> (raised (lambda () (in-client (lambda () (layout:zoom #f)))))
+(layout:zoom "a locked part")
+> (layout:zoomed-view)
+#f
+; s-o from the prompt picks among the views of the level the user was in.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (press! "C-x" "o")
+> (sleep-for 0.2)
+> (define t (ask!))
+> (press! "s-o")
+> (selected)
+"b"
+> (end! t)
+; A display from the prompt uses the least recently selected view of
+; that level; the prompt stays selected.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (press! "C-x" "o" "C-x" "o")
+> (define t (ask!))
+> (who (in-client (lambda () (layout:use-other-view (buffers:make "x" "x\n")))))
+"b"
+> (selected)
+" *Minibuf*"
+> (end! t)
+; A prompt shown in the selected view, by a display rule, sets
+; other-view on it, so that view stops being the one the user works in:
+; its successor takes its place, and the selection stays.
+> (table-set! layout:display-rules minibuffer:buffer? layout:display-in-selected-view)
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (define t (ask!))
+> (list (selected) (who (prompt-view)))
+("a" "a")
+> (who (in-client layout:other-view-for-scrolling))
+"b"
+> (press! "C-x" "o")
+> (selected)
+"b"
+> (end! t)
+> (table-remove! layout:display-rules minibuffer:buffer?)
+; Reloading layout while a prompt waits keeps the prompt selected.
+> (define a (begin! "a"))
+> (define t (ask!))
+> (load-module! '(layout))
+> (selected)
+" *Minibuf*"
+> (end! t)
+> (selected)
+"a"

@@ -164,7 +164,8 @@
 (#t #t #t #t)
 > (layout:deletable? (document:token (buffers:document layout:buffer) 0))
 #f
-; Deleting the selected view selects where the focused children lead.
+; Deleting the selected view selects its level's view selected most
+; recently.
 > (layout:delete-part! (layout:view-node c))
 > (tree)
 (layout:level () (layout-split:container ((direction . column)) (layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 3) (buffer . "notes"))) (boxes:box () #(views:view ((view . 4) (buffer . "mail")))))) #(views:view ((view . 6) (buffer . "*Echo*") (depth . 90) (size . content) (locked . #t)))))

@@ -45,8 +45,8 @@
                        ("showing" . ,(views:shown-count s))))))
           '("down" "click")))))
 ; A click on a view atom's element selects its view; on a container's,
-; the part right after its opening, through focused children. The press
-; reaches nothing.
+; the container's view selected last, its first child being no better a
+; guess than any other. The press reaches nothing.
 > (click! '("token" . 6))
 > (list (selected) pressed)
 (4 0)
@@ -61,15 +61,15 @@
 4
 > (click! '("token" . 4))
 > (list (selected) pressed)
-(3 0)
+(4 0)
 ; A locked part refuses: the echo area stays unselected.
 > (click! '("token" . 11))
 > (selected)
-3
+4
 ; A click on a part closed since its screen was drawn is stale.
 > (define version (buffers:version layout:buffer))
 > (layout:delete-part! (layout:view-node c))
 > (click! '("token" . 6) (cons "version" version))
 ! Stale click: what was clicked is gone
 > (selected)
-3
+1

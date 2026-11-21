@@ -1,0 +1,231 @@
+; When the view the user works in leaves, its successor is chosen in its
+; own level: the view there selected most recently, a view never selected
+; after every selected one, passing over locked and placed parts. The
+; choice records no use.
+;
+; A prompt that ended leaves its locked part in the order; it is passed
+; over.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (prompt!)
+> (order)
+("a" " *Minibuf*")
+> (define before (front 3))
+> (press! "C-x" "0")
+> (list (selected) (equal? (front 3) before))
+("b" #t)
+> (raised (lambda () (in-client layout:delete-view)))
+(layout:delete-part! "the last view of its level")
+; The same below, after a prompt answered with RET.
+> (define a (begin! "a"))
+> (press! "C-x" "2")
+> (define b (made-beside a "b"))
+> (define t (ask!))
+> (end! t "RET")
+> (press! "C-x" "0")
+> (selected)
+"b"
+; The view selected before the prompt is chosen over one never selected.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (press! "C-x" "o")
+> (prompt!)
+> (press! "C-x" "0")
+> (selected)
+"a"
+; No prompt: unchanged.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (press! "C-x" "0")
+> (selected)
+"b"
+; A locked bar first in the layout is passed over.
+> (define a (view-named "a"))
+> (define bar (view-named "bar"))
+> (set-parts! (layout-split:container '((direction . column)) (atom bar '(locked . #t)) (layout:level '() (atom a))))
+> (layout:select! a)
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (press! "C-x" "0")
+> (selected)
+"b"
+; A view in a nested level hands over to that level's view, whichever
+; order the views beside it were selected in.
+> (define a (view-named "a"))
+> (define b (view-named "b"))
+> (define c (view-named "c"))
+> (reset! (layout-split:container '((direction . row)) (atom a) (layout:level '() (layout-split:container '((direction . column)) (atom b) (atom c)))))
+> (for-each layout:select! (list a c b))
+> (prompt!)
+> (press! "C-x" "0")
+> (selected)
+"c"
+> (define b (view-named "b2"))
+> (reset! (layout-split:container '((direction . row)) (atom a) (layout:level '() (layout-split:container '((direction . column)) (atom b) (atom c)))))
+> (for-each layout:select! (list c a b))
+> (press! "C-x" "0")
+> (selected)
+"c"
+; A zoomed view that leaves ends the zoom.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (prompt!)
+> (press! "C-x" "1")
+> (who (layout:zoomed-view))
+"a"
+> (press! "C-x" "0")
+> (list (selected) (layout:zoomed-view))
+("b" #f)
+; Killing a buffer deletes no view, and the selection stays.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (in-client (lambda () (buffers:kill! (views:buffer a))))
+#t
+> (list (selected) (length (layout:views)))
+("a" 3)
+; C-x 4 0 deletes the view after killing its buffer; the successor is the
+; level's view selected most recently.
+> (define a (view-named "a"))
+> (define b (view-named "b"))
+> (define c (view-named "c"))
+> (reset! (layout-split:container '((direction . row)) (layout-split:container '((direction . column)) (atom a) (atom c)) (atom b)))
+> (for-each layout:select! (list c a))
+> (prompt!)
+> (press! "C-x" "4" "0")
+> (selected)
+"c"
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (prompt!)
+> (press! "C-x" "4" "0")
+> (selected)
+"b"
+; The part mode's x deletes the selected part, then selects the part
+; beside it. The mode's keys run these commands.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (prompt!)
+> (in-client layout:part-mode)
+> (in-client layout:delete-view)
+> (in-client layout:part-mode-leave)
+> (list (selected) (map who (layout:views)))
+("b" ("b" "echo" " *Minibuf*"))
+; An explorer placed beside the user's level, selected after b was made,
+; is passed over: b took a's space.
+> (define a (begin! "a"))
+> (define explorer (explorer!))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (click-part! (layout:view-node explorer))
+> (click-part! (layout:view-node a))
+> (order)
+("a" "explorer")
+> (press! "C-x" "0")
+> (selected)
+"b"
+; A view beside a nested level stays outside the choice for a view in it.
+> (define outline (view-named "outline"))
+> (define pi (view-named "pi"))
+> (reset! (layout-split:container '((direction . row) (title . "chat")) (atom outline '(size columns 24)) (layout:level '() (atom pi))))
+> (layout:select! pi)
+> (press! "C-x" "3")
+> (define pi2 (made-beside pi "pi2"))
+> (click-part! (layout:view-node outline))
+> (click-part! (layout:view-node pi))
+> (press! "C-x" "0")
+> (selected)
+"pi2"
+; A tabs container keeps the tab that showed the view that left while
+; the tab holds a view to give.
+> (define a (view-named "a"))
+> (define b (view-named "b"))
+> (define c (view-named "c"))
+> (reset! (layout-tabs:container '() (layout-split:container '((direction . row)) (atom a) (atom b)) (atom c)))
+> (for-each layout:select! (list b c a))
+> (press! "C-x" "0")
+> (list (selected) (map who (layout:views)))
+("b" ("b" "echo"))
+; Tabs inside tabs: the inner tabs keep the tab that held the view, though
+; the outer tabs hold nothing but the inner ones.
+> (define x (view-named "x"))
+> (define a (view-named "a"))
+> (define b (view-named "b"))
+> (reset! (layout-tabs:container '() (layout-tabs:container '() (atom x) (layout-split:container '((direction . row)) (atom a) (atom b)))))
+> (for-each layout:select! (list x b a))
+> (press! "C-x" "0")
+> (list (selected) (map who (layout:views)))
+("b" ("b" "echo"))
+> (define c2 (view-named "c2"))
+> (define a (view-named "a2"))
+> (define b (view-named "b2"))
+> (reset! (layout-tabs:container '() (atom c2) (layout-tabs:container '() (atom x) (layout-split:container '((direction . row)) (atom a) (atom b)))))
+> (for-each layout:select! (list x b a))
+> (press! "C-x" "0")
+> (list (selected) (map who (layout:views)))
+("b2" ("b2" "echo"))
+; A tab is kept only when the tabs had it; tabs holding the tabs that
+; lost a view keep nothing of their own.
+> (define y (view-named "y"))
+> (define z (view-named "z"))
+> (define w (view-named "w"))
+> (reset! (layout-tabs:container '() (layout-tabs:container '() (layout-tabs:container '() (atom y)) (atom z) (atom w))))
+> (for-each layout:select! (list w z))
+> (press! "C-x" "0")
+> (list (selected) (map who (layout:views)))
+("w" ("w" "echo"))
+; A tab whose only view goes leaves the views on screen after it to
+; compete: the view beside the tabs, or the tab that comes into view.
+> (define a (view-named "a"))
+> (define c (view-named "c"))
+> (define d (view-named "d"))
+> (reset! (layout-split:container '((direction . row)) (layout-tabs:container '() (atom a) (atom c)) (atom d)))
+> (for-each layout:select! (list c d a))
+> (press! "C-x" "t" "0")
+> (selected)
+"d"
+> (define a (view-named "a2"))
+> (reset! (layout-split:container '((direction . row)) (layout-tabs:container '() (atom a) (atom c)) (atom d)))
+> (for-each layout:select! (list d c a))
+> (press! "C-x" "t" "0")
+> (selected)
+"c"
+; C-x t 0 after a prompt selects the remaining tab's view.
+> (define a (begin! "a"))
+> (press! "C-x" "t" "2")
+> (define a2 (made-beside a "a2"))
+> (selected)
+"a2"
+> (prompt!)
+> (press! "C-x" "t" "0")
+> (selected)
+"a"
+; A collapse that dissolves a nested level leaves the level it was in:
+; m takes a's place, x outside it does not.
+> (define x (view-named "x"))
+> (define a (view-named "a"))
+> (define m (view-named "m"))
+> (reset! (layout-split:container '((direction . row)) (atom x) (layout:level '() (layout-split:container '((direction . column)) (atom a) (layout:level '() (atom m))))))
+> (for-each layout:select! (list m x a))
+> (press! "C-x" "0")
+> (selected)
+"m"
+; layout:deselect! of the selected view the user works in selects its
+; successor and records no use.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (define before (front 3))
+> (layout:deselect! a)
+> (list (selected) (equal? (front 3) before))
+("b" #t)
+; Of a view that is not selected, nothing.
+> (layout:deselect! a)
+> (selected)
+"b"

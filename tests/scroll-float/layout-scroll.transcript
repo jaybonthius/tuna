@@ -15,7 +15,7 @@
 > (layout:select! vb)
 > (tree)
 (layout:level () (layout-scroll:container () #(views:view ((view . 3) (buffer . "a") (size . 1/2))) (layout-split:container ((direction . column) (size . 1/3)) #(views:view ((view . 4) (buffer . "b"))) #(views:view ((view . 5) (buffer . "c")))) #(views:view ((view . 6) (buffer . "d"))) #(views:view ((view . 7) (buffer . "d") (size . 2/3)))))
-; Each column is an item named by the view its focused children lead to.
+; Each column is an item named by its view selected most recently.
 ; Before a client has measured the strip it draws the focused column and
 ; enough on each side to fill the strip, and is placed to show the
 ; focused column wholly.

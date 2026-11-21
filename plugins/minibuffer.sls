@@ -298,13 +298,13 @@
                        (let ([popup (layout:popup-node v)])
                          (when popup (layout:delete-part! popup)))))])
               (when selected?
-                (let ([back (if (and before (or (layout:view-node before) (layout:popup-node before)))
-                                before
-                                (find (lambda (w)
-                                        (and (not (eq? w v))
-                                             (let ([n (layout:view-node w)]) (and n (not (layout:locked? n))))))
-                                      (layout:selection-order)))])
-                  (when back (layout:select! back))))))))
+                (cond
+                  [(and before (or (layout:view-node before) (layout:popup-node before)))
+                   (layout:select! before)]
+                  ;; A palette's removal already selected the view the
+                  ;; user works in, so its view is no longer selected and
+                  ;; needs nothing more.
+                  [(live-view (shown-id p)) => layout:deselect!]))))))
       (prompt-ended p)))
 
   (define (answer! p thunk)

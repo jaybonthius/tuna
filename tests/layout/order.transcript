@@ -2,8 +2,7 @@
 ; buffers:all, as Emacs's select-window records a buffer, and so does
 ; showing a buffer in the selected view. Selecting by a click, C-x o,
 ; the part mode or a window history step is a selection; the view
-; selected after a deletion is not, as Emacs's delete-window selects
-; without recording.
+; selected after a deletion is not, since the user did not choose it.
 > (define c1 (web:add-client! 1))
 > (define (named name) (buffers:make name (string-append name "\n")))
 > (define (first-name) (buffers:name (car (buffers:all))))

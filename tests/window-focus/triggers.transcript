@@ -1,0 +1,87 @@
+; Each item through the key or the click that runs it.
+;
+; mouse-3 on the selected view's status line deletes it; the view beside
+; it takes its place.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (click-status! a 3)
+> (list (selected) (map who (layout:views)))
+("b" ("b" "echo"))
+; The close button of the tab the user was in, clicked while a prompt
+; waits: the prompt stays selected, and C-g selects the tab left, not the
+; explorer beside the user's level.
+> (define a (view-named "a"))
+> (define b (view-named "b"))
+> (reset! (layout-tabs:container '() (atom a) (atom b)))
+> (define explorer (explorer!))
+> (for-each layout:select! (list b explorer a))
+> (define t (ask!))
+> (mouse! (list layout-tabs:close-keymap layout-tabs:keymap) 1 (document:node-start (layout:view-node a)))
+> (list (selected) (map who (layout:views)))
+(" *Minibuf*" ("explorer" "b" "echo" " *Minibuf*"))
+> (end! t)
+> (selected)
+"b"
+; C-M-v from a prompt scrolls the view the prompt came from.
+> (define scrolled '())
+> (define (note-scroll scroll . args) (set! scrolled (cons (who (views:current)) scrolled)) (apply scroll args))
+> (advice-add! views:scroll-up note-scroll)
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (press! "C-x" "o")
+> (define t (ask!))
+> (press! "C-M-v")
+> scrolled
+("b")
+> (end! t)
+> (advice-remove! views:scroll-up note-scroll)
+; A display from a prompt, through the display action, shows the buffer
+; in the view of the user's level selected least recently; the prompt
+; stays selected.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (press! "C-x" "o" "C-x" "o")
+> (define t (ask!))
+> (define x (buffers:make "x" "x\n"))
+> (who (in-client (lambda () (layout:display-buffer x))))
+"b"
+> (selected)
+" *Minibuf*"
+> (end! t)
+; C-x k RET kills the buffer and deletes no view.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (define t (start-keys! "C-x" "k"))
+> (end! t "RET")
+> (list (selected) (map who (layout:views)) (buffers:find "a"))
+("a" ("a" "b" "echo" " *Minibuf*") #f)
+; A strip's band, sent with the layout's keymap as the page sends it,
+; reaches its column, whose first view is locked.
+> (define a (view-named "a"))
+> (define b (view-named "b"))
+> (define p (view-named "p"))
+> (reset! (layout-scroll:container '() (atom a '(size . 1/2)) (layout-split:container '((direction . column) (size . 1/2)) (atom p '(locked . #t)) (atom b))))
+> (for-each layout:select! (list b p a))
+> (mouse! (list layout:keymap) 1 (document:node-start (enclosing b)))
+> (selected)
+"b"
+; A hand scroll that comes to rest on that column selects its view that is
+; not locked.
+> (for-each layout:select! (list p a))
+> (strip-rest! (views:id b))
+> (selected)
+"b"
+; A click on a tab's label reaches the tab, whose last selected view is
+; locked.
+> (define a (view-named "a"))
+> (define b (view-named "b"))
+> (define p (view-named "p"))
+> (reset! (layout-tabs:container '() (atom a) (layout-split:container '((direction . column)) (atom b) (atom p '(locked . #t)))))
+> (for-each layout:select! (list b p a))
+> (mouse! (list layout-tabs:keymap) 1 (document:node-start (enclosing b)))
+> (selected)
+"b"

@@ -1,0 +1,114 @@
+; Commands run from a locked part act where the user works.
+;
+; From the echo area, selected by code, C-x 0 refuses; C-x o goes to the
+; view the user worked in, and a deletion there selects its successor,
+; never the echo area.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (layout:select! (echo))
+> (raised (lambda () (in-client layout:delete-view)))
+(layout:delete-view "a locked part")
+> (press! "C-x" "o")
+> (selected)
+"a"
+> (press! "C-x" "0")
+> (selected)
+"b"
+; Window history from the echo area steps in the user's level.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (layout:select! (echo))
+> (press! "C-c" "<left>")
+> (list (selected) (map who (layout:views)))
+("echo" ("a" "echo"))
+; C-x 4 4 then C-x b from the echo area shows the buffer in that level's
+; view selected least recently, and selects it.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (define x (buffers:make "x" "x\n"))
+> (layout:select! (echo))
+> (define t (start-keys! "C-x" "4" "4" "C-x" "b"))
+> (end! t "x" "RET")
+> (list (selected) (buffers:name (views:buffer b)))
+("b" "x")
+; reset-layout from the echo area deletes the other views of the user's
+; level, and keeps an explorer outside it.
+> (define a (begin! "a"))
+> (define explorer (explorer!))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (layout:select! (echo))
+> (in-client layout:reset-layout)
+> (list (selected) (map who (layout:views)))
+("a" ("explorer" "a" "echo"))
+; From a prompt with an explorer at the side, C-x o stays in the user's
+; level.
+> (define a (begin! "a"))
+> (define explorer (explorer!))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (press! "C-x" "o")
+> (define t (ask!))
+> (press! "C-x" "o")
+> (selected)
+"a"
+> (end! t)
+; q deletes the part a display made, and selects the successor: the view
+; selected most recently in its level, though another was selected when
+; the display happened.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (define h (name! (in-client (lambda () (layout:display-buffer (buffers:make "h" "h\n") layout-split:display-below))) "h"))
+> (layout:select! b)
+> (layout:select! h)
+> (in-client layout:quit-view)
+> (selected)
+"b"
+; The status line's mouse-3 selects the clicked view before deleting it,
+; so a waiting prompt is left unselected.
+> (define a (begin! "a"))
+> (press! "C-x" "3")
+> (define b (made-beside a "b"))
+> (define t (ask!))
+> (click-status! a 3)
+> (list (selected) (and (minibuffer:current-prompt) #t))
+("b" #t)
+> (end! t)
+; q in *Help*, which C-h f made and selected, deletes it and selects the
+; view it was asked from, after a prompt in *Help* too.
+> (define a (begin! "a"))
+> (define t (start-keys! "C-h" "f"))
+> (end! t "c" "a" "r" "RET")
+> (selected)
+"*Help*"
+> (press! "q")
+> (selected)
+"a"
+> (define t (start-keys! "C-h" "f"))
+> (end! t "c" "a" "r" "RET")
+> (prompt!)
+> (selected)
+"*Help*"
+> (press! "q")
+> (selected)
+"a"
+; A nested level stands for its most recently used view not placed inside
+; it: C-x o from beside it enters it there, and a display from beside it
+; lands there, though the placed part was used last.
+> (define a (view-named "a"))
+> (define b (view-named "b"))
+> (define p (view-named "p"))
+> (reset! (layout-split:container '((direction . row)) (atom a) (layout:level '() (layout-split:container '((direction . column)) (atom p '(depth . 50)) (atom b)))))
+> (for-each layout:select! (list b p a))
+> (press! "C-x" "o")
+> (selected)
+"b"
+> (layout:select! p)
+> (layout:select! a)
+> (define shown (buffers:make "shown" "x\n"))
+> (who (in-client (lambda () (layout:use-other-view shown))))
+"b"

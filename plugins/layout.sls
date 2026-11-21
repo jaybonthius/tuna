@@ -17,8 +17,8 @@
    open-layout! opened-popups current-index index-atom index-of-id atom-of part-of
    view-of atom-id selected-id shown-views select-id! set-zoom! current-zoom current-order zoom-level children root-node
    locked-node? locked-in? title-of shown-buffer-name draw-layout draw-popups neighbour-of remove-part! removed-part removal-refusal node-datum
-   note-batch save-now! selected-keymaps enclosing-keymaps last-selected-unlocked-atom lead-down order-views
-   enclosing-level reference-atom level-units placed-atom? same-node? same-level? visible-atoms index-atoms
+   note-batch save-now! selected-keymaps enclosing-keymaps most-recent-atom atoms-in order-views
+   enclosing-level reference-atom level-units unit-placed? other-view-in? deselect-id! same-node? same-level? visible-atoms index-atoms
    in-part-mode? enter-part-mode! leave-part-mode! selection-in choose-part! drawn-part-class
    choose-datum! parent-part child-part sibling-part end-part shift-part! lift-part! lower-part! raise-part!
    splice-part! wrap-part! deletion-successor check-unlocked check-holds-no-locked mode-key?
@@ -224,6 +224,11 @@
   ;; check leaves it to be made again at the next read.
   (define synced-doc #f)
   (define synced-popups-doc #f)
+  (define synced-index #f)
+
+  ;; At start-up the saved order may begin with a part a plugin placed
+  ;; and locked, which the user never chose to work in.
+  (define restoring? #f)
 
   (define (current-index)
     (let ([doc (layout-doc)] [popups (popups-doc)])
@@ -232,9 +237,10 @@
       (unless (and last-popups-index (eq? (index-doc last-popups-index) popups))
         (set! last-popups-index (build-index popups)))
       (unless (and (eq? synced-doc doc) (eq? synced-popups-doc popups))
-        (fix-selection! last-index last-popups-index)
+        (fix-selection! synced-index last-index last-popups-index)
         (set! synced-doc doc)
-        (set! synced-popups-doc popups))
+        (set! synced-popups-doc popups)
+        (set! synced-index last-index))
       last-index))
 
   (define (popups-index) (current-index) last-popups-index)
@@ -413,11 +419,29 @@
   (define (focused-child ix node)
     (hashtable-ref (focus-table ix) (document:node-start node) #f))
 
-  (define (lead-down ix n)
-    (if (document:atom? n)
-        (and (view-atom? n) n)
-        (let ([c (or (focused-child ix n) (let ([cs (kids-of ix n)]) (and (pair? cs) (car cs))))])
-          (and c (lead-down ix c)))))
+  ;; A locked part is its plugin's, so a choice made for the user takes
+  ;; one only when nothing else is left.
+  (define (most-recent-atom ix atoms order)
+    (let* ([unlocked (remp (lambda (a) (locked-in? ix a)) atoms)]
+           [pool (if (null? unlocked) atoms unlocked)])
+      (and (pair? pool)
+           (or (exists (lambda (id) (find (lambda (a) (eqv? (atom-id a) id)) pool)) order)
+               (car pool)))))
+
+  (define (other-view-in? ix n)
+    (let loop ([n n])
+      (and n (or (and (document:node-attribute n 'other-view #f) #t) (loop (parent-in ix n))))))
+
+  (define (reference-candidate? ix id)
+    (let ([a (index-atom ix id)])
+      (and a (not (locked-in? ix a)) (not (other-view-in? ix a)))))
+
+  (define (reference-in ix order)
+    (let ([atoms (index-atom-list ix)])
+      (or (most-recent-atom ix (filter (lambda (a) (reference-candidate? ix (atom-id a))) atoms) order)
+          (most-recent-atom ix atoms order))))
+
+  (define (with-first id order) (cons id (remv id order)))
 
   (define (set-order! order)
     (unless (equal? order view-order)
@@ -443,17 +467,138 @@
       (when (and b (not (buffers:internal-name? (buffers:name b))) (not (views:previewing? (view-of a))))
         (buffers:move-to-front! b))))
 
-  ;; A deleted view leaves the order, so the first view left is where the
-  ;; focused children lead from the root.
-  (define (fix-selection! ix px)
-    (let* ([order (filter (lambda (id) (or (index-atom ix id) (index-atom px id))) view-order)])
-      (set-order!
-        (if (null? order)
-            (let ([a (or (lead-down ix (root-node)) (car (index-atom-list ix)))]) (list (atom-id a)))
-            order))
-      (let ([z zoom-state])
-        (unless (and z (index-atom ix (car z)))
-          (set-zoom! #f)))))
+  ;; The previous document's index says which view the user worked in,
+  ;; since an edit can remove it or change what it may be. Its successor
+  ;; takes its place in the order whether or not it was selected, so a
+  ;; prompt or popup that ends later returns to it. Nothing records a
+  ;; use, since the user chose none of these views.
+  (define (fix-selection! old ix px)
+    (let* ([live? (lambda (id) (or (index-atom ix id) (index-atom px id)))]
+           [selected (and (pair? view-order) (car view-order))]
+           [r (and old (not restoring?) (reference-in old view-order))]
+           [r-id (and r (atom-id r))]
+           [handed? (and r (not (reference-candidate? ix r-id)))]
+           [order (filter live? view-order)]
+           [order (if handed? (hand-over old ix r-id order (and (eqv? r-id selected) (not (live? r-id)))) order)]
+           [order (if (or restoring? (null? order)
+                          (and (not (live? selected)) (not (and handed? (eqv? r-id selected)))))
+                      (with-first (atom-id (reference-in ix order)) order)
+                      order)])
+      (set! restoring? #f)
+      (set-order! order)
+      (fix-zoom! ix px)))
+
+  (define (fix-zoom! ix px)
+    (let ([z zoom-state] [id (and (pair? view-order) (car view-order))])
+      (when (and z (not (and (index-atom ix (car z))
+                             (or (index-atom px id)
+                                 (exists (lambda (a) (eqv? (atom-id a) id)) (atoms-under ix (zoom-place ix z) #f))))))
+        (set-zoom! #f))))
+
+  (define (hand-over old ix r-id order select?)
+    (let ([s (successor old ix r-id order)])
+      (cond
+        [(not s) order]
+        [select? (with-first (atom-id s) order)]
+        [(not (reference-candidate? ix (atom-id s))) order]
+        [else
+         (let loop ([os (remv (atom-id s) order)] [before '()])
+           (cond
+             [(null? os) (append (reverse before) (list (atom-id s)))]
+             [(reference-candidate? ix (car os)) (append (reverse before) (cons (atom-id s) os))]
+             [else (loop (cdr os) (cons (car os) before))]))])))
+
+  ;; The successor is sought where the leaving view sat, so the level it
+  ;; was in keeps the selection while that level has a view to give.
+  (define (successor old ix r-id order)
+    (let ([pins (pins-across old ix r-id)])
+      (or (exists (lambda (level) (most-recent-atom ix (level-candidates ix level pins r-id order) order))
+                  (levels-across old ix r-id))
+          (most-recent-atom ix (remp (lambda (a) (eqv? (atom-id a) r-id)) (index-atom-list ix)) order))))
+
+  (define (surviving-atoms old ix n)
+    (filter values (map (lambda (a) (index-atom ix (atom-id a))) (atoms-in old n))))
+
+  ;; An edit may dissolve a level, or a level holding a level, so a part
+  ;; of the old tree is found by the views it held, wherever they went.
+  (define (innermost ix atoms keep?)
+    (let loop ([n (parent-in ix (car atoms))])
+      (cond
+        [(not n) #f]
+        [(and (keep? n)
+              (for-all (lambda (a) (holds-range? a (document:node-start n) (document:node-end n))) atoms))
+         n]
+        [else (loop (parent-in ix n))])))
+
+  (define (levels-across old ix r-id)
+    (let loop ([l (enclosing-level old (index-atom old r-id))] [acc '()])
+      (if (not l)
+          (reverse acc)
+          (let* ([atoms (surviving-atoms old ix l)]
+                 [found (and (pair? atoms) (innermost ix atoms level?))])
+            (loop (enclosing-level old l)
+                  (if (or (not found) (and (pair? acc) (same-node? found (car acc)))) acc (cons found acc)))))))
+
+  ;; A container that shows one child goes on showing the one that held
+  ;; the leaving view; otherwise the order would show the tab of a view
+  ;; selected before it, since that tab lost its newest view. An edit may
+  ;; dissolve containers, so a tab is found after it as the child, of
+  ;; each container that shows one, holding every view the tab held.
+  (define (pins-across old ix r-id)
+    (let loop ([child (index-atom old r-id)] [acc '()])
+      (let ([k (parent-in old child)])
+        (if (not k)
+            acc
+            (loop k (if (shows-focused? k) (pin-held ix (surviving-atoms old ix child) acc) acc))))))
+
+  (define (pin-held ix held acc)
+    (if (null? held)
+        acc
+        (let up ([c (car held)] [acc acc])
+          (let ([n (parent-in ix c)])
+            (cond
+              [(not n) acc]
+              [(and (shows-focused? n) (not (assv (document:node-start n) acc))
+                    (for-all (lambda (a) (holds-range? a (document:node-start c) (document:node-end c))) held))
+               (up n (cons (cons (document:node-start n) c) acc))]
+              [else (up n acc)])))))
+
+  (define (shown-kids ix n pins holds?)
+    (let ([kids (kids-of ix n)])
+      (if (and (pair? kids) (shows-focused? n))
+          (let ([pin (assv (document:node-start n) pins)])
+            (list (if (and pin (holds? (cdr pin))) (cdr pin) (focused-or-first ix n kids))))
+          kids)))
+
+  ;; What use-other-view weighs, the zoom aside: the zoomed view was
+  ;; selected after every view the zoom hides, so it outranks them anyway.
+  (define (level-candidates ix level pins excluded order)
+    (define (shown-atoms-of n inner)
+      (cond
+        [(view-atom? n) (if (eqv? (atom-id n) excluded) '() (list n))]
+        [(document:atom? n) '()]
+        [else (fold-right (lambda (c acc) (append (shown-atoms-of c inner) acc)) '()
+                (shown-kids ix n pins
+                  (lambda (c) (exists (lambda (a) (not (or (locked-in? ix a) (unit-placed? ix a inner)))) (shown-atoms-of c inner)))))]))
+    (define (usable? a) (and (not (locked-in? ix a)) (not (unit-placed? ix a level))))
+    (let walk ([n (car (kids-of ix level))])
+      (cond
+        [(view-atom? n) (if (and (not (eqv? (atom-id n) excluded)) (usable? n)) (list n) '())]
+        [(document:atom? n) '()]
+        [(level? n)
+         (let ([s (stand-in ix n (shown-atoms-of n n) order)])
+           (if (and s (usable? s)) (list s) '()))]
+        [else (fold-right (lambda (c acc) (append (walk c) acc)) '()
+                (shown-kids ix n pins (lambda (c) (pair? (walk c)))))])))
+
+  (define (deselect-id! id)
+    (let ([ix (current-index)] [px last-popups-index] [order view-order])
+      (when (and (pair? order) (eqv? (car order) id))
+        (let* ([r (reference-in ix order)]
+               [next (if (eqv? (atom-id r) id) (successor ix ix id order) r)])
+          (when (and next (not (eqv? (atom-id next) id)))
+            (set-order! (with-first (atom-id next) order))
+            (fix-zoom! ix px))))))
 
   (define (title-of ix n)
     (let ([title (document:node-attribute n 'title #f)])
@@ -574,7 +719,7 @@
                       (assertion-violation 'layout:neighbour "a kind's neighbour is not a child of its container" sibling)]
                      [(fx= (document:node-start sibling) (document:node-start n)) #f]
                      [else
-                      (let ([a (lead-down ix sibling)])
+                      (let ([a (most-recent-atom ix (atoms-in ix sibling) view-order)])
                         (if (and a (not (locked-in? ix a))) (view-of a) (across sibling)))]))))))))
 
   (define (node-datum ix n)
@@ -641,17 +786,14 @@
 
   (define (same-level? ix a b) (same-node? (enclosing-level ix a) (enclosing-level ix b)))
 
-  (define (reference-atom ix)
-    (or (exists (lambda (id) (index-atom ix id)) view-order)
-        (car (index-atom-list ix))))
+  (define (reference-atom ix) (reference-in ix view-order))
 
   (define (unit-of ix atom level)
     (let loop ([n atom] [unit atom])
       (let ([p (parent-in ix n)])
         (if (same-node? p level) unit (loop p (if (level? p) p unit))))))
 
-  ;; The atoms of one nested level are adjacent in the layout's order,
-  ;; and stand for it by the one of them selected last.
+  ;; The atoms of one nested level are adjacent in the layout's order.
   (define (level-units ix level atoms)
     (let ([s (document:node-start level)] [e (document:node-end level)] [order view-order])
       (let loop ([as (filter (lambda (a) (and (fx< s (document:node-start a)) (fx<= (document:node-end a) e))) atoms)]
@@ -662,18 +804,22 @@
               (if (eq? unit (car as))
                   (loop (cdr as) (cons unit acc))
                   (let-values ([(inside rest) (partition (lambda (a) (holds-range? a (document:node-start unit) (document:node-end unit))) as)])
-                    (loop rest
-                          (cons (or (exists (lambda (id) (find (lambda (a) (eqv? (atom-id a) id)) inside)) order)
-                                    (car inside))
-                                acc)))))))))
+                    (loop rest (cons (stand-in ix unit inside order) acc)))))))))
+
+  ;; A nested level stands for the view in it the user would display in,
+  ;; so a part a plugin placed inside it does not hide the rest.
+  (define (stand-in ix level atoms order)
+    (most-recent-atom ix (let ([free (remp (lambda (a) (unit-placed? ix a level)) atoms)]) (if (null? free) atoms free))
+                      order))
 
   ;; A plugin's placed part carries depth, on its atom or on a container
-  ;; such as tabs that took the atom's place attributes.
-  (define (placed-atom? ix atom)
+  ;; such as tabs that took the atom's place attributes. A level nested in
+  ;; a placed part is a plugin's too, so the walk goes up to the level
+  ;; weighing the unit, not to the atom's own level.
+  (define (unit-placed? ix atom level)
     (let loop ([n atom])
-      (and n (not (level? n))
-           (or (document:node-attribute n 'depth #f) (loop (parent-in ix n)))
-           #t)))
+      (and (not (same-node? n level))
+           (or (and (document:node-attribute n 'depth #f) #t) (loop (parent-in ix n))))))
 
   (define (selected-keymaps)
     (let* ([id (selected-id)] [ix (index-of-id id)])
@@ -760,14 +906,6 @@
     (note-history-levels!)
     (save-now!))
 
-  (define (last-selected-unlocked-atom node)
-    (let ([atoms (filter (lambda (a)
-                           (and (holds-range? a (document:node-start node) (document:node-end node))
-                                (not (locked-node? a))))
-                         (index-atoms))])
-      (or (exists (lambda (id) (find (lambda (a) (eqv? (atom-id a) id)) atoms)) (current-order))
-          (and (pair? atoms) (car atoms)))))
-
   (define (first-buffer)
     (find (lambda (b) (not (buffers:internal-name? (buffers:name b)))) (buffers:all)))
 
@@ -781,7 +919,9 @@
   (define (open-layout! popups-root)
     (set! layout-buffer
       (or (buffers:find " *layout*")
-          (buffers:make " *layout*" (or (saved-layout) (default-datum)))))
+          (begin
+            (set! restoring? #t)
+            (buffers:make " *layout*" (or (saved-layout) (default-datum))))))
     (set! popups-buffer (or (buffers:find " *popups*") (buffers:make " *popups*" popups-root)))
     (set! known-ids (map atom-id (append (index-atoms) (index-atom-list (popups-index)))))
     layout-buffer)
@@ -857,9 +997,8 @@
         (atom-part ix)))
 
   (define (focus-part! ix n)
-    (let ([a (let ([a (lead-down ix n)])
-               (if (and a (not (locked-in? ix a))) a (last-selected-unlocked-atom n)))])
-      (when a (select-id! (atom-id a)))))
+    (let ([a (most-recent-atom ix (atoms-in ix n) view-order)])
+      (when (and a (not (locked-in? ix a))) (select-id! (atom-id a)))))
 
   ;; Code, a hand scroll or an edit the mode did not make can move focus
   ;; or the selected part without the other. Drawing reads the selection,
@@ -1404,7 +1543,8 @@
           void void)
         (let ([ix (current-index)])
           (unless (index-atom ix selected)
-            (let ([a (lead-down ix (history-level! ix h))]) (when a (select-id! (atom-id a)))))))))
+            (let* ([level (history-level! ix h)] [a (and level (most-recent-atom ix (atoms-in ix level) view-order))])
+              (when (and a (not (locked-in? ix a))) (select-id! (atom-id a)))))))))
 
   ;; A level a plugin's part made around the user's windows holds exactly
   ;; what the root held before, so the root's history becomes its own.
@@ -1487,6 +1627,11 @@
     (select-id! id)
     (void)))
 
+(define (deselect! view)
+  (check-view 'layout:deselect! view)
+  (check-main-thread 'layout:deselect!)
+  (deselect-id! (views:id view)))
+
 (define (zoomed-view)
   (check-main-thread 'layout:zoomed-view)
   (let ([z (current-zoom)])
@@ -1549,7 +1694,7 @@
 (define (part-view node)
   (check-main-thread 'layout:part-view)
   (let-values ([(ix n) (part-of 'layout:part-view node)])
-    (view-of (lead-down ix n))))
+    (view-of (most-recent-atom ix (atoms-in ix n) (current-order)))))
 
 (define (part-title node)
   (check-main-thread 'layout:part-title)
@@ -1642,7 +1787,8 @@
   (or (reuse-view b)
       (let-values ([(ix a units) (%level-units)])
         (let* ([selected (selected-id)]
-               [candidates (filter (lambda (u) (not (or (eqv? (atom-id u) selected) (locked-in? ix u) (placed-atom? ix u))))
+               [level (enclosing-level ix a)]
+               [candidates (filter (lambda (u) (not (or (eqv? (atom-id u) selected) (locked-in? ix u) (unit-placed? ix u level))))
                                    units)]
                [order (current-order)]
                [age (lambda (u) (let ([m (memv (atom-id u) order)]) (if m (length m) 0)))]
@@ -1796,22 +1942,17 @@
     (when (buffers:kill! (views:buffer v))
       (delete-part! (view-node v)))))
 
-(define (%other-view-in? ix n)
-  (let loop ([n n])
-    (and n (or (and (document:node-attribute n 'other-view #f) #t) (loop (parent-in ix n))))))
-
 (define (%after-other-view ix)
-  (let ([b (exists (lambda (id) (let ([a (index-atom ix id)]) (and a (not (%other-view-in? ix a)) a))) (current-order))])
-    (if b
-        (filter (lambda (u) (not (locked-in? ix u))) (level-units ix (enclosing-level ix b) (visible-atoms)))
-        '())))
+  (let ([b (reference-atom ix)] [selected (selected-id)])
+    (filter (lambda (u) (not (or (eqv? (atom-id u) selected) (locked-in? ix u))))
+            (level-units ix (enclosing-level ix b) (visible-atoms)))))
 
 (define (other-views)
   (check-main-thread 'layout:other-views)
   (let-values ([(ix a units) (%level-units)])
     (let* ([id (selected-id)] [sx (index-of-id id)])
       (map view-of
-           (if (%other-view-in? sx (index-atom sx id))
+           (if (other-view-in? sx (index-atom sx id))
                (%after-other-view ix)
                (%cycle-atoms ix a units))))))
 
@@ -1835,10 +1976,8 @@
 (define (other-view-for-scrolling)
   (check-main-thread 'layout:other-view-for-scrolling)
   (let* ([id (selected-id)] [sx (index-of-id id)] [ix (current-index)])
-    (or (if (or (not (eq? sx ix)) (%other-view-in? sx (index-atom sx id)))
-            (let ([b (exists (lambda (id) (let ([a (index-atom ix id)]) (and a (not (%other-view-in? ix a)) a)))
-                             (current-order))])
-              (and b (view-of b)))
+    (or (if (or (not (eq? sx ix)) (other-view-in? sx (index-atom sx id)))
+            (view-of (reference-atom ix))
             (find (lambda (v) (let ([b (views:buffer v)]) (and b (not (buffers:internal-name? (buffers:name b))))))
                   (other-views)))
         (error 'layout:other-view-for-scrolling "no other view"))))
@@ -1865,9 +2004,9 @@
          [outside (append
                     (filter (lambda (u)
                               (and (not (holds-range? u (document:node-start level) (document:node-end level)))
-                                   (%other-view-in? ix u)))
+                                   (other-view-in? ix u)))
                             (visible-atoms))
-                    (filter (lambda (u) (%other-view-in? px u)) (index-atom-list px)))]
+                    (filter (lambda (u) (other-view-in? px u)) (index-atom-list px)))]
          [joined (append units outside)]
          [m (memp (lambda (u) (eqv? (atom-id u) (atom-id a))) joined)]
          [from-a (if m (append m (list-head joined (fx- (length joined) (length m)))) joined)]
@@ -1956,6 +2095,7 @@
       (set-zoom! #f)
       (let* ([ix (current-index)] [a (index-atom ix (selected-id))])
         (when a
+          (check-unlocked 'layout:zoom ix a)
           (let ([target (cond
                           [(pair? prefix) 'root]
                           [(and (fixnum? prefix) (fx> prefix 1)) prefix]
@@ -1966,15 +2106,23 @@
   (void))
 
 (commands:define-command (mouse-select-view [event (keys:command-event)])
-  "Selects the view that the part clicked in the layout's drawing leads to through focused children, unless it is locked."
+  "Selects the most recently used view of the part clicked in the layout's drawing, unless it is locked."
   (unless (keys:event? event)
     (assertion-violation 'layout:mouse-select-view "not an event" event))
   (let* ([posn (keys:event-start event)] [v (views:posn-view posn)] [p (views:posn-point posn)])
     (when (and v p (eq? (views:buffer v) buffer))
       (let* ([doc (buffers:document buffer)]
              [t (and (fx< p (document:length doc)) (document:token doc p))]
-             [part (if (and (document:node? t) (document:atom? t)) t (document:enclosing doc p))]
-             [atom (and part (lead-down (current-index) part))])
+             [named (views:posn-node posn)]
+             ;; A strip's placeholder or band stands for its column and is
+             ;; sent as the column's start, whose next token is only the
+             ;; column's first child.
+             [part (cond
+                     [(document:node? named) named]
+                     [(and (document:node? t) (document:atom? t)) t]
+                     [else (document:enclosing doc p)])]
+             [ix (current-index)]
+             [atom (and part (most-recent-atom ix (atoms-in ix part) (current-order)))])
         (when (and atom (not (locked-node? atom)))
           (select! (view-of atom)))))))
 

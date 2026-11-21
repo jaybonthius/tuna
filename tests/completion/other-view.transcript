@@ -31,7 +31,10 @@
 > (result t)
 > (shown)
 (("notes" #f) ("notes" #t))
+; Deleting the view the prompt's command made selects the one beside it.
 > (press! "C-x" "0")
+> (shown)
+(("notes" #t))
 ; Through C-u, as in Emacs; C-u before it is spent by it.
 > (press! "C-x" "4" "4" "C-u")
 > (keys:prefix-description client)

@@ -68,14 +68,16 @@
 > (map (lambda (v) (cons (views:id v) (buffers:name (views:buffer v)))) (layout:views))
 ((1 . "fourth") (4 . "*Pager*") (3 . "notes") (5 . "*Echo*"))
 ; switch-to-buffer shows the buffer in the selected view; in a locked
-; view, it displays it elsewhere and selects that view.
+; view, it displays it elsewhere and selects that view: the display acts
+; in the level of the view the user was in, so it takes that level's
+; view selected least recently.
 > (layout:switch-to-buffer notes)
 > (cons (selected) (buffers:name (views:buffer (layout:selected-view))))
 (3 . "notes")
 > (layout:select! echo)
 > (layout:switch-to-buffer mail)
 > (cons (selected) (buffers:name (views:buffer (layout:selected-view))))
-(3 . "mail")
+(1 . "mail")
 > (buffers:name (views:buffer echo))
 "*Echo*"
 ; The documented example of a rule.
@@ -96,15 +98,16 @@
 6
 > (map views:id (layout:views))
 (6 5)
-; In the echo area, whose level is the root, the user's windows are a
-; level inside it, kept whole, and the echo area is locked.
+; From the echo area, locked and in the root's level, reset-layout acts
+; in the level of the view the user was in, here holding only that view,
+; and selects it.
 > (layout:select! echo)
 > (define before (tree))
 > (commands:run layout:reset-layout)
 > (equal? (tree) before)
 #t
 > (selected)
-5
+6
 > (raised (lambda () (layout:use-other-view "mail")))
 (layout:use-other-view "not a buffer")
 > (raised (lambda () (layout:reuse-view "mail")))
