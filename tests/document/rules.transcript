@@ -172,6 +172,27 @@
 (0 4 8 9)
 > (document:line-start lines 5)
 ! document:line-start: the document has fewer lines with irritant 5
+; A column counts the characters from the start of the position's line,
+; a tab to the next multiple of 8.
+> (map (lambda (p) (document:column lines p)) (list 0 3 4 6 8 9 13))
+(0 3 0 2 0 0 4)
+> (document:column (document:from-datum "(let ([x 1])\n  x)\n") 15)
+2
+> (map (lambda (p) (document:column (document:from-datum "\ta\tb  \tc") p)) (list 1 2 3 4 6 7 8))
+(8 9 16 17 19 24 25)
+; The position at a column on a line, or before the character that
+; spans it, or the line's end.
+> (define tabbed (document:from-datum "ab\n\tx\ny"))
+> (map (lambda (column) (document:column-position tabbed 2 column)) (list 0 3 8 9 20))
+(3 3 4 5 5)
+> (map (lambda (column) (document:column-position tabbed 1 column)) (list 1 5))
+(1 2)
+> (document:column-position tabbed 3 4)
+7
+> (document:column-position tabbed 2 -1)
+! document:column-position: not a column with irritant -1
+> (document:column lines 14)
+! document:column: not a position in the document with irritant 14
 ; Nodes.
 > (map (lambda (p) (document:enclosing doc p)) (list 0 1 6 8 16 17))
 (#f #<node chat:reply 0> #<node md:para 1> #<node md:link 6> #<node chat:reply 0> #f)

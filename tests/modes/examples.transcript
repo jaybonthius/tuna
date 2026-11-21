@@ -32,25 +32,25 @@ text:mode
 > (define notes (views:make notes-buffer))
 > (views:with-view notes (set-option-local! fill:mode #t))
 > (modes:active-minor-modes notes)
-(#<procedure>)
+(#<procedure> #<procedure>)
 > (map modes:lighter (modes:active-minor-modes notes))
-("Fill")
+(#f "Fill")
 > (show! build)
 #<buffer build.py>
 > (buffers:with-buffer build (modes:lighter (modes:major-mode (buffers:current))))
 "Py"
 > (map modes:lighter (modes:active-minor-modes (view)))
-("Fill")
+(#f "Fill")
 > (table-remove! modes:lighters fill:mode)
 > (map modes:lighter (modes:active-minor-modes (view)))
-(#f)
+(#f #f)
 ; A state minor mode reads its own table.
 > (import (view))
 > (modes:active-minor-modes notes)
-(#<procedure>)
+(#<procedure> #<procedure>)
 > (view:set-viewing! notes-buffer #t)
 > (map modes:lighter (modes:active-minor-modes notes))
-(#f "View")
+(#f #f "View")
 ; The user removes the setup, binds a key, and
 ; turns fill mode on in every buffer that derives from prog:mode.
 > (remove-hook! python:mode-hook python:setup)

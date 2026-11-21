@@ -1,4 +1,5 @@
-; czlsp indents a new line by on-type formatting on RET.
+; RET indents a Scheme buffer in its own command and asks czlsp nothing;
+; czlsp formats the buffer on request.
 > (import (chez-scheme))
 > (lsp:define-server czlsp '("czlsp" "--stdio"))
 > (table-set! lsp:language-servers "scheme" (list czlsp))
@@ -8,16 +9,27 @@
 0
 > (write-file! (string-append code "/f.ss") "(define (f x)\n")
 > (define f (visit! (string-append code "/f.ss")))
-> (wait-until (lambda () (let ([cs (lsp:buffer-connections f)]) (and (pair? cs) (lsp:connection-capability (car cs) "documentOnTypeFormattingProvider")))))
+> (wait-until (lambda () (let ([cs (lsp:buffer-connections f)]) (and (pair? cs) (lsp:connection-capability (car cs) "documentFormattingProvider")))))
 > (define (around) (let ([doc (buffers:document f)] [p (views:point (view))]) (list (document:text doc 0 p) (document:text doc p (document:length doc)))))
-> (define (ret!) (let ([version (buffers:version f)]) (press! "RET") (wait-until (lambda () (> (buffers:version f) (+ version 1))))))
 > (in-client (lambda () (views:set-point! (view) (+ 1 (string-length "(define (f x)")))))
-> (ret!)
+> (press! "RET")
 > (around)
 ("(define (f x)\n  " "\n")
 > (type! "(+ x 1))")
 > (in-client (lambda () (views:set-point! (view) (+ 1 (string-length "(define (f x)\n  (+ x")))))
-> (ret!)
+> (press! "RET")
 > (around)
 ("(define (f x)\n  (+ x\n     " "1))\n")
+> (begin (buffers:replace! f 1 (- (document:length (buffers:document f)) 1) "(define (g y)\n(+ y 2))\n") (void))
+> (in-client (lambda () (lsp:format-buffer f)))
+> (wait-until (lambda () (string=? (document:text (buffers:document f)) "(define (g y)\n  (+ y 2))\n")))
+> (document:text (buffers:document f))
+"(define (g y)\n  (+ y 2))\n"
+; Turned on, on-type formatting asks nothing for a RET whose command went
+; on to indent the line, since the answer would be for text since changed.
+> (set-option! lsp:on-type-formatting? #t)
+> (in-client (lambda () (views:set-point! (view) (+ 1 (string-length "(define (g y)")))))
+> (press! "RET")
+> (around)
+("(define (g y)\n  " "\n  (+ y 2))\n")
 > (lsp:shutdown-all)

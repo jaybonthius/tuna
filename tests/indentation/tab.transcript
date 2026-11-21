@@ -1,0 +1,74 @@
+; TAB in a Scheme buffer, each case as Emacs's Scheme mode gives it: the
+; cursor is ‸.
+; TAB in the indentation
+> (after "(define (f x)\n  ‸    (g x))" "TAB")
+"(define (f x)\n  ‸(g x))"
+; TAB in the text
+> (after "(define (f x)\n      (g‸ x))" "TAB")
+"(define (f x)\n  (g‸ x))"
+; TAB at the end of the text
+> (after "(define (f x)\n(g x)‸)" "TAB")
+"(define (f x)\n  (g x)‸)"
+; TAB at top level
+> (after "   (d‸efine x 1)" "TAB")
+"(d‸efine x 1)"
+; TAB on a line in a string
+> (after "(f \"a\n      b‸\")" "TAB")
+"(f \"a\n      b‸\")"
+; TAB on a ; line
+> (after "(define (f x)\n; n‸ote\n  x)" "TAB")
+"(define (f x)\n                                        ; n‸ote\n  x)"
+; TAB on a top-level ; line: Emacs leaves the cursor after the ;, Tuna
+; at the end of the indentation, as on every other line
+> (after "‸; foo\n(f x)" "TAB")
+"                                        ‸; foo\n(f x)"
+; TAB on a ;;; line
+> (after "(define (f x)\n    ;;‸; note\n  x)" "TAB")
+"(define (f x)\n    ;;‸; note\n  x)"
+; TAB on a ;; line
+> (after "(define (f x)\n    ;;‸ note\n  x)" "TAB")
+"(define (f x)\n  ;;‸ note\n  x)"
+; TAB on a #| line
+> (after "(define (f x)\n‸#| c |#\n  x)" "TAB")
+"(define (f x)\n  ‸#| c |#\n  x)"
+; TAB on a #; line
+> (after "(define (f x)\n‸#;(a)\n  x)" "TAB")
+"(define (f x)\n  ‸#;(a)\n  x)"
+; TAB on a line already indented
+> (after "(define (f x)\n  (g‸ x))" "TAB")
+"(define (f x)\n  (g‸ x))"
+; TAB on a line indented with a tab
+> (after "(define (f x)\n\t‸(g x))" "TAB")
+"(define (f x)\n  ‸(g x))"
+; TAB with a region
+> (after "(define (f x)\n‸(g x)\n(h x))" "C-SPC" "C-n" "C-e" "TAB")
+"(define (f x)\n  (g x)\n  (h x))‸"
+; TAB with a region ending at a line's start
+> (after "(define (f x)\n(g‸ x)\n(h x))" "C-SPC" "C-n" "C-a" "TAB")
+"(define (f x)\n  (g x)\n‸(h x))"
+; TAB on define-option's doc line
+> (after "(define-option delete-selection #f boolean?\n‸\"When true.\")" "TAB")
+"(define-option delete-selection #f boolean?\n  ‸\"When true.\")"
+; TAB under a tab-indented call
+> (after "(list\n\t(g a\n‸b)" "TAB")
+"(list\n\t(g a\n           ‸b)"
+; TAB on a tab-indented line already at its column
+> (after "(list\n\t(g a\n\t   ‸b)" "TAB")
+"(list\n\t(g a\n\t   ‸b)"
+; TAB with a region keeps each cursor's place, as Emacs's indent-region
+; does: in the indentation, before the blanks a line gains
+> (after "(define (f x)\n‸(g x)\n(h x))¦" "TAB")
+"(define (f x)\n‸  (g x)\n  (h x))"
+; TAB with a region whose first line is already right
+> (after "(define (f x)\n‸  (g x)\n(h x))¦" "TAB")
+"(define (f x)\n‸  (g x)\n  (h x))"
+; TAB with a region, a cursor inside indentation that shrinks
+> (after "(define (f x)\n    ‸  (g x)\n(h x))¦" "TAB")
+"(define (f x)\n  ‸(g x)\n  (h x))"
+; a line starting with an opening bracket in column 0 starts a form even
+; inside a #| or #; comment, so the lines after it are indented as code;
+; Emacs, which parses from the buffer's start, puts these at 2
+> (after "(define (f)\n  #|\n(g a\n‸b|#\n  1)" "TAB")
+"(define (f)\n  #|\n(g a\n   ‸b|#\n  1)"
+> (after "(define (f)\n  #;\n(g a\n‸b)\n  1)" "TAB")
+"(define (f)\n  #;\n(g a\n   ‸b)\n  1)"

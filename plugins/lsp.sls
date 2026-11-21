@@ -125,6 +125,9 @@
 
 (define-option report-progress? #t boolean? "Whether the status line shows servers' work in progress.")
 
+(define-option on-type-formatting? #f boolean?
+  "Whether typing a character a server names for on-type formatting asks it for edits, which apply only if the buffer has not changed since.")
+
 (define-syntax confirmation
   (lambda (x)
     (syntax-case x ()
@@ -1940,23 +1943,26 @@
   (%format! b #f #f 'lsp:format-buffer))
 
 (define (%on-type-format! b edit inserted)
-  (when (fx= (string-length inserted) 1)
+  (when (and (fx= (string-length inserted) 1) (buffers:with-buffer b (on-type-formatting?)))
     (let ([c (string-ref inserted 0)])
       (for-each
         (lambda (conn)
           (let* ([provider (%ref (%conn-caps conn) "documentOnTypeFormattingProvider")]
                  [triggers (and (pair? provider) (cons (%ref provider "firstTriggerCharacter") (%list (%ref provider "moreTriggerCharacter"))))])
             (when (and triggers (member (string c) triggers))
-              (let ([p (fx+ (buffers:edit-start edit) 1)])
+              (let ([p (fx+ (buffers:edit-start edit) 1)] [version (buffers:version b)])
                 (as-module (this-module)
                   (spawn-task
                     (lambda ()
                       (guard (e [(not (quit-condition? e)) (void)])
                         (%flush! conn)
-                        (let* ([version (buffers:version b)]
-                               [edits (jsonrpc:request (%conn-rpc conn) "textDocument/onTypeFormatting"
-                                        (append (%point-params conn b p) `(("ch" . ,(string c)) ("options" . ,(%formatting-options)))))])
-                          (%apply-text-edits! conn b (%list edits) version))))))))))
+                        ;; Edits made after the typed character, such as the
+                        ;; same command's indentation, move the position the
+                        ;; request would name, and any answer would be dropped.
+                        (when (eqv? version (buffers:version b))
+                          (let ([edits (jsonrpc:request (%conn-rpc conn) "textDocument/onTypeFormatting"
+                                         (append (%point-params conn b p) `(("ch" . ,(string c)) ("options" . ,(%formatting-options)))))])
+                            (%apply-text-edits! conn b (%list edits) version)))))))))))
         (let ([first (%give (%ordered-conns b) 'on-type-formatting b)]) (if (pair? first) (list (car first)) '()))))))
 
 

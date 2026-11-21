@@ -1,6 +1,6 @@
 #!tuna
 (import (prog) (modes) (auto-mode) (buffers) (document) (files) (jobs) (faces) (syntax)
-        (syntax-highlighting) (chez-scheme highlight))
+        (syntax-highlighting) (indentation) (chez-scheme highlight))
 
 (define-table keymap
   "Keys in Scheme buffers.")
@@ -14,6 +14,11 @@
   (keymap keymap)
   (hook mode-hook)
   (language "scheme"))
+
+(define-table indent-rules
+  "Maps a symbol to how a form with that head indents: the number of arguments it takes before its body; (indent-method defun), which puts the next line 2 columns past the opening bracket while the last argument before it is on the bracket's line; or a procedure of the buffer and the position of the form's opening bracket that returns that number.")
+
+(define-enumeration indent-method (defun) %indent-methods)
 
 (define-enumeration binding-kind (procedure syntax variable) binding-kinds)
 
@@ -384,6 +389,142 @@
     (when (drop-stale-names!)
       (syntax-highlighting:update!))))
 
+;; Emacs's Scheme mode puts a line holding only a one-semicolon comment
+;; at this column.
+(define %comment-column 40)
+
+(define (%class? lexeme class) (eq? (syntax:lexeme-class lexeme) class))
+
+(define-record-type (%sexp %make-sexp %sexp?)
+  (sealed #t)
+  (fields (immutable start %sexp-start) (immutable first %sexp-first)))
+
+(define (%children buffer from to)
+  (let loop ([ls (syntax:lexemes buffer from to)] [nest 0] [prefix #f] [acc '()])
+    (if (null? ls)
+        (reverse acc)
+        (let ([l (car ls)])
+          (cond
+            [(%class? l (syntax:class comment)) (loop (cdr ls) nest prefix acc)]
+            [(fx> nest 0)
+             (loop (cdr ls)
+                   (cond [(%class? l (syntax:class open)) (fx+ nest 1)] [(%class? l (syntax:class close)) (fx- nest 1)] [else nest])
+                   prefix acc)]
+            [(%class? l (syntax:class prefix)) (loop (cdr ls) 0 (or prefix (syntax:lexeme-start l)) acc)]
+            [(%class? l (syntax:class close)) (loop (cdr ls) 0 #f acc)]
+            [else
+             (loop (cdr ls) (if (%class? l (syntax:class open)) 1 0) #f
+                   (cons (%make-sexp (or prefix (syntax:lexeme-start l)) l) acc))])))))
+
+(define (%line-end doc line)
+  (if (fx< line (document:line doc (document:length doc)))
+      (fx- (document:line-start doc (fx+ line 1)) 1)
+      (document:length doc)))
+
+;; As Emacs, the first sexp on a line is read from the line's start
+;; whatever list holds it.
+(define (%first-sexp-column buffer doc p)
+  (let* ([line (document:line doc p)] [start (document:line-start doc line)])
+    (let loop ([ls (syntax:lexemes buffer start (fx+ p 1))])
+      (cond
+        [(null? ls) (document:column doc p)]
+        [(or (fx< (syntax:lexeme-start (car ls)) start)
+             (%class? (car ls) (syntax:class comment))
+             (%class? (car ls) (syntax:class close)))
+         (loop (cdr ls))]
+        [else (document:column doc (syntax:lexeme-start (car ls)))]))))
+
+(define (%def-name? name)
+  (and (fx> (string-length name) 3) (string=? (substring name 0 3) "def")))
+
+(define (%after-last-colon name)
+  (let loop ([i (fx- (string-length name) 1)])
+    (cond
+      [(fx< i 0) #f]
+      [(char=? (string-ref name i) #\:) (substring name (fx+ i 1) (string-length name))]
+      [else (loop (fx- i 1))])))
+
+(define (%rule buffer name bracket)
+  (let* ([plain (%after-last-colon name)]
+         [rule (or (table-ref indent-rules (string->symbol name) #f)
+                   (and plain (table-ref indent-rules (string->symbol plain) #f))
+                   (and (or (%def-name? name) (and plain (%def-name? plain))) (indent-method defun)))])
+    (if (procedure? rule)
+        (let ([n (rule buffer bracket)])
+          (unless (and (fixnum? n) (fx>= n 0))
+            (assertion-violation 'chez-scheme:indenter "the rule did not return a count" name rule n))
+          n)
+        rule)))
+
+;; Emacs's lisp-indent-specform: the first two distinguished arguments go
+;; 4 columns in, so they stand apart from the body at 2.
+(define (%special-column count bracket-column k normal)
+  (let ([body (fx+ bracket-column 2)])
+    (cond
+      [(fx< k count) (if (fx<= k 1) (fx+ bracket-column 4) normal)]
+      [(and (fx= count 0) (fx= k 0)) body]
+      [(and (fx= k count) (fx<= body normal)) body]
+      [else normal])))
+
+(define (%list-column buffer doc open children)
+  (let* ([bracket (fx- (syntax:lexeme-end open) 1)]
+         [head (car children)]
+         [last-start (%sexp-start (car (last-pair children)))]
+         [later-line? (fx> (document:line doc last-start) (document:line doc (%sexp-start head)))]
+         [normal (cond
+                   [later-line? (%first-sexp-column buffer doc last-start)]
+                   [(or (null? (cdr children)) (indentation:blank? (document:token doc (syntax:lexeme-end open))))
+                    (document:column doc (%sexp-start head))]
+                   [else (document:column doc (%sexp-start (cadr children)))])])
+    (if (%class? (%sexp-first head) (syntax:class atom))
+        (let* ([l (%sexp-first head)]
+               [rule (%rule buffer (document:text doc (syntax:lexeme-start l) (syntax:lexeme-end l)) bracket)])
+          (cond
+            [(eq? rule (indent-method defun))
+             (if (fx= (document:line doc last-start) (document:line doc bracket))
+                 (fx+ (document:column doc bracket) 2)
+                 normal)]
+            [rule (%special-column rule (document:column doc bracket) (fx- (length children) 1) normal)]
+            [else normal]))
+        (if later-line? normal (document:column doc (%sexp-start head))))))
+
+(define (%semicolons doc comment)
+  (let ([end (syntax:lexeme-end comment)])
+    (let loop ([p (syntax:lexeme-start comment)] [n 0])
+      (if (and (fx< p end) (eqv? (document:token doc p) #\;)) (loop (fx+ p 1) (fx+ n 1)) n))))
+
+(define (indenter buffer position)
+  (unless (buffers:buffer? buffer)
+    (assertion-violation 'chez-scheme:indenter "not a buffer" buffer))
+  (let ([doc (buffers:document buffer)])
+    (unless (and (fixnum? position) (fx<= 0 position (document:length doc)))
+      (assertion-violation 'chez-scheme:indenter "not a position in the buffer" position))
+    (let ([within (syntax:lexeme-at buffer position)])
+      (if (and within (or (%class? within (syntax:class string)) (%class? within (syntax:class comment))))
+          #f
+          (let* ([first (let ([ls (syntax:lexemes buffer position (%line-end doc (document:line doc position)))])
+                          (and (pair? ls) (fx>= (syntax:lexeme-start (car ls)) position) (car ls)))]
+                 [semicolons (if (and first (%class? first (syntax:class comment))) (%semicolons doc first) 0)])
+            (cond
+              [(fx>= semicolons 3) #f]
+              [(fx= semicolons 1) %comment-column]
+              [else
+               (let ([openings (syntax:openings buffer position)])
+                 (if (null? openings)
+                     0
+                     (let* ([open (car (last-pair openings))]
+                            [children (%children buffer (syntax:lexeme-end open) position)])
+                       (if (null? children)
+                           (document:column doc (syntax:lexeme-end open))
+                           (%list-column buffer doc open children)))))]))))))
+
+;; Emacs's scheme-let-indent: a name right after let on its line makes
+;; the let named, with its bindings a second argument before the body.
+(define (%let-count buffer bracket)
+  (let* ([doc (buffers:document buffer)]
+         [ls (syntax:lexemes buffer (fx+ bracket 1) (%line-end doc (document:line doc bracket)))])
+    (if (and (pair? ls) (pair? (cdr ls)) (%class? (cadr ls) (syntax:class atom))) 2 1)))
+
 (table-set! syntax:lexers mode lexer)
 (table-set! syntax:symbol-characters mode "!$%&*/:<=>?^_~+-.@")
 (for-each (lambda (name) (table-set! auto-mode:file-names name mode))
@@ -393,5 +534,27 @@
 (table-set! syntax-highlighting:highlighters mode
   (syntax-highlighting:make-highlighter %highlighter (list syntax-highlighting:faces syntax:brackets)
     %highlight-input))
+(for-each (lambda (rule) (table-set! indent-rules (car rule) (cdr rule)))
+  `((begin . 0) (delay . 0) (sequence . 0) (case . 1) (lambda . 1) (let* . 1) (letrec . 1) (let-values . 1)
+    (let*-values . 1) (and-let* . 1) (let-syntax . 1) (letrec-syntax . 1) (with-syntax . 1) (library . 1)
+    (eval-when . 1) (when . 1) (unless . 1) (letrec* . 1) (parameterize . 1) (define-values . 1)
+    (define-record-type . 1) (define-library . 1) (guard . 1) (syntax-rules . ,(indent-method defun)) (call-with-input-file . 1)
+    (call-with-port . 1) (with-input-from-file . 1) (with-input-from-port . 1) (call-with-output-file . 1)
+    (with-output-to-file . 1) (with-output-to-port . 1) (call-with-values . 1) (do . 2) (syntax-case . 2)
+    (dynamic-wind . 3) (let . ,%let-count) (match-let . ,%let-count) (receive . 2) (test-group . 1)
+    (test-group-with-cleanup . 1) (match . 1) (match-let* . 1) (match-letrec . 1) (match-lambda . 0)
+    (match-lambda* . 0) (opt-lambda . 1) (opt*-lambda . 1) (let-optionals . 2) (let-optionals* . 2)
+    (check-case . 1) (lambda-checked . 1) (fluid-let . 1) (with-input-from-string . 1) (with-output-to-string . 0)
+    (call-with-string-output-port . 0) (call-with-bytevector-output-port . 0) (call-with-current-continuation . 0)
+    (with-exception-handler . 1) (critical-section . 0) (with-interrupts-disabled . 0) (pariah . 0)
+    (with-profile-tracker . 0) (with-cost-center . 1) (with-source-path . 2)
+    (call-with-immediate-continuation-mark . 1) (with-continuation-mark . 2) (record-case . 1) (rec . 1)
+    (top-level-program . 1) (fluid-let-syntax . 1) (with-implicit . 1) (module . 1) (with-mutex . 1)
+    (extend-syntax . 1) (with . 1) (trace-case-lambda . 1) (trace-define . 1) (trace-define-syntax . 1)
+    (trace-do . 2) (trace-lambda . 2) (trace-let . 2) (use-plugin . 1) (plugin . 1) (config . 0)
+    (when-installed . 1) (as-module . 1) (with-options . 1) (buffers:with-buffer . 1)
+    (buffers:call-with-buffer . 1) (undo:with-edit-group . 1) (undo:call-with-edit-group . 1)
+    (views:with-view . 1) (views:call-with-view . 1) (minibuffer:call-with-setup . 1)))
+(table-set! indentation:indenters mode indenter)
 (advice-add! module-loaded %note-module-loaded)
 (advice-add! batch-ended %update-names)

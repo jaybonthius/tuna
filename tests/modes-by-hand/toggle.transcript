@@ -32,7 +32,7 @@
 ; input matches.
 > (define t (ask-minor!))
 > (list (question) (rows (session)))
-("Toggle minor mode: " (("diagnostics:mode" . "off") ("docs-at-point:mode" . "on") ("fill:mode" . "off") ("rainbow-delimiters:mode" . "off") ("syntax-highlighting:mode" . "on")))
+("Toggle minor mode: " (("diagnostics:mode" . "off") ("docs-at-point:mode" . "on") ("editing:electric-indent" . "on") ("fill:mode" . "off") ("rainbow-delimiters:mode" . "off") ("syntax-highlighting:mode" . "on")))
 > (type! "on")
 > (texts (session))
 ()
@@ -42,7 +42,7 @@
 > (views:set-option! v fill:mode #t)
 > (define t (ask-minor!))
 > (rows (session))
-(("diagnostics:mode" . "off") ("docs-at-point:mode" . "on") ("fill:mode" . "on") ("rainbow-delimiters:mode" . "off") ("syntax-highlighting:mode" . "on"))
+(("diagnostics:mode" . "off") ("docs-at-point:mode" . "on") ("editing:electric-indent" . "on") ("fill:mode" . "on") ("rainbow-delimiters:mode" . "off") ("syntax-highlighting:mode" . "on"))
 > (press! "C-g")
 ! &quit
 > (result t)
@@ -218,7 +218,7 @@
 dired:mode
 > (define t (ask-minor!))
 > (rows (session))
-(("diagnostics:mode" . "off") ("dired:hide-details?" . "off") ("docs-at-point:mode" . "on") ("fill:mode" . "off") ("rainbow-delimiters:mode" . "off") ("syntax-highlighting:mode" . "on"))
+(("diagnostics:mode" . "off") ("dired:hide-details?" . "off") ("docs-at-point:mode" . "on") ("editing:electric-indent" . "on") ("fill:mode" . "off") ("rainbow-delimiters:mode" . "off") ("syntax-highlighting:mode" . "on"))
 > (press! "C-g")
 ! &quit
 > (result t)

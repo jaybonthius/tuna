@@ -1,0 +1,167 @@
+; RET indents inside its own command: when the command ends, the new
+; line already has its indentation, so nothing is drawn before it.
+> (define ends '())
+> (add-hook! commands:after-command (lambda (command) (set! ends (cons (shown) ends))))
+> (start! "(define (f x)‸")
+#<buffer t1.ss>
+> (press! "RET")
+> ends
+("(define (f x)\n  ‸")
+> (set! ends '())
+; One undo takes back the break and the indentation together.
+> (after "(define (f x)\n      (g x)‸" "RET" "C-/")
+"(define (f x)\n      (g x)‸"
+; Each cursor's line is indented.
+> (after "(define (f x)‸\n  (let ((a 1))‸" "RET")
+"(define (f x)\n  ‸\n  (let ((a 1))\n    ‸"
+; With electric indentation off, RET only inserts a line break.
+> (define b (start! "(define (f x)‸"))
+> (buffers:with-buffer b (set-option-local! editing:electric-indent #f))
+> (press! "RET")
+> (shown)
+"(define (f x)\n‸"
+; With reindenting off, RET leaves the indentation of the line it ends
+; as it is, and still deletes the blanks before the break.
+> (define b (start! "(define (f x)\n      (g x)  ‸"))
+> (buffers:with-buffer b (set-option-local! editing:electric-reindent #f))
+> (press! "RET")
+> (shown)
+"(define (f x)\n      (g x)\n      ‸"
+; In a mode with no indenter, RET only inserts a line break, and TAB
+; gives a line the indentation of the nearest line above that holds
+; more than blanks.
+> (start! "    foo bar‸" plain)
+#<buffer t6.ss>
+> (press! "RET")
+> (shown)
+"    foo bar\n‸"
+> (press! "TAB")
+> (shown)
+"    foo bar\n    ‸"
+> (start! "  a\n\n    \nb‸" plain)
+#<buffer t7.ss>
+> (press! "TAB")
+> (shown)
+"  a\n\n    \n  b‸"
+; editing:newline called from a command's code inserts a break alone;
+; run as the command, it indents.
+> (start! "(define (f x)‸")
+#<buffer t8.ss>
+> (run break-line)
+> (shown)
+"(define (f x)\n‸"
+> (start! "(define (f x)‸")
+#<buffer t9.ss>
+> (run editing:newline 1)
+> (shown)
+"(define (f x)\n  ‸"
+; TAB acts at each cursor.
+> (after "(define (f x)\n‸(g x)\n   (h x)‸)" "TAB")
+"(define (f x)\n  ‸(g x)\n  (h x)‸)"
+; The indenter table, along a mode's ancestry.
+> (eq? (indentation:indenter chez-scheme:mode) chez-scheme:indenter)
+#t
+> (indentation:indenter prog:mode)
+#f
+> (indentation:indenter 'nonesuch)
+#f
+> (raised (lambda () (indentation:indenter "chez-scheme")))
+(indentation:indenter "not a mode")
+; indentation:lines! indents a range, or the whole buffer; empty lines
+; stay empty.
+> (define b (start! "(define (f x)\n(let ((a 1))\n\n(g a\nx)))‸"))
+> (indentation:lines! b 15 20)
+> (text b)
+"(define (f x)\n  (let ((a 1))\n\n(g a\nx)))"
+> (indentation:lines! b)
+> (text b)
+"(define (f x)\n  (let ((a 1))\n\n    (g a\n       x)))"
+; A line that starts in a string is left as it is.
+> (define b (start! "(f \"a\n      b\")‸"))
+> (chez-scheme:indenter b 7)
+#f
+; An indenter that raises or returns something else than a column or #f.
+> (define b (start! "x‸" plain))
+> (table-set! indentation:indenters plain (lambda (buffer position) "two"))
+> (raised (lambda () (indentation:line! b 1)))
+(indentation:line! "the indenter returned neither a column nor #f")
+> (guard (c [#t (indentation:indenter-error? c)]) (indentation:line! b 1))
+#t
+> (table-set! indentation:indenters plain (lambda (buffer position) (error 'plain-indenter "no rule")))
+> (raised (lambda () (indentation:line! b 1)))
+(indentation:line! "the indenter of plain raised: Exception in plain-indenter: no rule")
+; An indenter's failure is told from a bad argument by its condition type.
+> (guard (c [#t (indentation:indenter-error? c)]) (indentation:line! b 1))
+#t
+> (table-set! indentation:indenters plain (lambda (buffer position) (raise 'no-rule)))
+> (raised (lambda () (indentation:line! b 1)))
+(indentation:line! "the indenter of plain raised: no-rule")
+> (guard (c [#t (indentation:indenter-error? c)]) (indentation:line! b 1))
+#t
+> (table-remove! indentation:indenters plain)
+> (raised (lambda () (indentation:line! b 9)))
+(indentation:line! "not a position in the buffer")
+> (guard (c [#t (indentation:indenter-error? c)]) (indentation:line! b 9))
+#f
+> (raised (lambda () (indentation:lines! 'b)))
+(indentation:lines! "not a buffer")
+; The rules of chez-scheme: a form the table names, a name the table
+; names after a prefix, a name starting with def after a prefix, and a
+; prefixed name with no rule.
+> (table-set! chez-scheme:indent-rules 'my-form 1)
+> (after "(my-form a‸" "RET")
+"(my-form a\n  ‸"
+> (after "(buffers:with-buffer b‸" "RET")
+"(buffers:with-buffer b\n  ‸"
+> (after "(commands:define-command (f)‸" "RET")
+"(commands:define-command (f)\n  ‸"
+> (after "(foo:with-x a‸" "RET")
+"(foo:with-x a\n            ‸"
+> (after "(guard (e [#t 0])‸" "RET")
+"(guard (e [#t 0])\n  ‸"
+> (after "(x:let loop ((i 0))‸" "RET")
+"(x:let loop ((i 0))\n  ‸"
+> (table-set! chez-scheme:indent-rules 'my-form (lambda (buffer bracket) 'many))
+> (define b (start! "(my-form a\nb‸"))
+> (raised (lambda () (chez-scheme:indenter b 12)))
+(chez-scheme:indenter "the rule did not return a count")
+> (table-remove! chez-scheme:indent-rules 'my-form)
+> (raised (lambda () (chez-scheme:indenter 'b 1)))
+(chez-scheme:indenter "not a buffer")
+; A line whose text already starts at its column is not edited.
+> (define b (start! "(define (f x)\n  (g x)‸"))
+> (define version (buffers:version b))
+> (press! "TAB")
+> (list (= version (buffers:version b)) (buffers:modified? b))
+(#t #f)
+; A cursor of any view showing the buffer moves when it is in the
+; indentation.
+> (define b (start! "(define (f x)\n(g x))‸"))
+> (define other (views:make b))
+> (views:set-point! other 15)
+> (indentation:line! b 20)
+> (list (views:point other) (views:point (view)))
+(17 23)
+; A mode derived from one with an indenter uses it.
+> (define-table derived-keymap)
+> (define-hook derived-hook)
+> (modes:define-major-mode derived (parent chez-scheme:mode) (keymap derived-keymap) (hook derived-hook))
+> (eq? (indentation:indenter derived) chez-scheme:indenter)
+#t
+; With no indenter, the first line has no indentation.
+> (start! "   a‸" plain)
+#<buffer t23.ss>
+> (press! "TAB")
+> (shown)
+"a‸"
+; RET whose indenter raises keeps its line break and indents nothing,
+; as Emacs's electric indentation gives up; TAB reports the error.
+> (table-set! indentation:indenters plain (lambda (buffer position) (error 'plain-indenter "no rule")))
+> (start! "  x‸" plain)
+#<buffer t24.ss>
+> (press! "RET")
+> (shown)
+"  x\n‸"
+> (press! "TAB")
+! indentation:line!: the indenter of plain raised: Exception in plain-indenter: no rule with irritant #<procedure>
+> (table-remove! indentation:indenters plain)

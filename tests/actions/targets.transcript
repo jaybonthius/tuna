@@ -299,6 +299,17 @@ quit
 > (result a)
 > (list (text dup) (= (views:point (view)) before))
 ("(define (f b)\n  (g (bar b)(bar b)))\n" #t)
+; A list holding a line that starts with an opening bracket in column 0
+; is one expression, though that line starts a form of its own.
+> (define column-0 (show! (buffers:make "c0.ss" "(define (outer)\n  (let ()\n(define x 1)\nx))\n")))
+> (modes:set-major-mode chez-scheme:mode column-0)
+> (at! column-0 "x))" 2)
+> (define a (act! "C-."))
+> (keys:reading-prompt client)
+"Act on (let ()\n(define x 1)\nx): "
+> (press! "C-g")
+> (result a)
+! &quit
 ; With no lexer, nothing is an expression or a form.
 > (define plain (show! (buffers:make "plain" "(f (g x))\n")))
 > (at! plain "x" 0)

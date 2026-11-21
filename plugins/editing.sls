@@ -1,6 +1,6 @@
 #!tuna
 (import (document) (buffers) (views) (commands) (keys) (modes) (kill-ring) (undo) (layout) (web) (syntax)
-        (syntax characters) (ask) (jump-history))
+        (syntax characters) (ask) (jump-history) (indentation))
 
 (define-option delete-selection #f boolean?
   "When true, typing, newline, paste and yank replace an active, non-empty region, and delete-char, delete-forward-char and delete-backward-char delete it.")
@@ -11,9 +11,16 @@
 (define-option backward-kill-word-stops-at-whitespace? #f boolean?
   "When true, backward-kill-word with a count of 1 after spaces, tabs or line breaks deletes only them, without putting them on the kill ring.")
 
+(modes:define-minor-mode electric-indent
+  "Whether newline, run as a command in a buffer whose major mode has an indenter, indents the line it starts and the line it ends."
+  (default #t))
+
+(define-option electric-reindent #t boolean?
+  "Whether newline, indenting as electric-indent says, indents the line it ends. A mode whose indentation carries meaning, such as Python's, sets it to #f locally.")
+
 (module %internals
   (check-main-thread check-count check-nonnegative-count command-view check-view key-char content-bounds stop-bounds each-cursor
-   place-kept! move-kept! merge-met! edge-error stops-from code-points-back chars end-of-line first-stop column clear-marks!
+   place-kept! move-kept! merge-met! edge-error stops-from code-points-back chars end-of-line first-stop clear-marks!
    set-marks! forget-temporary! exchange-marks! word-characters-in words-from word-motion
    within-isolating delete-fitted! ranges-kill edge-at?
    line-motion-continues? note-line-motion! recase! capitalizer replace-region-or! insert-at-cursors! kill-ranges! kill-ends! after-kill?
@@ -210,10 +217,6 @@
   ;; The start of a line is often before openings, as of a paragraph that
   ;; holds the line; the cursor rests at the first stop after them.
   (define (first-stop b p) (or (buffers:stop b p) p))
-
-  (define (column doc p)
-    (fx- (document:offset doc p chars)
-         (document:offset doc (document:line-start doc (document:line doc p)) chars)))
 
   (define (word-characters-in buffer) (syntax:buffer-word-characters buffer))
 
@@ -745,11 +748,41 @@
     (insert-at-cursors! (check-view 'editing:quoted-insert (layout:selected-view)) (make-string n char)
       (delete-selection) (lambda (start end) end))))
 
+(define (%delete-blanks-before! b break)
+  (let ([from (%blanks-start (buffers:document b) break 0)])
+    (when (fx< from break)
+      (buffers:replace! b from break ""))))
+
+;; A line of blanks loses them all to the deletion that follows, so it
+;; is not reindented, sparing the indenter a lex.
+(define (%end-line! b line reindent?)
+  (let* ([doc (buffers:document b)] [start (document:line-start doc line)]
+         [text (indentation:blanks-end doc start (document:length doc))])
+    (when (and reindent? (not (eqv? (document:token doc text) #\newline)))
+      (indentation:line! b start))
+    (%delete-blanks-before! b (fx- (document:line-start (buffers:document b) (fx+ line 1)) 1))))
+
+;; As Emacs's electric indentation, an indenter that raises leaves the
+;; line break and gives up at that cursor without a word, since the user
+;; asked only for the break; TAB reports the error.
+(define (%indent-around-breaks! view)
+  (let ([b (views:buffer view)])
+    (when (and (indentation:indenter (modes:major-mode b)) (electric-indent))
+      (each-cursor view
+        (lambda (c point mark)
+          (guard (e [(indentation:indenter-error? e) (void)])
+            (let ([line (document:line (buffers:document b) point)])
+              (when (fx> line 1)
+                (%end-line! b (fx- line 1) (electric-reindent)))
+              (indentation:line! b (document:line-start (buffers:document b) line)))))))))
+
 (commands:define-command (newline [n (commands:prefix-number)])
-  "Inserts N line breaks at each cursor."
+  "Inserts N line breaks at each cursor; run as the command, also indents as electric-indent says."
   (check-nonnegative-count 'editing:newline n)
-  (insert-at-cursors! (command-view 'editing:newline) (make-string n #\newline) (delete-selection)
-    (lambda (start end) end)))
+  (let ([view (command-view 'editing:newline)])
+    (insert-at-cursors! view (make-string n #\newline) (delete-selection) (lambda (start end) end))
+    (when (and (eq? (commands:this-command) newline) (> n 0))
+      (%indent-around-breaks! view))))
 
 (commands:define-command (open-line [n (commands:prefix-number)])
   "Inserts N line breaks after each cursor, leaving the cursor before them."
@@ -831,17 +864,13 @@
   (let ([continues? (line-motion-continues?)])
     (lambda (c doc lo hi)
       (let* ([p (views:cursor-point c)]
-             [goal (or (and continues? (views:cursor-goal c)) (column doc p))]
+             [goal (or (and continues? (views:cursor-goal c)) (document:column doc p))]
              [target (+ (document:line doc p) n)])
         (cond
           [(< target (document:line doc lo)) (values lo goal)]
           [(> target (document:line doc hi)) (values hi goal)]
           [else
-           (let* ([start (document:line-start doc target)]
-                  [end (end-of-line doc target hi)]
-                  [offset (fxmin (fx+ (document:offset doc start chars) goal)
-                                 (document:offset doc end chars))])
-             (values (fxmax lo (document:position doc offset chars)) goal))])))))
+           (values (fxmax lo (fxmin (document:column-position doc target goal) (end-of-line doc target hi))) goal)])))))
 
 (define (%move-chars who n)
   (let ([view (command-view who)])
@@ -1005,11 +1034,8 @@
     (%kill-regions! view #f)
     (clear-marks! view)))
 
-(define (%blank-token? t)
-  (and (char? t) (or (char=? t #\space) (char=? t #\tab))))
-
 (define (%blank? text)
-  (for-all %blank-token? (string->list text)))
+  (for-all indentation:blank? (string->list text)))
 
 (commands:define-command (kill-line [n (and (commands:prefix-argument) (commands:prefix-number))])
   "Kills to the end of the line, or the line break when only spaces and tabs are left; with N, kills N lines."
@@ -1238,13 +1264,25 @@
   (%case-region 'editing:capitalize-region
     (capitalizer (word-characters-in (views:buffer (command-view 'editing:capitalize-region))))))
 
-(define (%indentation-end doc start end)
-  (let loop ([p start])
-    (if (and (fx< p end) (%blank-token? (document:token doc p))) (loop (fx+ p 1)) p)))
+;; As Emacs's indent-region, a region that ends at the start of a line
+;; leaves that line alone.
+(define (%indent-region-lines! b point mark)
+  (let* ([doc (buffers:document b)] [low (fxmin point mark)] [high (fxmax point mark)]
+         [last (if (fx= (document:column doc high) 0) (fxmax low (fx- high 1)) high)])
+    (indentation:lines! b low last)))
+
+(commands:define-command (indent-for-tab-command)
+  "Indents the line of each cursor of the current view, or, at a cursor with a region, each line the region holds."
+  (let* ([view (command-view 'editing:indent-for-tab-command)] [b (views:buffer view)])
+    (each-cursor view
+      (lambda (c point mark)
+        (if (nonempty-region? point mark)
+            (%indent-region-lines! b point mark)
+            (indentation:line! b point))))))
 
 (define (%blanks-start doc end lo)
   (let loop ([p end])
-    (if (and (fx> p lo) (%blank-token? (document:token doc (fx- p 1)))) (loop (fx- p 1)) p)))
+    (if (and (fx> p lo) (indentation:blank? (document:token doc (fx- p 1)))) (loop (fx- p 1)) p)))
 
 (define (%region-lines b doc p m hi)
   (if (nonempty-region? p m)
@@ -1261,7 +1299,7 @@
       (lambda (c doc lo hi)
         (let ([p (views:cursor-point c)])
           (let-values ([(s e) (%line-text-range b doc (document:line doc p) hi)])
-            (let ([indented (%indentation-end doc s e)])
+            (let ([indented (indentation:blanks-end doc s e)])
               (values (if (fx= p indented) s indented) #f))))))))
 
 (commands:define-command (kill-whole-line [n (commands:prefix-number)])
@@ -1305,7 +1343,7 @@
               (when (fx> line (document:line doc lo))
                 (let-values ([(s e) (%line-text-range b doc line hi)])
                   (let* ([start (%blanks-start doc (fx- (document:line-start doc line) 1) lo)]
-                         [end (%indentation-end doc s e)]
+                         [end (indentation:blanks-end doc s e)]
                          [space? (%space-between? doc start end lo hi)]
                          [at (delete-fitted! b start end)])
                     (when at
@@ -1531,7 +1569,7 @@
         (let ([doc (buffers:document b)])
           (let-values ([(lo hi) (content-bounds view doc)])
             (let-values ([(s e) (%line-text-range b doc (document:line doc p) hi)])
-              (let* ([indentation (document:text doc s (%indentation-end doc s e))]
+              (let* ([indentation (document:text doc s (indentation:blanks-end doc s e))]
                      [width (string-length indentation)])
                 (let-values ([(at text point)
                               (if below?
@@ -1782,6 +1820,7 @@
 (keys:remap! modes:special-keymap self-insert keys:undefined)
 (keys:bind! keys:global "SPC" self-insert)
 (keys:bind! keys:global "RET" newline)
+(keys:bind! keys:global "TAB" indent-for-tab-command)
 (keys:bind! keys:global "C-o" open-line)
 (keys:bind! keys:global "C-q" quoted-insert)
 (keys:bind! keys:global "DEL" delete-backward-char)
@@ -1846,4 +1885,5 @@
 (keys:bind! drag-keymap "<mouse-movement>" mouse-drag-movement)
 (for-each (lambda (command) (table-set! commands:region-commands command #t))
           (list kill-region kill-ring-save upcase-region downcase-region capitalize-region sort-lines duplicate-dwim
-                move-line-down move-line-up delete-trailing-whitespace delete-backward-char delete-forward-char))
+                move-line-down move-line-up delete-trailing-whitespace delete-backward-char delete-forward-char
+                indent-for-tab-command))

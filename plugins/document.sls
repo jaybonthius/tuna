@@ -2,6 +2,7 @@
   (export document? document:from-datum document:from-utf8 document:datums
           document:length document:token document:text document:for-each-utf8-chunk
           document:unit document:offset document:position document:text-position document:line document:line-start
+          document:column document:column-position
           document:enclosing document:node? document:atom? document:node-kind
           document:node-attribute document:node-start document:node-end document:in-line?
           document:for-each-child document:grapheme-boundary?
@@ -1160,6 +1161,35 @@
                       [(fx< newlines k) (loop (fx+ i 1) (fx- k newlines) (fx+ pos (tokens-ref s i)))]
                       [(leaf? t) (fx+ pos (run-after-newline (tree-child t i) s i k))]
                       [else (down (tree-child t i) k pos)]))))))))
+
+  ;; The page draws a tab to the next multiple of 8 columns.
+  (define (column-after c column)
+    (if (char=? c #\tab) (fx* 8 (fx+ (fxquotient column 8) 1)) (fx+ column 1)))
+
+  (define (document:column doc p)
+    (check-document 'document:column doc)
+    (check-position 'document:column doc p)
+    (let ([text (document:text doc (document:line-start doc (document:line doc p)) p)])
+      (let loop ([i 0] [column 0])
+        (if (fx= i (string-length text))
+            column
+            (loop (fx+ i 1) (column-after (string-ref text i) column))))))
+
+  (define (document:column-position doc line column)
+    (check-document 'document:column-position doc)
+    (unless (and (fixnum? column) (fx>= column 0))
+      (assertion-violation 'document:column-position "not a column" column))
+    (let* ([start (document:line-start doc line)]
+           [end (if (fx< line (document:line doc (tree-tokens (document-tree doc))))
+                    (fx- (document:line-start doc (fx+ line 1)) 1)
+                    (tree-tokens (document-tree doc)))]
+           [text (document:text doc start end)])
+      (let loop ([i 0] [at 0])
+        (cond
+          [(fx= i (string-length text)) end]
+          [(fx> (column-after (string-ref text i) at) column)
+           (document:position doc (fx+ (measure-before (document-tree doc) start 'characters) i) 'characters)]
+          [else (loop (fx+ i 1) (column-after (string-ref text i) at))]))))
 
   (define (run-after-newline run s i k)
     (let ([n (bytevector-length run)] [newlines (newlines-ref s i)] [chars (chars-ref s i)])

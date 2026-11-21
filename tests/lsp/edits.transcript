@@ -65,7 +65,7 @@
 "# formatted\nxsum = 1\nprint(total)\n"
 > (buffers:with-buffer a (remove-local-hook! files:before-save lsp:format-buffer))
 ; A character a server names for on-type formatting asks it for edits,
-; applied at once.
+; applied at once, once on-type formatting is on.
 > (configure! "types" `(capabilities ("textDocumentSync" . 2) ("documentOnTypeFormattingProvider" ("firstTriggerCharacter" . ":")) ("codeActionProvider" . #t))
                        `(responses ("textDocument/onTypeFormatting" . #((("range" ("start" ("line" . 0) ("character" . 0)) ("end" ("line" . 0) ("character" . 0))) ("newText" . "  "))))
                                    ("textDocument/codeAction" . #((("title" . "Use sum") ("kind" . "quickfix") ("isPreferred" . #t)
@@ -74,6 +74,7 @@
                        '(name . "types"))
 > (lsp:reconnect (car (lsp:connections)))
 > (wait-for "types" "textDocument/didOpen" 4)
+> (set-option! lsp:on-type-formatting? #t)
 > (in-client (lambda () (views:set-point! (view) 1)))
 > (press! ":")
 > (wait-for "types" "textDocument/onTypeFormatting")

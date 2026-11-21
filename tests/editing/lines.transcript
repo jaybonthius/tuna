@@ -299,3 +299,13 @@
 > (press! "M-<up>")
 > (list (car (document:datums (buffers:document (views:buffer (view))))) (cursors))
 ((md:doc () (md:para () "one\n") (md:para () "two\n")) ((2 #f) (3 #f)))
+; next-line and previous-line keep the column as the page draws it, a
+; tab reaching the next multiple of 8.
+> (start! "\tx\nabcdefghijk\n\ty" 3)
+("\tx\nabcdefghijk\n\ty" ((3 #f)))
+> (points-after "C-n" "C-n" "C-p" "C-p")
+(13 18 13 3)
+> (start! "abcdefghijk\n\tx" 5)
+("abcdefghijk\n\tx" ((5 #f)))
+> (points-after "C-n")
+(13)

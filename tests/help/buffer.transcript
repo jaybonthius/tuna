@@ -17,6 +17,8 @@
 ; Bindings are each keymap's own, walking keymaps bound as prefixes.
 > (help)
 # Modes
+## editing:electric-indent
+Whether newline, run as a command in a buffer whose major mode has an indenter, indents the line it starts and the line it ends.
 ## syntax-highlighting:mode
 Whether a buffer's faces are set, so a user can read a buffer in one colour. Its highlighting job runs either way.
 ## harpo:mode
@@ -30,6 +32,8 @@ Harpo's keys.
 > (press! "C-h" "m")
 > (help)
 # Modes
+## editing:electric-indent
+Whether newline, run as a command in a buffer whose major mode has an indenter, indents the line it starts and the line it ends.
 ## syntax-highlighting:mode
 Whether a buffer's faces are set, so a user can read a buffer in one colour. Its highlighting job runs either way.
 ## Horn
@@ -63,6 +67,7 @@ Harpo's keys.
 > (press! "C-h" "m")
 > (outline)
 # Modes
+## editing:electric-indent
 ## syntax-highlighting:mode
 ## Horn
 ## help:mode
@@ -83,6 +88,7 @@ Harpo's keys.
 ! help:forward: no later description
 > (outline)
 # Modes
+## editing:electric-indent
 ## syntax-highlighting:mode
 ## Horn
 ## help:mode
@@ -90,6 +96,7 @@ Harpo's keys.
 > (press! "g")
 > (outline)
 # Modes
+## editing:electric-indent
 ## syntax-highlighting:mode
 ## Horn
 ## help:mode
@@ -107,6 +114,7 @@ Harpo's keys.
 > (press! "g")
 > (outline)
 # Modes
+## editing:electric-indent
 ## syntax-highlighting:mode
 ## Horn
 ## help:mode

@@ -18,7 +18,7 @@ modes:fundamental
 > (list (local fill:column b) (buffers:with-buffer b (map (lambda (e) (e)) (hook-entries probe))))
 (70 ())
 > (map modes:lighter (modes:active-minor-modes (view)))
-("Fill")
+(#f "Fill")
 > (views:remove-option! (view) fill:mode)
 ; Setting the mode it already has resets it too.
 > (buffers:with-buffer b (set-option-local! fill:column 99))
@@ -196,7 +196,7 @@ mine
 (two-keymap fill:keymap one-keymap three-keymap python:keymap prog:keymap layout:keymap keys:global)
 > (map (lambda (m) (cond [(eq? m one) 'one] [(eq? m two) 'two] [(eq? m three) 'three] [else m]))
        (modes:active-minor-modes (view)))
-(two #<procedure> one three)
+(two #<procedure> #<procedure> one three)
 ; A minor mode with no keymap gives none; any procedure is a minor mode.
 > (table-remove! modes:keymaps one)
 > (define (always) #t)
@@ -210,10 +210,10 @@ mine
 > (define other (views:make b))
 > (views:set-option! other one #t)
 > (list (length (modes:active-minor-modes (view))) (length (modes:active-minor-modes other)))
-(2 3)
+(3 4)
 ; A view's value set inside the view counts at once.
 > (in-frame (lambda () (views:set-option! (view) one #t) (length (modes:active-minor-modes (view)))))
-3
+4
 > (views:remove-option! (view) one)
 ; A minor mode that raises, or a depth that is not a number, is reported
 ; and skipped; the other modes and their keymaps stay.
@@ -224,7 +224,7 @@ mine
 > (length (modes:active-minor-modes (view)))
 ! modes:minor-modes: not a real number with irritant high
 ! raising: broken minor mode
-2
+3
 > (active-keymaps)
 ! (modes) modes:minor-modes: not a real number with irritant high
 ! (modes) raising: broken minor mode

@@ -2119,13 +2119,15 @@
          (and (pair? found) (car found)))))
 
 ;; As Emacs's scan-sexps fails on a list left open, a list with no closing
-;; bracket is no expression.
+;; bracket is no expression. Depths count from the forms one answer of
+;; syntax:lexemes read, so both brackets come from the same answer.
 (define (%closed-list buffer start end)
-  (let ([open (find (lambda (l) (eq? (syntax:lexeme-class l) (syntax:class open)))
-                    (syntax:lexemes buffer start end))]
-        [close (%lexeme-covering buffer (fx- end 1))])
+  (let* ([lexemes (syntax:lexemes buffer start end)]
+         [open (find (lambda (l) (eq? (syntax:lexeme-class l) (syntax:class open))) lexemes)]
+         [close (and (pair? lexemes) (car (last-pair lexemes)))])
     (and (or (not open)
-             (and close (eq? (syntax:lexeme-class close) (syntax:class close))
+             (and (eq? (syntax:lexeme-class close) (syntax:class close))
+                  (fx= (syntax:lexeme-end close) end)
                   (fx= (syntax:lexeme-depth close) (syntax:lexeme-depth open))))
          (cons start end))))
 
