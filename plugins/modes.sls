@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (views) (keys) (commands))
+(import (buffers) (views) (keys) (commands) (ask))
 
 (define-table hooks
   "Maps each major mode to its hook. A major mode is defined while it has an entry here.")
@@ -18,6 +18,15 @@
 
 (define-table minor-modes
   "Maps each minor mode, a procedure of no arguments that returns true where the mode is on, to its depth, a real number.")
+
+(define-table plugin-only
+  "Maps a major mode to #t when only its own plugin sets it, on buffers that plugin makes: modes:switch-major-mode neither offers it nor switches a buffer away from it.")
+
+(define-table minor-mode-majors
+  "Maps a minor mode to the list of major modes it is for: modes:toggle-minor-mode offers it only in a buffer whose major mode derives from one of them.")
+
+(define-table %names
+  "Maps a minor mode defined with modes:define-minor-mode to its name.")
 
 (define-hook major-mode-changed
   "Called with a buffer, current, after modes:set-major-mode has called its mode hooks.")
@@ -40,7 +49,7 @@
 (define-saved %saved-modes '() %saved-modes?)
 
 (module %internals
-  (check-main-thread check-live-buffer define-major-mode! buffer-modes ancestry-of
+  (check-main-thread check-live-buffer define-major-mode! define-minor-mode! buffer-modes ancestry-of
    minor-modes-on view-keymaps module-part save-modes! restore-modes!)
 
   (define main-thread (get-thread-id))
@@ -70,7 +79,7 @@
                 (put-char p #\:)
                 (display id p)))))))
 
-  (define (define-major-mode! id parent lighter keymap hook language)
+  (define (define-major-mode! id parent lighter keymap hook language plugin-only?)
     (define who 'modes:define-major-mode)
     (unless (or (not parent) (symbol? parent))
       (assertion-violation who "not a mode" parent))
@@ -82,13 +91,32 @@
       (assertion-violation who "not a hook" hook))
     (unless (or (not language) (string? language))
       (assertion-violation who "not a string" language))
+    (unless (boolean? plugin-only?)
+      (assertion-violation who "not a boolean" plugin-only?))
     (let ([mode (exported-symbol id)])
       (table-set! hooks mode hook)
       (table-set! keymaps mode keymap)
       (if parent (table-set! parents mode parent) (table-remove! parents mode))
       (if lighter (table-set! lighters mode lighter) (table-remove! lighters mode))
       (if language (table-set! languages mode language) (table-remove! languages mode))
+      (if plugin-only? (table-set! plugin-only mode #t) (table-remove! plugin-only mode))
       mode))
+
+  (define (define-minor-mode! mode id depth lighter keymap majors)
+    (define who 'modes:define-minor-mode)
+    (unless (real? depth)
+      (assertion-violation who "not a real number" depth))
+    (unless (or (not lighter) (string? lighter))
+      (assertion-violation who "not a string" lighter))
+    (unless (or (not keymap) (table? keymap))
+      (assertion-violation who "not a keymap" keymap))
+    (when majors
+      (for-each (lambda (m) (unless (symbol? m) (assertion-violation who "not a mode" m))) majors))
+    (table-set! minor-modes mode depth)
+    (if lighter (table-set! lighters mode lighter) (table-remove! lighters mode))
+    (if keymap (table-set! keymaps mode keymap) (table-remove! keymaps mode))
+    (if majors (table-set! minor-mode-majors mode majors) (table-remove! minor-mode-majors mode))
+    (table-set! %names mode (exported-symbol id)))
 
   ;; A table entry can make parents a cycle.
   (define (ancestry-of mode)
@@ -186,32 +214,82 @@
 
 ;; Clause names are compared as symbols, so a module whose own variable is
 ;; named keymap or hook can still write (keymap keymap).
+(meta define (%mode-clauses who form clauses names)
+  (let loop ([clauses clauses] [found '()])
+    (if (null? clauses)
+        (lambda (name) (let ([c (assq name found)]) (and c (cdr c))))
+        (let* ([c (car clauses)]
+               [name (syntax-case c () [(k . _) (identifier? #'k) (syntax->datum #'k)] [_ #f])])
+          (unless (memq name names)
+            (syntax-violation who "invalid clause" form c))
+          (when (assq name found)
+            (syntax-violation who "clause given twice" form c))
+          (loop (cdr clauses) (cons (cons name c) found))))))
+
+(meta define (%clause-expression who form clause default)
+  (if clause
+      (syntax-case clause () [(_ e) #'e] [_ (syntax-violation who "invalid clause" form clause)])
+      default))
+
 (define-syntax define-major-mode
   (lambda (x)
-    (define (invalid c) (syntax-violation 'modes:define-major-mode "invalid clause" x c))
+    (define who 'modes:define-major-mode)
     (syntax-case x ()
       [(_ id clause ...)
        (identifier? #'id)
-       (let loop ([clauses #'(clause ...)] [seen '()] [parent #'#f] [lighter #'#f] [keymap #f] [hook #f] [language #'#f])
-         (if (null? clauses)
-             (begin
-               (unless keymap (syntax-violation 'modes:define-major-mode "a keymap clause is required" x))
-               (unless hook (syntax-violation 'modes:define-major-mode "a hook clause is required" x))
-               #`(define-public id (define-major-mode! 'id #,parent #,lighter #,keymap #,hook #,language)))
-             (let* ([c (car clauses)] [rest (cdr clauses)]
-                    [name (syntax-case c () [(k . _) (identifier? #'k) (syntax->datum #'k)] [_ (invalid c)])]
-                    [e (syntax-case c () [(_ e) #'e] [_ (invalid c)])])
-               (when (memq name seen)
-                 (syntax-violation 'modes:define-major-mode "clause given twice" x c))
-               (let ([seen (cons name seen)])
-                 (case name
-                   [(parent) (loop rest seen e lighter keymap hook language)]
-                   [(lighter) (loop rest seen parent e keymap hook language)]
-                   [(keymap) (loop rest seen parent lighter e hook language)]
-                   [(hook) (loop rest seen parent lighter keymap e language)]
-                   [(language) (loop rest seen parent lighter keymap hook e)]
-                   [else (invalid c)])))))]
-      [_ (syntax-violation 'modes:define-major-mode "expected (modes:define-major-mode id clause ...)" x)])))
+       (let* ([clause (%mode-clauses who x #'(clause ...) '(parent lighter keymap hook language plugin-only))]
+              [expression (lambda (name default) (%clause-expression who x (clause name) default))])
+         (unless (clause 'keymap) (syntax-violation who "a keymap clause is required" x))
+         (unless (clause 'hook) (syntax-violation who "a hook clause is required" x))
+         #`(define-public id
+             (define-major-mode! 'id #,(expression 'parent #'#f) #,(expression 'lighter #'#f)
+               #,(expression 'keymap #f) #,(expression 'hook #f) #,(expression 'language #'#f)
+               #,(expression 'plugin-only #'#f))))]
+      [_ (syntax-violation who "expected (modes:define-major-mode id clause ...)" x)])))
+
+(define-syntax define-minor-mode
+  (lambda (x)
+    (define who 'modes:define-minor-mode)
+    (syntax-case x ()
+      [(_ id doc clause ...)
+       (and (identifier? #'id) (string? (syntax->datum #'doc)))
+       (let* ([clause (%mode-clauses who x #'(clause ...) '(default on-change state depth lighter keymap majors))]
+              [expression (lambda (name default) (%clause-expression who x (clause name) default))])
+         (with-syntax ([depth (expression 'depth #'0)]
+                       [lighter (expression 'lighter #'#f)]
+                       [keymap (expression 'keymap #'#f)]
+                       [majors (let ([c (clause 'majors)])
+                                 (if c
+                                     (syntax-case c () [(_ e1 e2 ...) #'(list e1 e2 ...)] [_ (syntax-violation who "invalid clause" x c)])
+                                     #'#f))])
+           (let ([register #'(define-values ()
+                               (begin (define-minor-mode! id 'id depth lighter keymap majors) (values)))]
+                 [state (clause 'state)])
+             (if state
+                 (begin
+                   (for-each
+                     (lambda (name)
+                       (when (clause name)
+                         (syntax-violation who "a state mode has no default or on-change clause" x (clause name))))
+                     '(default on-change))
+                   ;; A state mode is called with no arguments, so formals that
+                   ;; require one would fail at every key.
+                   (syntax-case state ()
+                     [(_ formals body1 body2 ...)
+                      (syntax-case #'formals ()
+                        [() #t]
+                        [rest (identifier? #'rest) #t]
+                        [_ (syntax-violation who "a state mode's formals must allow no arguments" x state)])
+                      #`(begin
+                          (define-public (id . formals) doc body1 body2 ...)
+                          #,register)]
+                     [_ (syntax-violation who "invalid clause" x state)]))
+                 (with-syntax ([default (expression 'default #'#f)]
+                               [on-change (expression 'on-change #'#f)])
+                   #`(begin
+                       (define-option id default boolean? doc on-change)
+                       #,register))))))]
+      [_ (syntax-violation who "expected (modes:define-minor-mode id doc-string clause ...)" x)])))
 
 (define-major-mode fundamental
   (lighter "Fundamental")
@@ -338,6 +416,86 @@
 (define (lighter mode)
   (or (table-ref lighters mode #f)
       (and (symbol? mode) (table-ref hooks mode #f) (module-part mode))))
+
+(define (name mode)
+  (cond
+    [(symbol? mode) (and (table-ref hooks mode #f) mode)]
+    [(procedure? mode) (table-ref %names mode #f)]
+    [else #f]))
+
+(define (%by-name modes)
+  (list-sort (lambda (a b) (string<? (symbol->string (name a)) (symbol->string (name b)))) modes))
+
+(define (%check-not-plugin-only who mode)
+  (when (table-ref plugin-only mode #f)
+    (errorf who "~a is set only by its plugin" mode)))
+
+(define (%read-major-mode)
+  (let* ([buffer (buffers:current)] [current (major-mode buffer)])
+    (%check-not-plugin-only 'modes:switch-major-mode current)
+    (values
+      (ask:choice "Major mode: "
+        (map (lambda (m)
+               (if (eq? m current)
+                   (vector (symbol->string m) m "current")
+                   (cons (symbol->string m) m)))
+             (%by-name (remp (lambda (m) (table-ref plugin-only m #f)) (map car (table-entries hooks))))))
+      buffer)))
+
+(commands:define-command (switch-major-mode [(mode buffer) (%read-major-mode)])
+  "Sets BUFFER's major mode to MODE with modes:set-major-mode, reading MODE by name among the major modes that are not plugin-only. Refuses when MODE or BUFFER's mode is plugin-only."
+  (check-main-thread 'modes:switch-major-mode)
+  (check-live-buffer 'modes:switch-major-mode buffer)
+  (unless (hook? (table-ref hooks mode #f))
+    (assertion-violation 'modes:switch-major-mode "not a major mode" mode))
+  (%check-not-plugin-only 'modes:switch-major-mode (major-mode buffer))
+  (%check-not-plugin-only 'modes:switch-major-mode mode)
+  (set-major-mode mode buffer))
+
+(define (%option-mode? mode)
+  (and (option? mode) (table-ref %names mode #f) #t))
+
+(define (%for-major? mode major)
+  (let ([majors (table-ref minor-mode-majors mode #f)])
+    (or (not majors) (exists (lambda (m) (derived? major m)) majors))))
+
+(define (%read-minor-mode)
+  (let* ([buffer (buffers:current)]
+         [view (let ([v (views:current)]) (and v (eq? (views:buffer v) buffer) v))]
+         [prefix (commands:prefix-argument)]
+         [number (commands:prefix-number)]
+         [major (major-mode buffer)]
+         [state (lambda (m) (if view (views:call-with-view view m) (buffers:with-buffer buffer (m))))]
+         [mode (ask:choice "Toggle minor mode: "
+                 (map (lambda (m) (vector (symbol->string (name m)) m (if (state m) "on" "off")))
+                      (%by-name (filter (lambda (m) (and (option? m) (%for-major? m major)))
+                                        (map car (table-entries %names))))))])
+    (values mode buffer (if prefix (>= number 1) (not (state mode))))))
+
+(define (%toggle-message mode buffer on?)
+  (let ([view (views:current)])
+    (format "~a ~a in current buffer~a" (name mode) (if on? "enabled" "disabled")
+      (if (and view (eq? (views:buffer view) buffer) (not (eq? (views:call-with-view view mode) on?)))
+          "; this view keeps its own value"
+          ""))))
+
+(commands:define-command (toggle-minor-mode [(mode buffer on?) (%read-minor-mode)])
+  "Sets the option mode MODE's local value in BUFFER to ON?, reading MODE by name among the option modes for BUFFER's major mode. Read by name, ON? is the opposite of MODE's state in the selected view; with a prefix argument, it is true when the argument's number is 1 or more."
+  (check-main-thread 'modes:toggle-minor-mode)
+  (check-live-buffer 'modes:toggle-minor-mode buffer)
+  (unless (%option-mode? mode)
+    (assertion-violation 'modes:toggle-minor-mode "not an option mode" mode))
+  (unless (boolean? on?)
+    (assertion-violation 'modes:toggle-minor-mode "not a boolean" on?))
+  (let ([major (major-mode buffer)])
+    (unless (%for-major? mode major)
+      (assertion-violationf 'modes:toggle-minor-mode "~a is not for ~a" (name mode) major)))
+  (if (eq? (commands:this-command) toggle-minor-mode)
+      (let ([outer (ask:message-writer)] [spoke? #f])
+        (with-options ([ask:message-writer (lambda (text) (set! spoke? #t) (outer text))])
+          (buffers:with-buffer buffer (set-option-local! mode on?)))
+        (unless spoke? (ask:message (%toggle-message mode buffer on?))))
+      (buffers:with-buffer buffer (set-option-local! mode on?))))
 
 ;; Loading a module takes back its local values in every scope, so the
 ;; hooks run again where a mode was set, and a new plugin's hook entries

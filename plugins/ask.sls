@@ -10,7 +10,7 @@
   "A procedure of a question and a default or #f that reads a line of text and returns it, as Emacs's read-string.")
 
 (define-option choice-reader (%no-reader 'ask:choice-reader) procedure?
-  "A procedure of a question and a list of choices, each a pair of a label and a value, that returns the value of the choice picked, as Emacs's completing-read with a required match.")
+  "A procedure of a question and a list of choices, each a pair of a label and a value or a vector of a label, a value and an annotation, that returns the value of the choice picked, as Emacs's completing-read with a required match.")
 
 (define-option line-with-candidates-reader (%no-reader 'ask:line-with-candidates-reader) procedure?
   "A procedure of a question, the candidates and a default or #f that reads a line of text, offering the candidates, and returns it, as Emacs's completing-read without a required match.")
@@ -57,10 +57,14 @@
      (%check-default 'ask:line default)
      ((line-reader) question default)]))
 
+(define (%choice? c)
+  (or (and (pair? c) (string? (car c)))
+      (and (vector? c) (fx= (vector-length c) 3) (string? (vector-ref c 0)) (string? (vector-ref c 2)))))
+
 (define (choice question choices)
   (%check-question 'ask:choice question)
-  (unless (and (list? choices) (for-all (lambda (c) (and (pair? c) (string? (car c)))) choices))
-    (assertion-violation 'ask:choice "not a list of pairs of a label and a value" choices))
+  (unless (and (list? choices) (for-all %choice? choices))
+    (assertion-violation 'ask:choice "not a list of choices: pairs of a label and a value, or vectors of a label, a value and an annotation" choices))
   ((choice-reader) question choices))
 
 (define line-with-candidates

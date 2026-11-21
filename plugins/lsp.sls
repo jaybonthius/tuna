@@ -591,9 +591,12 @@
       (when (null? (%conns-of b)) (%tear-down-buffer! b))
       (when (buffers:live? b) (buffers:with-buffer b (managed b))))))
 
-(define (managed? . args)
-  (let ([b (if (null? args) (buffers:current) (car args))])
-    (and b (buffers:buffer? b) (pair? (%conns-of b)) #t)))
+(modes:define-minor-mode managed?
+  "Whether a language server manages the buffer, or the current buffer when none is given."
+  (state args
+    (let ([b (if (null? args) (buffers:current) (car args))])
+      (and b (buffers:buffer? b) (pair? (%conns-of b)) #t)))
+  (keymap keymap))
 
 ;; The local values and entries a managed buffer has, set as the plugin's
 ;; own changes, so they go when the buffer is managed no longer.
@@ -2165,8 +2168,6 @@
 (table-set! notification-handlers "window/logMessage" (lambda (rpc params) (void)))
 (table-set! notification-handlers "$/progress" %progress)
 
-(table-set! modes:minor-modes managed? 0)
-(table-set! modes:keymaps managed? keymap)
 (keys:bind! diagnostic-keymap "<mouse-2>" code-actions)
 (keys:bind! %status-keymap "<mouse-1>" %show-clicked-events)
 (table-set! status-line:segments status (status-line:right 30))

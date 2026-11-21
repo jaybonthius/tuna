@@ -12,7 +12,7 @@
 (define-hook mode-hook
   "Called with a read's rows' buffer current when its mode is set, after completion/rows:mode-hook; it changes a read's list and not the popup.")
 
-(modes:define-major-mode mode (parent completion/rows:mode) (keymap mode-keymap) (hook mode-hook))
+(modes:define-major-mode mode (parent completion/rows:mode) (keymap mode-keymap) (hook mode-hook) (plugin-only #t))
 
 (define-record-type %shown
   (sealed #t)

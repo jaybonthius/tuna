@@ -13,7 +13,7 @@
 (define-table link-keymap "Clicks on a row's message, and on a project list's file: a click goes to the row's diagnostic.")
 (define-hook mode-hook "Called in each buffer that turns on diagnostics-list:mode.")
 
-(modes:define-major-mode mode (parent modes:special) (lighter "Diagnostics") (keymap keymap) (hook mode-hook))
+(modes:define-major-mode mode (parent modes:special) (lighter "Diagnostics") (keymap keymap) (hook mode-hook) (plugin-only #t))
 
 (define (%list-node b) (document:token (buffers:document b) 0))
 

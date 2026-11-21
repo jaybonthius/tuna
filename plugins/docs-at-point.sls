@@ -92,8 +92,9 @@
 (define-option after-edits-only? #f boolean?
   "Whether the sources are asked only after a command that changed the selected view's buffer.")
 
-(define-option mode #t boolean?
-  "Whether the sources are asked after a command.")
+(modes:define-minor-mode mode
+  "Whether the sources are asked after a command."
+  (default #t))
 
 ;; An ask is about a place, as Eldoc's request state, so its answers
 ;; stand until the place changes and one place is not asked about twice.
@@ -228,7 +229,6 @@
                (set! %last-place place)
                (displays view '() #f)])))))))
 
-(table-set! modes:minor-modes mode 0)
 (add-hook! commands:before-command %note-start)
 (add-hook! commands:after-command %note-end)
 (%set-timer! (delay))

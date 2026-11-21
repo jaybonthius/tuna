@@ -2034,8 +2034,14 @@
 
 (define %quit (record-constructor (record-constructor-descriptor &quit)))
 
+(define-category choice-category "The choices of ask:choice, valued by the choice's value; an annotated choice's annotation is its details.")
+
 (define (%read-choice question choices)
-  (read question (list (source (candidates (list->vector choices)) (in-order)))))
+  (read question (list (source (candidates (list->vector choices)) (category choice-category) (in-order)))))
+
+(define (%choice-annotator session)
+  (lambda (value annotation)
+    (if annotation (list (cons faces:shadow annotation)) '())))
 
 ;; A stream's receiver must return at once, and the procedure may pause,
 ;; as one asking a server does.
@@ -2190,6 +2196,7 @@
 (table-set! action-keymaps top-level-form-category (list top-level-form-action-keymap expression-action-keymap))
 (table-set! web:stylesheets 'completion "completion/completion.css")
 (set-option! ask:choice-reader %read-choice)
+(table-set! annotators choice-category %choice-annotator)
 (set-option! ask:line-with-candidates-reader %read-line-with-candidates)
 (keys:bind! minibuffer:keymap "M-r" search-history)
 (keys:bind! minibuffer:keymap "M-s" search-history)

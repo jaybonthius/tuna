@@ -1034,9 +1034,25 @@
           (or (not group) (not pid) (= group pid)
               (ask:y-or-n? (format "~a runs a job; kill it and the job? " (buffers:name buffer))))))))
 
-(define (semi-char-mode?) (let ([t (%current-terminal)]) (and t (eq? (%terminal-input-mode t) 'semi-char))))
-(define (char-mode?) (let ([t (%current-terminal)]) (and t (eq? (%terminal-input-mode t) 'char))))
-(define (copy-mode?) (let ([t (%current-terminal)]) (and t (eq? (%terminal-input-mode t) 'copy))))
+(modes:define-minor-mode semi-char-mode?
+  "Whether the current terminal is in semi-char mode."
+  (state () (let ([t (%current-terminal)]) (and t (eq? (%terminal-input-mode t) 'semi-char))))
+  (depth -10)
+  (keymap semi-char-keymap))
+
+(modes:define-minor-mode char-mode?
+  "Whether the current terminal is in char mode."
+  (state () (let ([t (%current-terminal)]) (and t (eq? (%terminal-input-mode t) 'char))))
+  (depth -20)
+  (lighter "Char")
+  (keymap char-keymap))
+
+(modes:define-minor-mode copy-mode?
+  "Whether the current terminal is in copy mode."
+  (state () (let ([t (%current-terminal)]) (and t (eq? (%terminal-input-mode t) 'copy))))
+  (depth -30)
+  (lighter "Copy")
+  (keymap copy-keymap))
 
 (define (%set-input-mode! t mode)
   (%terminal-input-mode-set! t mode)
@@ -1675,18 +1691,10 @@
 (modes:define-major-mode mode
   (lighter "Terminal")
   (keymap keymap)
-  (hook mode-hook))
+  (hook mode-hook)
+  (plugin-only #t))
 
 (add-hook! mode-hook %tail)
-
-(table-set! modes:minor-modes copy-mode? -30)
-(table-set! modes:minor-modes char-mode? -20)
-(table-set! modes:minor-modes semi-char-mode? -10)
-(table-set! modes:keymaps copy-mode? copy-keymap)
-(table-set! modes:keymaps char-mode? char-keymap)
-(table-set! modes:keymaps semi-char-mode? semi-char-keymap)
-(table-set! modes:lighters copy-mode? "Copy")
-(table-set! modes:lighters char-mode? "Char")
 
 (table-set! views:span-properties 'terminal-cells %cells-attributes)
 (table-set! views:span-properties 'terminal-link %link-attributes)

@@ -24,9 +24,9 @@
 
 (define-hook listed "Called with *Occur* after each listing that has matches, occur:refresh included.")
 
-(modes:define-major-mode mode (parent modes:special) (lighter "Occur") (keymap keymap) (hook mode-hook))
+(modes:define-major-mode mode (parent modes:special) (lighter "Occur") (keymap keymap) (hook mode-hook) (plugin-only #t))
 
-(modes:define-major-mode edit-mode (lighter "Occur-Edit") (keymap edit-keymap) (hook edit-mode-hook))
+(modes:define-major-mode edit-mode (lighter "Occur-Edit") (keymap edit-keymap) (hook edit-mode-hook) (plugin-only #t))
 
 ;; A listed line's source is held by an anchor at its start and anchors
 ;; around each of its matches, so going to it lands on the match after

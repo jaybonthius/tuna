@@ -1,9 +1,9 @@
 #!tuna
 (import (syntax) (syntax-highlighting) (buffers) (views) (modes) (web))
 
-(define-option mode #f boolean?
+(modes:define-minor-mode mode
   "Whether brackets are coloured by depth."
-  (lambda (on?) (syntax-highlighting:update!)))
+  (on-change (lambda (on?) (syntax-highlighting:update!))))
 
 (define-option outermost-only-face-count 0 (lambda (v) (and (fixnum? v) (fx<= 0 v 8)))
   "How many of the outermost depths keep their face for themselves: past depth 9 the faces start again after them.")
@@ -28,7 +28,6 @@
 (define (%draws-brackets? buffer)
   (buffers:with-buffer buffer (mode)))
 
-(table-set! modes:minor-modes mode 0)
 (table-set! syntax:bracket-users 'rainbow-delimiters %draws-brackets?)
 (table-set! views:span-properties 'bracket %bracket-attributes)
 (table-set! web:stylesheets 'rainbow-delimiters "rainbow-delimiters/rainbow-delimiters.css")

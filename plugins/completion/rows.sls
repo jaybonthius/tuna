@@ -19,7 +19,7 @@
 (define-hook mode-hook
   "Called with a rows' buffer current when its mode is set, before the hook of the display's own mode.")
 
-(modes:define-major-mode mode (lighter "Completions") (keymap mode-keymap) (hook mode-hook))
+(modes:define-major-mode mode (lighter "Completions") (keymap mode-keymap) (hook mode-hook) (plugin-only #t))
 
 ;; Only the session moves a rows' view's point, so a hand scroll must leave
 ;; it, or the row drawn as selected would not be the one RET chooses.
@@ -113,7 +113,7 @@
   (haml (:span.completion-column ([data-face (and (pair? c) (symbol->string (car c)))]
                                   [style (string-append "--completion-column-size:var(--completion-column-"
                                                         (number->string k) "-size)")])
-          (%column-text c))))
+          (:span.completion-annotation (%column-text c)))))
 
 (define (%grow-widths! r text columns)
   (%rows-text-width-set! r (fxmax (%rows-text-width r) (string-length text)))

@@ -6,9 +6,10 @@
 
 (buffers:define-layer faces (priority -10) (sticky after) (evaporate))
 
-(define-option mode #t boolean?
+(modes:define-minor-mode mode
   "Whether a buffer's faces are set, so a user can read a buffer in one colour. Its highlighting job runs either way."
-  (lambda (on?) (%note-faces-changed!)))
+  (default #t)
+  (on-change (lambda (on?) (%note-faces-changed!))))
 
 (module %internals
   (make-highlighter-record highlighter-record? check-main-thread note-faces-changed! note-mode-set!
@@ -287,7 +288,6 @@
   (ended)
   (as-module (this-module) (start-pending!)))
 
-(table-set! modes:minor-modes mode 0)
 (add-hook! modes:major-mode-changed %mode-set)
 (add-hook! modes:delayed-mode-changed %mode-set-delaying-hooks)
 (add-hook! buffers:killed forget-buffer!)

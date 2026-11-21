@@ -22,7 +22,7 @@
 
 (define-hook %mode-hook)
 
-(modes:define-major-mode mode (lighter "Pi") (keymap keymap) (hook %mode-hook))
+(modes:define-major-mode mode (lighter "Pi") (keymap keymap) (hook %mode-hook) (plugin-only #t))
 
 (define (%tail) (set-option-local! views:tail #t))
 

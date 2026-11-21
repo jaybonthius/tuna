@@ -106,7 +106,8 @@
   (parent modes:special)
   (lighter "Docs")
   (keymap docs-keymap)
-  (hook docs-mode-hook))
+  (hook docs-mode-hook)
+  (plugin-only #t))
 
 (define (%draw-page node view) (haml (:div (views:draw-children view node))))
 

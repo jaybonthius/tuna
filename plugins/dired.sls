@@ -27,9 +27,6 @@
 (define-option folders-first? #f boolean?
   "When true, folders come before other entries.")
 
-(define-option hide-details? #f boolean?
-  "When true, a listing draws only marks and names.")
-
 (define-option columns (list (column mode) (column links) (column owner) (column group) (column size) (column time))
   %columns?
   "The columns drawn before each name, in order, each given with dired:column.")
@@ -62,7 +59,11 @@
 
 (define-saved %folders '() (lambda (v) (and (list? v) (for-all string? v))))
 
-(modes:define-major-mode mode (parent modes:special) (lighter "Folder") (keymap keymap) (hook mode-hook))
+(modes:define-major-mode mode (parent modes:special) (lighter "Folder") (keymap keymap) (hook mode-hook) (plugin-only #t))
+
+(modes:define-minor-mode hide-details?
+  "When true, a listing draws only marks and names."
+  (majors mode))
 
 ;; Kinds are compared by name, which a document keeps after the module
 ;; that defined them unloads.
@@ -1130,7 +1131,6 @@
 (add-hook! files:directory-finders folder)
 (add-hook! files:after-rename %follow-rename)
 (add-hook! buffers:killed %forget-killed)
-(table-set! modes:minor-modes hide-details? 0)
 (table-set! web:stylesheets 'dired "dired/dired.css")
 (on-unload stop-waiting!)
 (keys:bind! keys:global "C-x d" open)

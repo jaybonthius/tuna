@@ -48,6 +48,6 @@ extract
 > (raised (lambda () (ask:line "Name: " 'notes)))
 (ask:line "neither a string nor #f")
 > (raised (lambda () (ask:choice "Action: " (list 'rename))))
-(ask:choice "not a list of pairs of a label and a value")
+(ask:choice "not a list of choices: pairs of a label and a value, or vectors of a label, a value and an annotation")
 > (raised (lambda () (ask:line-with-candidates "Identifier: " (vector "car"))))
 (ask:line-with-candidates "neither a list of strings nor a procedure")

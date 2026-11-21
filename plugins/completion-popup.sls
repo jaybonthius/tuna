@@ -25,7 +25,7 @@
 (define-hook mode-hook
   "Called with a popup's rows' buffer current when its mode is set, after completion/rows:mode-hook; it changes the popup and not a read's list.")
 
-(modes:define-major-mode mode (parent completion/rows:mode) (keymap mode-keymap) (hook mode-hook))
+(modes:define-major-mode mode (parent completion/rows:mode) (keymap mode-keymap) (hook mode-hook) (plugin-only #t))
 
 ;; The popup is as wide as its rows, which only the page measures, so its
 ;; bounds go to the page too.

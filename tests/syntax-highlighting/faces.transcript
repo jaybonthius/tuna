@@ -1,8 +1,9 @@
 ; syntax-highlighting:mode is a minor mode, on by default, with no
-; keymap and no lighter.
+; keymap and no lighter, named as modes names minor modes.
 > (list (syntax-highlighting:mode) (table-ref modes:minor-modes syntax-highlighting:mode #f)
-        (table-ref modes:keymaps syntax-highlighting:mode #f) (modes:lighter syntax-highlighting:mode))
-(#t 0 #f #f)
+        (table-ref modes:keymaps syntax-highlighting:mode #f) (modes:lighter syntax-highlighting:mode)
+        (modes:name syntax-highlighting:mode))
+(#t 0 #f #f syntax-highlighting:mode)
 > (define f (marked "f.mk" "#a (b)\n" marks:mode))
 > (list (faces f) (parens f))
 ((("#a" comment)) ("(" ")"))

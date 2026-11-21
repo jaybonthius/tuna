@@ -43,15 +43,34 @@
      in the UI font; the candidate is buffer text and stays in the code
      font, lined up with what was typed. */
   .completion-column {
-    flex: 0 0 var(--completion-column-size, auto);
+    flex: 0 0 auto;
     min-inline-size: 0;
+    display: grid;
+    grid-template-columns: minmax(0, max-content);
+    font-family: var(--tuna-font-ui);
+    font-size: var(--tuna-font-size-ui);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A column's size counts the characters of its longest annotation in
+     ch, the width of a 0, which a word in the proportional UI font can
+     pass. An empty item that wide shares the column's one track with the
+     annotation, so the column is as wide as the wider of the two: rows
+     line up, and no annotation is cut while the row has room. It comes
+     after the annotation, since a grid takes its baseline from its first
+     item. */
+  .completion-column::after {
+    content: "";
+    grid-area: 1 / 1;
+    inline-size: var(--completion-column-size, 0);
+  }
+
+  .completion-annotation {
+    grid-area: 1 / 1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: pre;
     text-align: end;
-    font-family: var(--tuna-font-ui);
-    font-size: var(--tuna-font-size-ui);
-    font-variant-numeric: tabular-nums;
   }
 
   /* Marginalia truncates the last annotation, such as a command's

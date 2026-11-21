@@ -189,9 +189,9 @@
     (on-unload (lambda () (clear! s)))
     s))
 
-(define-option mode #f boolean?
+(modes:define-minor-mode mode
   "Whether a buffer's diagnostics are drawn and its checkers run."
-  (lambda (on?) (%follow-mode!)))
+  (on-change (lambda (on?) (%follow-mode!))))
 
 (define-table mark-keymap "Keys active at a drawn diagnostic, after the diagnostic's own keymap.")
 
@@ -632,7 +632,6 @@
   "Moves point to the start of the Nth diagnostic before point and tells the text of each diagnostic there; C-u, or any prefix that is not a number, moves by one, skipping infos and hints."
   (%move! (fx- 0 n)))
 
-(table-set! modes:minor-modes mode 0)
 (add-hook! buffers:after-edit %after-edit)
 (add-hook! files:after-save %after-save)
 (add-hook! files:after-visit %after-visit)

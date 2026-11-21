@@ -17,7 +17,7 @@
 ; Bindings are each keymap's own, walking keymaps bound as prefixes.
 > (help)
 # Modes
-## a minor mode
+## syntax-highlighting:mode
 Whether a buffer's faces are set, so a user can read a buffer in one colour. Its highlighting job runs either way.
 ## harpo:mode
 Its lighter is Harpo.
@@ -30,7 +30,7 @@ Harpo's keys.
 > (press! "C-h" "m")
 > (help)
 # Modes
-## a minor mode
+## syntax-highlighting:mode
 Whether a buffer's faces are set, so a user can read a buffer in one colour. Its highlighting job runs either way.
 ## Horn
 Whether the horn is out.
@@ -63,7 +63,7 @@ Harpo's keys.
 > (press! "C-h" "m")
 > (outline)
 # Modes
-## a minor mode
+## syntax-highlighting:mode
 ## Horn
 ## help:mode
 ## modes:special
@@ -83,14 +83,14 @@ Harpo's keys.
 ! help:forward: no later description
 > (outline)
 # Modes
-## a minor mode
+## syntax-highlighting:mode
 ## Horn
 ## help:mode
 ## modes:special
 > (press! "g")
 > (outline)
 # Modes
-## a minor mode
+## syntax-highlighting:mode
 ## Horn
 ## help:mode
 ## modes:special
@@ -107,7 +107,7 @@ Harpo's keys.
 > (press! "g")
 > (outline)
 # Modes
-## a minor mode
+## syntax-highlighting:mode
 ## Horn
 ## help:mode
 ## modes:special

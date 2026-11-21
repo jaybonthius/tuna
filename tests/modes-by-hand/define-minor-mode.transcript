@@ -1,0 +1,148 @@
+> (define b (buffers:make "build.py" "import os\n"))
+> (define v (view))
+> (views:set-buffer! v b)
+; The test library's fill defines its mode with the form, with lighter
+; and keymap clauses; its own variable named keymap is the keymap. The
+; mode is an option, off, with the documentation and boolean values; its
+; depth, lighter, keymap and name are recorded.
+> (list (option? fill:mode) (fill:mode) (documentation fill:mode) (option-default fill:mode))
+(#t #f "Whether typing past fill:column breaks the line." #f)
+> (list (table-ref modes:minor-modes fill:mode #f) (table-ref modes:lighters fill:mode #f)
+        (eq? (table-ref modes:keymaps fill:mode #f) fill:keymap) (table-ref modes:minor-mode-majors fill:mode #f)
+        (modes:name fill:mode))
+(0 "Fill" #t #f fill:mode)
+; A default and an on-change, as define-option takes them.
+> (define changes '())
+> (modes:define-minor-mode my-mode
+    "Whether mine is on."
+    (default #t)
+    (on-change (lambda (on?) (set! changes (cons on? changes)))))
+> (list (my-mode) (option-default my-mode))
+(#t #t)
+> (set-option! my-mode #f)
+> changes
+(#f)
+; Defined at the REPL, as in the configuration, a mode is named as
+; written.
+> (modes:name my-mode)
+my-mode
+; A state mode is a procedure of its formals and body, with the
+; documentation; modes calls it with no arguments.
+> (list (procedure? view:mode) (option? view:mode) (documentation view:mode) (view:mode))
+(#t #f "Whether the current buffer is viewed, not edited." #f)
+> (view:set-viewing! b #t)
+> (list (local view:mode b) (table-ref modes:minor-modes view:mode #f) (modes:lighter view:mode) (modes:name view:mode))
+(#t 0 "View" view:mode)
+> (view:set-viewing! b #f)
+> (list (lsp:managed?) (lsp:managed? b) (documentation lsp:managed?) (table-ref modes:minor-modes lsp:managed? #f)
+        (eq? (table-ref modes:keymaps lsp:managed? #f) lsp:keymap) (modes:name lsp:managed?))
+(#f #f "Whether a language server manages the buffer, or the current buffer when none is given." 0 #t lsp:managed?)
+> (list (table-ref modes:minor-modes terminal:copy-mode? #f) (table-ref modes:minor-modes terminal:char-mode? #f)
+        (table-ref modes:minor-modes terminal:semi-char-mode? #f)
+        (map modes:lighter (list terminal:copy-mode? terminal:char-mode? terminal:semi-char-mode?)))
+(-30 -20 -10 ("Copy" "Char" #f))
+; The majors clause sets modes:minor-mode-majors.
+> (table-ref modes:minor-mode-majors dired:hide-details? #f)
+(dired:mode)
+; Bad uses are syntax errors naming the form.
+> (modes:define-minor-mode bad-mode (lighter "Bad"))
+! modes:define-minor-mode: expected (modes:define-minor-mode id doc-string clause ...) (modes:define-minor-mode bad-mode (lighter "Bad"))
+> (modes:define-minor-mode bad-mode "Bad." (colour "red"))
+! modes:define-minor-mode: invalid clause (colour "red") in (modes:define-minor-mode bad-mode "Bad." (colour "red"))
+> (modes:define-minor-mode bad-mode "Bad." (lighter "Bad") (lighter "Worse"))
+! modes:define-minor-mode: clause given twice (lighter "Worse") in (modes:define-minor-mode bad-mode "Bad." (lighter "Bad") (lighter "Worse"))
+> (modes:define-minor-mode bad-mode "Bad." (state () #t) (default #t))
+! modes:define-minor-mode: a state mode has no default or on-change clause (default #t) in (modes:define-minor-mode bad-mode "Bad." (state () #t) (default #t))
+> (modes:define-minor-mode bad-mode "Bad." (state () #t) (on-change values))
+! modes:define-minor-mode: a state mode has no default or on-change clause (on-change values) in (modes:define-minor-mode bad-mode "Bad." (state () #t) (on-change values))
+> (modes:define-minor-mode bad-mode "Bad." (state (b) #t))
+! modes:define-minor-mode: a state mode's formals must allow no arguments (state (b) #t) in (modes:define-minor-mode bad-mode "Bad." (state (b) #t))
+> (modes:define-minor-mode bad-mode "Bad." (state x))
+! modes:define-minor-mode: invalid clause (state x) in (modes:define-minor-mode bad-mode "Bad." (state x))
+> (modes:define-minor-mode bad-mode "Bad." (lighter))
+! modes:define-minor-mode: invalid clause (lighter) in (modes:define-minor-mode bad-mode "Bad." (lighter))
+> (modes:define-minor-mode "bad-mode" "Bad.")
+! modes:define-minor-mode: expected (modes:define-minor-mode id doc-string clause ...) (modes:define-minor-mode "bad-mode" "Bad.")
+; A keymap clause whose expression is a variable named keymap works.
+> (define-table keymap "Keys of a mode defined at the REPL.")
+> (modes:define-minor-mode keyed-mode "Whether keyed is on." (keymap keymap))
+> (eq? (table-ref modes:keymaps keyed-mode #f) keymap)
+#t
+; Clause values are checked as the mode is defined.
+> (modes:define-minor-mode bad-mode "Bad." (lighter 'bad))
+! modes:define-minor-mode: not a string with irritant bad
+> (modes:define-minor-mode bad-mode "Bad." (keymap 5))
+! modes:define-minor-mode: not a keymap with irritant 5
+> (modes:define-minor-mode bad-mode "Bad." (depth 'high))
+! modes:define-minor-mode: not a real number with irritant high
+> (modes:define-minor-mode bad-mode "Bad." (majors "python"))
+! modes:define-minor-mode: not a mode with irritant "python"
+; A majors clause names at least one mode.
+> (modes:define-minor-mode bad-mode "Bad." (majors))
+! modes:define-minor-mode: invalid clause (majors) in (modes:define-minor-mode bad-mode "Bad." (majors))
+> (modes:define-minor-mode bad-mode "Bad." (majors . python:mode))
+! modes:define-minor-mode: invalid clause (majors . python:mode) in (modes:define-minor-mode bad-mode "Bad." (majors . python:mode))
+; Defined again without a lighter, keymap or majors clause, a mode keeps
+; none of the ones it had.
+> (define-table again-keymap "Keys of a mode defined twice.")
+> (modes:define-minor-mode again-mode "Whether again is on." (lighter "Again") (keymap again-keymap) (majors python:mode))
+> (list (modes:lighter again-mode) (eq? (table-ref modes:keymaps again-mode #f) again-keymap) (table-ref modes:minor-mode-majors again-mode #f))
+("Again" #t (python:mode))
+> (modes:define-minor-mode again-mode "Whether again is on.")
+> (list (modes:lighter again-mode) (table-ref modes:keymaps again-mode #f) (table-ref modes:minor-mode-majors again-mode #f))
+(#f #f #f)
+; modes:name: a major mode's own name, a minor mode's recorded name, and
+; #f for anything else, a procedure put in modes:minor-modes alone
+; included, which is not offered and which help labels by its lighter.
+> (map modes:name (list python:mode fill:mode lsp:managed? car 'nothing:mode))
+(python:mode fill:mode lsp:managed? #f #f)
+> (define-option plain-mode #f boolean? "Whether plain is on.")
+> (table-set! modes:minor-modes plain-mode 0)
+> (table-set! modes:lighters plain-mode "Plain")
+> (modes:name plain-mode)
+#f
+> (define t (start! "M-x"))
+> (type! "modes:toggle-minor-mode")
+> (press! "RET")
+> (sleep-for 0.05)
+> (member "plain-mode" (texts (session)))
+#f
+> (press! "C-g")
+! &quit
+> (result t)
+; help names each minor mode on by its name, a state mode's too, and
+; heads a minor mode's keymap with its name.
+> (keys:bind! fill:keymap "C-c f" editing:forward-char)
+> (buffers:with-buffer b (set-option-local! diagnostics:mode #t fill:mode #t plain-mode #t))
+> (view:set-viewing! b #t)
+> (in-client (lambda () (help:describe-mode v)))
+> (define help-buffer (buffers:find "*Help*"))
+> (define (has? s sub) (and (search s sub 0) #t))
+> (map (lambda (name) (has? (text help-buffer) name)) '("diagnostics:mode" "view:mode" "fill:mode" "Plain" "a minor mode"))
+(#t #t #t #t #f)
+> (views:set-buffer! v b)
+> (in-client (lambda () (help:describe-bindings v)))
+> (has? (text help-buffer) "fill:mode")
+#t
+; The plugin-only clause marks a major mode.
+> (define-table plain-keymap)
+> (define-hook plain-hook)
+> (modes:define-major-mode own-mode (keymap plain-keymap) (hook plain-hook) (plugin-only #t))
+> (list (table-ref modes:plugin-only own-mode #f) (table-ref modes:plugin-only python:mode #f) (table-ref modes:plugin-only help:mode #f))
+(#t #f #t)
+> (modes:define-major-mode bad-mode (keymap plain-keymap) (hook plain-hook) (plugin-only 'yes))
+! modes:define-major-mode: not a boolean with irritant yes
+; The names and marks are the defining modules' entries, so they stay
+; through a reload of modes.
+> (import (tuna eval))
+> (eval-file (string-append (getenv "TUNA_LIBRARY") "/modes.sls"))
+> (list (modes:name fill:mode) (modes:name view:mode) (table-ref modes:plugin-only help:mode #f)
+        (table-ref modes:minor-mode-majors dired:hide-details? #f))
+(fill:mode view:mode #t (dired:mode))
+; Unloading the defining module takes the mode, its entries and its name
+; away.
+> (define fill-mode fill:mode)
+> (unload-module! '(fill))
+> (list (table-ref modes:minor-modes fill-mode #f) (table-ref modes:lighters fill-mode #f)
+        (table-ref modes:keymaps fill-mode #f) (modes:name fill-mode))
+(#f #f #f #f)

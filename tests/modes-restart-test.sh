@@ -43,12 +43,13 @@ wait='(define (wait-until done?)
 output=$(run "$wait
 (map modes:major-mode (files:buffers))
 (modes:set-major-mode text:mode (car (files:buffers)))
+(modes:switch-major-mode python:mode (cadr (files:buffers)))
 (map modes:major-mode (files:buffers))" a.py b.txt)
 expect "first start" "$output" '(python:mode text:mode)
-(text:mode text:mode)'
+(text:mode python:mode)'
 
 # A restart visits the files again and chooses their modes again: a
-# mode set by hand lasts only for the process.
+# mode set by code or by hand lasts only for the process.
 output=$(run "$wait
 (map modes:major-mode (files:buffers))")
 expect "restart" "$output" '(python:mode text:mode)'

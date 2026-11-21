@@ -18,7 +18,7 @@
 
 (define-hook %mode-hook)
 
-(modes:define-major-mode mode (keymap keymap) (hook %mode-hook))
+(modes:define-major-mode mode (keymap keymap) (hook %mode-hook) (plugin-only #t))
 
 ;; The plugin writes prompts with splice!, which asks no kind, so every
 ;; kind but the input refuses the user's edits.
@@ -524,9 +524,11 @@
   (let ([v (views:current)])
     (and v (eq? (views:buffer v) buffer) (prompt-holding (views:point v)))))
 
-(define (y-or-n-mode)
-  (let ([p (%prompt-holding-point)])
-    (and p (%y-or-n-question? p))))
+(modes:define-minor-mode y-or-n-mode
+  "Whether point is in a prompt that waits for a y-or-n answer."
+  (state ()
+    (let ([p (%prompt-holding-point)])
+      (and p (%y-or-n-question? p)))))
 
 (define (%question-to-answer who)
   (let ([p (%prompt-holding-point)])
@@ -659,7 +661,6 @@
 (for-each
   (lambda (command) (table-set! commands:command-modes command (list mode)))
   (list exit abort previous-history next-history mouse-set-point))
-(table-set! modes:minor-modes y-or-n-mode 0)
 (table-set! commands:command-modes answer-yes (list y-or-n-mode))
 (table-set! commands:command-modes answer-no (list y-or-n-mode))
 (add-hook! keys:find-keymaps %prompt-keymaps 40)

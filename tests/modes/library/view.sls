@@ -2,7 +2,8 @@
 (import (buffers) (modes))
 
 (define %viewing (make-weak-eq-hashtable))
-(define (mode) (eq-hashtable-ref %viewing (buffers:current) #f))
+(modes:define-minor-mode mode
+  "Whether the current buffer is viewed, not edited."
+  (state () (eq-hashtable-ref %viewing (buffers:current) #f))
+  (lighter "View"))
 (define (set-viewing! buffer on?) (eq-hashtable-set! %viewing buffer on?))
-(table-set! modes:minor-modes mode 0)
-(table-set! modes:lighters mode "View")

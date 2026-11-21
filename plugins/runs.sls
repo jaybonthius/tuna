@@ -33,7 +33,7 @@
 (define-hook mode-hook
   "Called in each buffer that turns on runs:mode or a mode derived from it.")
 
-(modes:define-major-mode mode (parent modes:special) (lighter "Run") (keymap keymap) (hook mode-hook))
+(modes:define-major-mode mode (parent modes:special) (lighter "Run") (keymap keymap) (hook mode-hook) (plugin-only #t))
 
 (define (%refuse-edits node edit) #f)
 

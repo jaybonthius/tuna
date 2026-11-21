@@ -595,7 +595,8 @@
   (parent modes:special)
   (lighter "Showcase")
   (keymap showcase-keymap)
-  (hook showcase-mode-hook))
+  (hook showcase-mode-hook)
+  (plugin-only #t))
 
 (define (%showcase-buffer)
   (let ([b (buffers:find "*Showcase*")])

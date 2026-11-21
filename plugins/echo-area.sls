@@ -62,7 +62,8 @@
   (parent modes:special)
   (lighter "Messages")
   (keymap messages-keymap)
-  (hook messages-mode-hook))
+  (hook messages-mode-hook)
+  (plugin-only #t))
 
 (module %internals
   (check-main-thread echo-buffer messages-buffer shown? shown-spans show! log! queue-report! flushing? flush-reports! report-text

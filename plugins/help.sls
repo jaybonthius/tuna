@@ -15,7 +15,7 @@
 
 (define-hook mode-hook "Called with *Help* current when a description makes it, or finds it for the first time after help loads.")
 
-(modes:define-major-mode mode (parent modes:special) (lighter "Help") (keymap mode-keymap) (hook mode-hook))
+(modes:define-major-mode mode (parent modes:special) (lighter "Help") (keymap mode-keymap) (hook mode-hook) (plugin-only #t))
 
 (define (%draw-page node view) (haml (:div.help (views:draw-children view node))))
 
@@ -139,9 +139,10 @@
   (map (lambda (b) (cons (car b) (%command-link (cdr b)))) bindings))
 
 (define (%mode-label mode)
-  (if (symbol? mode)
-      (symbol->string mode)
-      (or (modes:lighter mode) "a minor mode")))
+  (cond
+    [(modes:name mode) => symbol->string]
+    [(symbol? mode) (symbol->string mode)]
+    [else (or (modes:lighter mode) "a minor mode")]))
 
 (define (%keymap-heading keymap)
   (cond

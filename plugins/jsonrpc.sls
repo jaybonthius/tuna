@@ -22,7 +22,8 @@
   (parent modes:special)
   (lighter "Events")
   (keymap events-keymap)
-  (hook events-mode-hook))
+  (hook events-mode-hook)
+  (plugin-only #t))
 
 (define (%no-revert)
   (set-option-local! buffers:revert-function #f))

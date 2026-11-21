@@ -23,7 +23,8 @@
   (parent runs:mode)
   (lighter "Compilation")
   (keymap compilation-keymap)
-  (hook compilation-mode-hook))
+  (hook compilation-mode-hook)
+  (plugin-only #t))
 
 (define %output-buffer-name "*Shell Command Output*")
 
