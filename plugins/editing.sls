@@ -859,16 +859,61 @@
     (when (and (not (= n 0)) (memq primary (views:cursors view)) (fx= (views:cursor-point primary) before))
       (edge-error who n))))
 
-(define (line-motion-target n)
+(define (%hiding-fold view p outer?)
+  (fold-left (lambda (best f)
+               (if (and (fx< p (cdr f)) (or (not best) (if outer? (fx< (car f) (car best)) (fx> (cdr f) (cdr best)))))
+                   f
+                   best))
+             #f (views:folds-at view p)))
+
+(define (%closing? doc p) (and (fx< p (document:length doc)) (eq? (document:token doc p) 'close)))
+
+;; A fold joins the lines around it into one, as views draws it, unless
+;; it ends at a node's closing, where what follows starts a block of its
+;; own.
+(define (%row-after view doc line last)
+  (let loop ([line line])
+    (if (fx>= line last)
+        #f
+        (let* ([nl (fx- (document:line-start doc (fx+ line 1)) 1)] [f (%hiding-fold view nl #f)])
+          (cond
+            [(not f) (fx+ line 1)]
+            [(%closing? doc (cdr f)) (let ([next (document:line doc (cdr f))]) (and (fx<= next last) next))]
+            [else (loop (document:line doc (cdr f)))])))))
+
+(define (%row-start view doc line first)
+  (let loop ([line line])
+    (let ([f (and (fx> line first) (%hiding-fold view (fx- (document:line-start doc line) 1) #t))])
+      (if (and f (not (%closing? doc (cdr f))))
+          (loop (document:line doc (car f)))
+          line))))
+
+(define (%row-before view doc line first)
+  (let ([start (%row-start view doc line first)])
+    (and (fx> start first)
+         (let ([f (%hiding-fold view (fx- (document:line-start doc start) 1) #t)])
+           (%row-start view doc (if f (document:line doc (car f)) (fx- start 1)) first)))))
+
+(define (%rows-from view doc line n first last)
+  (let loop ([line line] [n n])
+    (cond
+      [(fx= n 0) line]
+      [(fx> n 0) (let ([next (%row-after view doc line last)]) (if next (loop next (fx- n 1)) (fx+ last 1)))]
+      [else (let ([previous (%row-before view doc line first)]) (if previous (loop previous (fx+ n 1)) (fx- first 1)))])))
+
+(define (line-motion-target view n)
+  (unless (views:view? view)
+    (assertion-violation 'editing:line-motion-target "not a view" view))
   (check-count 'editing:line-motion-target n)
   (let ([continues? (line-motion-continues?)])
     (lambda (c doc lo hi)
       (let* ([p (views:cursor-point c)]
              [goal (or (and continues? (views:cursor-goal c)) (document:column doc p))]
-             [target (+ (document:line doc p) n)])
+             [first (document:line doc lo)] [last (document:line doc hi)]
+             [target (%rows-from view doc (document:line doc p) n first last)])
         (cond
-          [(< target (document:line doc lo)) (values lo goal)]
-          [(> target (document:line doc hi)) (values hi goal)]
+          [(< target first) (values lo goal)]
+          [(> target last) (values hi goal)]
           [else
            (values (fxmax lo (fxmin (document:column-position doc target goal) (end-of-line doc target hi))) goal)])))))
 
@@ -888,7 +933,7 @@
 
 (define (%move-lines who n)
   (let ([view (command-view who)])
-    (move-cursors! who view n (line-motion-target n))))
+    (move-cursors! who view n (line-motion-target view n))))
 
 (commands:define-command (next-line [n (commands:prefix-number)])
   "Moves each cursor N lines down, keeping the column the run of line motions began at."

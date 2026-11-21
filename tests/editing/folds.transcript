@@ -1,0 +1,30 @@
+; C-n and C-p step over what a fold hides. A fold that ends at a node's
+; closing ends its line, as a hidden section's heading is a line of its
+; own: the next line is the one after the node.
+> (define (para . lines) (md:para '() (apply string-append lines)))
+> (start! (md:doc '() (para "head a\n" "body\n" "body\n") (para "head b\n" "body\n") (para "head c\n")) 2)
+("head a\nbody\nbody\nhead b\nbody\nhead c\n" ((2 #f)))
+> (define (fold-node! i)
+    (let* ([doc (buffers:document (views:buffer (view)))] [n (list-ref (let ([acc '()]) (document:for-each-child (document:token doc 0) 1 (- (document:length doc) 1) (lambda (c at) (set! acc (cons c acc)))) (reverse acc)) i)]
+           [s (document:node-start n)])
+      (views:fold! (view) (+ s 7) (- (document:node-end n) 1))))
+> (fold-node! 0)
+> (fold-node! 1)
+> (map (lambda (p) (document:line (buffers:document (views:buffer (view))) p)) (points-after "C-n" "C-n" "C-p" "C-p"))
+(4 6 4 1)
+; The cursor keeps its column on each line it reaches, and a hidden
+; heading's line ends where its fold starts.
+> (views:set-point! (view) 5)
+> (points-after "C-n" "C-n")
+(24 38)
+; A count steps that many lines.
+> (views:set-point! (view) 2)
+> (map (lambda (p) (document:line (buffers:document (views:buffer (view))) p)) (points-after "C-u" "2" "C-n"))
+(1 1 6)
+; A fold inside text joins the lines around it into one, so C-n from it
+; goes to the line after the last one it reaches.
+> (start! "one\ntwo\nthree\nfour\n" 1)
+("one\ntwo\nthree\nfour\n" ((1 #f)))
+> (views:fold! (view) 3 7)
+> (points-after "C-n" "C-p")
+(9 1)

@@ -1,0 +1,109 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  .git-status-counts {
+    margin-inline-start: 1ch;
+  }
+
+  .git-status-counts > span + span {
+    margin-inline-start: 0.5ch;
+  }
+
+  .git-status-buttons {
+    margin-inline-start: auto;
+    padding-inline-start: 1ch;
+    visibility: hidden;
+    white-space: nowrap;
+  }
+
+  .ui-section-heading:hover > .git-status-buttons {
+    visibility: visible;
+  }
+
+  .git-status-button {
+    min-width: 2ch;
+    padding-inline: 0.25em;
+  }
+}
+
+@layer defaults.faces {
+  [data-face="git-status.header"] {
+    color: var(--git-status-header-color, revert-layer);
+    background-color: var(--git-status-header-background, revert-layer);
+    font-weight: var(--git-status-header-font-weight, var(--tuna-font-weight-semibold));
+    font-style: var(--git-status-header-font-style, revert-layer);
+    font-family: var(--git-status-header-font-family, revert-layer);
+    font-size: var(--git-status-header-font-size, revert-layer);
+    text-decoration: var(--git-status-header-text-decoration, revert-layer);
+  }
+
+  [data-face="git-status.hash"] {
+    color: var(--git-status-hash-color, var(--tuna-text-faint));
+    background-color: var(--git-status-hash-background, revert-layer);
+    font-weight: var(--git-status-hash-font-weight, revert-layer);
+    font-style: var(--git-status-hash-font-style, revert-layer);
+    font-family: var(--git-status-hash-font-family, revert-layer);
+    font-size: var(--git-status-hash-font-size, revert-layer);
+    text-decoration: var(--git-status-hash-text-decoration, revert-layer);
+  }
+
+  [data-face="git-status.branch-local"] {
+    color: var(--git-status-branch-local-color, var(--tuna-info));
+    background-color: var(--git-status-branch-local-background, var(--tuna-surface-subtle));
+    font-weight: var(--git-status-branch-local-font-weight, revert-layer);
+    font-style: var(--git-status-branch-local-font-style, revert-layer);
+    font-family: var(--git-status-branch-local-font-family, revert-layer);
+    font-size: var(--git-status-branch-local-font-size, revert-layer);
+    text-decoration: var(--git-status-branch-local-text-decoration, revert-layer);
+  }
+
+  [data-face="git-status.branch-remote"] {
+    color: var(--git-status-branch-remote-color, var(--tuna-success));
+    background-color: var(--git-status-branch-remote-background, var(--tuna-surface-subtle));
+    font-weight: var(--git-status-branch-remote-font-weight, revert-layer);
+    font-style: var(--git-status-branch-remote-font-style, revert-layer);
+    font-family: var(--git-status-branch-remote-font-family, revert-layer);
+    font-size: var(--git-status-branch-remote-font-size, revert-layer);
+    text-decoration: var(--git-status-branch-remote-text-decoration, revert-layer);
+  }
+
+  [data-face="git-status.tag"] {
+    color: var(--git-status-tag-color, var(--tuna-warning));
+    background-color: var(--git-status-tag-background, var(--tuna-surface-subtle));
+    font-weight: var(--git-status-tag-font-weight, revert-layer);
+    font-style: var(--git-status-tag-font-style, revert-layer);
+    font-family: var(--git-status-tag-font-family, revert-layer);
+    font-size: var(--git-status-tag-font-size, revert-layer);
+    text-decoration: var(--git-status-tag-text-decoration, revert-layer);
+  }
+
+  [data-face="git-status.stash"] {
+    color: var(--git-status-stash-color, var(--tuna-text-muted));
+    background-color: var(--git-status-stash-background, revert-layer);
+    font-weight: var(--git-status-stash-font-weight, revert-layer);
+    font-style: var(--git-status-stash-font-style, revert-layer);
+    font-family: var(--git-status-stash-font-family, revert-layer);
+    font-size: var(--git-status-stash-font-size, revert-layer);
+    text-decoration: var(--git-status-stash-text-decoration, revert-layer);
+  }
+
+  [data-face="git-status.ahead"] {
+    color: var(--git-status-ahead-color, var(--tuna-success));
+    background-color: var(--git-status-ahead-background, revert-layer);
+    font-weight: var(--git-status-ahead-font-weight, revert-layer);
+    font-style: var(--git-status-ahead-font-style, revert-layer);
+    font-family: var(--git-status-ahead-font-family, revert-layer);
+    font-size: var(--git-status-ahead-font-size, revert-layer);
+    text-decoration: var(--git-status-ahead-text-decoration, revert-layer);
+  }
+
+  [data-face="git-status.behind"] {
+    color: var(--git-status-behind-color, var(--tuna-warning));
+    background-color: var(--git-status-behind-background, revert-layer);
+    font-weight: var(--git-status-behind-font-weight, revert-layer);
+    font-style: var(--git-status-behind-font-style, revert-layer);
+    font-family: var(--git-status-behind-font-family, revert-layer);
+    font-size: var(--git-status-behind-font-size, revert-layer);
+    text-decoration: var(--git-status-behind-text-decoration, revert-layer);
+  }
+}

@@ -1,0 +1,178 @@
+> (define repo (fresh! "repo"))
+> (sh "cd repo && git config user.name Tuna && git config user.email tuna@example.org")
+> (define (log) (git-out "repo" "log" "--format=%s"))
+> (define (editing?) (equal? (shown-buffer) "COMMIT_EDITMSG"))
+> (define (message!) (wait-until editing?) (take-said!) (views:buffer (view)))
+> (define (message-lines m) (let loop ([t (document:text (buffers:document m))] [i 0] [start 0] [acc '()]) (cond [(= i (string-length t)) (reverse acc)] [(char=? (string-ref t i) #\newline) (if (and (< start i) (char=? (string-ref t start) #\#)) (reverse acc) (loop t (+ i 1) (+ i 1) (cons (substring t start i) acc)))] [else (loop t (+ i 1) start acc)])))
+; git-commit:mode-hook runs in each message buffer as it opens.
+> (define (set-message! m text)
+    (let* ([t (document:text (buffers:document m))]
+           [end (let loop ([i 0]) (if (or (= i (string-length t)) (char=? (string-ref t i) #\#)) i (loop (+ i 1))))])
+      (buffers:replace! m 1 (+ end 1) text)))
+> (define hooked 0)
+> (add-hook! git-commit:mode-hook (lambda () (set! hooked (+ hooked 1))))
+; C-c C-k cancels: the view shows the status buffer, the message
+; is saved, and the cancel is no Git error.
+> (press! "c" "c")
+> (define m (message!))
+> hooked
+1
+> (buffers:replace! m 1 1 "First draft\n")
+#<edit 1>
+> (press! "C-c" "C-k")
+> (settle!)
+> (list (shown-buffer) (take-said!) (car (git-commit:messages)) (git:command-canceled? (car (reverse (git:commands repo)))))
+("*git: repo*" ("Commit canceled. Message saved") "First draft" #t)
+; M-p brings back older messages, M-n newer ones; a count skips.
+> (press! "c" "c")
+> (define m (message!))
+> (buffers:replace! m 1 1 "Second draft\n")
+#<edit 1>
+> (press! "C-c" "C-k")
+> (settle!)
+> (press! "c" "c")
+> (define m (message!))
+> (press! "M-p")
+> (message-lines m)
+("Second draft")
+> (press! "M-p")
+> (message-lines m)
+("First draft")
+> (press! "M-n")
+> (message-lines m)
+("Second draft")
+> (press! "M-p")
+> (press! "M-p")
+! git-commit:previous-message: No previous message
+; C-c M-s saves the message without finishing.
+> (set-message! m "Saved\n")
+#<edit 5>
+> (press! "C-c" "M-s")
+> (car (git-commit:messages))
+"Saved"
+; the trailer keys insert a trailer with the user's name and
+; email at the end of the message; C-c C-i reads one.
+> (press! "C-c" "C-s")
+> (message-lines m)
+("Saved" "" "Signed-off-by: Tuna <tuna@example.org>")
+> (answer! "Reviewed-by" "Ada <ada@example.org>")
+> (press! "C-c" "C-i")
+> (message-lines m)
+("Saved" "" "Signed-off-by: Tuna <tuna@example.org>" "Reviewed-by: Ada <ada@example.org>")
+> (answer! "Bob" "bob@example.org")
+> (press! "C-u" "C-c" "C-a")
+> (message-lines m)
+("Saved" "" "Signed-off-by: Tuna <tuna@example.org>" "Reviewed-by: Ada <ada@example.org>" "Acked-by: Bob <bob@example.org>")
+; faces: the summary, past git-commit:summary-max-length the
+; overlong face, a non-empty second line, trailer keys and comments.
+> (set-option! git-commit:summary-max-length 4)
+> (buffers:replace! m 1 1 "X")
+#<edit 9>
+> (define (faces) (map (lambda (s) (cdr (assq 'face (caddr s)))) (buffers:spans (buffers:layer m git-commit:%faces) 0 (document:length (buffers:document m)))))
+> (list-head (faces) 5)
+("git-commit.summary" "git-commit.overlong-summary" "git-commit.trailer-key" "git-commit.trailer-key" "git-commit.trailer-key")
+> (set-option! git-commit:summary-max-length 68)
+; an edit above the scissors line repaints only the message, as the diff
+; below it can be large; an edit below it repaints the diff too.
+> (define (diff-faces)
+    (let* ([doc (buffers:document m)] [at (git-commit:%scissors-start doc)])
+      (map (lambda (s) (cdr (assq 'face (caddr s)))) (buffers:spans (buffers:layer m git-commit:%faces) at (document:length doc)))))
+> (list-head (diff-faces) 3)
+(comment comment diff.minus)
+> (let ([doc (buffers:document m)]) (buffers:set-spans! (buffers:layer m git-commit:%faces) (git-commit:%scissors-start doc) (document:length doc) '()))
+#t
+> (buffers:replace! m 1 1 "Y")
+#<edit 10>
+> (list (diff-faces) (list-head (faces) 2))
+(() ("git-commit.summary" "git-commit.trailer-key"))
+> (let ([at (git-commit:%scissors-start (buffers:document m))]) (buffers:replace! m (+ at 1) (+ at 1) "#"))
+#<edit 11>
+> (list-head (diff-faces) 3)
+(comment comment diff.minus)
+; C-c C-d and C-c C-w are undefined.
+> (press! "C-c" "C-d")
+! C-c C-d is undefined
+> (press! "C-c" "C-w")
+! C-c C-w is undefined
+; C-c C-c with a non-empty second line asks; n keeps the buffer.
+> (set-message! m "Summary\nnot blank\n")
+#<edit 12>
+> (answer! #f)
+> (press! "C-c" "C-c")
+> (list (take-asked!) (shown-buffer))
+(("Trailer: " "Value: " "Name: " "Email: " "Second line is not empty.  Commit anyway? ") "COMMIT_EDITMSG")
+; with overlong-summary-line in git-commit:style-checks, a long
+; summary asks too.
+> (set-option! git-commit:style-checks (list (git-commit:style-check overlong-summary-line)))
+> (set-message! m (string-append (make-string 70 #\s) "\n"))
+#<edit 13>
+> (answer! #f)
+> (press! "C-c" "C-c")
+> (list (take-asked!) (shown-buffer))
+(("Summary line is too long.  Commit anyway? ") "COMMIT_EDITMSG")
+> (set-option! git-commit:style-checks (list (git-commit:style-check non-empty-second-line)))
+; C-u C-c C-c commits without the checks.
+> (set-message! m "Forced\nnot blank\n")
+#<edit 14>
+> (press! "C-u" "C-c" "C-c")
+> (settle!)
+> (list (take-asked!) (shown-buffer) (substring (log) 0 6))
+(() "*git: repo*" "Forced")
+; a cancel check that returns #f keeps the buffer; C-u C-c C-k
+; skips it.
+> (press! "c" "-" "e" "c")
+> (define m (message!))
+> (define (keep b) #f)
+> (add-hook! with-editor:cancel-checks keep)
+> (press! "C-c" "C-k")
+> (shown-buffer)
+"COMMIT_EDITMSG"
+> (press! "C-u" "C-c" "C-k")
+> (settle!)
+> (shown-buffer)
+"*git: repo*"
+> (remove-hook! with-editor:cancel-checks keep)
+; killing the buffer another way cancels, saving the message.
+> (press! "c" "-" "e" "c")
+> (define m (message!))
+> (buffers:replace! m 1 1 "Killed draft\n")
+#<edit 1>
+> (buffers:kill! m)
+#t
+> (settle!)
+> (list (car (git-commit:messages)) (git:command-canceled? (car (reverse (git:commands repo)))))
+("Killed draft" #t)
+; finishing with only comments and whitespace is git's abort, said
+; as a cancel.
+> (take-said!)
+("Commit canceled. Message saved")
+> (press! "c" "-" "e" "c")
+> (define m (message!))
+> (press! "C-c" "C-c")
+> (settle!)
+> (take-said!)
+("Commit canceled")
+; the history is saved data, kept across restarts, the newest 32.
+> (length (git-commit:messages))
+5
+> (for-each (lambda (i) (set-saved! git-commit:messages (cons (format "m~a" i) (git-commit:messages)))) (iota 40))
+> (press! "c" "-" "e" "c")
+> (define m (message!))
+> (buffers:replace! m 1 1 "Newest\n")
+#<edit 1>
+> (press! "C-c" "C-k")
+> (settle!)
+> (list (length (git-commit:messages)) (car (git-commit:messages)))
+(32 "Newest")
+> (sleep-for 0.5)
+> (file-exists? (at ".local/share/tuna/saved/tuna/git-commit/messages.ss"))
+#t
+; visiting a message file in a git folder any other way gives it
+; git-commit:major-mode and git-commit:mode.
+> (write-file! "repo/.git/TAG_EDITMSG" "tag\n")
+> (define t (files:visit (at "repo/.git/TAG_EDITMSG")))
+> (list (modes:major-mode t) (buffers:with-buffer t (git-commit:mode)))
+(modes:fundamental #t)
+> (write-file! "repo/TAG_EDITMSG" "not git's\n")
+> (buffers:with-buffer (files:visit (at "repo/TAG_EDITMSG")) (git-commit:mode))
+#f

@@ -1,0 +1,47 @@
+; A merge that conflicts in f.txt.
+> (sh "git init -q -b main c && cd c && printf 'a\\nb\\nc\\n' > f.txt && git add f.txt && git commit -qm base && git checkout -q -b other && printf 'a\\nOTHER\\nc\\n' > f.txt && git commit -qam other && git checkout -q main && printf 'a\\nMAIN\\nc\\n' > f.txt && git commit -qam main && (git merge -q other || true)")
+> (define repo (git:find-repository (at "c")))
+> (git-status:show repo)
+; the conflicted file shows as unmerged under both lists, its combined
+; hunk under Unstaged changes with two prefix columns.
+> (ui:show-section! (view) (section '(file . "f.txt") '(unstaged . #f)))
+> (status)
+("Head:     main main" "Unstaged changes (1)" "unmerged   f.txt" "@@@ -1,3 -1,3 +1,7 @@@" "  a" "++<<<<<<< HEAD" " +MAIN" "++=======" "+ OTHER" "++>>>>>>> other" "  c" "Staged changes (1)" "unmerged   f.txt" "Recent commits…")
+; no Merging section.
+> (exists (lambda (s) (eq? (ui:section-type s) 'merging)) (ui:section-children (section '(unstaged . #f))))
+#f
+; s, u and k on the combined hunk, or lines of it, raise.
+> (go-to-section! '(hunk . "@@@ -1,3 -1,3 +1,7 @@@") '(file . "f.txt") '(unstaged . #f))
+> (press! "s")
+! diff:hunks-patch: Cannot un-/stage resolution hunks.  Stage the whole file
+> (press! "k")
+! diff:reverse-hunks-patch: Cannot un-/stage resolution hunks.  Stage the whole file
+> (go-to-in! "++<<<<<<< HEAD" '(file . "f.txt") '(unstaged . #f))
+> (views:set-mark! (view) (views:point (view)))
+> (press! "C-e")
+> (press! "s")
+! diff:lines-patch: Cannot un-/stage resolution hunks.  Stage the whole file
+> (views:set-mark! (view) #f)
+; RET on a conflicted file visits it.
+> (go-to-section! '(file . "f.txt") '(unstaged . #f))
+> (press! "RET")
+> (settle!)
+> (shown-buffer)
+"f.txt"
+> (layout:switch-to-buffer (status-buffer))
+; k on the conflicted file raises until conflicts are resolved.
+> (go-to-section! '(file . "f.txt") '(unstaged . #f))
+> (press! "k")
+! git-status:discard: Discarding a conflict waits for conflict resolution
+; u on it under Staged changes raises.
+> (go-to-section! '(file . "f.txt") '(staged . #f))
+> (press! "u")
+! git-status:unstage: Unstaging a conflict waits for conflict resolution
+; s on the conflicted file stages it as it stands.
+> (go-to-section! '(file . "f.txt") '(unstaged . #f))
+> (press! "s")
+> (settle!)
+> (git-out "c" "status" "--short")
+"M  f.txt\n"
+> (status)
+("Head:     main main" "Staged changes (1)" "modified   f.txt…" "Recent commits…")

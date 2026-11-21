@@ -17,7 +17,7 @@
 > (malformed-face-rules)
 ()
 > (length (filter (lambda (r) (string=? (car r) "defaults.faces")) (apply append (map (lambda (f) (css-rules (library-file f))) face-stylesheets))))
-122
+134
 > (rule-chain "faces/faces.css" "keyword.return" "font-weight")
 ("--faces-keyword-return-font-weight" "--faces-keyword-font-weight" "revert-layer")
 > (rule-chain "faces/faces.css" "keyword.return" "color")

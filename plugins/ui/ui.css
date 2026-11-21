@@ -203,9 +203,16 @@
     min-width: 0;
   }
 
+  /* A heading's chevron sits in a gutter left of the text, as Magit's
+     sits in the fringe, so a heading's text lines up with its body's. */
+  .view-lines:has(.ui-section) {
+    padding-inline-start: var(--ui-section-gutter, 1.25em);
+  }
+
   .ui-section-chevron {
     flex: none;
-    width: 1.25em;
+    inline-size: var(--ui-section-gutter, 1.25em);
+    margin-inline-start: calc(-1 * var(--ui-section-gutter, 1.25em));
     color: var(--ui-section-chevron-text, var(--tuna-text-muted));
     cursor: pointer;
   }

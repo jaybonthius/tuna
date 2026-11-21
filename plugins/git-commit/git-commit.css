@@ -1,0 +1,43 @@
+@layer defaults, themes, preferences;
+
+@layer defaults.faces {
+  [data-face="git-commit.summary"] {
+    color: var(--git-commit-summary-color, revert-layer);
+    background-color: var(--git-commit-summary-background, revert-layer);
+    font-weight: var(--git-commit-summary-font-weight, var(--tuna-font-weight-semibold));
+    font-style: var(--git-commit-summary-font-style, revert-layer);
+    font-family: var(--git-commit-summary-font-family, revert-layer);
+    font-size: var(--git-commit-summary-font-size, revert-layer);
+    text-decoration: var(--git-commit-summary-text-decoration, revert-layer);
+  }
+
+  [data-face="git-commit.overlong-summary"] {
+    color: var(--git-commit-overlong-summary-color, var(--tuna-warning));
+    background-color: var(--git-commit-overlong-summary-background, revert-layer);
+    font-weight: var(--git-commit-overlong-summary-font-weight, var(--tuna-font-weight-semibold));
+    font-style: var(--git-commit-overlong-summary-font-style, revert-layer);
+    font-family: var(--git-commit-overlong-summary-font-family, revert-layer);
+    font-size: var(--git-commit-overlong-summary-font-size, revert-layer);
+    text-decoration: var(--git-commit-overlong-summary-text-decoration, revert-layer);
+  }
+
+  [data-face="git-commit.nonempty-second-line"] {
+    color: var(--git-commit-nonempty-second-line-color, var(--tuna-warning));
+    background-color: var(--git-commit-nonempty-second-line-background, revert-layer);
+    font-weight: var(--git-commit-nonempty-second-line-font-weight, revert-layer);
+    font-style: var(--git-commit-nonempty-second-line-font-style, revert-layer);
+    font-family: var(--git-commit-nonempty-second-line-font-family, revert-layer);
+    font-size: var(--git-commit-nonempty-second-line-font-size, revert-layer);
+    text-decoration: var(--git-commit-nonempty-second-line-text-decoration, revert-layer);
+  }
+
+  [data-face="git-commit.trailer-key"] {
+    color: var(--git-commit-trailer-key-color, var(--tuna-info));
+    background-color: var(--git-commit-trailer-key-background, revert-layer);
+    font-weight: var(--git-commit-trailer-key-font-weight, revert-layer);
+    font-style: var(--git-commit-trailer-key-font-style, revert-layer);
+    font-family: var(--git-commit-trailer-key-font-family, revert-layer);
+    font-size: var(--git-commit-trailer-key-font-size, revert-layer);
+    text-decoration: var(--git-commit-trailer-key-text-decoration, revert-layer);
+  }
+}

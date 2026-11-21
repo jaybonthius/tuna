@@ -618,7 +618,7 @@
 ; Another plugin's motion moves the cursors through editing's step. One
 ; through the line target is a line motion, so C-n after it keeps the
 ; goal column, and it raises at the buffer's edge.
-> (commands:define-command (down-two) "Moves two lines down." (editing:move-cursors! 'down-two (view) 2 (editing:line-motion-target 2)))
+> (commands:define-command (down-two) "Moves two lines down." (editing:move-cursors! 'down-two (view) 2 (editing:line-motion-target (view) 2)))
 > (keys:bind! keys:global "C-c d" down-two)
 > (start! "abcdef\nab\n\nabcdefgh\nxyz" 5)
 ("abcdef\nab\n\nabcdefgh\nxyz" ((5 #f)))
@@ -632,11 +632,11 @@
 24
 > (press! "C-c" "d")
 ! down-two: end of buffer
-> (raised (lambda () (editing:move-cursors! "down" (view) 1 (editing:line-motion-target 1))))
+> (raised (lambda () (editing:move-cursors! "down" (view) 1 (editing:line-motion-target (view) 1))))
 (editing:move-cursors! "not a symbol")
 > (raised (lambda () (editing:move-cursors! 'down (view) 1 'up)))
 (editing:move-cursors! "not a procedure")
-> (raised (lambda () (editing:line-motion-target 1.5)))
+> (raised (lambda () (editing:line-motion-target (view) 1.5)))
 (editing:line-motion-target "not an exact integer")
 ; Only the mark shift selection set is temporary: one that code set
 ; stays, and a swapped temporary region stays temporary.

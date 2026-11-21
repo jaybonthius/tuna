@@ -266,7 +266,7 @@
     (editing:move-cursors! who view n
       (lambda (c doc lo hi)
         (let* ([p (views:cursor-point c)] [cell (%cell-at doc p)])
-          ((editing:line-motion-target (if cell (- (%row-line doc cell n) (document:line doc p)) n)) c doc lo hi))))))
+          ((editing:line-motion-target view (if cell (- (%row-line doc cell n) (document:line doc p)) n)) c doc lo hi))))))
 
 (commands:define-command (next-row [n (commands:prefix-number)])
   "Moves each cursor in a Markdown table cell to the cell in its column N rows down, or past the last row to the lines after the table, and each other cursor N lines down, as next-line does."

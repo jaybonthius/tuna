@@ -1,0 +1,164 @@
+> (define repo (fresh! "repo"))
+> (sh "cd repo && git config user.name Tuna && git config user.email tuna@example.org")
+> (define (log) (git-out "repo" "log" "--format=%s"))
+> (define (first-line s) (let loop ([i 0]) (if (or (= i (string-length s)) (char=? (string-ref s i) #\newline)) (substring s 0 i) (loop (+ i 1)))))
+> (define (editing?) (equal? (shown-buffer) "COMMIT_EDITMSG"))
+> (define (message!) (wait-until editing?) (views:buffer (view)))
+; c shows the commit menu, with Magit's groups and keys.
+> (press! "c")
+> (menu)
+("Commit" ("Arguments" ("- a" "Stage all modified and deleted files" "--all") ("- e" "Allow empty commit" "--allow-empty") ("- v" "Show diff of changes to be committed" "*--verbose") ("- n" "Disable hooks" "--no-verify") ("- R" "Claim authorship and reset author date" "--reset-author") ("- A" "Override the author" "--author=")) ("Create" ("c" "Commit")) ("Edit HEAD" ("e" "Extend") ("a" "Amend") ("w" "Reword")))
+; a switch toggles its argument.
+> (press! "-" "a")
+> (cadr (menu))
+("Arguments" ("- a" "Stage all modified and deleted files" "*--all") ("- e" "Allow empty commit" "--allow-empty") ("- v" "Show diff of changes to be committed" "*--verbose") ("- n" "Disable hooks" "--no-verify") ("- R" "Claim authorship and reset author date" "--reset-author") ("- A" "Override the author" "--author="))
+> (press! "-" "a")
+; -A reads an author among the repository's and sets --author=.
+> (answer! "Ada <ada@example.org>")
+> (press! "-" "A")
+> (list (take-asked!) (cadr (menu)))
+(("Author: ") ("Arguments" ("- a" "Stage all modified and deleted files" "--all") ("- e" "Allow empty commit" "--allow-empty") ("- v" "Show diff of changes to be committed" "*--verbose") ("- n" "Disable hooks" "--no-verify") ("- R" "Claim authorship and reset author date" "--reset-author") ("- A" "Override the author" "*--author=Ada <ada@example.org>")))
+> (press! "-" "A")
+> (press! "C-g")
+; C-g closes it.
+> (menu-open?)
+#f
+; c c with something staged runs git commit --verbose; git's
+; message file opens in the selected view, in git-commit:mode.
+> (press! "c" "c")
+> (define m (message!))
+> (list (buffers:with-buffer m (with-editor:mode)) (buffers:with-buffer m (git-commit:mode)) (modes:major-mode m))
+(#t #t modes:fundamental)
+> (take-said!)
+("Type C-c C-c to finish, C-c C-k to cancel" "Type C-c C-c to finish, C-c C-k to cancel, and M-p and M-n to recover older messages")
+> (git:command-arguments (git:running repo))
+("commit" "--verbose")
+; the diff below the scissors line is folded in the view.
+> (let ([doc (buffers:document m)]) (pair? (views:folds-at (view) (- (document:length doc) 2))))
+#t
+; C-c C-c commits and says Git finished; the view shows the
+; status buffer again, the message on the history.
+> (buffers:replace! m 1 1 "Commit b\n")
+#<edit 1>
+> (press! "C-c" "C-c")
+> (settle!)
+> (list (log) (shown-buffer) (take-said!) (car (git-commit:messages)))
+("Commit b\nlong\nSecond commit\nFirst commit\n" "*git: repo*" ("Wrote ~/repo/.git/COMMIT_EDITMSG" "Git finished") "Commit b")
+> (cadr (member "Unmerged into origin/main (3)" (status)))
+"c664b6e main Commit b"
+; c c with nothing staged and unstaged changes asks; n does nothing,
+; y commits everything.
+> (answer! #f)
+> (press! "c" "c")
+> (settle!)
+> (list (take-asked!) (shown-buffer))
+(("Nothing staged.  Commit all uncommitted changes? ") "*git: repo*")
+> (answer! #t)
+> (press! "c" "c")
+> (define m (message!))
+> (take-asked!)
+("Nothing staged.  Commit all uncommitted changes? ")
+> (git:command-arguments (git:running repo))
+("commit" "--verbose" "--all")
+> (buffers:replace! m 1 1 "Everything\n")
+#<edit 1>
+> (press! "C-c" "C-c")
+> (settle!)
+> (git-out "repo" "status" "--short")
+"?? new.txt\n"
+; with nothing to commit, it raises.
+> (sh "cd repo && rm -f new.txt")
+> (git-mode:refresh-repository repo)
+> (press! "c" "c")
+! git-commit:create: Nothing staged (or unstaged)
+; --allow-empty commits without asking.
+> (press! "c" "-" "e" "c")
+> (define m (message!))
+> (buffers:replace! m 1 1 "Empty\n")
+#<edit 1>
+> (press! "C-c" "C-c")
+> (settle!)
+> (list (take-asked!) (first-line (log)))
+(() "Empty")
+; c a amends; the message opens with HEAD's message and a Date
+; comment.
+> (sh "cd repo && echo amend >> a.py && git add a.py")
+> (press! "c" "a")
+> (define m (message!))
+> (let ([t (document:text (buffers:document m))]) (list (substring t 0 6) (contains? t "# Date:")))
+("Empty\n" #t)
+> (press! "C-c" "C-k")
+> (settle!)
+> (take-said!)
+("Type C-c C-c to finish, C-c C-k to cancel" "Type C-c C-c to finish, C-c C-k to cancel, and M-p and M-n to recover older messages" "Wrote ~/repo/.git/COMMIT_EDITMSG" "Git finished" "Type C-c C-c to finish, C-c C-k to cancel" "Type C-c C-c to finish, C-c C-k to cancel, and M-p and M-n to recover older messages" "Wrote ~/repo/.git/COMMIT_EDITMSG" "Git finished" "Type C-c C-c to finish, C-c C-k to cancel" "Type C-c C-c to finish, C-c C-k to cancel, and M-p and M-n to recover older messages" "Commit canceled. Message saved")
+; c w rewords HEAD's message only.
+> (sh "cd repo && echo w >> a.py && git add a.py")
+> (press! "c" "w")
+> (define m (message!))
+> (git:command-arguments (git:running repo))
+("commit" "--amend" "--only" "--allow-empty" "--verbose")
+> (buffers:replace! m 1 6 "Reworded")
+#<edit 1>
+> (press! "C-c" "C-c")
+> (settle!)
+> (list (first-line (log)) (git-out "repo" "status" "--short" "a.py"))
+("Reworded" "M  a.py\n")
+; c e extends HEAD with the staged changes, opening nothing; while
+; git-commit:extend-override-date? is #f the committer date stays HEAD's,
+; and C-u inverts the option.
+> (sh "cd repo && GIT_COMMITTER_DATE='1600000000 +0000' git commit -q --amend --no-edit")
+> (define (date) (git-out "repo" "log" "-1" "--format=%ct"))
+> (set-option! git-commit:extend-override-date? #f)
+> (press! "c" "e")
+> (settle!)
+> (list (take-said!) (git-out "repo" "status" "--short" "a.py") (date) (shown-buffer))
+(("Type C-c C-c to finish, C-c C-k to cancel" "Type C-c C-c to finish, C-c C-k to cancel, and M-p and M-n to recover older messages" "Wrote ~/repo/.git/COMMIT_EDITMSG" "Git finished" "Git finished") "" "1600000000\n" "*git: repo*")
+> (sh "cd repo && echo e >> a.py && git add a.py")
+> (press! "c" "C-u" "e")
+> (settle!)
+> (date)
+"1767225600\n"
+> (set-option! git-commit:extend-override-date? #t)
+; c w keeps HEAD's date while git-commit:reword-override-date?
+; is #f.
+> (sh "cd repo && GIT_COMMITTER_DATE='1600000000 +0000' git commit -q --amend --no-edit")
+> (set-option! git-commit:reword-override-date? #f)
+> (press! "c" "w")
+> (define m (message!))
+> (press! "C-c" "C-c")
+> (settle!)
+> (date)
+"1600000000\n"
+> (set-option! git-commit:reword-override-date? #t)
+; amending, extending or rewording a commit of a published branch
+; asks first.
+> (set-option! git-commit:published-branches '("origin/main"))
+> (sh "cd repo && git push -q origin main")
+> (answer! #f)
+> (press! "c" "w")
+! git-commit: Abort
+> (settle!)
+> (list (take-asked!) (shown-buffer))
+(("This commit has already been published to origin/main.\nDo you really want to modify it? ") "*git: repo*")
+> (set-option! git-commit:published-branches '("origin/master"))
+; git-commit:ask-to-stage stage commits everything without asking,
+; refuse raises.
+> (sh "cd repo && echo h >> a.py")
+> (set-option! git-commit:ask-to-stage (git-commit:staging refuse))
+> (press! "c" "c")
+! git-commit:create: Nothing staged
+> (set-option! git-commit:ask-to-stage (git-commit:staging stage))
+> (press! "c" "c")
+> (define m (message!))
+> (list (take-asked!) (git:command-arguments (git:running repo)))
+(() ("commit" "--verbose" "--all"))
+> (press! "C-c" "C-k")
+> (settle!)
+> (set-option! git-commit:ask-to-stage (git-commit:staging ask))
+; amending before the first commit is git's refusal.
+> (sh "git init -q -b main empty && cd empty && echo x > x && git add x")
+> (git-status:show (git:find-repository (at "empty")))
+> (press! "c" "a")
+> (settle!)
+> (take-said!)
+("Git finished" "Type C-c C-c to finish, C-c C-k to cancel" "Type C-c C-c to finish, C-c C-k to cancel, and M-p and M-n to recover older messages" "Git finished" "Type C-c C-c to finish, C-c C-k to cancel" "Type C-c C-c to finish, C-c C-k to cancel, and M-p and M-n to recover older messages" "Commit canceled. Message saved" "Git error: You have nothing to amend. [Type $ for details]")

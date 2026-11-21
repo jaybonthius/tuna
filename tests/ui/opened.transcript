@@ -1,0 +1,128 @@
+; Other transcripts here count the live buffers, which isearch adds to,
+; so it is loaded here alone.
+> (use-plugin isearch)
+> (define (visible v)
+    (let* ([doc (buffers:document (views:buffer v))] [n (document:length doc)])
+      (define folds (let loop ([p 0] [acc '()]) (if (= p n) acc (loop (+ p 1) (fold-left (lambda (acc f) (if (member f acc) acc (cons f acc))) acc (views:folds-at v p))))))
+      (define (hidden? p) (exists (lambda (f) (and (< (car f) p) (<= p (cdr f)))) folds))
+      (define (folded-here? p) (exists (lambda (f) (= (car f) p)) folds))
+      (let loop ([p 0] [line '()] [start #f] [acc '()])
+        (cond
+          [(= p n) (reverse acc)]
+          [(char? (document:token doc p))
+           (let ([c (document:token doc p)])
+             (if (char=? c #\newline)
+                 (loop (+ p 1) '() #f
+                       (if (and start (not (hidden? start)))
+                           (cons (string-append (list->string (reverse line)) (if (folded-here? p) "…" "")) acc)
+                           acc))
+                 (loop (+ p 1) (cons c line) (or start p) acc)))]
+          [else (loop (+ p 1) line start acc)]))))
+> (buffers:define-kind header)
+> (buffers:define-kind status (content nodes))
+> (define (status-datum . sections) (apply status '() (header '() "Head: main\n") sections))
+> (define (hunk heading . lines) (apply ui:section `((type . hunk) (value . ,heading)) heading lines))
+> (define (file path . hunks) (apply ui:section `((type . file) (value . ,path)) (string-append "modified " path) hunks))
+> (define (fa) (file "a" (hunk "@@ a @@" "-a1" "+a2")))
+> (define (fb) (file "b" (hunk "@@ b @@" "-b1" "+b2")))
+> (define (fc) (file "c" (hunk "@@ c @@" "-c1" "+c2")))
+> (define (unstaged . files) (apply ui:section '((type . unstaged)) "Unstaged" files))
+> (define (staged . files) (apply ui:section '((type . staged)) "Staged" files))
+> (define b (buffers:make "*st*" (status-datum (unstaged (fa) (fb) (fc)) (staged))))
+> (buffers:set-silent! b #t)
+> (modes:set-major-mode ui:section-mode b)
+> (show! b)
+> (define v (view))
+> (define (rebuild! . sections) (buffers:reconcile! b (document:token (buffers:document b) 0) (cddr (apply status-datum sections))))
+> (define (find . identity) (ui:find-section b identity))
+> (define (hide! . identity) (ui:hide-section! v (apply find identity)))
+> (define (unstagedn n . files) (apply ui:section '((type . unstaged)) (format "Unstaged changes (~a)" n) files))
+> (define (folds) (let ([n (document:length (buffers:document b))]) (let loop ([p 0] [acc '()]) (if (= p n) (reverse acc) (loop (+ p 1) (fold-left (lambda (acc f) (if (member f acc) acc (cons f acc))) acc (views:folds-at v p)))))))
+> (define (st) (list (visible v) (folds) (views:point v)))
+> (define (hid? . identity) (ui:section-hidden? v (apply find identity)))
+> (define (fb2) (file "b" (hunk "@@ b @@" "-b1" "+b2" "+b3")))
+; A section opened because a cursor came into its hidden body stays
+; open across a refresh that edits inside it, as magit-section-show
+; records it: views tells ui when it opens a fold for a cursor.
+> (rebuild! (unstagedn 3 (fa) (fb) (fc)) (staged))
+> (hide! '(file . "b") '(unstaged . #f))
+> (st)
+(("Head: main" "Unstaged changes (3)" "modified a" "@@ a @@" "-a1" "+a2" "modified b…" "modified c" "@@ c @@" "-c1" "+c2" "Staged") ((89 . 115)) 2)
+> (views:set-point! v (+ 3 (ui:section-heading-start (find '(hunk . "@@ b @@") '(file . "b") '(unstaged . #f)))))
+> (string? (html v))
+#t
+> (sleep-for 0.05)
+> (st)
+(("Head: main" "Unstaged changes (3)" "modified a" "@@ a @@" "-a1" "+a2" "modified b" "@@ b @@" "-b1" "+b2" "modified c" "@@ c @@" "-c1" "+c2" "Staged") () 96)
+> (rebuild! (unstagedn 3 (fa) (fb2) (fc)) (staged))
+> (string? (html v))
+#t
+> (st)
+(("Head: main" "Unstaged changes (3)" "modified a" "@@ a @@" "-a1" "+a2" "modified b" "@@ b @@" "-b1" "+b2" "+b3" "modified c" "@@ c @@" "-c1" "+c2" "Staged") () 96)
+> (hid? '(file . "b") '(unstaged . #f))
+#f
+; Hiding it again records that, so the next refresh keeps it hidden.
+> (hide! '(file . "b") '(unstaged . #f))
+> (rebuild! (unstagedn 3 (fa) (fb) (fc)) (staged))
+> (st)
+(("Head: main" "Unstaged changes (3)" "modified a" "@@ a @@" "-a1" "+a2" "modified b…" "modified c" "@@ c @@" "-c1" "+c2" "Staged") ((89 . 115)) 79)
+> (hid? '(file . "b") '(unstaged . #f))
+#t
+; A search that ends at a match in the hidden body leaves the section
+; open, and a refresh that edits inside it keeps it open; the point
+; stays where the search left it.
+> (views:set-point! v 1)
+> (press! "C-s" "b" "2" "RET")
+> (st)
+(("Head: main" "Unstaged changes (3)" "modified a" "@@ a @@" "-a1" "+a2" "modified b" "@@ b @@" "-b1" "+b2" "modified c" "@@ c @@" "-c1" "+c2" "Staged") () 112)
+> (hid? '(file . "b") '(unstaged . #f))
+#f
+> (rebuild! (unstagedn 3 (fa) (fb2) (fc)) (staged))
+> (st)
+(("Head: main" "Unstaged changes (3)" "modified a" "@@ a @@" "-a1" "+a2" "modified b" "@@ b @@" "-b1" "+b2" "+b3" "modified c" "@@ c @@" "-c1" "+c2" "Staged") () 112)
+> (hid? '(file . "b") '(unstaged . #f))
+#f
+; A search canceled in a hidden body leaves the section hidden.
+> (hide! '(file . "b") '(unstaged . #f))
+> (views:set-point! v 1)
+> (press! "C-s" "b" "2" "C-g")
+! &quit
+> (st)
+(("Head: main" "Unstaged changes (3)" "modified a" "@@ a @@" "-a1" "+a2" "modified b…" "modified c" "@@ c @@" "-c1" "+c2" "Staged") ((89 . 121)) 2)
+; A search that moves from one match to another in the same hidden body
+; and ends there leaves it open.
+> (press! "C-s" "+" "C-s" "C-s" "RET")
+> (rebuild! (unstagedn 3 (fa) (fb) (fc)) (staged))
+> (st)
+(("Head: main" "Unstaged changes (3)" "modified a" "@@ a @@" "-a1" "+a2" "modified b" "@@ b @@" "-b1" "+b2" "modified c" "@@ c @@" "-c1" "+c2" "Staged") () 118)
+> (hid? '(file . "b") '(unstaged . #f))
+#f
+; One that passes through a hidden body and ends elsewhere leaves it
+; hidden.
+> (hide! '(file . "b") '(unstaged . #f))
+> (rebuild! (unstagedn 3 (fa) (fb2) (fc)) (staged))
+> (views:set-point! v 1)
+> (press! "C-s" "+" "C-s" "C-s" "C-s" "RET")
+> (st)
+(("Head: main" "Unstaged changes (3)" "modified a" "@@ a @@" "-a1" "+a2" "modified b…" "modified c" "@@ c @@" "-c1" "+c2" "Staged") ((89 . 121)) 155)
+> (rebuild! (unstagedn 3 (fa) (fb) (fc)) (staged))
+> (st)
+(("Head: main" "Unstaged changes (3)" "modified a" "@@ a @@" "-a1" "+a2" "modified b…" "modified c" "@@ c @@" "-c1" "+c2" "Staged") ((89 . 115)) 149)
+> (hid? '(file . "b") '(unstaged . #f))
+#t
+; A refresh that lands between the draw that opened a section for a
+; cursor and views' tell hides it again; the tell then records nothing,
+; so the next refresh leaves it hidden.
+> (hide! '(file . "b") '(unstaged . #f))
+> (begin (views:set-point! v (+ 3 (ui:section-heading-start (find '(hunk . "@@ b @@") '(file . "b") '(unstaged . #f))))) (html v) (rebuild! (unstagedn 3 (fa) (fb2) (fc)) (staged)) (list (st) (hid? '(file . "b") '(unstaged . #f))))
+((("Head: main" "Unstaged changes (3)" "modified a" "@@ a @@" "-a1" "+a2" "modified b…" "modified c" "@@ c @@" "-c1" "+c2" "Staged") ((89 . 121)) 79) #t)
+> (sleep-for 0.05)
+> (string? (html v))
+#t
+> (list (st) (hid? '(file . "b") '(unstaged . #f)))
+((("Head: main" "Unstaged changes (3)" "modified a" "@@ a @@" "-a1" "+a2" "modified b…" "modified c" "@@ c @@" "-c1" "+c2" "Staged") ((89 . 121)) 79) #t)
+> (rebuild! (unstagedn 3 (fa) (fb) (fc)) (staged))
+> (string? (html v))
+#t
+> (list (st) (hid? '(file . "b") '(unstaged . #f)))
+((("Head: main" "Unstaged changes (3)" "modified a" "@@ a @@" "-a1" "+a2" "modified b…" "modified c" "@@ c @@" "-c1" "+c2" "Staged") ((89 . 115)) 79) #t)

@@ -195,14 +195,24 @@
       [else (search:match-start m)])))
 
 (define (%show-match! s m)
-  (let ([v (%search-view s)])
-    (for-each (lambda (f) (unless (and m (<= (car f) (search:match-start m) (cdr f))) (views:fold! v (car f) (cdr f))))
-              (%search-opened s))
-    (%search-opened-set! s (if m
-                               (let ([folds (views:folds-at v (search:match-start m))])
-                                 (unless (null? folds) (views:unfold! v (search:match-start m)))
-                                 folds)
-                               '()))))
+  (let-values ([(kept closed) (partition (lambda (f) (and m (<= (car f) (search:match-start m) (cdr f))))
+                                         (%search-opened s))])
+    (let ([v (%search-view s)])
+      (for-each (lambda (f) (views:fold! v (car f) (cdr f))) closed)
+      (%search-opened-set! s (if m
+                                 (let ([folds (views:folds-at v (search:match-start m))])
+                                   (unless (null? folds) (views:unfold! v (search:match-start m)))
+                                   (append kept folds))
+                                 '())))))
+
+;; Folds a search opened stay open once it ends at a match inside them,
+;; as Emacs's isearch-open-invisible does, and their makers are told.
+(define (%reveal-match! s m)
+  (let ([v (%search-view s)] [opened (%search-opened s)])
+    (%search-opened-set! s '())
+    (unless (null? opened)
+      (for-each (lambda (f) (views:fold! v (car f) (cdr f))) opened)
+      (when m (views:reveal! v (search:match-start m) (search:match-end m))))))
 
 (define (%push! s state)
   (%search-states-set! s (cons state (%search-states s)))
@@ -314,7 +324,7 @@
           (let ([last (or success state)])
             (unless (string=? (%state-text last) "")
               (search:add-to-history! (%whole-query s last))))
-          (%search-opened-set! s '())
+          (%reveal-match! s (and success (%state-match success)))
           (unless (= (views:point view) origin)
             (jump-history:push! (%buffer s) origin))))
     (%end-highlights! s)

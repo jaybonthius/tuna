@@ -1,0 +1,118 @@
+; C-x g in a file buffer inside a repository, one view, shows
+; *git: repo* in a split below, selects it, and puts point on the first
+; section after the headers.
+> (sample-repository! "repo")
+> (layout:switch-to-buffer (files:visit (at "repo/a.py")))
+> (length (layout:views))
+3
+> (press! "C-x" "g")
+> (settle!)
+> (list (shown-buffer) (length (layout:views)) (point-line))
+("*git: repo*" 4 "Untracked files (1)")
+; the headers, then the sections in Magit's order, each only when
+; it holds something; untracked files, the files of the change lists and
+; the commits not pushed start hidden.
+> (status)
+("Head:     main Second commit" "Merge:    origin/main First commit" "Untracked files (1)…" "Unstaged changes (3)" "modified   a.py…" "modified   b.txt…" "deleted    gone.txt…" "Staged changes (1)" "modified   b.txt…" "Unmerged into origin/main (1)" "be72b3c main Second commit")
+; a commit line is its abbreviated hash, the refs pointing at it and
+; its summary.
+> (go-to! "be72b3c")
+> (ui:section-type (ui:section-at (view)))
+commit
+; the mode derives from git-mode:mode, from ui:section-mode, from
+; modes:special; the buffer is read-only and silent.
+> (modes:ancestry (modes:major-mode (status-buffer)))
+(git-status:mode git-mode:mode ui:section-mode modes:special)
+> (modes:lighter git-status:mode)
+"Git"
+> (raised (lambda () (buffers:insert! (status-buffer) 3 "x")))
+"a read-only span refuses the edit"
+; C-x g when the status buffer is shown selects that view, refreshes
+; and makes no new view.
+> (press! "C-x" "o")
+> (shown-buffer)
+"a.py"
+> (write-file! "repo/c.txt" "c\n")
+> (press! "C-x" "g")
+> (settle!)
+> (list (shown-buffer) (length (layout:views)))
+("*git: repo*" 4)
+> (status)
+("Head:     main Second commit" "Merge:    origin/main First commit" "Untracked files (2)…" "Unstaged changes (3)" "modified   a.py…" "modified   b.txt…" "deleted    gone.txt…" "Staged changes (1)" "modified   b.txt…" "Unmerged into origin/main (1)" "be72b3c main Second commit")
+; C-x g with a modified buffer of the repository asks to save it
+; first, through files' question.
+> (sh "cd repo && rm c.txt")
+> (define a (files:buffer-visiting (at "repo/a.py")))
+> (buffers:insert! a 1 "zero\n")
+6
+> (answer! #t)
+> (press! "C-x" "g")
+> (settle!)
+> (take-asked!)
+("Save file ~/repo/a.py? ")
+> (buffers:modified? a)
+#f
+> (read-file "repo/a.py")
+"zero\none\nTWO\nthree\nfour\nfive\nsix\nseven\neight\nNINE\nten\neleven\n"
+; C-x g outside any repository asks for a folder; a repository shows,
+; any other folder is offered git init, and n does nothing.
+> (sh "mkdir plain other")
+> (layout:switch-to-buffer (files:visit (at "plain/notes.txt")))
+> (answer! (at "other") #f)
+> (press! "C-x" "g")
+> (settle!)
+> (take-asked!)
+("Git repository: " "Create repository in $HOME/other/? ")
+> (shown-buffer)
+"notes.txt"
+> (file-directory? (at "other/.git"))
+#f
+> (answer! (at "plain") #t)
+> (press! "C-x" "g")
+> (settle!)
+> (take-asked!)
+("Git repository: " "Create repository in $HOME/plain/? ")
+> (shown-buffer)
+"*git: plain*"
+; a repository with no commit.
+> (status)
+("Head:     master In the beginning there was darkness")
+; C-u C-x g inside a repository asks for one.
+> (answer! (at "repo"))
+> (press! "C-u" "C-x" "g")
+> (settle!)
+> (list (take-asked!) (shown-buffer))
+(("Git repository: ") "*git: repo*")
+; C-u C-u C-x g asks for any folder, offering git init.
+> (answer! (at "other") #t)
+> (press! "C-u" "C-u" "C-x" "g")
+> (settle!)
+> (list (take-asked!) (shown-buffer) (file-directory? (at "other/.git")))
+(("Git repository: " "Create repository in $HOME/other/? ") "*git: other*" #t)
+; git-status:initial-section as identities, and #f.
+> (for-each buffers:kill! (filter git-status:buffer? (buffers:all)))
+#t
+> (set-option! git-status:initial-section '(((unstaged . #f))))
+> (layout:switch-to-buffer (files:visit (at "repo/b.txt")))
+> (press! "C-x" "g")
+> (settle!)
+> (point-line)
+"Unstaged changes (3)"
+> (for-each buffers:kill! (filter git-status:buffer? (buffers:all)))
+#t
+> (set-option! git-status:initial-section #f)
+> (layout:switch-to-buffer (files:visit (at "repo/b.txt")))
+> (press! "C-x" "g")
+> (settle!)
+> (point-line)
+"Head:     main Second commit"
+; C-x g where git cannot run raises, rather than asking for a folder as
+; it does outside a repository.
+> (layout:switch-to-buffer (files:visit (at "repo/b.txt")))
+> (set-option! git:program "no-such-git")
+> (press! "C-x" "g")
+! spawn-process: cannot run no-such-git: No such file or directory with irritants ("no-such-git" ("--no-optional-locks" "--no-pager" "--literal-pathspecs" "-c" "core.preloadindex=true" "-c" "log.showSignature=false" "-c" "color.ui=false" "-c" "color.diff=false" "-c" "diff.noPrefix=false" "-c" "diff.mnemonicPrefix=false" "-c" "diff.srcPrefix=a/" "-c" "diff.dstPrefix=b/" "-c" "diff.suppressBlankEmpty=false" "-c" "core.quotePath=false" "rev-parse" "--show-toplevel" "--absolute-git-dir"))
+> (settle!)
+> (take-asked!)
+()
+> (set-option! git:program "git")

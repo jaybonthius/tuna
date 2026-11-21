@@ -1,0 +1,158 @@
+> (define repo (fresh! "repo"))
+> (define status-view (view))
+; $ shows the command log in another view and selects it: a section
+; per command run for its effect, its exit status right-aligned, then git
+; … and the arguments; a failed command's output shows, others' is
+; hidden.
+> (go-to-section! '(file . "a.py") '(unstaged . #f))
+> (press! "s")
+> (settle!)
+> (git:run repo '("tag" "v1"))
+#vu8()
+> (guard (c [#t 'failed]) (git:run repo '("checkout" "nowhere")))
+failed
+> (settle!)
+> (press! "$")
+> (settle!)
+> (list (shown-buffer) (eq? (view) status-view) (modes:major-mode (views:buffer (view))))
+("*git-commands: repo*" #f git-mode:commands-mode)
+> (shown (view))
+("  0 git … add --pathspec-from-file=- --pathspec-file-nul" "  0 git … tag v1" "  1 git … checkout nowhere" "error: pathspec 'nowhere' did not match any file(s) known to git")
+; g is undefined in the log, which follows the commands itself.
+> (press! "g")
+! g is undefined
+> (git:run repo '("tag" "v2"))
+#vu8()
+> (settle!)
+> (car (reverse (shown (view))))
+"  0 git … tag v2"
+; k on a running command asks, and stops it; its section ends with
+; its exit status and the command fails.
+> (write-file! "repo/.git/hooks/pre-commit" "#!/bin/sh\nsleep 30\n")
+> (sh "chmod +x repo/.git/hooks/pre-commit")
+> (define slow (git-mode:start repo '("commit" "-m" "slow") (lambda (c) (void))))
+> (wait-until (lambda () (git:running repo)))
+> (press! "M->")
+> (point-line)
+"    git … commit -m slow"
+; while it runs, the status line of each view of a Git buffer of the
+; repository shows it.
+> (git-mode:show-running status-view)
+"git commit -m slow…"
+> (git-mode:show-running (view))
+"git commit -m slow…"
+> (answer! #t)
+> (press! "k")
+> (wait-until (lambda () (git:command-exit slow)))
+> (list (take-asked!) (git:command-exit slow) (point-line))
+(("Kill process?") -1 " -1 git … commit -m slow")
+> (settle!)
+> (take-said!)
+("Git error: pathspec 'nowhere' did not match any file(s) known to git [Type $ for details]" "Git error: git failed [Type $ for details]")
+> (git-mode:show-running status-view)
+#f
+; k on a command that has ended raises.
+> (press! "k")
+! git-mode:stop-command: Process isn't running
+; the log keeps git:command-log-size commands.
+> (set-option! git:command-log-size 3)
+> (git:run repo '("tag" "v3"))
+#vu8()
+> (settle!)
+> (length (git:commands repo))
+3
+> (length (filter (lambda (l) (and (> (string-length l) 3) (string=? (substring l 3 5) " g"))) (shown (view))))
+3
+> (set-option! git:command-log-size 32)
+; q in the log quits its view; the view selected before is selected.
+> (press! "q")
+> (list (shown-buffer) (eq? (view) status-view))
+("*git: repo*" #t)
+; a background command says Git finished; staging says nothing.
+> (take-said!)
+()
+> (go-to-section! '(file . "b.txt") '(unstaged . #f))
+> (press! "s")
+> (settle!)
+> (take-said!)
+()
+> (git:command? (git-mode:start repo '("tag" "v4") (lambda (c) (void))))
+#t
+> (settle!)
+> (take-said!)
+("Git finished")
+; ?, h and C-c C-c show the dispatch menu, one entry per Git
+; menu and the commands that act on changes.
+> (press! "?")
+> (menu)
+("Transient and dwim commands" ("Essential commands" ("g" "Refresh current buffer") ("q" "Bury current buffer") ("TAB" "Toggle section at point") ("RET" "Visit thing at point")) (("I" "Init") ("c" "Commit") ("f" "Fetch") ("F" "Pull") ("P" "Push")) ("Applying changes" ("s" "Stage") ("u" "Unstage") ("k" "Discard") ("S" "Stage all") ("U" "Unstage all")))
+> (press! "C-g")
+> (press! "h")
+> (menu-open?)
+#t
+> (press! "C-g")
+> (press! "C-c" "C-c")
+> (menu-open?)
+#t
+> (press! "C-g")
+; C-x M-g outside a repository raises; inside one, it shows the menu.
+> (sh "mkdir -p plain")
+> (layout:switch-to-buffer (files:visit (at "plain/n.txt")))
+> (press! "C-x" "M-g")
+! git-mode:current-repository: Not inside a Git repository
+> (menu-open?)
+#f
+> (layout:switch-to-buffer (files:visit (at "repo/a.py")))
+> (press! "C-x" "M-g")
+> (menu-open?)
+#t
+> (press! "C-g")
+; I in the dispatch menu reads a folder; for a folder inside a
+; repository, or a repository's root, it asks first, n raising Abort.
+> (layout:switch-to-buffer (status-buffer))
+> (answer! (at "repo/sub") #f)
+> (press! "?" "I")
+! git-status:init: Abort
+> (settle!)
+> (list (take-asked!) (file-directory? (at "repo/sub")))
+(("Create repository in: " "$HOME/repo/ is a repository.  Create another in $HOME/repo/sub/? ") #f)
+> (answer! (at "repo/") #f)
+> (press! "?" "I")
+! git-status:init: Abort
+> (settle!)
+> (take-asked!)
+("Create repository in: " "Reinitialize existing repository $HOME/repo/? ")
+> (answer! (at "fresh"))
+> (press! "?" "I")
+> (settle!)
+> (list (take-asked!) (shown-buffer) (file-directory? (at "fresh/.git")))
+(("Create repository in: ") "*git: fresh*" #t)
+; keys of Magit commands Tuna lacks are undefined in a Git buffer.
+> (layout:switch-to-buffer (status-buffer))
+> (press! "b")
+! b is undefined
+> (press! "z")
+! z is undefined
+; q quits the view, showing the buffer it showed before.
+> (layout:switch-to-buffer (files:visit (at "repo/a.py")))
+> (press! "C-x" "g")
+> (settle!)
+> (press! "q")
+> (list (shown-buffer) (buffers:live? (buffers:find "*git: repo*")))
+("a.py" #t)
+; C-u q also kills the buffer.
+> (press! "C-x" "g")
+> (settle!)
+> (press! "C-u" "q")
+> (buffers:find "*git: repo*")
+#f
+; C-u C-u q kills every Git buffer of the repository, and no other.
+> (press! "C-x" "g")
+> (settle!)
+> (press! "$")
+> (settle!)
+> (press! "C-x" "o")
+> (layout:switch-to-buffer (buffers:find "*git: repo*"))
+> (press! "C-u" "C-u" "q")
+> (map buffers:name (filter (lambda (b) (modes:derived? (modes:major-mode b) git-mode:mode)) (buffers:all)))
+("*git: fresh*")

@@ -113,8 +113,11 @@
 #f
 > (n! "M-<" "n" "n" "^")
 #f
-> (= (views:point v) (views:next-stop v 0))
-#t
+> (let ([doc (buffers:document b)] [p (views:point v)]) (list (document:line doc p) (document:column doc p)))
+(1 0)
+> (n! "p")
+! ui:section-backward: No previous section
+#f
 ; Point passes a hidden body in one step.
 > (n! "M-<" "n" "n")
 (unstaged #f)
@@ -418,3 +421,17 @@
 > (toggle-in-q! '(untracked . #f))
 > (visible q)
 ("Head:     main Second commit" "Untracked files (1)" "n3" "Unstaged changes (3)" "modified   b" "@@ b @@" "+b" "modified   c…" "modified   d" "@@ d @@" "+d")
+; A section with no body draws no chevron; hiding it folds nothing, so
+; neither the fold's ellipsis nor the heading's is drawn.
+> (define e (buffers:make "*empty*" (status-datum (ui:section '((type . recent)) "Recent commits" (ui:section '((type . commit) (value . "abc")) "abc First") (ui:section '((type . commit) (value . "def")) "def Second")))))
+> (modes:set-major-mode ui:section-mode e)
+> (views:set-buffer! q e)
+> (define (drawn part) (let ([s (html q)]) (let loop ([i 0] [n 0]) (cond [(> (+ i (string-length part)) (string-length s)) n] [(string=? (substring s i (+ i (string-length part))) part) (loop (+ i 1) (+ n 1))] [else (loop (+ i 1) n)]))))
+> (list (drawn "ui-section-chevron") (drawn "…"))
+(1 0)
+> (ui:hide-section! q (ui:find-section e '((commit . "abc") (recent . #f))))
+> (list (views:folds-at q (ui:section-heading-start (ui:find-section e '((commit . "abc") (recent . #f))))) (drawn "ui-section-chevron") (drawn "…"))
+(() 1 0)
+> (ui:hide-section! q (ui:find-section e '((recent . #f))))
+> (list (drawn "▸") (drawn "…"))
+(1 2)

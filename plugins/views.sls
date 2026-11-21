@@ -52,6 +52,9 @@
 ;; thumb lies in.
 (define-enumeration bar-part (above-handle below-handle before-handle after-handle) %bar-parts)
 
+(define-hook fold-opened
+  "Called with a view, and the start and end of a fold it opened so that a position in it could be seen, with the view's buffer current: a cursor inside the fold when the view was drawn, or views:reveal!. Inner folds come first.")
+
 (define-hook drawn-ranges-changed
   "Called with a view and a buffer, current, when the view's drawn ranges of the buffer differ from what they were after the previous screens.")
 
@@ -64,7 +67,7 @@
    view-record-folds-set! view-record-narrowing-set! view-record-shown-count top-position body-size-in
    cursor-record? cursor-record-view cursor-record-goal cursor-record-goal-set!
    spot-position point-of mark-of set-cursor-spots! move-point! add-cursor-at! primary-moved! mark-dirty!
-   bounds-of live-folds add-fold! narrow-view! widen-view! stop-after stop-before
+   bounds-of live-folds folds-holding open-folds! tell-opened! add-fold! narrow-view! widen-view! stop-after stop-before
    set-view-option! remove-view-option! state-entry view-record-states view-record-states-set!
    scroll-to-place! draw-view current-context context-view context-client in-line? make-context children-html drawing?
    atom-view-of keymaps-at note-edit note-kill after-batch scroll-report mouse-item posn-keymaps forget-client!
@@ -908,19 +911,94 @@
         (mark-dirty!))
       live))
 
-  (define (fold-holding v p)
-    (find-first (lambda (f) (fx< (spot-position (car f)) p (spot-position (cdr f)))) (live-folds v)))
+  ;; Drawing asks where folds lie for every line and node it draws, so a
+  ;; scan of every fold each time makes a draw cost the view's folds times
+  ;; its lines. Folds are found by position instead: their ranges sorted
+  ;; by start, and the spans they cover, merged where folds overlap, whose
+  ;; starts and ends both rise. An index lasts while the view's folds and
+  ;; its buffer's version do, since folds move only when either changes.
+  (define-record-type fold-index
+    (sealed #t)
+    (fields folds buffer version ranges spans))
 
+  (define fold-indexes (make-weak-eq-hashtable))
+
+  (define (merged-spans ranges)
+    (let loop ([rs ranges] [acc '()])
+      (cond
+        [(null? rs) (list->vector (reverse acc))]
+        [(and (pair? acc) (fx< (caar rs) (cdar acc)))
+         (loop (cdr rs) (if (fx> (cdar rs) (cdar acc)) (cons (cons (caar acc) (cdar rs)) (cdr acc)) acc))]
+        [else (loop (cdr rs) (cons (car rs) acc))])))
+
+  (define (fold-index-of v)
+    (let* ([b (view-record-buffer v)] [version (and b (buffers:version b))]
+           [i (eq-hashtable-ref fold-indexes v #f)])
+      (if (and i (eq? (fold-index-folds i) (view-record-folds v)) (eq? (fold-index-buffer i) b)
+               (eqv? (fold-index-version i) version))
+          i
+          (let* ([ranges (list-sort (lambda (x y) (fx< (car x) (car y)))
+                                    (map (lambda (f) (cons (spot-position (car f)) (spot-position (cdr f)))) (live-folds v)))]
+                 [i (make-fold-index (view-record-folds v) b version (list->vector ranges) (merged-spans ranges))])
+            (eq-hashtable-set! fold-indexes v i)
+            i))))
+
+  (define (count-below rs p field)
+    (let loop ([lo 0] [hi (vector-length rs)])
+      (if (fx= lo hi)
+          lo
+          (let ([mid (fxsrl (fx+ lo hi) 1)])
+            (if (fx< (field (vector-ref rs mid)) p) (loop (fx+ mid 1) hi) (loop lo mid))))))
+
+  (define (fold-holding v p)
+    (let* ([spans (fold-index-spans (fold-index-of v))] [i (fx- (count-below spans p car) 1)])
+      (and (fx>= i 0)
+           (let ([s (vector-ref spans i)]) (and (fx< p (cdr s)) s)))))
+
+  ;; A fold lies within its span, so those holding p start between the
+  ;; start of the first span holding p and p itself.
+  (define (folds-holding v p)
+    (let* ([i (fold-index-of v)] [ranges (fold-index-ranges i)] [spans (fold-index-spans i)]
+           [k (count-below spans p cdr)])
+      (if (or (fx= k (vector-length spans)) (fx> (car (vector-ref spans k)) p))
+          '()
+          (let ([from (count-below ranges (car (vector-ref spans k)) car)] [to (count-below ranges (fx+ p 1) car)])
+            (let loop ([j (fx- to 1)] [acc '()])
+              (if (fx< j from)
+                  acc
+                  (loop (fx- j 1) (let ([r (vector-ref ranges j)]) (if (fx<= p (cdr r)) (cons r acc) acc)))))))))
+
+  ;; Inner folds are told first, so the maker of an outer one finds the
+  ;; inner ones already open.
+  (define (open-folds! v hides?)
+    (let ([opened (filter hides? (live-folds v))])
+      (unless (null? opened)
+        (view-record-folds-set! v (filter (lambda (f) (not (memq f opened))) (view-record-folds v)))
+        (mark-dirty!))
+      (list-sort (lambda (x y) (fx> (spot-position (car x)) (spot-position (car y)))) opened)))
+
+  (define (tell-opened! v b opened)
+    (for-each
+      (lambda (f)
+        (let ([s (spot-position (car f))] [e (spot-position (cdr f))])
+          (buffers:with-buffer b (fold-opened v s e))))
+      opened))
+
+  ;; The view is drawn when this runs, which may be in batch-ended's
+  ;; drawing, acting for no module, so the makers are told by a task.
   (define (open-folds-at-cursors! v)
-    (unless (null? (view-record-folds v))
-      (let ([points (map point-of (view-record-cursors v))])
-        (let ([kept (filter (lambda (f)
-                              (let ([s (spot-position (car f))] [e (spot-position (cdr f))])
-                                (not (exists (lambda (p) (fx< s p e)) points))))
-                            (live-folds v))])
-          (unless (fx= (length kept) (length (view-record-folds v)))
-            (view-record-folds-set! v kept)
-            (mark-dirty!))))))
+    (unless (or (null? (view-record-folds v))
+                (not (exists (lambda (c) (fold-holding v (point-of c))) (view-record-cursors v))))
+      (let* ([points (map point-of (view-record-cursors v))]
+             [opened (open-folds! v (lambda (f)
+                                      (let ([s (spot-position (car f))] [e (spot-position (cdr f))])
+                                        (exists (lambda (p) (fx< s p e)) points))))]
+             [b (view-record-buffer v)])
+        (unless (null? opened)
+          (as-module (this-module)
+            (post! (lambda ()
+                     (when (and (not (view-record-dropped? v)) (eq? (view-record-buffer v) b) (buffers:live? b))
+                       (tell-opened! v b opened)))))))))
 
   (define (merge-cursors! v)
     (let loop ([cs (view-record-cursors v)] [seen '()] [kept '()])
@@ -1063,14 +1141,19 @@
 
   ;; A fold hides the newlines it holds, so the drawing joins the text
   ;; before it and after it into one line: an item boundary B goes when
-  ;; the token before it, B - 1, is folded.
+  ;; the token before it, B - 1, is folded. A fold that ends at a node's
+  ;; closing ends the line there, since what follows the node starts a
+  ;; block of its own: a hidden section is one line, not one with every
+  ;; hidden section after it.
   (define (line-at v doc p)
     (let-values ([(lo hi) (item-bounds v doc)])
-      (let ([folds (fold-ranges v)])
-        (if (null? folds)
+      (let ([spans (fold-index-spans (fold-index-of v))])
+        (if (fx= (vector-length spans) 0)
             (item-at doc lo hi p)
             (let ()
-              (define (folding b) (find-first (lambda (f) (fx< (car f) b (fx+ (cdr f) 1))) folds))
+              (define (folding b)
+                (let ([i (fx- (count-below spans b car) 1)])
+                  (and (fx>= i 0) (let ([f (vector-ref spans i)]) (and (fx<= b (cdr f)) f)))))
               (let-values ([(s e n) (item-at doc lo hi p)])
                 (values
                   (let back ([s s])
@@ -1081,7 +1164,9 @@
                   (let forward ([e e])
                     (let ([f (and (fx< e hi) (folding e))])
                       (if f
-                          (let-values ([(a z m) (item-at doc lo hi (cdr f))]) (if (fx> z e) (forward z) e))
+                          (if (ends-at-closing? doc (cdr f))
+                              (fxmin hi (cdr f))
+                              (let-values ([(a z m) (item-at doc lo hi (cdr f))]) (if (fx> z e) (forward z) e)))
                           e)))
                   n)))))))
 
@@ -1093,7 +1178,7 @@
       (cond
         [(fx<= c s) s]
         [(fx>= c e) e]
-        [(fold-holding v c) => (lambda (f) (loop (spot-position (cdr f))))]
+        [(fold-holding v c) => (lambda (f) (loop (cdr f)))]
         [(let ([x (document:enclosing doc c)])
            (and x (not (fx= (document:node-start x) (document:node-start n))) (child-within doc n x)))
          => (lambda (child) (loop (document:node-end child)))]
@@ -1139,15 +1224,23 @@
     (let ([characters (document:unit characters)])
       (fx- (document:offset doc z characters) (document:offset doc a characters))))
 
+  (define (ends-at-closing? doc p)
+    (and (fx< p (document:length doc)) (eq? (document:token doc p) 'close)))
+
+  ;; A fold that ends at a closing leaves a line break there, as the
+  ;; drawing does.
   (define (folded-counts v doc a z)
-    (let loop ([folds (fold-ranges v)] [lines 0] [chars 0])
-      (if (null? folds)
-          (values lines chars)
-          (let ([from (fxmax a (caar folds))] [to (fxmin z (cdar folds))])
-            (if (fx< from to)
-                (let-values ([(l c) (stretch-counts doc from to)])
-                  (loop (cdr folds) (fx+ lines l) (fx+ chars c)))
-                (loop (cdr folds) lines chars))))))
+    (let ([spans (fold-index-spans (fold-index-of v))])
+      (let loop ([i (count-below spans (fx+ a 1) cdr)] [lines 0] [chars 0])
+        (if (or (fx= i (vector-length spans)) (fx>= (car (vector-ref spans i)) z))
+            (values lines chars)
+            (let* ([f (vector-ref spans i)] [from (fxmax a (car f))] [to (fxmin z (cdr f))])
+              (if (fx< from to)
+                  (let-values ([(l c) (stretch-counts doc from to)])
+                    (loop (fx+ i 1)
+                          (fx+ lines (if (and (fx= to (cdr f)) (fx> l 0) (ends-at-closing? doc to)) (fx- l 1) l))
+                          (fx+ chars c)))
+                  (loop (fx+ i 1) lines chars)))))))
 
   (define (doubled n) (fxmin most-wanted (fx* 2 n)))
 
@@ -1340,12 +1433,12 @@
   ;; A fold shows none of its positions, so a window reaching into one
   ;; reaches past it by as many as it hides, as the run does.
   (define (beyond-folds v s window)
-    (let ([a (fx+ s (car window))])
-      (let loop ([folds (fold-ranges v)] [z (fx+ s (cdr window))])
-        (cond
-          [(or (null? folds) (fx>= (caar folds) z)) (cons (car window) (fx- z s))]
-          [(fx<= (cdar folds) a) (loop (cdr folds) z)]
-          [else (loop (cdr folds) (fx+ z (fx- (cdar folds) (fxmax (caar folds) a))))]))))
+    (let ([a (fx+ s (car window))] [spans (fold-index-spans (fold-index-of v))])
+      (let loop ([i (count-below spans (fx+ a 1) cdr)] [z (fx+ s (cdr window))])
+        (if (or (fx= i (vector-length spans)) (fx>= (car (vector-ref spans i)) z))
+            (cons (car window) (fx- z s))
+            (let ([f (vector-ref spans i)])
+              (loop (fx+ i 1) (fx+ z (fx- (cdr f) (fxmax (car f) a)))))))))
 
   ;; The last gap stops before the line's newline, which ends the line
   ;; as drawn.
@@ -1597,9 +1690,6 @@
     (sealed #t)
     (fields stack from to html))
 
-  (define (fold-ranges v)
-    (list-sort (lambda (a b) (fx< (car a) (car b)))
-               (map (lambda (f) (cons (spot-position (car f)) (spot-position (cdr f)))) (live-folds v))))
 
   (define (by-position marks) (list-sort (lambda (a b) (fx< (car a) (car b))) marks))
 
@@ -1939,7 +2029,7 @@
                                             (values #f '())
                                             (sideways-pieces v doc ws we (side-windows v cs) marks))])
               (new-context v client doc lo hi ws we (document:token doc 0) (shown (cursor-points v doc)) (shown (anchor-points v))
-                           regions spans (longest-span spans) (fold-ranges v) '() (item-ids v b) #t (make-eqv-hashtable)
+                           regions spans (longest-span spans) (fold-index-spans (fold-index-of v)) '() (item-ids v b) #t (make-eqv-hashtable)
                            marker pieces gaps (document:offset doc lo (document:unit characters)))))))))
 
   ;; A page scrolled by hand keeps where its hand left it, so a view
@@ -2205,34 +2295,34 @@
              (loop (cdr gaps) z (append acc (drawn-items-of ctx node from a) (list (make-gap-mark a z)))))]))))
 
   (define (drawn-items-of ctx node s e)
-    (let ([folds (context-folds ctx)] [items '()])
+    (let* ([spans (context-folds ctx)] [n (vector-length spans)] [items '()])
       (define (fold-mark! f)
         (unless (memq f (context-shown ctx))
           (context-shown-set! ctx (cons f (context-shown ctx)))
           (set! items (cons (make-fold-mark (car f) (cdr f)) items))))
       (define (add-text! at str from)
-        (let loop ([from from] [folds folds])
+        (let loop ([from from] [i (count-below spans (fx+ at from 1) cdr)])
           (let ([a (fx+ at from)] [z (fx+ at (string-length str))])
             (cond
               [(fx= a z)]
-              [(or (null? folds) (fx>= (caar folds) z))
+              [(or (fx= i n) (fx>= (car (vector-ref spans i)) z))
                (set! items (cons (make-text-piece a (if (fx= from 0) str (substring str from (string-length str)))) items))]
-              [(fx<= (cdar folds) a) (loop from (cdr folds))]
-              [(fx< a (caar folds))
-               (set! items (cons (make-text-piece a (substring str from (fx- (caar folds) at))) items))
-               (loop (fx- (caar folds) at) folds)]
+              [(fx< a (car (vector-ref spans i)))
+               (set! items (cons (make-text-piece a (substring str from (fx- (car (vector-ref spans i)) at))) items))
+               (loop (fx- (car (vector-ref spans i)) at) i)]
               [else
-               (fold-mark! (car folds))
-               (when (fx< (cdar folds) z)
-                 (loop (fx- (cdar folds) at) (cdr folds)))]))))
+               (fold-mark! (vector-ref spans i))
+               (when (fx< (cdr (vector-ref spans i)) z)
+                 (loop (fx- (cdr (vector-ref spans i)) at) (fx+ i 1)))]))))
       (document:for-each-child node s e
         (lambda (child at)
           (cond
             [(string? child) (add-text! at child 0)]
-            [(null? folds) (set! items (cons child items))]
+            [(fx= n 0) (set! items (cons child items))]
             [else
              (let* ([ns (document:node-start child)] [ne (node-end ctx child)]
-                    [f (find-first (lambda (f) (and (fx<= (car f) ns) (fx<= ne (cdr f)))) folds)])
+                    [i (fx- (count-below spans (fx+ ns 1) car) 1)]
+                    [f (and (fx>= i 0) (fx<= ne (cdr (vector-ref spans i))) (vector-ref spans i))])
                (if f (fold-mark! f) (set! items (cons child items))))])))
       (reverse items)))
 
@@ -2717,7 +2807,7 @@
 
   (define (add-fold! v start end)
     (let ([b (view-record-buffer v)])
-      (view-record-folds-set! v (append (view-record-folds v) (list (cons (make-spot b start #t) (make-spot b end #f)))))
+      (view-record-folds-set! v (cons (cons (make-spot b start #t) (make-spot b end #f)) (view-record-folds v)))
       (mark-dirty!)))
 
   ;; Narrowing keeps text inserted at either edge inside, as Emacs's
@@ -2748,7 +2838,7 @@
           [(fx< q lo) (loop (buffers:next-stop b q))]
           [(fold-holding v q)
            => (lambda (f)
-                (let* ([e (spot-position (cdr f))] [s (buffers:stop b e)])
+                (let* ([e (cdr f)] [s (buffers:stop b e)])
                   (loop (if (and s (fx>= s e)) s (buffers:next-stop b e)))))]
           [else q]))))
 
@@ -2760,7 +2850,7 @@
           [(fx> q hi) (loop (buffers:previous-stop b q))]
           [(fold-holding v q)
            => (lambda (f)
-                (let* ([e (spot-position (car f))] [s (buffers:stop b e)])
+                (let* ([e (car f)] [s (buffers:stop b e)])
                   (loop (if (and s (fx<= s e)) s (buffers:previous-stop b e)))))]
           [else q]))))
 
@@ -3863,16 +3953,25 @@
   (check-view 'views:folds-at view)
   (shown-buffer 'views:folds-at view)
   (check-position 'views:folds-at view position)
-  (fold-right (lambda (f acc)
-                (let ([start (spot-position (car f))] [end (spot-position (cdr f))])
-                  (if (fx<= start position end) (cons (cons start end) acc) acc)))
-              '() (live-folds view)))
+  (map (lambda (r) (cons (car r) (cdr r))) (folds-holding view position)))
 
 (define (folded? view position)
   (check-view 'views:folded? view)
   (shown-buffer 'views:folded? view)
   (check-position 'views:folded? view position)
-  (exists (lambda (f) (fx<= (spot-position (car f)) position (spot-position (cdr f)))) (live-folds view)))
+  (pair? (folds-holding view position)))
+
+(define (reveal! view start end)
+  (check-view 'views:reveal! view)
+  (let ([b (shown-buffer 'views:reveal! view)])
+    (check-position 'views:reveal! view start)
+    (check-position 'views:reveal! view end)
+    (unless (fx<= start end)
+      (assertion-violation 'views:reveal! "the start is after the end" start end))
+    (tell-opened! view b
+      (open-folds! view (lambda (f)
+                          (let ([a (spot-position (car f))] [z (spot-position (cdr f))])
+                            (if (fx= start end) (fx< a start z) (and (fx< a end) (fx< start z)))))))))
 
 (define (narrow! view start end)
   (check-view 'views:narrow! view)

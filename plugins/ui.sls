@@ -468,6 +468,9 @@
 
 (define-option highlight-current-section? #t boolean? "Whether the section at point is highlighted.")
 
+(define-hook section-heading-adornments
+  "Called with a view and a section as its heading is drawn; each entry returns HTML drawn after the heading, which is no text of the buffer, or #f.")
+
 (define-table section-keymap "Keys in buffers of ui:section-mode and of the modes derived from it.")
 
 (define-table %section-chevron-keys)
@@ -484,7 +487,7 @@
 (module %sections
   (section-node? section-at-position enclosing-section heading-node heading-start heading-end section-sections
    top-sections next-sibling previous-sibling identity-of walk-sections folded-at? hidden-in? hide! show!
-   settle-visibility! repair-after-edit! in-heading? record-section! current-section-of)
+   settle-visibility! repair-after-edit! opened! in-heading? empty-body? record-section! current-section-of)
 
   (define (section-node? n)
     (and (document:node? n) (not (document:atom? n)) (eq? (document:node-kind n) %section-kind)))
@@ -514,6 +517,9 @@
 
   (define (in-heading? section p)
     (fx<= (heading-start section) p (heading-end section)))
+
+  (define (empty-body? section)
+    (fx= (document:node-end (heading-node section)) (fx- (document:node-end section) 1)))
 
   ;; A section is a block, and a node holding text holds no block, so a
   ;; walk leaves a node at its first text.
@@ -592,11 +598,14 @@
 
   (define (folded-at? view section) (own-fold? section (folds-of view section)))
 
+  ;; A section with no body has nothing to hide, as in Magit; a fold
+  ;; there would hold only the heading's line break.
   (define (add-fold! view section)
-    (let ([start (heading-end section)] [end (fx- (document:node-end section) 1)])
-      (when (fx< start (views:point view) end)
-        (views:set-point! view (heading-start section)))
-      (views:fold! view start end)))
+    (unless (empty-body? section)
+      (let ([start (heading-end section)] [end (fx- (document:node-end section) 1)])
+        (when (fx< start (views:point view) end)
+          (views:set-point! view (heading-start section)))
+        (views:fold! view start end))))
 
   ;; views:unfold! opens every fold holding the position, so the others
   ;; are put back.
@@ -697,11 +706,20 @@
         (when folded? (remove-fold! view section folds))
         (derive-below! view record section identity))))
 
-  ;; An edit moves or strands folds only where it begins and ends, so the
-  ;; folds there are opened and derived again for the sections holding
-  ;; the start, and for those whose opening the edit inserted, with every
-  ;; section inside each of them, whose identities follow it; a section
-  ;; the edit only enters keeps its identity.
+  ;; As magit-section-show when a search or motion opens a section, so
+  ;; a refresh keeps it open. A cursor's opening is told after the draw,
+  ;; and a refresh in between may have hidden the section again.
+  (define (opened! view start)
+    (let* ([b (views:buffer view)] [s (section-at-position (buffers:document b) start)])
+      (when (and s (fx= (heading-end s) start) (not (folded-at? view s)))
+        (let ([record (visibilities-of view b)] [identity (identity-of (buffers:document b) s)])
+          (hashtable-set! (visibilities-table record) identity 'show)
+          (settle-visibility! view)
+          (derive-below! view record s identity)))))
+
+  ;; An edit moves or strands folds only where it begins and ends. A
+  ;; section whose opening it inserted has new identities inside it; a
+  ;; section it only enters keeps its own.
   (define (repair! view record doc start end same-key?)
     (let ([n (document:length doc)])
       (views:unfold! view start)
@@ -796,12 +814,20 @@
   (let* ([b (views:buffer view)]
          [section (and b (enclosing-section (buffers:document b) (document:node-start node)))]
          [hidden? (and section (folded-at? view section))]
-         [ellipsis (if hidden? (haml (:span.ui-section-ellipsis "…")) '())])
+         [chevron (if (and section (empty-body? section))
+                      '()
+                      (haml (:span.ui-section-chevron ([data-keymap (views:keymap-mark %section-chevron-keys)] [aria-hidden "true"])
+                              (if hidden? "▸" "▾"))))]
+         [ellipsis (if hidden? (haml (:span.ui-section-ellipsis "…")) '())]
+         [adornments (if section
+                         (fold-right (lambda (entry acc) (let ([h (entry view section)]) (if h (cons h acc) acc)))
+                                     '() (hook-entries section-heading-adornments))
+                         '())])
     (haml (:div.ui-section-heading
-            (:span.ui-section-chevron ([data-keymap (views:keymap-mark %section-chevron-keys)] [aria-hidden "true"])
-              (if hidden? "▸" "▾"))
+            chevron
             (views:draw-children view node)
-            ellipsis))))
+            ellipsis
+            adornments))))
 
 (buffers:define-kind %section (content nodes) (draw %draw-section))
 
@@ -1015,7 +1041,7 @@
     (let ([parent (enclosing-section doc (document:node-start s))])
       (if parent
           (%goto! v parent)
-          (views:set-point! v (or (views:next-stop v 0) 0))))
+          (views:set-point! v 0)))
     (%moved! v)))
 
 (define (%section-here who)
@@ -1105,7 +1131,7 @@
         (cond
           [(not s)
            (%show-children! v (top-sections doc) (fx- level 1))
-           (views:set-point! v (or (views:next-stop v 0) 0))]
+           (views:set-point! v 0)]
           [(fx< i level)
            (show! v s)
            (%show-children! v (section-sections s) (fx- (fx- level i) 1))
@@ -1139,6 +1165,10 @@
 (define (%settle-after-edit buffer edit)
   (when (%section-buffer? buffer)
     (for-each (lambda (v) (repair-after-edit! v buffer edit)) (views:showing buffer))))
+
+(define (%note-opened view start end)
+  (when (%section-buffer? (views:buffer view))
+    (opened! view start)))
 
 (define %section-buffers (make-weak-eq-hashtable))
 
@@ -1352,6 +1382,7 @@
 (add-hook! section-mode-hook %settle-on-mode)
 (add-hook! buffers:after-edit %settle-after-edit)
 (add-hook! views:drawn-ranges-changed %settle-when-drawn)
+(add-hook! views:fold-opened %note-opened)
 (add-hook! commands:after-command %note-section-change)
 (keys:bind! showcase-keymap "g" keys:undefined)
 (keys:bind! list-keys "C-n" next-row)

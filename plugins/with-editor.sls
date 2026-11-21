@@ -99,18 +99,18 @@
                                      "" "/")
                        file)))
 
-  ;; The message comes before the mode turns on, so a message the mode's
-  ;; hook says replaces it.
+  ;; The message comes before the visit, so a message the visited
+  ;; buffer's mode hooks say replaces it.
   (define (serve! folder wrapper)
     (let-values ([(directory file) (read-request folder)])
       (let* ([path (resolved directory file)] [stale (files:buffer-visiting path)])
         (when stale
           (guard (c [(i/o-error? c) (void)]) (files:revert-from-file stale)))
+        (ask:message "Type C-c C-c to finish, C-c C-k to cancel")
         (let ([b (files:visit path)])
           (eq-hashtable-set! requests b (make-request folder wrapper (or (files:path b) path)))
-          (layout:switch-to-buffer b)
-          (ask:message "Type C-c C-c to finish, C-c C-k to cancel")
-          (buffers:with-buffer b (set-option-local! mode #t))))))
+          (buffers:with-buffer b (set-option-local! mode #t))
+          (layout:switch-to-buffer b)))))
 
   (define request-prefix (string->utf8 "\x1b;]7563;tuna-edit;"))
 
