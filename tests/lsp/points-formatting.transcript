@@ -1,0 +1,71 @@
+> (lsp:define-server shaper (fake-command "shaper"))
+> (define path (string-append project "/e.fk"))
+> (write-file! path "\n")
+> (define (whole! new)
+    (configure! "shaper" '(capabilities ("textDocumentSync" . 2) ("documentFormattingProvider" . #t) ("documentRangeFormattingProvider" . #t)
+                                        ("documentOnTypeFormattingProvider" ("firstTriggerCharacter" . "\n")))
+                         `(responses ("textDocument/formatting" . ,(vector `(("range" ("start" ("line" . 0) ("character" . 0)) ("end" ("line" . 100000) ("character" . 0))) ("newText" . ,new))))
+                                     ("textDocument/rangeFormatting" . #((("range" ("start" ("line" . 1) ("character" . 0)) ("end" ("line" . 1) ("character" . 0))) ("newText" . "  ")))))
+                         '(name . "shaper")))
+> (whole! "")
+> (table-set! lsp:language-servers "fakelang" (list shaper))
+> (add-hook! fake-mode-hook lsp:ensure)
+> (define c (visit! path))
+> (wait-for "shaper" "textDocument/didOpen")
+> (define (around v) (let ([doc (buffers:document c)] [p (views:point v)]) (list (document:text doc 0 p) (document:text doc p (document:length doc)))))
+> (define (fresh! content before)
+    (buffers:replace! c 1 (- (document:length (buffers:document c)) 1) content)
+    (in-client (lambda () (views:set-point! (view) (+ 1 (string-length before))))))
+; An edit that replaces the whole text is one change to the buffer and to
+; the server, and point in text it keeps stays with that text.
+> (whole! "(let ([a 1])\n  (+ a b))\n")
+> (fresh! "(let ([a 1]) (+ a b))\n" "(let ([a 1]) (+ a ")
+> (define version (buffers:version c))
+> (define changes (length (of-method "shaper" "textDocument/didChange")))
+> (in-client (lambda () (lsp:format-buffer c)))
+> (wait-for "shaper" "textDocument/didChange" (+ changes 1))
+> (list (around (view)) (- (buffers:version c) version) (vector-length (ref (last-of "shaper" "textDocument/didChange") "params" "contentChanges")))
+(("(let ([a 1])\n  (+ a " "b))\n") 1 1)
+; The server's edits are not typing: one that leaves a single line break
+; asks for no on-type formatting.
+> (whole! "x = 1\ny = 2\n")
+> (fresh! "x = 1; y = 2\n" "")
+> (in-client (lambda () (lsp:format-buffer c)))
+> (list (text c) (length (of-method "shaper" "textDocument/onTypeFormatting")))
+("x = 1\ny = 2\n" 0)
+; Formatting the buffer moves point in a line's indentation the same
+; way as typing; whitespace elsewhere is only text the difference keeps
+; or not.
+> (whole! "(let ([a 1])\n  (+ a b))\n")
+> (fresh! "(let ([a 1])\n (+ a   b))\n" "(let ([a 1])\n")
+> (in-client (lambda () (lsp:format-buffer c)))
+> (around (view))
+("(let ([a 1])\n  " "(+ a b))\n")
+> (fresh! "(let ([a 1])\n (+ a   b))\n" "(let ([a 1])\n (+ a")
+> (in-client (lambda () (lsp:format-buffer c)))
+> (around (view))
+("(let ([a 1])\n  (+ a" " b))\n")
+; A point that the edits carry out of a line's indentation, as when they
+; join its line to the one before, keeps its place in the text.
+> (whole! "  x y\n")
+> (fresh! "  x\ny\n" "  x\n")
+> (in-client (lambda () (lsp:format-buffer c)))
+> (around (view))
+("  x " "y\n")
+; A region from a line's start keeps its mark there when the server
+; indents the line, as a mark is an anchor.
+> (fresh! "(a\nb)\n" "(a\nb")
+> (in-client (lambda () (views:set-mark! (view) 4) (lsp:format)))
+> (list (views:mark (view)) (around (view)))
+(4 ("(a\n  b" ")\n"))
+; Past the search's cap of differences, the split it falls back on still
+; gives the server's text, and point stays with its text.
+> (define (numbered n f) (apply string-append (map f (iota n))))
+> (define reindented (numbered 2000 (lambda (i) (format "    (define (f~a x) (+ x ~a))\n" i i))))
+> (whole! reindented)
+> (fresh! (numbered 2000 (lambda (i) (format "  (define (f~a x) (+ x ~a))\n" i i))) (string-append (numbered 1000 (lambda (i) (format "  (define (f~a x) (+ x ~a))\n" i i))) "  (define (f1000 x) "))
+> (define version (buffers:version c))
+> (in-client (lambda () (lsp:format-buffer c)))
+> (list (equal? (text c) reindented) (- (buffers:version c) version)
+        (= (views:point (view)) (+ 1 (string-length (numbered 1000 (lambda (i) (format "    (define (f~a x) (+ x ~a))\n" i i)))) (string-length "    (define (f1000 x) "))))
+(#t 1 #t)

@@ -1,0 +1,28 @@
+; An edit whose differences cost too much to find replaces its range
+; whole, and a point or mark inside it keeps its line and column, or
+; the line's end when the new line is shorter.
+> (lsp:define-server shaper (fake-command "shaper"))
+> (define path (string-append project "/d.fk"))
+> (random-seed 5)
+> (define (random-lines n) (apply string-append (map (lambda (i) (string-append (list->string (map (lambda (j) (string-ref "ab " (random 3))) (iota (random 13)))) "\n")) (iota n))))
+> (define old (string-append "keep\n" (random-lines 60000)))
+> (define new (string-append "keep\n" (random-lines 60000)))
+> (write-file! path old)
+> (configure! "shaper" '(capabilities ("textDocumentSync" . 2) ("documentFormattingProvider" . #t))
+                       `(responses ("textDocument/formatting" . #((("range" ("start" ("line" . 1) ("character" . 0)) ("end" ("line" . 60001) ("character" . 0))) ("newText" . ,(substring new 5 (string-length new)))))))
+                       '(name . "shaper"))
+> (table-set! lsp:language-servers "fakelang" (list shaper))
+> (add-hook! fake-mode-hook lsp:ensure)
+> (define d (visit! path))
+> (wait-for "shaper" "textDocument/didOpen")
+> (define (line-start s line) (let loop ([i 0] [l 0]) (if (= l line) i (loop (+ i 1) (if (char=? (string-ref s i) #\newline) (+ l 1) l)))))
+> (define (line-length s line) (let ([i (line-start s line)]) (let loop ([j i]) (if (char=? (string-ref s j) #\newline) (- j i) (loop (+ j 1))))))
+> (define (line-where ok?) (let loop ([l 1000]) (if (ok? l) l (loop (+ l 1)))))
+> (define point-line (line-where (lambda (l) (and (>= (line-length old l) 10) (>= (line-length new l) 10)))))
+> (define mark-line (line-where (lambda (l) (and (>= (line-length old l) 12) (< (line-length new l) 6)))))
+> (in-client (lambda () (views:set-mark! (view) (+ 1 (line-start old mark-line) 12)) (views:set-point! (view) (+ 1 (line-start old point-line) 9))))
+> (in-client (lambda () (lsp:format-buffer d)))
+> (equal? (text d) new)
+#t
+> (list (- (views:point (view)) 1 (line-start new point-line)) (= (views:mark (view)) (+ 1 (line-start new mark-line) (line-length new mark-line))))
+(9 #t)

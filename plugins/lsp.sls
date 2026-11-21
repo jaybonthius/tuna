@@ -706,7 +706,7 @@
                                 (%doc-changes d)))))))
               (%schedule-flush! conn))))
         (%conns-of b))
-      (%on-type-format! b edit inserted))))
+      (unless (%server-edits?) (%on-type-format! b edit inserted)))))
 
 (define (%full-sync? conn)
   (let ([sync (%ref (%conn-caps conn) "textDocumentSync")])
@@ -1106,17 +1106,258 @@
   (unless (eqv? (buffers:version b) version)
     (error 'lsp (%fmt "~a changed while ~a answered" (buffers:name b) (%conn-title conn)))))
 
-;; Last first, so each edit's positions hold when it is applied.
+(define-record-type (%text-edit %make-text-edit %text-edit?)
+  (sealed #t)
+  (fields start end text index))
+
+(define-record-type (%hunk %make-hunk %hunk?)
+  (sealed #t)
+  (fields old-start old-end new-start new-end))
+
+(define-record-type (%place %make-place %place?)
+  (sealed #t)
+  (fields (mutable position) indentation point?))
+
+(define-record-type (%cursor-places %make-cursor-places %cursor-places?)
+  (sealed #t)
+  (fields view cursor point mark))
+
+;; Last first, so each edit's positions hold when it is applied. At one
+;; start a replacement goes first and the inserts after it, the later in
+;; the list first, so the inserts appear in the list's order before the
+;; replacement's text, and an insert listed after a replacement, which
+;; the protocol does not allow, is still kept.
 (define (%apply-text-edits! conn b edits version)
   (unless (null? edits)
     (%check-version! conn b version)
     (let* ([doc (buffers:document b)]
-           [placed (map (lambda (e) (let-values ([(s en) (%bounds-at doc (%ref e "range") (%conn-encoding conn))])
-                                      (list s en (or (%ref e "newText") ""))))
-                        edits)])
-      (for-each (lambda (e) (buffers:replace! b (car e) (cadr e) (caddr e)))
-                (list-sort (lambda (a c) (fx> (car a) (car c))) placed))))
+           [placed (map (lambda (e i)
+                          (let-values ([(s en) (%bounds-at doc (%ref e "range") (%conn-encoding conn))])
+                            (%make-text-edit s en (or (%ref e "newText") "") i)))
+                        edits (iota (length edits)))]
+           [cursors (%cursors-showing b)]
+           [places (fold-right (lambda (c acc) (append (filter values (list (%cursor-places-point c) (%cursor-places-mark c))) acc))
+                               '() cursors)]
+           [budget (box %difference-budget)])
+      (parameterize ([%server-edits? #t])
+        (for-each (lambda (e) (%apply-text-edit! b e budget places))
+                  (list-sort %applied-before? placed)))
+      (%place-cursors! b cursors)))
   (void))
+
+(define (%applied-before? x y)
+  (let ([xs (%text-edit-start x)] [ys (%text-edit-start y)])
+    (or (fx> xs ys)
+        (and (fx= xs ys)
+             (let ([x-replaces? (fx< xs (%text-edit-end x))] [y-replaces? (fx< ys (%text-edit-end y))])
+               (or (and x-replaces? (not y-replaces?))
+                   (and (eq? x-replaces? y-replaces?) (fx> (%text-edit-index x) (%text-edit-index y)))))))))
+
+;; A server's edits are not typing, and an on-type request made from one
+;; of them would name a position the edits after it move.
+(define %server-edits? (make-thread-parameter #f))
+
+;; One replacement for the span the differences cover, not one for each
+;; difference, so after-edit hooks, undo and every server see one change
+;; for each change the server sent, as Emacs announces one modification
+;; for replace-region-contents. Past the budget, as Emacs's
+;; replace-region-contents falls back past its MAX-SECS, a cursor inside
+;; the range has no difference to follow.
+(define (%apply-text-edit! b edit budget places)
+  (let* ([doc (buffers:document b)] [start (%text-edit-start edit)] [end (%text-edit-end edit)] [text (%text-edit-text edit)]
+         [old (let ([v (make-vector (fx- end start))])
+                (do ([q start (fx+ q 1)]) ((fx= q end) v) (vector-set! v (fx- q start) (document:token doc q))))]
+         [hunks (%differences old text budget)])
+    (cond
+      [(not hunks)
+       (let ([whole (list (%make-hunk 0 (fx- end start) 0 (string-length text)))])
+         (for-each
+           (lambda (place)
+             (let ([p (%place-position place)])
+               (%place-position-set! place
+                 (if (fx< start p end) (%same-line-and-column doc start text p) (%carried place start whole)))))
+           places)
+         (buffers:replace! b start end text))]
+      [(pair? hunks)
+       (let ([first (car hunks)] [last (car (last-pair hunks))])
+         (for-each (lambda (place) (%place-position-set! place (%carried place start hunks))) places)
+         (buffers:replace! b (fx+ start (%hunk-old-start first)) (fx+ start (%hunk-old-end last))
+           (substring text (%hunk-new-start first) (%hunk-new-end last))))])))
+
+;; Text inserted at a point goes before it, so the cursor stays before
+;; the text that followed it, as Emacs keeps point through
+;; replace-region-contents and VS Code moves cursors through formatting
+;; edits; a mark stays before text inserted at it, as Emacs's mark, a
+;; marker, does.
+(define (%carried place start hunks)
+  (let ([q (fx- (%place-position place) start)])
+    (let loop ([hs hunks] [delta 0])
+      (if (null? hs)
+          (fx+ start q delta)
+          (let* ([h (car hs)] [s (%hunk-old-start h)] [e (%hunk-old-end h)] [inserted (fx- (%hunk-new-end h) (%hunk-new-start h))])
+            (cond
+              [(fx< q s) (fx+ start q delta)]
+              [(fx= q s) (fx+ start q delta (if (and (fx= s e) (%place-point? place)) inserted 0))]
+              [(fx< q e) (fx+ start s delta)]
+              [else (loop (cdr hs) (fx+ delta (fx- inserted (fx- e s))))]))))))
+
+(define (%same-line-and-column doc start text p)
+  (let* ([line (document:line doc p)] [lines (fx- line (document:line doc start))]
+         [column (fx- p (if (fx= lines 0) start (document:line-start doc line)))]
+         [n (string-length text)])
+    (let find ([i 0] [left lines])
+      (cond
+        [(fx= left 0)
+         (let run ([j i])
+           (if (or (fx= j n) (fx= (fx- j i) column) (char=? (string-ref text j) #\newline)) (fx+ start j) (run (fx+ j 1))))]
+        [(fx= i n) (fx+ start n)]
+        [else (find (fx+ i 1) (if (char=? (string-ref text i) #\newline) (fx- left 1) left))]))))
+
+;; Measured, formatting every line of a 390,000-character document as
+;; one edit spends 16,000,000, a quarter of a second.
+(define %difference-budget 20000000)
+
+;; With the search capped at this many differences, as Emacs's MAX-COSTS
+;; caps it, a split is taken from the furthest point reached; measured,
+;; whole-document formatting stays minimal or within a few characters of
+;; it, and the time grows with the length rather than its square.
+(define %difference-search-limit 64)
+
+;; Split at the middle snake, so that it takes space linear in the
+;; lengths.
+(define (%differences old new budget)
+  (define give-up #f)
+  (define (same? i j) (eqv? (vector-ref old i) (string-ref new j)))
+  (define (spend! n)
+    (let ([left (fx- (unbox budget) n)])
+      (set-box! budget left)
+      (when (fx< left 0) (give-up #f))))
+  (define (add hunk tail)
+    (if (and (pair? tail) (fx= (%hunk-old-end hunk) (%hunk-old-start (car tail))) (fx= (%hunk-new-end hunk) (%hunk-new-start (car tail))))
+        (cons (%make-hunk (%hunk-old-start hunk) (%hunk-old-end (car tail)) (%hunk-new-start hunk) (%hunk-new-end (car tail))) (cdr tail))
+        (cons hunk tail)))
+  (define (furthest a0 b0 n m limit size forward backward)
+    (let loop ([o 0] [fx -1] [fy -1] [bx -1] [by -1])
+      (if (fx= o size)
+          (if (fx>= (fx+ fx fy) (fx+ bx by))
+              (values (fx+ a0 fx) (fx+ b0 fy))
+              (values (fx+ a0 (fx- n bx)) (fx+ b0 (fx- m by))))
+          (let ([k (fx- o limit)])
+            (define (clamped x)
+              (let* ([x (fxmin x n)] [y (fx- x k)])
+                (if (fx> y m) (values (fx+ m k) m) (values x y))))
+            (let-values ([(x y) (if (fx= (vector-ref forward o) -1) (values -1 -1) (clamped (vector-ref forward o)))]
+                         [(x2 y2) (if (fx= (vector-ref backward o) -1) (values -1 -1) (clamped (vector-ref backward o)))])
+              (let-values ([(fx fy) (if (and (fx>= y 0) (fx>= x 0) (fx> (fx+ x y) (fx+ fx fy))) (values x y) (values fx fy))]
+                           [(bx by) (if (and (fx>= y2 0) (fx>= x2 0) (fx> (fx+ x2 y2) (fx+ bx by))) (values x2 y2) (values bx by))])
+                (loop (fx+ o 1) fx fy bx by)))))))
+  (define (middle a0 a1 b0 b1)
+    (let* ([n (fx- a1 a0)] [m (fx- b1 b0)] [limit (fxmin (fxquotient (fx+ n m 1) 2) (fx+ %difference-search-limit 1))] [size (fx+ (fx* 2 limit) 2)]
+           [forward (make-vector size -1)] [backward (make-vector size -1)]
+           [delta (fx- n m)] [front? (fxodd? delta)])
+      (spend! size)
+      (vector-set! forward (fx+ limit 1) 0)
+      (vector-set! backward (fx+ limit 1) 0)
+      (call/1cc
+        (lambda (return)
+          (let ([k1start 0] [k1end 0] [k2start 0] [k2end 0])
+            (do ([d 0 (fx+ d 1)]) ((fx= d limit) (values #f #f))
+              (when (fx= d %difference-search-limit)
+                (call-with-values (lambda () (furthest a0 b0 n m limit size forward backward)) return))
+              (do ([k (fx+ (fx- d) k1start) (fx+ k 2)]) ((fx> k (fx- d k1end)))
+                (let* ([o (fx+ limit k)]
+                       [x0 (if (or (fx= k (fx- d)) (and (not (fx= k d)) (fx< (vector-ref forward (fx- o 1)) (vector-ref forward (fx+ o 1)))))
+                               (vector-ref forward (fx+ o 1))
+                               (fx+ (vector-ref forward (fx- o 1)) 1))]
+                       [x (let loop ([x x0])
+                            (if (and (fx< x n) (fx< (fx- x k) m) (same? (fx+ a0 x) (fx+ b0 (fx- x k)))) (loop (fx+ x 1)) x))]
+                       [y (fx- x k)])
+                  (spend! (fx+ 1 (fx- x x0)))
+                  (vector-set! forward o x)
+                  (cond
+                    [(fx> x n) (set! k1end (fx+ k1end 2))]
+                    [(fx> y m) (set! k1start (fx+ k1start 2))]
+                    [front?
+                     (let ([o2 (fx+ limit (fx- delta k))])
+                       (when (and (fx< -1 o2 size) (not (fx= (vector-ref backward o2) -1))
+                                  (fx>= x (fx- n (vector-ref backward o2))))
+                         (return (fx+ a0 x) (fx+ b0 y))))])))
+              (do ([k (fx+ (fx- d) k2start) (fx+ k 2)]) ((fx> k (fx- d k2end)))
+                (let* ([o (fx+ limit k)]
+                       [x0 (if (or (fx= k (fx- d)) (and (not (fx= k d)) (fx< (vector-ref backward (fx- o 1)) (vector-ref backward (fx+ o 1)))))
+                               (vector-ref backward (fx+ o 1))
+                               (fx+ (vector-ref backward (fx- o 1)) 1))]
+                       [x (let loop ([x x0])
+                            (if (and (fx< x n) (fx< (fx- x k) m) (same? (fx- a1 x 1) (fx- b1 (fx- x k) 1))) (loop (fx+ x 1)) x))]
+                       [y (fx- x k)])
+                  (spend! (fx+ 1 (fx- x x0)))
+                  (vector-set! backward o x)
+                  (cond
+                    [(fx> x n) (set! k2end (fx+ k2end 2))]
+                    [(fx> y m) (set! k2start (fx+ k2start 2))]
+                    [(not front?)
+                     (let ([o1 (fx+ limit (fx- delta k))])
+                       (when (and (fx< -1 o1 size) (not (fx= (vector-ref forward o1) -1)))
+                         (let ([x1 (vector-ref forward o1)])
+                           (when (fx>= x1 (fx- n x))
+                             (return (fx+ a0 x1) (fx+ b0 (fx- (fx+ limit x1) o1)))))))])))))))))
+  (call/1cc
+    (lambda (k)
+      (set! give-up k)
+      (let walk ([a0 0] [a1 (vector-length old)] [b0 0] [b1 (string-length new)] [tail '()])
+        (let prefix ([a0 a0] [b0 b0])
+          (if (and (fx< a0 a1) (fx< b0 b1) (same? a0 b0))
+              (prefix (fx+ a0 1) (fx+ b0 1))
+              (let suffix ([a1 a1] [b1 b1])
+                (cond
+                  [(and (fx< a0 a1) (fx< b0 b1) (same? (fx- a1 1) (fx- b1 1))) (suffix (fx- a1 1) (fx- b1 1))]
+                  [(and (fx= a0 a1) (fx= b0 b1)) tail]
+                  [(or (fx= a0 a1) (fx= b0 b1)) (add (%make-hunk a0 a1 b0 b1) tail)]
+                  [else
+                   (let-values ([(x y) (middle a0 a1 b0 b1)])
+                     (if (and x (not (and (fx= x a0) (fx= y b0))) (not (and (fx= x a1) (fx= y b1))))
+                         (walk a0 x b0 y (walk x a1 y b1 tail))
+                         (add (%make-hunk a0 a1 b0 b1) tail)))]))))))))
+
+(define (%indentation-bounds doc p)
+  (let ([start (fxmax (%content-start doc) (document:line-start doc (document:line doc p)))] [end (%content-end doc)])
+    (values start (let loop ([q start]) (if (and (fx< q end) (memv (document:token doc q) '(#\space #\tab))) (loop (fx+ q 1)) q)))))
+
+(define (%point-place doc p)
+  (let-values ([(start end) (%indentation-bounds doc p)])
+    (%make-place p (and (fx<= start p end) (buffers:text-between doc start end)) #t)))
+
+(define (%cursors-showing b)
+  (let ([doc (buffers:document b)])
+    (apply append
+      (map (lambda (v)
+             (map (lambda (c)
+                    (let ([m (views:cursor-mark c)])
+                      (%make-cursor-places v c (%point-place doc (views:cursor-point c)) (and m (%make-place m #f #f)))))
+                  (views:cursors v)))
+           (views:showing b)))))
+
+;; A point in leading whitespace the edits change goes to the end of the
+;; line's new indentation, as Emacs's indent-line-to leaves point, since
+;; the difference of two runs of spaces could put the added ones on
+;; either side of it.
+(define (%place-cursors! b cursors)
+  (let ([doc (buffers:document b)])
+    (define (final place)
+      (and place
+           (let ([p (fxmin (%place-position place) (%content-end doc))] [indentation (%place-indentation place)])
+             (if indentation
+                 (let-values ([(start end) (%indentation-bounds doc p)])
+                   (if (or (fx> p end) (string=? indentation (buffers:text-between doc start end))) p end))
+                 p))))
+    (for-each
+      (lambda (places)
+        (let ([v (%cursor-places-view places)] [c (%cursor-places-cursor places)])
+          (when (and (eq? (views:buffer v) b) (memq c (views:cursors v)))
+            (let ([p (final (%cursor-places-point places))] [m (final (%cursor-places-mark places))])
+              (unless (and (eqv? p (views:cursor-point c)) (eqv? m (views:cursor-mark c)))
+                (views:set-cursor! c p m))))))
+      cursors)))
 
 (define (%edit-paths edit)
   (let ([changes (%ref edit "changes")] [document-changes (%list (%ref edit "documentChanges"))])

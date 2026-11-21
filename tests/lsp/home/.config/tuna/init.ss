@@ -103,14 +103,17 @@
 (define (fake-command name)
   (list tuna-program "--script" (string-append home "/fake-server.ss") libraries (config-of name) (record-of name)))
 
-;; The messages a fake server has read, as JSON, oldest first.
+;; The messages a fake server has read, as JSON, oldest first. The
+;; server may be writing a long message as the record is read, so text
+;; after the last line break is not yet a message.
 (define (received name)
   (if (file-exists? (record-of name))
-      (call-with-input-file (record-of name)
-        (lambda (p)
-          (let loop ([acc '()])
-            (let ([line (get-line p)])
-              (if (eof-object? line) (reverse acc) (loop (cons (string->json line) acc)))))))
+      (let ([all (call-with-input-file (record-of name) get-string-all)])
+        (let loop ([start 0] [i 0] [acc '()])
+          (cond
+            [(or (eof-object? all) (= i (string-length all))) (reverse acc)]
+            [(char=? (string-ref all i) #\newline) (loop (+ i 1) (+ i 1) (cons (string->json (substring all start i)) acc))]
+            [else (loop start (+ i 1) acc)])))
       '()))
 
 (define (ref v . keys)
