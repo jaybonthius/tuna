@@ -46,7 +46,7 @@
 > (strip-report! desktop (list (views:id vb) (views:id vd)))
 > (strip desktop)
 (4 nearest 4 ((3 placeholder) 4 6 (7 placeholder)))
-> (let ([html (screen-of desktop)]) (and (search html "<button class=\"strip-placeholder\" type=\"button\" tabindex=\"-1\" data-at=\"2\" data-to=\"3\" data-keymap=\"1 clickable\">a</button>" 0) #t))
+> (let ([html (screen-of desktop)]) (and (search html "<button class=\"strip-placeholder\" type=\"button\" tabindex=\"-1\" data-at=\"2\" data-to=\"3\" data-keymap=\"2 clickable\">a</button>" 0) #t))
 #t
 > (strip phone)
 (4 nearest 4 (3 4 6 7))

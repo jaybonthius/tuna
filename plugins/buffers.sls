@@ -5,6 +5,8 @@
 (define-hook killed)
 (define-hook after-edit)
 
+(define-option stop-inside-clusters #f boolean?
+  "Whether point also stops between the code points of a grapheme cluster, so that one of its marks can be edited alone.")
 (define-option revert-function #f (lambda (v) (or (not v) (commands:command? v)))
   "The command buffers:revert-buffer runs to make the current buffer again from its source, or #f when nothing does; a buffer's mode or maker sets it locally.")
 
@@ -1448,9 +1450,16 @@
                   (right (fx+ z 1))
                   (values a z)))))))
 
-  (define (candidate-depth doc q)
+  ;; A stop inside a grapheme cluster would let point split what is drawn
+  ;; and read as one character, as Emacs keeps point out of a composition
+  ;; unless composition-break-at-point is set.
+  (define (cluster-edge? b doc q)
+    (or (with-current b stop-inside-clusters) (document:grapheme-boundary? doc q)))
+
+  (define (candidate-depth b doc q)
     (let ([as (ancestors doc q)])
       (and (pair? as)
+           (cluster-edge? b doc q)
            (for-all (lambda (n) (not (eq? (node-stops n) 'none))) as)
            (or (and (eq? (node-content (car as)) 'text) (eq? (node-stops (car as)) 'all))
                (let ([t (document:token doc q)]) (and (document:node? t) (document:atom? t))))
@@ -1496,11 +1505,11 @@
     (let-values ([(a z) (if (plain-range? doc (fx- p 1) (fx+ p 1)) (values p p) (place-bounds doc p))])
       (values
         (if (fx= a z)
-            (and (candidate-depth doc a) a)
+            (and (candidate-depth b doc a) a)
             (let ([candidates (let loop ([q a] [acc '()])
                                 (if (fx> q z)
                                     (reverse acc)
-                                    (let ([d (candidate-depth doc q)])
+                                    (let ([d (candidate-depth b doc q)])
                                       (loop (fx+ q 1) (if d (cons (cons q d) acc) acc)))))])
               (define (best ok?)
                 (fold-left (lambda (best c)
@@ -1516,10 +1525,16 @@
     (let ([root (bare-root b doc)])
       (and root (eq? (node-content root) 'text) (eq? (node-stops root) 'all))))
 
+  (define (cluster-start b doc p)
+    (if (cluster-edge? b doc p) p (cluster-start b doc (fx- p 1))))
+
+  (define (cluster-end b doc p)
+    (if (cluster-edge? b doc p) p (cluster-end b doc (fx+ p 1))))
+
   (define (stop-at b p)
     (let ([doc (buffer-doc b)])
       (if (bare-text b doc)
-          (fxmax 1 (fxmin p (fx- (document:length doc) 1)))
+          (cluster-start b doc (fxmax 1 (fxmin p (fx- (document:length doc) 1))))
           (let-values ([(stop a z) (place-stop b doc p)]) stop))))
 
   (define (next-stop-after b p)
@@ -1527,8 +1542,8 @@
       (cond
         [(bare-text b doc)
          (let ([q (if (fx= p 0) 2 (fx+ p 1))])
-           (and (fx<= q (fx- (document:length doc) 1)) q))]
-        [(and (plain-range? doc (fx- p 1) (fx+ p 2)) (candidate-depth doc (fx+ p 1))) (fx+ p 1)]
+           (and (fx<= q (fx- (document:length doc) 1)) (cluster-end b doc q)))]
+        [(and (plain-range? doc (fx- p 1) (fx+ p 2)) (candidate-depth b doc (fx+ p 1))) (fx+ p 1)]
         [else (next-stop-in-places b doc p)])))
 
   (define (next-stop-in-places b doc p)
@@ -1543,8 +1558,8 @@
       (cond
         [(bare-text b doc)
          (let ([q (if (fx= p (document:length doc)) (fx- p 2) (fx- p 1))])
-           (and (fx>= q 1) q))]
-        [(and (plain-range? doc (fx- p 2) (fx+ p 1)) (candidate-depth doc (fx- p 1))) (fx- p 1)]
+           (and (fx>= q 1) (cluster-start b doc q)))]
+        [(and (plain-range? doc (fx- p 2) (fx+ p 1)) (candidate-depth b doc (fx- p 1))) (fx- p 1)]
         [else (previous-stop-in-places b doc p)])))
 
   (define (previous-stop-in-places b doc p)

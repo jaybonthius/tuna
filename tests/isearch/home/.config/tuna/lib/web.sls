@@ -25,9 +25,10 @@
 
 (define current-client (make-thread-parameter #f))
 
-(define (call-page! client name value) (void))
+;; No page answers a stand-in client.
+(define (ask-page client name value) #f)
 
-(define (client-device client) (number->string (client-number client)))
+(define (call-page! client name value) (void))
 
 (define (remove-client! c)
   (set! connected (remq c connected))

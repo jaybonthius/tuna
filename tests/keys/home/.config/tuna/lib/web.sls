@@ -26,9 +26,11 @@
 (define (call-page! client name value)
   (set! calls (cons (list client name value) calls)))
 
+;; No page answers a stand-in client.
+(define (ask-page client name value) #f)
+
 (define (take-calls!)
   (let ([taken (reverse calls)])
     (set! calls '())
     taken))
 
-(define (client-device client) (number->string (client-number client)))

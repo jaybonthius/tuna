@@ -25,7 +25,7 @@
 ; The view's element names its buffer's version and how many buffers it
 ; has shown; a line that starts after its line's start names where.
 > (show v)
-<div class="view nowrap" id="view-1" data-view="1" data-version="0" data-showing="0" data-placement="*" data-place-kind="follow" data-place-item="1" data-place-at="1" data-base-item="1" data-base-offset="0.0" data-base-height="0.0" data-base-left="0.0" data-scroll-margin="2" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end><div class="view-lines"><div class="line" id="v1-1" data-line="1" data-at="1"><span class="cursor primary"></span>one two</div><div class="line" id="v1-2" data-line="2">three</div><div class="line" id="v1-3" data-line="3"><br></div></div></div>
+<div class="view nowrap" id="view-1" data-view="1" data-version="0" data-showing="0" data-placement="*" data-place-kind="position" data-lead data-place-item="1" data-place-fraction="0.0" data-place-column="0" data-scroll-margin="2" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end data-lines="2" data-chars="14"><div class="view-bars" data-preserve-attr="data-shown" aria-hidden="true"><div class="view-scroll-bar" data-scroll-bar="vertical" data-keymap="1" data-preserve-attr="style data-fits data-held"><div class="view-thumb"></div></div></div><div class="view-lines"><div class="line" id="v1-1" data-line="1" data-before="0" data-at="1"><span class="cursor-on primary">o</span>ne two</div><div class="line" id="v1-2" data-line="2" data-before="8">three</div><div class="line" id="v1-3" data-line="3" data-before="14"><br></div></div></div>
 ; Places: characters after a line's start, or after a position.
 > (mouse! v '("action" . "click") '("line" . 2) '("count" . 2))
 > (mouse! v '("action" . "down") '("at" . 1) '("count" . 3))
@@ -151,7 +151,7 @@
 > (define d (buffers:make "doc" (md:doc '() (md:para '() "See " (clicky-link '() "here") " and " (clicky-image '()) ".\n"))))
 > (define w (views:make d))
 > (show w)
-<div class="view nowrap" id="view-2" data-view="2" data-version="0" data-showing="0" data-placement="*" data-place-kind="follow" data-place-item="2" data-place-at="2" data-base-item="2" data-base-offset="0.0" data-base-height="0.0" data-base-left="0.0" data-scroll-margin="2" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end><div class="view-lines"><article><div class="node" id="v2-2" data-at="1" data-to="21"><div class="line" id="v2-1" data-line="1" data-at="2"><span class="cursor primary"></span>See <span class="node" data-at="6" data-to="12" data-click="clickable"><span data-at="7">here</span></span> and <span class="node" data-at="17" data-to="18" data-click="clickable"></span>.</div></div></article></div></div>
+<div class="view nowrap" id="view-2" data-view="2" data-version="0" data-showing="0" data-placement="*" data-place-kind="position" data-lead data-place-item="2" data-place-fraction="0.0" data-place-column="0" data-scroll-margin="2" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end data-lines="1" data-chars="16"><div class="view-bars" data-preserve-attr="data-shown" aria-hidden="true"><div class="view-scroll-bar" data-scroll-bar="vertical" data-keymap="1" data-preserve-attr="style data-fits data-held"><div class="view-thumb"></div></div></div><div class="view-lines"><article><div class="node" id="v2-2" data-at="1" data-to="21"><div class="line" id="v2-1" data-line="1" data-before="0" data-at="2"><span class="cursor-on primary">S</span>ee <span class="node" data-at="6" data-to="12" data-click="clickable"><span data-at="7">here</span></span> and <span class="node" data-at="17" data-to="18" data-click="clickable"></span>.</div></div></article></div></div>
 > (mouse! w '("action" . "click") '("token" . 6))
 > (mouse! w '("action" . "click") '("at" . 7) '("count" . 2))
 > (mouse! w '("action" . "click") '("token" . 17))
@@ -206,11 +206,10 @@
 > (map (lambda (e) (let ([n (views:posn-node (cadr (car e)))]) (and n (document:node-kind n)))) (take!))
 (clicky-link clicky-image #f)
 ; The pointer's place is in px from the clicked part or the view; its cell
-; is counted in the character width and line height the client last
-; reported for the view, from 0.
+; is counted by the page, in the cells of what was clicked, from 0.
 > (mouse! v '("action" . "click") '("at" . 1) '("count" . 0) '("x" . 35.5) '("y" . 12))
 > (report! c1 v 1 0 #t)
-> (mouse! v '("action" . "click") '("at" . 1) '("count" . 0) '("x" . 35.5) '("y" . 42) '("keymaps" . #(99)))
+> (mouse! v '("action" . "click") '("at" . 1) '("count" . 0) '("x" . 35.5) '("y" . 42) '("column" . 3) '("row" . 2) '("keymaps" . #(99)))
 > (map (lambda (e) (let ([posn (cadr (car e))])
                      (list (call-with-values (lambda () (views:posn-x-y posn)) list)
                            (call-with-values (lambda () (views:posn-cell posn)) list))))

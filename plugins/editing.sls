@@ -13,7 +13,7 @@
 
 (module %internals
   (check-main-thread check-count check-nonnegative-count command-view check-view key-char content-bounds stop-bounds each-cursor
-   place-kept! move-kept! merge-met! edge-error stops-from chars end-of-line first-stop column clear-marks!
+   place-kept! move-kept! merge-met! edge-error stops-from code-points-back chars end-of-line first-stop column clear-marks!
    set-marks! forget-temporary! exchange-marks! word-characters-in words-from word-motion
    within-isolating delete-fitted! ranges-kill edge-at?
    line-motion-continues? note-line-motion! recase! capitalizer replace-region-or! insert-at-cursors! kill-ranges! kill-ends! after-kill?
@@ -177,6 +177,19 @@
     (let loop ([p p] [k (abs n)])
       (let ([next (and (> k 0) (if (> n 0) (views:next-stop view p) (views:previous-stop view p)))])
         (if next (loop next (- k 1)) p))))
+
+  ;; Emacs's delete-backward-char deletes the character before point, so
+  ;; the last mark typed on a grapheme cluster goes alone.
+  (define (code-points-back view p n)
+    (let ([doc (buffers:document (views:buffer view))])
+      (define (characters? from to)
+        (or (fx= from to) (and (char? (document:token doc from)) (characters? (fx+ from 1) to))))
+      (let loop ([p p] [k n])
+        (let ([q (and (> k 0) (views:previous-stop view p))])
+          (cond
+            [(not q) p]
+            [(and (fx> (fx- p q) 1) (characters? q p)) (loop (fx- p 1) (- k 1))]
+            [else (loop q (- k 1))])))))
 
   ;; Typing and other edits leave goal columns on the cursors, so a goal
   ;; holds only for the command right after the one that set it.
@@ -748,7 +761,7 @@
   (let ([b (views:buffer view)] [primary (car (views:cursors view))] [stuck? #f])
     (replace-region-or! view region?
       (lambda (c p)
-        (let ([q (stops-from view p n)])
+        (let ([q (if (< n 0) (code-points-back view p (- n)) (stops-from view p n))])
           (cond
             [(not (fx= q p))
              (let ([at (delete-fitted! b (fxmin p q) (fxmax p q))])
@@ -761,21 +774,21 @@
   (or (delete-selection) (and (delete-active-region) (= n 1))))
 
 (commands:define-command (delete-backward-char [n (commands:prefix-number)])
-  "Deletes N characters before each cursor, or with N of 1 each cursor's region while editing:delete-active-region is true."
+  "Deletes the N code points before each cursor, so a mark typed on a grapheme cluster goes alone, or with N of 1 each cursor's region while editing:delete-active-region is true."
   (check-count 'editing:delete-backward-char n)
   (let ([view (command-view 'editing:delete-backward-char)])
     (undo:amalgamate!)
     (%delete-chars 'editing:delete-backward-char view (- n) (%deletes-region? n))))
 
 (commands:define-command (delete-forward-char [n (commands:prefix-number)])
-  "Deletes N characters after each cursor, or with N of 1 each cursor's region while editing:delete-active-region is true."
+  "Deletes the N grapheme clusters after each cursor, or with N of 1 each cursor's region while editing:delete-active-region is true."
   (check-count 'editing:delete-forward-char n)
   (let ([view (command-view 'editing:delete-forward-char)])
     (undo:amalgamate!)
     (%delete-chars 'editing:delete-forward-char view n (%deletes-region? n))))
 
 (commands:define-command (delete-char [n (commands:prefix-number)])
-  "Deletes N characters after each cursor."
+  "Deletes the N grapheme clusters after each cursor."
   (check-count 'editing:delete-char n)
   (let ([view (command-view 'editing:delete-char)])
     (undo:amalgamate!)

@@ -6,7 +6,7 @@
 > (length (filter (lambda (n) (and (pair? n) (eq? (car n) 'minibuffer:prompt))) (cddr (car (datums minibuf)))))
 20
 > (html (bar))
-"<div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-60\" data-at=\"258\" data-to=\"271\"><div class=\"minibuffer-prompt\"><span class=\"minibuffer-depth\">[20] </span><div class=\"line\" id=\"v4-58\" data-line=\"20\" data-at=\"259\"><span class=\"node\" data-at=\"259\" data-to=\"265\"><span class=\"minibuffer-question\"><span data-at=\"260\">Q1: </span></span></span><span class=\"node\" data-at=\"265\" data-to=\"267\"><span class=\"minibuffer-input\"><span data-at=\"266\"><span class=\"cursor primary\"></span></span></span></span><br></div><div class=\"node\" id=\"v4-59\" data-at=\"268\" data-to=\"270\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
+"<div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-60\" data-at=\"258\" data-to=\"271\"><div class=\"minibuffer-prompt\"><span class=\"minibuffer-depth\">[20] </span><div class=\"line\" id=\"v4-58\" data-line=\"20\" data-before=\"0\" data-at=\"259\"><span class=\"node\" data-at=\"259\" data-to=\"265\"><span class=\"minibuffer-question\"><span data-at=\"260\">Q1: </span></span></span><span class=\"node\" data-at=\"265\" data-to=\"267\"><span class=\"minibuffer-input\"><span data-at=\"266\"><span class=\"cursor primary\"></span></span></span></span><br></div><div class=\"node\" id=\"v4-59\" data-at=\"268\" data-to=\"270\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
 > (define order '(7 0 19 3 12 5 18 1 9 14 2 16 6 11 4 17 8 13 10 15))
 > (for-each (lambda (i) (signal-task (list-ref tasks i) (make-message-condition "stop"))) order)
 ! stop
@@ -64,7 +64,7 @@ early
 > (minibuffer:input (prompt))
 ""
 > (html (bar))
-"<div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-67\" data-at=\"1\" data-to=\"17\"><div class=\"minibuffer-prompt\"><span class=\"minibuffer-depth\">[2] </span><div class=\"line\" id=\"v4-65\" data-line=\"1\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"11\"><span class=\"minibuffer-question\"><span data-at=\"3\">Inner: </span></span></span><span class=\"node\" data-at=\"11\" data-to=\"13\"><span class=\"minibuffer-input\"><span data-at=\"12\"><span class=\"cursor primary\"></span></span></span></span><br></div><div class=\"node\" id=\"v4-66\" data-at=\"14\" data-to=\"16\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
+"<div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-67\" data-at=\"1\" data-to=\"17\"><div class=\"minibuffer-prompt\"><span class=\"minibuffer-depth\">[2] </span><div class=\"line\" id=\"v4-65\" data-line=\"1\" data-before=\"0\" data-at=\"2\"><span class=\"node\" data-at=\"2\" data-to=\"11\"><span class=\"minibuffer-question\"><span data-at=\"3\">Inner: </span></span></span><span class=\"node\" data-at=\"11\" data-to=\"13\"><span class=\"minibuffer-input\"><span data-at=\"12\"><span class=\"cursor primary\"></span></span></span></span><br></div><div class=\"node\" id=\"v4-66\" data-at=\"14\" data-to=\"16\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
 > (type! "i")
 > (press! "RET")
 > (result inner)

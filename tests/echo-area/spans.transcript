@@ -3,7 +3,7 @@
 > (parameterize ([echo-area:spans (list (list 6 23 faces:highlight))])
     (echo-area:message! "~a" "total(items: list[Item]) -> Decimal"))
 > (echo-area-element)
-"<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-2\" data-line=\"1\" data-at=\"1\">total(<span data-face=\"highlight\">items: list[Item]</span>) -&gt; Decimal</div></div>"
+"<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-2\" data-line=\"1\" data-before=\"0\" data-at=\"1\">total(<span data-face=\"highlight\">items: list[Item]</span>) -&gt; Decimal</div></div>"
 > (echo-area:current-spans)
 ((6 23 highlight))
 > (messages)

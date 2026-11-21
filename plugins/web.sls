@@ -4,7 +4,7 @@
 ;; The server's threads run this code, so none of it may be a top-level
 ;; definition, which can change under a running thread.
 (module %internals
-  (client-record? client-record-device connected-clients give-screen! call-page start-server! restart-server!
+  (client-record? connected-clients give-screen! call-page ask-and-wait start-server! restart-server!
    stop-server! allow-hosts! refresh-head-files! refresh-upload-handlers! post-start! release-first-screens!
    home-path? valid-name?)
 
@@ -35,22 +35,24 @@
 
   (define busy (list 'busy))
 
-  ;; Only the main thread uses through and removal-timer; the lock guards
-  ;; the other mutable fields.
+  ;; Only the main thread uses through, removal-timer, held and deferred;
+  ;; the lock guards the other mutable fields.
   ;; FIRST is the screen the page carries: #f until a batch draws one,
   ;; and the symbol served once the page has gone with it. TITLE is the
   ;; one the page shows, as far as this plugin knows; #f when it cannot
   ;; know, after the page's stream was opened again.
   (define-record-type (client make-client client-record?)
     (sealed #t)
-    (fields id number (immutable device client-record-device) pending (mutable next) (mutable removed?) (mutable stream)
+    (fields id number pending (mutable next) (mutable removed?) (mutable stream)
             (mutable through) (mutable removal-timer)
-            (mutable last) (mutable count) (mutable in-flight) (mutable sent-at)
-            (mutable waiting) (mutable calls) (mutable links) (mutable scripts-version) (mutable title) (mutable first))
+            (mutable last) (mutable count) (mutable in-flight) (mutable sent-at) (mutable unconfirmed)
+            (mutable waiting) (mutable calls) (mutable links) (mutable scripts-version) (mutable title) (mutable first)
+            (mutable asks) (mutable held) (mutable deferred))
     (protocol
       (lambda (new)
-        (lambda (id number device links scripts-version)
-          (new id number device (make-eqv-hashtable) 1 #f #f 0 #f #f 0 #f 0 #f '() links scripts-version "Tuna" #f)))))
+        (lambda (id number links scripts-version)
+          (new id number (make-eqv-hashtable) 1 #f #f 0 #f #f 0 #f 0 '() #f '() links scripts-version "Tuna" #f
+               '() 0 '())))))
 
   (define-record-type head-file
     (sealed #t)
@@ -90,7 +92,14 @@
   (define files-checked 0)
 
   (define max-held-items 10000)
+
+  (define questions (make-eqv-hashtable))
+  (define last-question 0)
   (define confirmation-wait 1000)
+
+  ;; What the stream library holds for a page that has not read it yet,
+  ;; at most; past it the library fails the stream.
+  (define stream-limit (* 4 1024 1024))
   (define removal-seconds 3600)
   (define heartbeat-seconds 15)
 
@@ -121,6 +130,13 @@
   ;; Caller holds the lock.
   (define (remove-client! c)
     (client-removed?-set! c #t)
+    (let-values ([(ids entries) (hashtable-entries questions)])
+      (vector-for-each
+        (lambda (id e)
+          (when (eq? (car e) c)
+            (hashtable-delete! questions id)
+            ((cdr e) (lambda () #f))))
+        ids entries))
     (hashtable-delete! clients-by-id (client-id c))
     (set! connected (remq c connected))
     (set! opening (remq c opening))
@@ -164,8 +180,18 @@
            (and (fx>= (hashtable-size pending) max-held-items)
                 (begin (remove-client! c) #t))]))))
 
+  ;; While a command waits for its page's answer, the client's later
+  ;; items wait too, so they act on what the command made of the answer;
+  ;; a quit does not wait, so it can stop the command. An item that
+  ;; arrives while earlier ones still wait joins them, since it may run
+  ;; before the task that releases them continues.
   (define (run-item c seq item)
     (with-lock (set! queued (fx- queued 1)))
+    (if (and (or (fx> (client-held c) 0) (pair? (client-deferred c))) (not (eq? (field item "quit") #t)))
+        (client-deferred-set! c (append (client-deferred c) (list (cons seq item))))
+        (handle-in-order c seq item)))
+
+  (define (handle-in-order c seq item)
     (dynamic-wind
       (lambda () (set-idle! #f))
       (lambda ()
@@ -176,6 +202,67 @@
       (lambda ()
         (when (with-lock (fx= queued 0))
           (set-idle! #t)))))
+
+  ;; One task runs the waiting items in order, and stops where one of
+  ;; them asks its page in turn.
+  (define (release-deferred! c)
+    (client-held-set! c (fx- (client-held c) 1))
+    (when (and (fx= (client-held c) 0) (pair? (client-deferred c)))
+      (with-lock (set! queued (fx+ queued 1)))
+      (post-as-web
+        (lambda ()
+          (with-lock (set! queued (fx- queued 1)))
+          (let loop ()
+            (let ([items (client-deferred c)])
+              (when (and (fx= (client-held c) 0) (pair? items))
+                (client-deferred-set! c (cdr items))
+                (handle-in-order c (caar items) (cdar items))
+                (loop))))))))
+
+  ;; The question goes after the screen the batch draws, so the page
+  ;; answers about what the asking command has done so far.
+  (define (ask-and-wait c name value)
+    (let* ([id (begin (set! last-question (fx+ last-question 1)) last-question)]
+           [script (format "tuna.ask(~a, ~s, ~a)" id name (parameterize ([json-escape-html? #t]) (json->string value)))])
+      (client-held-set! c (fx+ (client-held c) 1))
+      (guard (e [#t (with-lock (hashtable-delete! questions id)) (release-deferred! c) (raise e)])
+        (let ([answer (suspend
+                        (lambda (resume)
+                          (unless (with-lock
+                                    (and (client-stream c) (not (client-removed? c))
+                                         (begin
+                                           (hashtable-set! questions id (cons c resume))
+                                           (client-asks-set! c (append (client-asks c) (list script)))
+                                           #t)))
+                            (resume (lambda () #f)))))])
+          (release-deferred! c)
+          answer))))
+
+  ;; Caller holds the lock.
+  (define (send-asks! c)
+    (let ([asks (client-asks c)] [stream (client-stream c)])
+      (client-asks-set! c '())
+      (when stream
+        (for-each
+          (lambda (script)
+            (if (client-waiting c)
+                (client-calls-set! c (cons script (client-calls c)))
+                (enqueue! (lambda () (execute-script stream script)))))
+          asks))))
+
+  (define (answer request)
+    (let ([item (guard (e [(json-error? e) #f]) (bytevector->json (request-body request)))])
+      (when (pair? item)
+        (let ([id (field item "id")] [c (with-lock (client-with-id (field item "client")))])
+          (when (and c (fixnum? id))
+            (let ([resume (with-lock
+                            (let ([e (hashtable-ref questions id #f)])
+                              (and e (eq? (car e) c)
+                                   (begin (hashtable-delete! questions id) (cdr e)))))])
+              (when resume
+                (let ([value (let ([p (assoc "value" item)]) (if p (cdr p) 'null))])
+                  (resume (lambda () value)))))))))
+    no-content)
 
   (define (handle-item c item)
     (let* ([type (field item "type")]
@@ -268,18 +355,52 @@
               [data-init (post (format "/applied?count=~a" n)) "; el.removeAttribute('data-init')"])
         (raw-html content))))
 
-  ;; Caller holds the lock.
+  ;; Datastar's framing adds 16 bytes, its data prefix and a newline, to
+  ;; each line of an event's elements, and about 120 of event name and
+  ;; options before them.
+  (define (event-size content)
+    (let ([n (bytevector-length content)])
+      (let loop ([i 0] [lines 1])
+        (if (fx= i n)
+            (fx+ n 120 (fx* 16 lines))
+            (loop (fx+ i 1) (if (fx= (bytevector-u8-ref content i) 10) (fx+ lines 1) lines))))))
+
+  (define (unconfirmed-bytes c)
+    (fold-left (lambda (sum e) (fx+ sum (cdr e))) 0 (client-unconfirmed c)))
+
+  ;; The lock's holder may not post, so the report goes by the sender.
+  (define (too-large c size)
+    (enqueue!
+      (lambda ()
+        (report-later (condition (make-warning) (make-who-condition 'web)
+                                 (make-message-condition "a screen is larger than the stream's limit, so the page keeps the last")
+                                 (make-irritants-condition (list (client-id c) size stream-limit)))))))
+
+  (define (stream-failed c)
+    (report-later (condition (make-warning) (make-who-condition 'web)
+                             (make-message-condition "the stream to a page failed")
+                             (make-irritants-condition (list (client-id c))))))
+
+  ;; A screen the stream library cannot hold whole would fail the stream,
+  ;; and the page's next stream would be sent the same screen, so it is
+  ;; not sent at all. Caller holds the lock.
   (define (dispatch-screen! c content through now)
-    (let ([n (fx+ (client-count c) 1)] [stream (client-stream c)] [calls (reverse (client-calls c))])
-      (client-count-set! c n)
-      (client-in-flight-set! c n)
-      (client-sent-at-set! c now)
+    (let ([size (event-size content)])
       (client-waiting-set! c #f)
-      (client-calls-set! c '())
-      (enqueue!
-        (lambda ()
-          (patch-elements stream (screen-element n through content))
-          (for-each (lambda (script) (execute-script stream script)) calls)))))
+      (if (fx> size stream-limit)
+          (too-large c size)
+          (let ([n (fx+ (client-count c) 1)] [stream (client-stream c)] [calls (reverse (client-calls c))])
+            (client-count-set! c n)
+            (client-in-flight-set! c n)
+            (client-sent-at-set! c now)
+            (client-unconfirmed-set! c (append (client-unconfirmed c) (list (cons n size))))
+            (client-calls-set! c '())
+            (enqueue!
+              (lambda ()
+                (unless (or (patch-elements stream (screen-element n through content))
+                            (not (with-lock (eq? (client-stream c) stream))))
+                  (stream-failed c))
+                (for-each (lambda (script) (execute-script stream script)) calls)))))))
 
   (define (give-screen! c screen title)
     (let ([content (if (bytevector? screen) screen (html->bytevector screen))]
@@ -298,9 +419,12 @@
             (enqueue! (lambda () (patch-elements stream (title-element title)))))
           (when (and stream (not (and last (bytevector=? content last))))
             (client-last-set! c content)
-            (if (and (client-in-flight c) (fx< (fx- now (client-sent-at c)) confirmation-wait))
+            (if (and (client-in-flight c)
+                     (or (fx< (fx- now (client-sent-at c)) confirmation-wait)
+                         (fx> (fx+ (unconfirmed-bytes c) (event-size content)) stream-limit)))
                 (client-waiting-set! c (cons content through))
-                (dispatch-screen! c content through now)))))))
+                (dispatch-screen! c content through now)))
+          (send-asks! c)))))
 
   (define (applied request)
     (let ([id (signal-client request)]
@@ -309,6 +433,8 @@
                             (and count (string->number (cdr count))))))])
       (with-lock
         (let ([c (client-with-id id)])
+          (when (and c (fixnum? n))
+            (client-unconfirmed-set! c (filter (lambda (e) (fx> (car e) n)) (client-unconfirmed c))))
           (when (and c (eqv? n (client-in-flight c)))
             (client-in-flight-set! c #f)
             (let ([waiting (client-waiting c)])
@@ -336,6 +462,7 @@
       (client-title-set! c #f))
     (client-first-set! c 'served)
     (client-in-flight-set! c #f)
+    (client-unconfirmed-set! c '())
     (client-waiting-set! c #f)
     (client-calls-set! c '())
     (unless (memq c connected)
@@ -629,13 +756,6 @@
   (define page-headers
     '(("content-type" . "text/html; charset=utf-8") ("cache-control" . "no-store")))
 
-  (define (device-id? s)
-    (and (fx= (string-length s) 32)
-         (for-all (lambda (c) (or (char<=? #\0 c #\9) (char<=? #\a c #\f))) (string->list s))))
-
-  ;; Browsers keep a cookie at most 400 days.
-  (define device-cookie-seconds (* 400 24 60 60))
-
   (define first-screen-wait 10)
 
   ;; The page waits for the batch that adds its client, whose end draws
@@ -643,13 +763,10 @@
   ;; runs once every client is drawn.
   (define (page request)
     (if (string=? (request-path request) "/")
-        (let* ([given (let ([e (assoc "tuna-device" (request-cookies request))])
-                        (and e (device-id? (cdr e)) (cdr e)))]
-               [device (or given (random-id))]
-               [id (random-id)]
+        (let* ([id (random-id)]
                [c (with-lock
                     (set! added (fx+ added 1))
-                    (let ([c (make-client id added device links scripts-version)])
+                    (let ([c (make-client id added links scripts-version)])
                       (hashtable-set! clients-by-id id c)
                       (set! opening (cons c opening))
                       c))])
@@ -664,12 +781,7 @@
                           (set! opening (remq c opening))
                           (values (let ([first (client-first c)]) (and (bytevector? first) first)) (client-title c)
                                   script-hrefs early-hrefs))])
-            (response 200
-              (if given
-                  page-headers
-                  (cons (set-cookie-header "tuna-device" device (cookie-path "/") (cookie-http-only)
-                          (cookie-same-site (same-site strict)) (cookie-max-age device-cookie-seconds))
-                        page-headers))
+            (response 200 page-headers
               (html->bytevector (shell id title (client-links c) modules early first)))))
         not-found))
 
@@ -801,12 +913,14 @@
                       (compress (encodings zstd br gzip) (qualities [zstd 9] [br 5] [gzip 1])))
                     (route "/input" (checked input))
                     (route "/applied" (checked applied))
+                    (route "/answer" (checked answer))
                     (route "/upload/" (checked upload))
                     (route "/goodbye" (checked goodbye))
                     (route "/web/" (checked page-file))
                     (route "/files/" (checked served-file))
                     (route "/" (checked page)))))
       (server-options [on-error report-later]
+                      [max-stream-buffer stream-limit]
                       [http1-request-io-timeout (* 4 heartbeat-seconds 1000)])))
 
   (define (current-settings) (list (port) (listen-also) (proxy-secret-file)))
@@ -917,11 +1031,6 @@
 
 (define (client? v) (client-record? v))
 
-(define (client-device client)
-  (unless (client-record? client)
-    (assertion-violation 'web:client-device "not a client" client))
-  (client-record-device client))
-
 (define (send-screen! client screen title)
   (unless (client-record? client)
     (assertion-violation 'web:send-screen! "not a client" client))
@@ -938,6 +1047,18 @@
     (assertion-violation 'web:call-page! "not 1 to 64 letters, digits and hyphens" name))
   (guard (e [(json-error? e) (assertion-violation 'web:call-page! "(json) cannot write it" value)])
     (call-page client name value)))
+
+(define (ask-page client name value)
+  (unless (client-record? client)
+    (assertion-violation 'web:ask-page "not a client" client))
+  (unless (and (string? name)
+               (fx<= 1 (string-length name) 64)
+               (for-all (lambda (c) (or (char<=? #\a c #\z) (char<=? #\A c #\Z) (char<=? #\0 c #\9) (char=? c #\-)))
+                        (string->list name)))
+    (assertion-violation 'web:ask-page "not 1 to 64 letters, digits and hyphens" name))
+  (guard (e [(json-error? e) (assertion-violation 'web:ask-page "(json) cannot write it" value)])
+    (json->string value))
+  (ask-and-wait client name value))
 
 (advice-add! batch-ended
   (lambda (ended)

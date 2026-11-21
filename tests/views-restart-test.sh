@@ -52,7 +52,7 @@ expect "first run" "$output" "4
 #<cursor>"
 
 output=$(run "(define v (views:find 3))
-(list (views:point v) (views:mark v) (map views:cursor-point (views:cursors v)) (views:top v))
+(list (views:point v) (views:mark v) (map views:cursor-point (views:cursors v)) (views:top v #f))
 (list (views:folded? v 20) (call-with-values (lambda () (views:bounds v)) list))
 (views:with-view v (views:wrap-lines))
 (views:find 4)

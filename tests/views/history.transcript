@@ -184,3 +184,15 @@
 > (views:end-preview! text-view)
 > (equal? (list (views:last-point b2) (views:last-point a)) before)
 #t
+; The place kept is the shared position in text: the item at the top
+; and the fraction of it above the edge, which every page puts there
+; again in its own geometry.
+> (define d (buffers:make "d" (lines 300)))
+> (define u (views:make d))
+> (report! desktop u 1 0 #f)
+> (report! desktop u 151 5 #f)
+> (report! desktop u 151 5 #t)
+> (views:set-buffer! u a)
+> (views:set-buffer! u d)
+> (list (placement u desktop) (and (search (html-of u desktop) "data-place-fraction=\"0.25\"" 0) #t))
+((new position 151) #t)

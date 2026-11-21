@@ -447,6 +447,40 @@
 ! editing:delete-backward-char: beginning of buffer
 > (press! "M--" "C-d")
 ! editing:delete-char: beginning of buffer
+; Point stops between grapheme clusters: C-f steps over an e and its
+; combining acute, and over a flag of two regional indicators, in one
+; step. DEL deletes the code point before point, as Emacs's
+; delete-backward-char deletes one character, so the acute typed last
+; goes alone; C-d deletes the whole cluster after point.
+> (start! (string #\a #\e #\x301 #\x1F1EB #\x1F1F7 #\b) 1)
+("aé🇫🇷b" ((1 #f)))
+> (press! "C-f" "C-f")
+> (cursors)
+((4 #f))
+> (press! "C-f")
+> (cursors)
+((6 #f))
+> (press! "C-b" "DEL")
+> (state)
+("ae🇫🇷b" ((3 #f)))
+> (press! "C-d")
+> (state)
+("aeb" ((3 #f)))
+; With buffers:stop-inside-clusters, point also stops between a
+; cluster's code points, as with Emacs's composition-break-at-point.
+> (start! (string #\e #\x301 #\x302 #\x) 1)
+("é̂x" ((1 #f)))
+> (buffers:with-buffer (views:buffer (view)) (set-option-local! buffers:stop-inside-clusters #t))
+> (press! "C-f")
+> (cursors)
+((2 #f))
+> (buffers:with-buffer (views:buffer (view)) (remove-option-local! buffers:stop-inside-clusters))
+> (press! "C-f")
+> (cursors)
+((4 #f))
+> (press! "M-2" "DEL")
+> (state)
+("ex" ((2 #f)))
 > (raised (lambda () (views:with-view (view) (editing:self-insert 1 #f))))
 (editing:self-insert "no character was typed")
 > (raised (lambda () (views:with-view (view) (editing:self-insert 1 "x"))))

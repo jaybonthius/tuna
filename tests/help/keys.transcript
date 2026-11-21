@@ -41,6 +41,8 @@ Honks once.
 ## harpo:mode
 [C-x h]  <harpo:honk>
 ## keys:global
+[C-x <]          <views:scroll-left>
+[C-x >]          <views:scroll-right>
 [C-x o]          <layout:other-view>
 [C-x 0]          <layout:delete-view>
 [C-x 1]          <layout:zoom>

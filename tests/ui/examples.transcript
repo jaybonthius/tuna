@@ -4,7 +4,7 @@
 > (import (files-sidebar))
 > (show! files-sidebar:sidebar)
 > (element (view) "<button" "button")
-"<button class=\"ui-button\" type=\"button\" tabindex=\"-1\"><span data-at=\"2\"><span class=\"cursor primary\"></span>notes.org</span></button>"
+"<button class=\"ui-button\" type=\"button\" tabindex=\"-1\"><span data-at=\"2\"><span class=\"cursor-on primary\">n</span>otes.org</span></button>"
 > (views:set-point! (view) 11)
 > (mouse-in! (view) "down" '(("at" . 4) ("count" . 0)))
 > (views:point (view))

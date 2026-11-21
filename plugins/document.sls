@@ -4,7 +4,7 @@
           document:unit document:offset document:position document:text-position document:line document:line-start
           document:enclosing document:node? document:atom? document:node-kind
           document:node-attribute document:node-start document:node-end document:in-line?
-          document:for-each-child
+          document:for-each-child document:grapheme-boundary?
           document:slice document:open-start document:open-end document:replace document:repeat
           document:same-tokens? document:freeze)
   (import (chezscheme))
@@ -873,6 +873,44 @@
               [(bytevector? item) (decode item (run-index item (fx- p at) (chars-ref s i)))]
               [(eq? item 'close) 'close]
               [else (make-node doc p item)])))))
+
+  ;; The rules of Unicode's grapheme clusters (UAX #29) that can join two
+  ;; code points; a pair no rule joins is always a boundary, so the text
+  ;; before it need not be read.
+  (define (may-join? a b)
+    (let ([pa (char-grapheme-break-property a)] [pb (char-grapheme-break-property b)])
+      (or (and (eq? pa 'CR) (eq? pb 'LF))
+          (and (memq pb '(Extend ZWJ SpacingMark)) #t)
+          (eq? pa 'Prepend)
+          (and (eq? pa 'ZWJ) (char-extended-pictographic? b))
+          (and (eq? pa 'Regional_Indicator) (eq? pb 'Regional_Indicator))
+          (and (eq? pa 'L) (memq pb '(L V LV LVT)) #t)
+          (and (memq pa '(LV V)) (memq pb '(V T)) #t)
+          (and (memq pa '(LVT T)) (eq? pb 'T))
+          (and (eq? (char-indic-break-property b) 'Consonant)
+               (memq (char-indic-break-property a) '(Linker Extend))
+               #t))))
+
+  ;; Below the combining marks, every code point but CR stands alone.
+  (define (lone? c) (and (fx< (char->integer c) #x300) (not (char=? c #\return))))
+
+  (define (document:grapheme-boundary? doc p)
+    (check-document 'document:grapheme-boundary? doc)
+    (check-position 'document:grapheme-boundary? doc p)
+    (let ([n (tree-tokens (document-tree doc))])
+      (or (fx= p 0) (fx= p n)
+          (let ([a (document:token doc (fx- p 1))] [b (document:token doc p)])
+            (or (not (char? a)) (not (char? b)) (and (lone? a) (lone? b)) (not (may-join? a b))
+                (let ([start (let back ([q (fx- p 1)])
+                               (let ([c (and (fx> q 0) (document:token doc (fx- q 1)))])
+                                 (if (and (char? c) (may-join? c (document:token doc q))) (back (fx- q 1)) q)))])
+                  (let step ([q start] [state 0])
+                    (if (fx= q p)
+                        (or (fx= state 0)
+                            (let-values ([(done? next) (char-grapheme-step b state)])
+                              (and done? (not (fx= next 0)))))
+                        (let-values ([(done? next) (char-grapheme-step (document:token doc q) state)])
+                          (step (fx+ q 1) next))))))))))
 
   (define document:text
     (case-lambda

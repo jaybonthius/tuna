@@ -131,7 +131,7 @@ run '(let ([v (layout:selected-view)] [g (files:visit "g.txt")])
   (views:scroll-to! v (views:point v) (views:align bottom)))' > /dev/null
 output=$(run '(wait-until (lambda () (showing? "h.txt")))
 (let* ([v (layout:selected-view)] [doc (buffers:document (views:buffer v))])
-  (list (document:line doc (views:point v)) (document:line doc (views:top v))))' g.txt h.txt)
+  (list (document:line doc (views:point v)) (document:line doc (views:top v #f))))' g.txt h.txt)
 expect "from its start" "$(printf '%s\n' "$output" | grep -v '^configured \|^Tuna is at ')" '(1 1)'
 
 [ "$failures" -eq 0 ] || exit 1

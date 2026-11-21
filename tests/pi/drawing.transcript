@@ -37,7 +37,7 @@
 > (wait-until (lambda () (pair? reconciled)))
 > (sleep-for 0.1)
 > (list (place-kind) (memq 'pi-chat:transcript reconciled) (and (memq 'pi-chat:%item reconciled) #t))
-("follow" #f #t)
+("top" #f #t)
 > (advice-remove! buffers:reconcile! note-reconcile)
 > (say! f (update '(("type" . "thinking_end") ("contentIndex" . 0) ("content" . "Consider *x*")))
         (update '(("type" . "text_start") ("contentIndex" . 1)))

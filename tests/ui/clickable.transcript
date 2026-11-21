@@ -38,7 +38,8 @@
           (if i
               (let* ([start (+ i 13)] [end (let find ([j start]) (if (char=? (string-ref s j) #\") j (find (+ j 1))))]
                      [mark (substring s start end)])
-                (loop end (cons (string->symbol (substring mark (+ 1 (let find ([k 0]) (if (char=? (string-ref mark k) #\space) k (find (+ k 1))))) (string-length mark))) acc)))
+                (loop end (let ([k (let find ([k 0]) (cond [(= k (string-length mark)) #f] [(char=? (string-ref mark k) #\space) k] [else (find (+ k 1))]))])
+                            (if k (cons (string->symbol (substring mark (+ k 1) (string-length mark))) acc) acc))))
               (reverse acc))))))
 > (list (clicks (view)) (marks (view)))
 (() (inert clickable clickable clickable))

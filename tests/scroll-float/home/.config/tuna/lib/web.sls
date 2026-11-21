@@ -27,4 +27,6 @@
 
 (define (call-page! client name value) (void))
 
-(define (client-device client) (number->string (client-number client)))
+;; No page answers a stand-in client.
+(define (ask-page client name value) #f)
+

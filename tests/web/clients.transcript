@@ -98,23 +98,3 @@ Tuna is at http://127.0.0.1:PORT/
 > (wait-until (lambda () (zero? (hashtable-size names))))
 > (hashtable-size names)
 0
-; A browser is a device, told apart by a cookie the page sets when its
-; request has none; a page whose request carries it, as a reload's does,
-; gives its client that device.
-> (define devices '())
-> (add-hook! web:client-added (lambda (client) (set! devices (cons (web:client-device client) devices))))
-> (define r (http:get "/"))
-> (define set (http:header r "set-cookie"))
-> (list (substring set 0 12) (substring set 44 (string-length set)))
-("tuna-device=" "; Path=/; HttpOnly; SameSite=Strict; Max-Age=34560000")
-> (define cookie (substring set 0 44))
-> (define r2 (http:get "/" (list (cons "cookie" cookie))))
-> (http:header r2 "set-cookie")
-#f
-> (wait-until (lambda () (= 2 (length devices))))
-> (list (string=? (car devices) (cadr devices)) (string=? (car devices) (substring cookie 12 44)))
-(#t #t)
-> (string? (http:header (http:get "/" '(("cookie" . "tuna-device=not-one-of-ours"))) "set-cookie"))
-#t
-> (web:client-device 'nobody)
-! web:client-device: not a client with irritant nobody

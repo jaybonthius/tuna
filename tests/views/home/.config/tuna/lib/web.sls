@@ -23,3 +23,6 @@
 (define (clients) '())
 
 (define (call-page! client name value) (void))
+
+;; No page answers a stand-in client.
+(define (ask-page client name value) #f)

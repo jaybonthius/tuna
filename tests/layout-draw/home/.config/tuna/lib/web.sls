@@ -36,7 +36,9 @@
 
 (define (call-page! client name value) (void))
 
-(define (client-device client) (symbol->string (client-name client)))
+
+;; No page answers a stand-in client.
+(define (ask-page client name value) #f)
 
 ;; Layout imports web, so this advice is beneath layout's.
 (define batches 0)

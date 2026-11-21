@@ -24,6 +24,8 @@
 
 (modes:define-major-mode mode (lighter "Pi") (keymap keymap) (hook %mode-hook))
 
+(define (%tail) (set-option-local! views:tail #t))
+
 (define (%refuse-edits node edit) #f)
 
 (define (%attribute node name) (document:node-attribute node name #f))
@@ -708,16 +710,6 @@
           (%measure-items! lengths (buffers:document b) 0 first)))
     (hashtable-set! %written-transcripts b (%make-written new lengths))))
 
-;; Point in the prompt or a question stays in view as Pi writes above it,
-;; as at a terminal's prompt; views follows point only where it is set.
-(define (%follow-prompt! b)
-  (let ([below (document:node-start (%part b 'pi-chat:%dialogs))])
-    (for-each
-      (lambda (v)
-        (when (fx>= (views:point v) below)
-          (views:set-point! v (views:point v))))
-      (views:showing b))))
-
 ;; The conversation is rebuilt from Pi's records, so its rewrites are no
 ;; history of the prompt's.
 (define (%rewrite! chat b)
@@ -729,8 +721,7 @@
     (buffers:reconcile! b (%part b 'pi-chat:%widgets '(placement . below)) (%widget-datums chat 'below))
     (let ([t (%part b 'pi-chat:transcript)])
       (buffers:set-spans! (buffers:layer b %read-only) 0 (document:length (buffers:document b))
-        (list (list (document:node-start t) (document:node-end t) '())))))
-  (%follow-prompt! b))
+        (list (list (document:node-start t) (document:node-end t) '()))))))
 
 (define (%redraw-dirty!)
   (let ([dirty %dirty] [live (pi:chats)])
@@ -1411,6 +1402,8 @@
   (let ([b (%buffer-of chat)])
     (%set-prompt-text! b text)
     (%mark-dirty! chat)))
+
+(add-hook! %mode-hook %tail)
 
 (table-set! slash-commands "/new" (lambda (chat argument) (%new-session chat)))
 (table-set! slash-commands "/name"

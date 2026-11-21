@@ -8,12 +8,12 @@
 > (define w (views:make out))
 > (define end (- (document:length (buffers:document out)) 1))
 > (views:set-point! v end)
-> (list (placement v desktop) (placement v desktop) (views:point w))
-((new follow 4) (same follow 4) 1)
+> (list (list-head (placement v desktop) 2) (list-head (placement v desktop) 2) (views:point w))
+((new follow) (same follow) 1)
 > (buffers:insert! out end "line 4\n")
 29
-> (list (= (views:point v) (+ end 7)) (views:point w) (placement v desktop))
-(#t 1 (new follow 5))
+> (list (= (views:point v) (+ end 7)) (views:point w) (list-head (placement v desktop) 2))
+(#t 1 (same follow))
 ; A rewritten last line, replaced from its start, keeps the point after it.
 > (buffers:replace! out end (+ end 7) "line 4, again\n")
 #<edit 2>
@@ -24,9 +24,21 @@
 > (define plain (buffers:make "plain" (lines 3)))
 > (define u (views:make plain))
 > (views:set-point! u end)
-> (list (placement u desktop) (placement u desktop))
-((new follow 4) (same follow 4))
+> (list (list-head (placement u desktop) 2) (list-head (placement u desktop) 2))
+((new follow) (same follow))
 > (buffers:insert! plain end "line 4\n")
 29
-> (list (= (views:point u) end) (placement u desktop))
-(#t (same follow 4))
+> (list (= (views:point u) end) (list-head (placement u desktop) 2))
+(#t (same follow))
+; A view the hand placed follows point again when text goes in at point,
+; with the option; without it, it stays where the hand left it.
+> (report! desktop v 2 0 #t)
+> (report! desktop u 2 0 #t)
+> (list (list-head (placement v desktop) 2) (list-head (placement u desktop) 2))
+((same position) (same position))
+> (buffers:insert! out (views:point v) "line 6\n")
+43
+> (buffers:insert! plain (views:point u) "line 5\n")
+29
+> (list (list-head (placement v desktop) 2) (list-head (placement u desktop) 2))
+((new follow) (same position))

@@ -80,7 +80,7 @@
       (sleep-for 0.01)
       (loop (+ n 1)))))
 
-(define (faced html)
+(define (faced-text html)
   (let loop ([from 0] [acc '()])
     (let ([i (let find ([i from]) (cond [(> (+ i 11) (string-length html)) #f]
                                        [(string=? (substring html i (+ i 11)) "data-face=\"") i]
@@ -91,6 +91,22 @@
                  [close (let find ([j open]) (if (char=? (string-ref html j) #\<) j (find (+ j 1))))])
             (loop close (cons (list (substring html (+ i 11) name-end) (substring html open close)) acc)))
           (reverse acc)))))
+
+;; A cursor over the character at point is an element of its own, not a
+;; face, so it is read as its text.
+(define (without-cursors html)
+  (let ([o (open-output-string)] [n (string-length html)])
+    (let loop ([i 0])
+      (cond
+        [(>= i n) (get-output-string o)]
+        [(and (<= (+ i 22) n) (string=? (substring html i (+ i 22)) "<span class=\"cursor-on"))
+         (let* ([open (let find ([j i]) (if (char=? (string-ref html j) #\>) (+ j 1) (find (+ j 1))))]
+                [close (let find ([j open]) (if (char=? (string-ref html j) #\<) j (find (+ j 1))))])
+           (put-string o (substring html open close))
+           (loop (+ close 7)))]
+        [else (write-char (string-ref html i) o) (loop (+ i 1))]))))
+
+(define (faced html) (faced-text (without-cursors html)))
 
 (define (drawn c) (faced (html->string (views:draw (view) c))))
 (import (console))

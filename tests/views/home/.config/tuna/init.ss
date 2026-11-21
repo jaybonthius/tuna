@@ -43,16 +43,14 @@
 
 (define (html-of view client) (html->string (views:draw view client)))
 
-(define (decimal-after text needle)
-  (let ([i (search text needle 0)])
-    (and i (let ([from (+ i (string-length needle))])
-             (string->number (substring text from (search text "px" from)))))))
-
+;; The first, last and count of lines drawn, and the lines each spacer
+;; stands for, above and below.
 (define (drawn view client)
-  (let* ([html (html-of view client)] [ls (numbers-after html "data-line=\"")])
-    (list (car ls) (car (reverse ls)) (length ls)
-          (let ([x (decimal-after html "--views-spacer-block-size:")]) (if x (list (exact (round x))) '()))
-          (let ([x (decimal-after html "--views-scroll-sizer-block-size:")]) (if x (list (exact (round x))) '())))))
+  (let* ([html (html-of view client)] [ls (map car (line-marks html))])
+    (define (spacer side)
+      (let ([i (search html (string-append "data-spacer=\"" side "\"") 0)])
+        (if i (list (car (numbers-after (substring html i (search html ">" i)) "data-lines=\""))) '())))
+    (list (car ls) (car (reverse ls)) (length ls) (spacer "above") (spacer "below"))))
 
 (define seen '())
 
@@ -60,9 +58,10 @@
   (let* ([html (html-of view client)] [n (car (numbers-after html "data-placement=\""))]
          [key (cons (views:id view) (web:client-number client))] [last (assoc key seen)]
          [kind (word-after html "data-place-kind=\"")]
-         [at (car (numbers-after html (if (eq? kind 'position) "data-place-item=\"" "data-place-at=\"")))])
+         [at (let ([item (numbers-after html "data-place-item=\"")] [at (numbers-after html "data-place-at=\"")])
+               (cond [(and (memq kind '(top center bottom)) (pair? at)) (car at)] [(pair? item) (car item)] [else #f]))])
     (set! seen (cons (cons key n) seen))
-    (list (if (and last (= (cdr last) n)) 'same 'new) kind (line-of view at))))
+    (list (if (and last (= (cdr last) n)) 'same 'new) kind (and at (line-of view at)))))
 
 (define reports 0)
 
@@ -76,34 +75,39 @@
             (loop close (cons (cons line (if at (list (cons "at" at)) (list (cons "line" line)))) acc)))
           (reverse acc)))))
 
-;; The first and last lines wholly in view keep the configuration's
-;; scroll margin of 2 lines from the edges.
+;; Stands for the page of a view that does not wrap, each line 20 px:
+;; TOP is the line at the top edge and OFFSET the px of it above the
+;; edge. A line that is not drawn lies in a spacer, which names it by
+;; its counts, a line per row. The first and last lines wholly in view
+;; keep the configuration's scroll margin of 2 lines from the edges.
 (define (report! client view top offset settled? . overrides)
   (let* ([html (html-of view client)]
          [marks (line-marks html)]
-         [first (caar marks)] [last (car (car (reverse marks)))]
          [h (height-of client)]
-         [at (lambda (line) (- (* 20 (- line top)) offset))]
-         [spacer (cond [(< top first) "above"] [(> top last) "below"] [else 'null])]
+         [spacer? (not (assv top marks))]
          [whole-from (+ (if (> offset 0.5) (+ top 1) top) 2)]
-         [whole-to (- (let loop ([k top]) (if (<= (+ (at (+ k 1)) 20) (+ h 0.5)) (loop (+ k 1)) k)) 2)])
+         [whole-to (- (+ top (quotient (+ h offset) 20)) 1 2)]
+         [mark (lambda (line) (or (cdr (or (assv line marks) '(#f . #f))) (list (cons "line" line))))])
     (set! reports (+ reports 1))
     ((table-ref web:input-handlers "scroll") client
      (map (lambda (field) (or (assoc (car field) overrides) field))
      `(("type" . "scroll") ("view" . ,(views:id view))
        ("placement" . ,(car (numbers-after html "data-placement=\""))) ("report" . ,reports)
        ("version" . ,(car (numbers-after html "data-version=\"")))
-       ("top" . ,(if (eq? spacer 'null) (cdr (or (assv top marks) (car marks))) 'null)) ("offset" . ,(if (eq? spacer 'null) offset 0))
-       ("itemHeight" . 20) ("left" . 0)
-       ("start" . ,(if (eq? spacer 'null) (list (cons "line" whole-from) (cons "count" 0)) 'null))
-       ("end" . ,(if (eq? spacer 'null) (list (cons "line" (max whole-from whole-to)) (cons "count" 0)) 'null))
-       ("spacer" . ,spacer)
-       ("spacerDistance" . ,(cond [(equal? spacer "above") (at first)] [(equal? spacer "below") (- (+ (at last) 20))] [else 0]))
-       ("below" . ,(max 0 (- (+ (at last) 20) h)))
-       ("items" . ,(list->vector (map (lambda (m) (vector (cdr m) 20)) marks)))
-       ("lineHeight" . 20) ("charWidth" . 10) ("width" . 800) ("height" . ,h)
-       ("settled" . ,settled?) ("hand" . #t)
-       ("runAtEnd" . ,(and (search html "data-run-at-end" 0) #t)))))
+       ("top" . ,(mark top)) ("spacer" . ,spacer?) ("fraction" . ,(/ offset 20))
+       ("left" . ,(mark top)) ("past" . 0) ("sides" . #())
+       ("start" . ,(append (mark whole-from) '(("count" . 0))))
+       ("end" . ,(append (mark (max whole-from whole-to)) '(("count" . 0))))
+       ("atStart" . ,(and (search html "data-run-at-start" 0) (= top 1) (= offset 0) #t))
+       ("atEnd" . ,(and (search html "data-run-at-end" 0) (not (search html "data-spacer=\"below\"" 0))
+                        (>= (+ top (quotient (+ h offset) 20)) (car (car (reverse marks)))) #t))
+       ("columns" . 80) ("rows" . ,(quotient h 20)) ("pointVisible" . #t) ("lost" . #f)
+       ("wanted" . ,(let* ([screens (string->number (let ([i (search html "data-drawn-screens=\"" 0)])
+                                                       (substring html (+ i 20) (search html "\"" (+ i 20)))))]
+                           [lines (+ (exact (ceiling (/ (* screens h) 20))) 1)])
+                      `(("aboveLines" . ,lines) ("aboveChars" . ,(* lines 80)) ("belowLines" . ,lines) ("belowChars" . ,(* lines 80))
+                        ("side" . ,(exact (ceiling (* screens 80)))))))
+       ("settled" . ,settled?) ("hand" . #t) ("edge" . "top"))))
     (void)))
 
 (define (line-of view p) (document:line (buffers:document (views:buffer view)) p))

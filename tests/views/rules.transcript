@@ -69,7 +69,7 @@
 > (list (views:next-stop v 4) (views:previous-stop v 14) (views:next-stop v 3))
 (14 4 4)
 > (show v)
-<div class="view nowrap" id="view-1" data-view="1" data-version="1" data-showing="0" data-placement="*" data-place-kind="follow" data-place-item="1" data-place-at="1" data-base-item="1" data-base-offset="0.0" data-base-height="0.0" data-base-left="0.0" data-scroll-margin="2" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end><div class="view-lines"><div class="line" id="v1-1" data-line="1" data-at="1"><span class="cursor primary"></span>one<span class="fold" data-at="4" data-to="14">…</span>r five six</div><div class="line" id="v1-2" data-line="3">seven</div><div class="line" id="v1-3" data-line="4"><br></div></div></div>
+<div class="view nowrap" id="view-1" data-view="1" data-version="1" data-showing="0" data-placement="*" data-place-kind="follow" data-place-edge="top" data-lead data-scroll-margin="2" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end data-lines="3" data-chars="30"><div class="view-bars" data-preserve-attr="data-shown" aria-hidden="true"><div class="view-scroll-bar" data-scroll-bar="vertical" data-keymap="1" data-preserve-attr="style data-fits data-held"><div class="view-thumb"></div></div></div><div class="view-lines"><div class="line" id="v1-1" data-line="1" data-before="0" data-at="1"><span class="cursor-on primary">o</span>ne<span class="fold" data-at="4" data-to="14">…</span>r five six</div><div class="line" id="v1-2" data-line="3" data-before="24">seven</div><div class="line" id="v1-3" data-line="4" data-before="30"><br></div></div></div>
 > (views:folded? w 9)
 #f
 ; Folds follow edits: text typed before a fold moves it, text typed at
@@ -98,7 +98,7 @@
 > (list (views:folded? v 1) (views:folded? v 2))
 (#f #f)
 > (show v)
-<div class="view nowrap" id="view-1" data-view="1" data-version="4" data-showing="0" data-placement="*" data-place-kind="follow" data-place-item="9" data-place-line="2" data-place-at="17" data-base-item="1" data-base-offset="0.0" data-base-height="0.0" data-base-left="0.0" data-scroll-margin="2" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end><div class="view-lines"><div class="line" id="v1-1" data-line="1" data-at="1">x three</div><div class="line" id="v1-4" data-line="2">four fiv<span class="cursor primary"></span>e six</div><div class="line" id="v1-2" data-line="3">seven</div><div class="line" id="v1-3" data-line="4"><br></div></div></div>
+<div class="view nowrap" id="view-1" data-view="1" data-version="4" data-showing="0" data-placement="*" data-place-kind="follow" data-place-edge="top" data-lead data-scroll-margin="2" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end data-lines="3" data-chars="28"><div class="view-bars" data-preserve-attr="data-shown" aria-hidden="true"><div class="view-scroll-bar" data-scroll-bar="vertical" data-keymap="1" data-preserve-attr="style data-fits data-held"><div class="view-thumb"></div></div></div><div class="view-lines"><div class="line" id="v1-1" data-line="1" data-before="0" data-at="1">x three</div><div class="line" id="v1-4" data-line="2" data-before="8">four fiv<span class="cursor-on primary">e</span> six</div><div class="line" id="v1-2" data-line="3" data-before="22">seven</div><div class="line" id="v1-3" data-line="4" data-before="28"><br></div></div></div>
 ; Narrowing: the view draws and moves only within it; other views see
 ; all; the cursor moves inside.
 > (document:text (buffers:document notes))
@@ -115,7 +115,7 @@
 > (views:point v)
 15
 > (show v)
-<div class="view nowrap" id="view-1" data-view="1" data-version="4" data-showing="0" data-placement="*" data-place-kind="follow" data-place-item="15" data-place-at="15" data-scroll-margin="2" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end><div class="view-lines"><div class="line" id="v1-5" data-line="2" data-at="15"><span class="cursor primary"></span>ive six</div><div class="line" id="v1-2" data-line="3">sev</div></div></div>
+<div class="view nowrap" id="view-1" data-view="1" data-version="4" data-showing="0" data-placement="*" data-place-kind="follow" data-place-edge="top" data-lead data-scroll-margin="2" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end data-lines="1" data-chars="11"><div class="view-bars" data-preserve-attr="data-shown" aria-hidden="true"><div class="view-scroll-bar" data-scroll-bar="vertical" data-keymap="1" data-preserve-attr="style data-fits data-held"><div class="view-thumb"></div></div></div><div class="view-lines"><div class="line" id="v1-5" data-line="2" data-before="0" data-at="15"><span class="cursor-on primary">i</span>ve six</div><div class="line" id="v1-2" data-line="3" data-before="8">sev</div></div></div>
 > (call-with-values (lambda () (views:bounds w)) list)
 (0 30)
 > (buffers:replace! notes 15 15 "x")

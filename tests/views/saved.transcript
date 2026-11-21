@@ -33,7 +33,7 @@
 (new position 2)
 > (list (eq? v v2) (views:find (views:id loose)) (eq? (views:buffer v2) notes))
 (#f #f #t)
-> (list (views:point v2) (views:mark v2) (map views:cursor-point (views:cursors v2)) (views:top v2))
+> (list (views:point v2) (views:mark v2) (map views:cursor-point (views:cursors v2)) (views:top v2 #f))
 (10 3 (10 19) 9)
 > (list (views:folded? v2 15) (call-with-values (lambda () (views:bounds v2)) list))
 (#t (1 20))

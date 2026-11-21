@@ -123,12 +123,13 @@
     (haml (:div.terminal-screen ([data-cursor (if t (symbol->string (%terminal-cursor-style t)) "block")]
                                  [data-keymap (and mouse? (views:keymap-mark mouse-keymap))]
                                  [data-wheel (and (or mouse? (and t (%alternate-scroll? t))) "shift")]
-                                 [data-grid (and mouse? "shift")])
+                                 [data-grid (and mouse? "shift")]
+                                 [data-body-cells])
             (views:draw-children view node)))))
 
 (buffers:define-kind %root (content nodes) (draw %draw-root))
 (buffers:define-kind %scrollback (consent %refuse-edits) (draw %draw-scrollback))
-(buffers:define-kind %screen (consent %refuse-edits) (draw %draw-screen))
+(buffers:define-kind %screen (whole) (consent %refuse-edits) (draw %draw-screen))
 
 (buffers:define-layer %styles (priority 0))
 (buffers:define-layer %cells (priority 1))
@@ -595,21 +596,13 @@
         (fx+ (%row-start t (car cursor)) (%column->index (vector-ref rows (car cursor)) (cdr cursor)))
         (%screen-start t))))
 
-(define (%last-row-start t)
-  (let ([n (vector-length (%terminal-rows t))])
-    (if (fx= n 0) (%screen-start t) (%row-start t (fx- n 1)))))
-
 (define (%following-views t)
   (let ([at (%cursor-position t)])
-    (filter (lambda (v) (fx= (views:point v) at)) (views:showing (%terminal-buffer t)))))
+    (filter (lambda (v) (and (fx= (views:point v) at) (views:following? v))) (views:showing (%terminal-buffer t)))))
 
 (define (%follow! t views)
-  (let ([at (%cursor-position t)] [bottom (%last-row-start t)])
-    (for-each
-      (lambda (v)
-        (views:set-point! v at)
-        (views:scroll-to! v bottom (views:align bottom)))
-      views)))
+  (let ([at (%cursor-position t)])
+    (for-each (lambda (v) (views:set-point! v at)) views)))
 
 (define (%writing? t)
   (and (not (eq? (%terminal-input-mode t) 'copy)) (not (%terminal-held? t))))
@@ -1677,10 +1670,14 @@
   (keys:bind! %link-keymap "<mouse-1>" open-link)
   (keys:bind! %link-keymap "C-<mouse-1>" open-link))
 
+(define (%tail) (set-option-local! views:tail #t))
+
 (modes:define-major-mode mode
   (lighter "Terminal")
   (keymap keymap)
   (hook mode-hook))
+
+(add-hook! mode-hook %tail)
 
 (table-set! modes:minor-modes copy-mode? -30)
 (table-set! modes:minor-modes char-mode? -20)

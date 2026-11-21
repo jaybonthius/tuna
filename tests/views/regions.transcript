@@ -57,11 +57,11 @@
 > (region-in-link 3 40)
 <span class="region eol">Al <span class="node" data-at="25" data-to="31"><a href="https://x"><span data-at="26">beta</span></a></span> gamma.</span>
 > (region-in-link 3 27)
-<span class="region">Al </span><span class="node" data-at="25" data-to="31"><a href="https://x"><span data-at="26"><span class="region">b</span><span class="cursor primary"></span>eta</span></a></span> gamma.
+<span class="region">Al </span><span class="node" data-at="25" data-to="31"><a href="https://x"><span data-at="26"><span class="region">b</span><span class="cursor-on primary">e</span>ta</span></a></span> gamma.
 > (region-in-link 27 40)
 Al <span class="node" data-at="25" data-to="31"><a href="https://x"><span data-at="26">b<span class="region">eta</span></span></a></span><span class="region eol"> gamma.</span>
 > (region-in-link 26 28)
-Al <span class="node" data-at="25" data-to="31"><a href="https://x"><span data-at="26"><span class="region">be</span><span class="cursor primary"></span>ta</span></a></span> gamma.
+Al <span class="node" data-at="25" data-to="31"><a href="https://x"><span data-at="26"><span class="region">be</span><span class="cursor-on primary">t</span>a</span></a></span> gamma.
 ; A line the region holds from its start through its newline is marked
 ; region-line, so the stylesheet fills it to its edges; the first line,
 ; held from its middle, and the last, held only in part, are not.
@@ -102,11 +102,11 @@ Al <span class="node" data-at="25" data-to="31"><a href="https://x"><span data-a
 > (define fv (views:make found))
 > (begin (views:set-mark! fv 3) (views:set-point! fv 20))
 > (line-of fv 1)
-"<span data-face=\"keyword\">fi</span><span class=\"region\"><span data-face=\"keyword\">nd</span> the <span class=\"above-region\" data-face=\"match\">needle</span> her</span><span class=\"cursor primary\"></span>e"
+"<span data-face=\"keyword\">fi</span><span class=\"region\"><span data-face=\"keyword\">nd</span> the <span class=\"above-region\" data-face=\"match\">needle</span> her</span><span class=\"cursor-on primary\">e</span>"
 ; Only a span the region reaches is marked.
 > (begin (views:set-mark! fv 1) (views:set-point! fv 6))
 > (line-of fv 1)
-"<span class=\"region\"><span data-face=\"keyword\">find</span> </span><span class=\"cursor primary\"></span>the <span data-face=\"match\">needle</span> here"
+"<span class=\"region\"><span data-face=\"keyword\">find</span> </span><span class=\"cursor-on primary\">t</span>he <span data-face=\"match\">needle</span> here"
 ; views:region-ranges gives the ranges a cursor's region draws. Advised
 ; to give each line its piece between point's and mark's columns, the
 ; region is a rectangle, and holds no line through its newline.
