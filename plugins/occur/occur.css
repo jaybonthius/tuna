@@ -1,10 +1,18 @@
 @layer defaults, themes, preferences;
 
-@layer defaults {
+@layer defaults.faces {
   [data-face="occur.match"] {
-    background: var(--occur-match-background, var(--tuna-match));
+    color: var(--occur-match-color, revert-layer);
+    background-color: var(--occur-match-background, var(--tuna-match));
+    font-weight: var(--occur-match-font-weight, revert-layer);
+    font-style: var(--occur-match-font-style, revert-layer);
+    font-family: var(--occur-match-font-family, revert-layer);
+    font-size: var(--occur-match-font-size, revert-layer);
+    text-decoration: var(--occur-match-text-decoration, revert-layer);
   }
+}
 
+@layer defaults {
   .occur-heading {
     text-decoration: underline;
   }

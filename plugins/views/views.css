@@ -244,12 +244,6 @@
     background-color: var(--tuna-region, Highlight);
   }
 
-  /* With no specificity, so a span above the region keeps a background
-     its face gives it, as a search match shows over Emacs's region. */
-  :where(.region .above-region:not(.above-region .above-region)) {
-    background-color: var(--tuna-region, Highlight);
-  }
-
   /* A line the region holds through its newline is filled to its edges,
      so lines join whatever their fonts, as Emacs extends the region
      face to the window's edge. */

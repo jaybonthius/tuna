@@ -1,23 +1,168 @@
 @layer defaults, themes, preferences;
 
-@layer defaults {
-  [data-face="ansi-colors.black"] { color: var(--ansi-colors-black-color, var(--tuna-gray-12)); }
-  [data-face="ansi-colors.red"] { color: var(--ansi-colors-red-color, var(--tuna-red-11)); }
-  [data-face="ansi-colors.green"] { color: var(--ansi-colors-green-color, var(--tuna-green-11)); }
-  [data-face="ansi-colors.yellow"] { color: var(--ansi-colors-yellow-color, var(--tuna-yellow-11)); }
-  [data-face="ansi-colors.blue"] { color: var(--ansi-colors-blue-color, var(--tuna-blue-11)); }
-  [data-face="ansi-colors.magenta"] { color: var(--ansi-colors-magenta-color, var(--tuna-purple-11)); }
-  [data-face="ansi-colors.cyan"] { color: var(--ansi-colors-cyan-color, var(--tuna-cyan-11)); }
-  [data-face="ansi-colors.white"] { color: var(--ansi-colors-white-color, var(--tuna-gray-11)); }
-  [data-face="ansi-colors.bright-black"] { color: var(--ansi-colors-bright-black-color, var(--tuna-gray-10)); }
-  [data-face="ansi-colors.bright-red"] { color: var(--ansi-colors-bright-red-color, var(--tuna-red-9)); }
-  [data-face="ansi-colors.bright-green"] { color: var(--ansi-colors-bright-green-color, var(--tuna-green-9)); }
-  [data-face="ansi-colors.bright-yellow"] { color: var(--ansi-colors-bright-yellow-color, var(--tuna-yellow-9)); }
-  [data-face="ansi-colors.bright-blue"] { color: var(--ansi-colors-bright-blue-color, var(--tuna-blue-9)); }
-  [data-face="ansi-colors.bright-magenta"] { color: var(--ansi-colors-bright-magenta-color, var(--tuna-purple-9)); }
-  [data-face="ansi-colors.bright-cyan"] { color: var(--ansi-colors-bright-cyan-color, var(--tuna-cyan-9)); }
-  [data-face="ansi-colors.bright-white"] { color: var(--ansi-colors-bright-white-color, var(--tuna-gray-12)); }
+@layer defaults.faces {
+  [data-face="ansi-colors.black"] {
+    color: var(--ansi-colors-black-color, var(--tuna-gray-12));
+    background-color: var(--ansi-colors-black-background, revert-layer);
+    font-weight: var(--ansi-colors-black-font-weight, revert-layer);
+    font-style: var(--ansi-colors-black-font-style, revert-layer);
+    font-family: var(--ansi-colors-black-font-family, revert-layer);
+    font-size: var(--ansi-colors-black-font-size, revert-layer);
+    text-decoration: var(--ansi-colors-black-text-decoration, revert-layer);
+  }
 
+  [data-face="ansi-colors.red"] {
+    color: var(--ansi-colors-red-color, var(--tuna-red-11));
+    background-color: var(--ansi-colors-red-background, revert-layer);
+    font-weight: var(--ansi-colors-red-font-weight, revert-layer);
+    font-style: var(--ansi-colors-red-font-style, revert-layer);
+    font-family: var(--ansi-colors-red-font-family, revert-layer);
+    font-size: var(--ansi-colors-red-font-size, revert-layer);
+    text-decoration: var(--ansi-colors-red-text-decoration, revert-layer);
+  }
+
+  [data-face="ansi-colors.green"] {
+    color: var(--ansi-colors-green-color, var(--tuna-green-11));
+    background-color: var(--ansi-colors-green-background, revert-layer);
+    font-weight: var(--ansi-colors-green-font-weight, revert-layer);
+    font-style: var(--ansi-colors-green-font-style, revert-layer);
+    font-family: var(--ansi-colors-green-font-family, revert-layer);
+    font-size: var(--ansi-colors-green-font-size, revert-layer);
+    text-decoration: var(--ansi-colors-green-text-decoration, revert-layer);
+  }
+
+  [data-face="ansi-colors.yellow"] {
+    color: var(--ansi-colors-yellow-color, var(--tuna-yellow-11));
+    background-color: var(--ansi-colors-yellow-background, revert-layer);
+    font-weight: var(--ansi-colors-yellow-font-weight, revert-layer);
+    font-style: var(--ansi-colors-yellow-font-style, revert-layer);
+    font-family: var(--ansi-colors-yellow-font-family, revert-layer);
+    font-size: var(--ansi-colors-yellow-font-size, revert-layer);
+    text-decoration: var(--ansi-colors-yellow-text-decoration, revert-layer);
+  }
+
+  [data-face="ansi-colors.blue"] {
+    color: var(--ansi-colors-blue-color, var(--tuna-blue-11));
+    background-color: var(--ansi-colors-blue-background, revert-layer);
+    font-weight: var(--ansi-colors-blue-font-weight, revert-layer);
+    font-style: var(--ansi-colors-blue-font-style, revert-layer);
+    font-family: var(--ansi-colors-blue-font-family, revert-layer);
+    font-size: var(--ansi-colors-blue-font-size, revert-layer);
+    text-decoration: var(--ansi-colors-blue-text-decoration, revert-layer);
+  }
+
+  [data-face="ansi-colors.magenta"] {
+    color: var(--ansi-colors-magenta-color, var(--tuna-purple-11));
+    background-color: var(--ansi-colors-magenta-background, revert-layer);
+    font-weight: var(--ansi-colors-magenta-font-weight, revert-layer);
+    font-style: var(--ansi-colors-magenta-font-style, revert-layer);
+    font-family: var(--ansi-colors-magenta-font-family, revert-layer);
+    font-size: var(--ansi-colors-magenta-font-size, revert-layer);
+    text-decoration: var(--ansi-colors-magenta-text-decoration, revert-layer);
+  }
+
+  [data-face="ansi-colors.cyan"] {
+    color: var(--ansi-colors-cyan-color, var(--tuna-cyan-11));
+    background-color: var(--ansi-colors-cyan-background, revert-layer);
+    font-weight: var(--ansi-colors-cyan-font-weight, revert-layer);
+    font-style: var(--ansi-colors-cyan-font-style, revert-layer);
+    font-family: var(--ansi-colors-cyan-font-family, revert-layer);
+    font-size: var(--ansi-colors-cyan-font-size, revert-layer);
+    text-decoration: var(--ansi-colors-cyan-text-decoration, revert-layer);
+  }
+
+  [data-face="ansi-colors.white"] {
+    color: var(--ansi-colors-white-color, var(--tuna-gray-11));
+    background-color: var(--ansi-colors-white-background, revert-layer);
+    font-weight: var(--ansi-colors-white-font-weight, revert-layer);
+    font-style: var(--ansi-colors-white-font-style, revert-layer);
+    font-family: var(--ansi-colors-white-font-family, revert-layer);
+    font-size: var(--ansi-colors-white-font-size, revert-layer);
+    text-decoration: var(--ansi-colors-white-text-decoration, revert-layer);
+  }
+
+  [data-face="ansi-colors.bright-black"] {
+    color: var(--ansi-colors-bright-black-color, var(--tuna-gray-10));
+    background-color: var(--ansi-colors-bright-black-background, revert-layer);
+    font-weight: var(--ansi-colors-bright-black-font-weight, revert-layer);
+    font-style: var(--ansi-colors-bright-black-font-style, revert-layer);
+    font-family: var(--ansi-colors-bright-black-font-family, revert-layer);
+    font-size: var(--ansi-colors-bright-black-font-size, revert-layer);
+    text-decoration: var(--ansi-colors-bright-black-text-decoration, revert-layer);
+  }
+
+  [data-face="ansi-colors.bright-red"] {
+    color: var(--ansi-colors-bright-red-color, var(--tuna-red-9));
+    background-color: var(--ansi-colors-bright-red-background, revert-layer);
+    font-weight: var(--ansi-colors-bright-red-font-weight, revert-layer);
+    font-style: var(--ansi-colors-bright-red-font-style, revert-layer);
+    font-family: var(--ansi-colors-bright-red-font-family, revert-layer);
+    font-size: var(--ansi-colors-bright-red-font-size, revert-layer);
+    text-decoration: var(--ansi-colors-bright-red-text-decoration, revert-layer);
+  }
+
+  [data-face="ansi-colors.bright-green"] {
+    color: var(--ansi-colors-bright-green-color, var(--tuna-green-9));
+    background-color: var(--ansi-colors-bright-green-background, revert-layer);
+    font-weight: var(--ansi-colors-bright-green-font-weight, revert-layer);
+    font-style: var(--ansi-colors-bright-green-font-style, revert-layer);
+    font-family: var(--ansi-colors-bright-green-font-family, revert-layer);
+    font-size: var(--ansi-colors-bright-green-font-size, revert-layer);
+    text-decoration: var(--ansi-colors-bright-green-text-decoration, revert-layer);
+  }
+
+  [data-face="ansi-colors.bright-yellow"] {
+    color: var(--ansi-colors-bright-yellow-color, var(--tuna-yellow-9));
+    background-color: var(--ansi-colors-bright-yellow-background, revert-layer);
+    font-weight: var(--ansi-colors-bright-yellow-font-weight, revert-layer);
+    font-style: var(--ansi-colors-bright-yellow-font-style, revert-layer);
+    font-family: var(--ansi-colors-bright-yellow-font-family, revert-layer);
+    font-size: var(--ansi-colors-bright-yellow-font-size, revert-layer);
+    text-decoration: var(--ansi-colors-bright-yellow-text-decoration, revert-layer);
+  }
+
+  [data-face="ansi-colors.bright-blue"] {
+    color: var(--ansi-colors-bright-blue-color, var(--tuna-blue-9));
+    background-color: var(--ansi-colors-bright-blue-background, revert-layer);
+    font-weight: var(--ansi-colors-bright-blue-font-weight, revert-layer);
+    font-style: var(--ansi-colors-bright-blue-font-style, revert-layer);
+    font-family: var(--ansi-colors-bright-blue-font-family, revert-layer);
+    font-size: var(--ansi-colors-bright-blue-font-size, revert-layer);
+    text-decoration: var(--ansi-colors-bright-blue-text-decoration, revert-layer);
+  }
+
+  [data-face="ansi-colors.bright-magenta"] {
+    color: var(--ansi-colors-bright-magenta-color, var(--tuna-purple-9));
+    background-color: var(--ansi-colors-bright-magenta-background, revert-layer);
+    font-weight: var(--ansi-colors-bright-magenta-font-weight, revert-layer);
+    font-style: var(--ansi-colors-bright-magenta-font-style, revert-layer);
+    font-family: var(--ansi-colors-bright-magenta-font-family, revert-layer);
+    font-size: var(--ansi-colors-bright-magenta-font-size, revert-layer);
+    text-decoration: var(--ansi-colors-bright-magenta-text-decoration, revert-layer);
+  }
+
+  [data-face="ansi-colors.bright-cyan"] {
+    color: var(--ansi-colors-bright-cyan-color, var(--tuna-cyan-9));
+    background-color: var(--ansi-colors-bright-cyan-background, revert-layer);
+    font-weight: var(--ansi-colors-bright-cyan-font-weight, revert-layer);
+    font-style: var(--ansi-colors-bright-cyan-font-style, revert-layer);
+    font-family: var(--ansi-colors-bright-cyan-font-family, revert-layer);
+    font-size: var(--ansi-colors-bright-cyan-font-size, revert-layer);
+    text-decoration: var(--ansi-colors-bright-cyan-text-decoration, revert-layer);
+  }
+
+  [data-face="ansi-colors.bright-white"] {
+    color: var(--ansi-colors-bright-white-color, var(--tuna-gray-12));
+    background-color: var(--ansi-colors-bright-white-background, revert-layer);
+    font-weight: var(--ansi-colors-bright-white-font-weight, revert-layer);
+    font-style: var(--ansi-colors-bright-white-font-style, revert-layer);
+    font-family: var(--ansi-colors-bright-white-font-family, revert-layer);
+    font-size: var(--ansi-colors-bright-white-font-size, revert-layer);
+    text-decoration: var(--ansi-colors-bright-white-text-decoration, revert-layer);
+  }
+}
+
+@layer defaults {
   [data-ansi-colors~="bg-0"] { background-color: var(--ansi-colors-black-color, var(--tuna-gray-12)); }
   [data-ansi-colors~="bg-1"] { background-color: var(--ansi-colors-red-color, var(--tuna-red-11)); }
   [data-ansi-colors~="bg-2"] { background-color: var(--ansi-colors-green-color, var(--tuna-green-11)); }

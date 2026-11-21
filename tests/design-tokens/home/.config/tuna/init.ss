@@ -213,11 +213,18 @@
 
 (define faces-css (library-file "faces/faces.css"))
 
+;; Faint text is meant for the page alone, where a pair of its own
+;; checks it.
 (define face-colours
-  (map (lambda (i)
-         (let* ([from (+ (search faces-css ", var(--tuna-" i) (string-length ", var(--tuna-"))])
-           (substring faces-css from (search faces-css ")" from))))
-       (occurrences faces-css "var(--faces-")))
+  (fold-right
+    (lambda (i acc)
+      (let* ([end (search faces-css ";" i)]
+             [at (search faces-css "var(--tuna-" i)])
+        (if (and at (< at end))
+            (let ([name (substring faces-css (+ at 11) (search faces-css ")" at))])
+              (if (or (member name acc) (string=? name "text-faint")) acc (cons name acc)))
+            acc)))
+    '() (occurrences faces-css "\n    color: var(--faces-")))
 
 (define pairs
   (append
@@ -322,9 +329,24 @@
 (define (unknown-in-theme)
   (filter (lambda (d) (and (prefix? "--tuna-" (car d)) (not (assoc (car d) tokens)))) modus-mapping))
 
+;; Modus's two options are variables the user declares, so the theme
+;; reads them undeclared; its bold faces read the bold weight's token.
 (define (unset-by-modus)
-  (filter (lambda (r) (not (assoc r modus-colours)))
+  (filter (lambda (r) (not (or (assoc r modus-colours)
+                               (member r '("--modus-bold-constructs" "--modus-italic-constructs" "--tuna-font-weight-bold")))))
           (apply append (map (lambda (d) (token-references (cdr d))) modus-mapping))))
+
+(define (modus-declares? name) (and (search modus-css (string-append name ":") 0) #t))
+
+(define (modus-colour-of token mode)
+  (let* ([value (cdr (assoc token modus-mapping))]
+         [pair (hex-colours (cdr (assoc (car (token-references value)) modus-colours)))])
+    (string-append "#" (if (eq? mode 'dark) (cadr pair) (car pair)))))
+
+(define (modus-attributes suffix)
+  (filter (lambda (d) (let ([n (string-length (car d))] [m (string-length suffix)])
+                        (and (> n m) (string=? (substring (car d) (- n m) n) suffix))))
+          modus-mapping))
 
 (define colour-semantic-names
   (filter (lambda (n) (not (or (prefix? "font-" n) (prefix? "line-height" n) (member n '("control-radius" "panel-radius" "border-width" "focus-width" "shadow-raised" "bar-size" "control-size" "duration" "ease" "line-height-code")))))

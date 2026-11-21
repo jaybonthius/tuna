@@ -1,11 +1,23 @@
 @layer defaults, themes, preferences;
 
-@layer defaults {
+@layer defaults.faces {
   [data-face="search.group-1"] {
-    background: var(--search-group-1-background, var(--tuna-blue-5));
+    color: var(--search-group-1-color, revert-layer);
+    background-color: var(--search-group-1-background, var(--tuna-blue-5));
+    font-weight: var(--search-group-1-font-weight, revert-layer);
+    font-style: var(--search-group-1-font-style, revert-layer);
+    font-family: var(--search-group-1-font-family, revert-layer);
+    font-size: var(--search-group-1-font-size, revert-layer);
+    text-decoration: var(--search-group-1-text-decoration, revert-layer);
   }
 
   [data-face="search.group-2"] {
-    background: var(--search-group-2-background, var(--tuna-green-5));
+    color: var(--search-group-2-color, revert-layer);
+    background-color: var(--search-group-2-background, var(--tuna-green-5));
+    font-weight: var(--search-group-2-font-weight, revert-layer);
+    font-style: var(--search-group-2-font-style, revert-layer);
+    font-family: var(--search-group-2-font-family, revert-layer);
+    font-size: var(--search-group-2-font-size, revert-layer);
+    text-decoration: var(--search-group-2-text-decoration, revert-layer);
   }
 }

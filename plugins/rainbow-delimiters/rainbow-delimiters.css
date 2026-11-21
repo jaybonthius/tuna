@@ -1,53 +1,115 @@
 @layer defaults, themes, preferences;
 
-@layer defaults {
+@layer defaults.faces {
   [data-face="rainbow-delimiters.depth-1"] {
     color: var(--rainbow-delimiters-depth-1-color, var(--tuna-text));
+    background-color: var(--rainbow-delimiters-depth-1-background, revert-layer);
+    font-weight: var(--rainbow-delimiters-depth-1-font-weight, revert-layer);
+    font-style: var(--rainbow-delimiters-depth-1-font-style, revert-layer);
+    font-family: var(--rainbow-delimiters-depth-1-font-family, revert-layer);
+    font-size: var(--rainbow-delimiters-depth-1-font-size, revert-layer);
+    text-decoration: var(--rainbow-delimiters-depth-1-text-decoration, revert-layer);
   }
 
   [data-face="rainbow-delimiters.depth-2"] {
     color: var(--rainbow-delimiters-depth-2-color, var(--tuna-pink-11));
+    background-color: var(--rainbow-delimiters-depth-2-background, revert-layer);
+    font-weight: var(--rainbow-delimiters-depth-2-font-weight, revert-layer);
+    font-style: var(--rainbow-delimiters-depth-2-font-style, revert-layer);
+    font-family: var(--rainbow-delimiters-depth-2-font-family, revert-layer);
+    font-size: var(--rainbow-delimiters-depth-2-font-size, revert-layer);
+    text-decoration: var(--rainbow-delimiters-depth-2-text-decoration, revert-layer);
   }
 
   [data-face="rainbow-delimiters.depth-3"] {
     color: var(--rainbow-delimiters-depth-3-color, var(--tuna-cyan-11));
+    background-color: var(--rainbow-delimiters-depth-3-background, revert-layer);
+    font-weight: var(--rainbow-delimiters-depth-3-font-weight, revert-layer);
+    font-style: var(--rainbow-delimiters-depth-3-font-style, revert-layer);
+    font-family: var(--rainbow-delimiters-depth-3-font-family, revert-layer);
+    font-size: var(--rainbow-delimiters-depth-3-font-size, revert-layer);
+    text-decoration: var(--rainbow-delimiters-depth-3-text-decoration, revert-layer);
   }
 
   [data-face="rainbow-delimiters.depth-4"] {
     color: var(--rainbow-delimiters-depth-4-color, var(--tuna-orange-11));
+    background-color: var(--rainbow-delimiters-depth-4-background, revert-layer);
+    font-weight: var(--rainbow-delimiters-depth-4-font-weight, revert-layer);
+    font-style: var(--rainbow-delimiters-depth-4-font-style, revert-layer);
+    font-family: var(--rainbow-delimiters-depth-4-font-family, revert-layer);
+    font-size: var(--rainbow-delimiters-depth-4-font-size, revert-layer);
+    text-decoration: var(--rainbow-delimiters-depth-4-text-decoration, revert-layer);
   }
 
   [data-face="rainbow-delimiters.depth-5"] {
     color: var(--rainbow-delimiters-depth-5-color, var(--tuna-yellow-11));
+    background-color: var(--rainbow-delimiters-depth-5-background, revert-layer);
+    font-weight: var(--rainbow-delimiters-depth-5-font-weight, revert-layer);
+    font-style: var(--rainbow-delimiters-depth-5-font-style, revert-layer);
+    font-family: var(--rainbow-delimiters-depth-5-font-family, revert-layer);
+    font-size: var(--rainbow-delimiters-depth-5-font-size, revert-layer);
+    text-decoration: var(--rainbow-delimiters-depth-5-text-decoration, revert-layer);
   }
 
   [data-face="rainbow-delimiters.depth-6"] {
     color: var(--rainbow-delimiters-depth-6-color, var(--tuna-violet-11));
+    background-color: var(--rainbow-delimiters-depth-6-background, revert-layer);
+    font-weight: var(--rainbow-delimiters-depth-6-font-weight, revert-layer);
+    font-style: var(--rainbow-delimiters-depth-6-font-style, revert-layer);
+    font-family: var(--rainbow-delimiters-depth-6-font-family, revert-layer);
+    font-size: var(--rainbow-delimiters-depth-6-font-size, revert-layer);
+    text-decoration: var(--rainbow-delimiters-depth-6-text-decoration, revert-layer);
   }
 
   [data-face="rainbow-delimiters.depth-7"] {
     color: var(--rainbow-delimiters-depth-7-color, var(--tuna-green-11));
+    background-color: var(--rainbow-delimiters-depth-7-background, revert-layer);
+    font-weight: var(--rainbow-delimiters-depth-7-font-weight, revert-layer);
+    font-style: var(--rainbow-delimiters-depth-7-font-style, revert-layer);
+    font-family: var(--rainbow-delimiters-depth-7-font-family, revert-layer);
+    font-size: var(--rainbow-delimiters-depth-7-font-size, revert-layer);
+    text-decoration: var(--rainbow-delimiters-depth-7-text-decoration, revert-layer);
   }
 
   [data-face="rainbow-delimiters.depth-8"] {
     color: var(--rainbow-delimiters-depth-8-color, var(--tuna-indigo-11));
+    background-color: var(--rainbow-delimiters-depth-8-background, revert-layer);
+    font-weight: var(--rainbow-delimiters-depth-8-font-weight, revert-layer);
+    font-style: var(--rainbow-delimiters-depth-8-font-style, revert-layer);
+    font-family: var(--rainbow-delimiters-depth-8-font-family, revert-layer);
+    font-size: var(--rainbow-delimiters-depth-8-font-size, revert-layer);
+    text-decoration: var(--rainbow-delimiters-depth-8-text-decoration, revert-layer);
   }
 
   [data-face="rainbow-delimiters.depth-9"] {
     color: var(--rainbow-delimiters-depth-9-color, var(--tuna-purple-11));
+    background-color: var(--rainbow-delimiters-depth-9-background, revert-layer);
+    font-weight: var(--rainbow-delimiters-depth-9-font-weight, revert-layer);
+    font-style: var(--rainbow-delimiters-depth-9-font-style, revert-layer);
+    font-family: var(--rainbow-delimiters-depth-9-font-family, revert-layer);
+    font-size: var(--rainbow-delimiters-depth-9-font-size, revert-layer);
+    text-decoration: var(--rainbow-delimiters-depth-9-text-decoration, revert-layer);
   }
 
   /* Weight marks a bracket in error where its colour is not seen. */
   [data-face="rainbow-delimiters.unmatched"] {
-    background: var(--rainbow-delimiters-unmatched-background, var(--tuna-error-surface));
     color: var(--rainbow-delimiters-unmatched-color, var(--tuna-error));
-    font-weight: var(--tuna-font-weight-bold);
+    background-color: var(--rainbow-delimiters-unmatched-background, var(--tuna-error-surface));
+    font-weight: var(--rainbow-delimiters-unmatched-font-weight, var(--tuna-font-weight-bold));
+    font-style: var(--rainbow-delimiters-unmatched-font-style, revert-layer);
+    font-family: var(--rainbow-delimiters-unmatched-font-family, revert-layer);
+    font-size: var(--rainbow-delimiters-unmatched-font-size, revert-layer);
+    text-decoration: var(--rainbow-delimiters-unmatched-text-decoration, revert-layer);
   }
 
   [data-face="rainbow-delimiters.mismatched"] {
-    background: var(--rainbow-delimiters-mismatched-background, var(--tuna-warning-surface));
     color: var(--rainbow-delimiters-mismatched-color, var(--tuna-warning));
-    font-weight: var(--tuna-font-weight-bold);
+    background-color: var(--rainbow-delimiters-mismatched-background, var(--tuna-warning-surface));
+    font-weight: var(--rainbow-delimiters-mismatched-font-weight, var(--tuna-font-weight-bold));
+    font-style: var(--rainbow-delimiters-mismatched-font-style, revert-layer);
+    font-family: var(--rainbow-delimiters-mismatched-font-family, revert-layer);
+    font-size: var(--rainbow-delimiters-mismatched-font-size, revert-layer);
+    text-decoration: var(--rainbow-delimiters-mismatched-text-decoration, revert-layer);
   }
 }
 

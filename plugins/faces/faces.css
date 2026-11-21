@@ -1,224 +1,821 @@
 @layer defaults, themes, preferences;
 
-/* A family's descendants are matched inside :where(), so a rule for an
+/* Face rules sit in a sub-layer of defaults, so a plugin's own rule on an
+   element that carries a face beats the face whatever its specificity,
+   and the face fills only what the plugin leaves. A property with no
+   token or default ends in revert-layer, which leaves the element what
+   the browser gives it, such as a strong element's weight; a var() with
+   no fallback would be unset and drop that too.
+
+   A family's descendants are matched inside :where(), so a rule for an
    exact child name beats the family wherever it appears. A grandchild
    matches two such families, so a child family follows its parent's. */
-@layer defaults {
-  [data-face="comment"], :where([data-face^="comment."]) {
-    color: var(--faces-comment-color, var(--tuna-gray-11));
+@layer defaults.faces {
+  /* Outside :where(), so a .builtin name no plugin defines looks like
+     the builtins rather than its family; first, so the named .builtin
+     faces, of the same specificity, win over it. */
+  [data-face$=".builtin"] {
+    color: var(--faces-builtin-color, var(--tuna-cyan-11));
+    background-color: var(--faces-builtin-background, revert-layer);
+    font-weight: var(--faces-builtin-font-weight, revert-layer);
+    font-style: var(--faces-builtin-font-style, revert-layer);
+    font-family: var(--faces-builtin-font-family, revert-layer);
+    font-size: var(--faces-builtin-font-size, revert-layer);
+    text-decoration: var(--faces-builtin-text-decoration, revert-layer);
   }
 
-  [data-face="comment.documentation"], :where([data-face^="comment.documentation."]),
-  [data-face="string.documentation"], :where([data-face^="string.documentation."]) {
+  [data-face="comment"], :where([data-face^="comment."]) {
+    color: var(--faces-comment-color, var(--tuna-gray-11));
+    background-color: var(--faces-comment-background, revert-layer);
+    font-weight: var(--faces-comment-font-weight, revert-layer);
+    font-style: var(--faces-comment-font-style, revert-layer);
+    font-family: var(--faces-comment-font-family, revert-layer);
+    font-size: var(--faces-comment-font-size, revert-layer);
+    text-decoration: var(--faces-comment-text-decoration, revert-layer);
+  }
+
+  [data-face="comment.documentation"], :where([data-face^="comment.documentation."]) {
     color: var(--faces-comment-documentation-color, var(--tuna-green-11));
+    background-color: var(--faces-comment-documentation-background, var(--faces-comment-background, revert-layer));
+    font-weight: var(--faces-comment-documentation-font-weight, var(--faces-comment-font-weight, revert-layer));
+    font-style: var(--faces-comment-documentation-font-style, var(--faces-comment-font-style, revert-layer));
+    font-family: var(--faces-comment-documentation-font-family, var(--faces-comment-font-family, revert-layer));
+    font-size: var(--faces-comment-documentation-font-size, var(--faces-comment-font-size, revert-layer));
+    text-decoration: var(--faces-comment-documentation-text-decoration, var(--faces-comment-text-decoration, revert-layer));
   }
 
   [data-face="string"], :where([data-face^="string."]) {
     color: var(--faces-string-color, var(--tuna-green-11));
+    background-color: var(--faces-string-background, revert-layer);
+    font-weight: var(--faces-string-font-weight, revert-layer);
+    font-style: var(--faces-string-font-style, revert-layer);
+    font-family: var(--faces-string-font-family, revert-layer);
+    font-size: var(--faces-string-font-size, revert-layer);
+    text-decoration: var(--faces-string-text-decoration, revert-layer);
   }
 
   [data-face="string.escape"], :where([data-face^="string.escape."]) {
     color: var(--faces-string-escape-color, var(--tuna-amber-11));
+    background-color: var(--faces-string-escape-background, var(--faces-string-background, revert-layer));
+    font-weight: var(--faces-string-escape-font-weight, var(--faces-string-font-weight, revert-layer));
+    font-style: var(--faces-string-escape-font-style, var(--faces-string-font-style, revert-layer));
+    font-family: var(--faces-string-escape-font-family, var(--faces-string-font-family, revert-layer));
+    font-size: var(--faces-string-escape-font-size, var(--faces-string-font-size, revert-layer));
+    text-decoration: var(--faces-string-escape-text-decoration, var(--faces-string-text-decoration, revert-layer));
   }
 
   [data-face="string.regexp"], :where([data-face^="string.regexp."]) {
     color: var(--faces-string-regexp-color, var(--tuna-orange-11));
+    background-color: var(--faces-string-regexp-background, var(--faces-string-background, revert-layer));
+    font-weight: var(--faces-string-regexp-font-weight, var(--faces-string-font-weight, revert-layer));
+    font-style: var(--faces-string-regexp-font-style, var(--faces-string-font-style, revert-layer));
+    font-family: var(--faces-string-regexp-font-family, var(--faces-string-font-family, revert-layer));
+    font-size: var(--faces-string-regexp-font-size, var(--faces-string-font-size, revert-layer));
+    text-decoration: var(--faces-string-regexp-text-decoration, var(--faces-string-text-decoration, revert-layer));
+  }
+
+  [data-face="string.documentation"], :where([data-face^="string.documentation."]) {
+    color: var(--faces-string-documentation-color, var(--faces-comment-documentation-color, var(--tuna-green-11)));
+    background-color: var(--faces-string-documentation-background, var(--faces-comment-documentation-background, var(--faces-comment-background, revert-layer)));
+    font-weight: var(--faces-string-documentation-font-weight, var(--faces-comment-documentation-font-weight, var(--faces-comment-font-weight, revert-layer)));
+    font-style: var(--faces-string-documentation-font-style, var(--faces-comment-documentation-font-style, var(--faces-comment-font-style, revert-layer)));
+    font-family: var(--faces-string-documentation-font-family, var(--faces-comment-documentation-font-family, var(--faces-comment-font-family, revert-layer)));
+    font-size: var(--faces-string-documentation-font-size, var(--faces-comment-documentation-font-size, var(--faces-comment-font-size, revert-layer)));
+    text-decoration: var(--faces-string-documentation-text-decoration, var(--faces-comment-documentation-text-decoration, var(--faces-comment-text-decoration, revert-layer)));
   }
 
   [data-face="number"], :where([data-face^="number."]) {
     color: var(--faces-number-color, var(--tuna-orange-11));
+    background-color: var(--faces-number-background, revert-layer);
+    font-weight: var(--faces-number-font-weight, revert-layer);
+    font-style: var(--faces-number-font-style, revert-layer);
+    font-family: var(--faces-number-font-family, revert-layer);
+    font-size: var(--faces-number-font-size, revert-layer);
+    text-decoration: var(--faces-number-text-decoration, revert-layer);
+  }
+
+  [data-face="constant"], :where([data-face^="constant."]) {
+    color: var(--faces-constant-color, var(--tuna-orange-11));
+    background-color: var(--faces-constant-background, revert-layer);
+    font-weight: var(--faces-constant-font-weight, revert-layer);
+    font-style: var(--faces-constant-font-style, revert-layer);
+    font-family: var(--faces-constant-font-family, revert-layer);
+    font-size: var(--faces-constant-font-size, revert-layer);
+    text-decoration: var(--faces-constant-text-decoration, revert-layer);
   }
 
   /* A boolean, a character and a quoted symbol are literal data, so
-     they take the constant colour. */
-  [data-face="constant"], :where([data-face^="constant."]),
-  [data-face="boolean"], [data-face="character"], [data-face="string.special.symbol"] {
-    color: var(--faces-constant-color, var(--tuna-orange-11));
+     they look like constants. */
+  [data-face="boolean"], :where([data-face^="boolean."]) {
+    color: var(--faces-boolean-color, var(--faces-constant-color, var(--tuna-orange-11)));
+    background-color: var(--faces-boolean-background, var(--faces-constant-background, revert-layer));
+    font-weight: var(--faces-boolean-font-weight, var(--faces-constant-font-weight, revert-layer));
+    font-style: var(--faces-boolean-font-style, var(--faces-constant-font-style, revert-layer));
+    font-family: var(--faces-boolean-font-family, var(--faces-constant-font-family, revert-layer));
+    font-size: var(--faces-boolean-font-size, var(--faces-constant-font-size, revert-layer));
+    text-decoration: var(--faces-boolean-text-decoration, var(--faces-constant-text-decoration, revert-layer));
+  }
+
+  [data-face="character"], :where([data-face^="character."]) {
+    color: var(--faces-character-color, var(--faces-constant-color, var(--tuna-orange-11)));
+    background-color: var(--faces-character-background, var(--faces-constant-background, revert-layer));
+    font-weight: var(--faces-character-font-weight, var(--faces-constant-font-weight, revert-layer));
+    font-style: var(--faces-character-font-style, var(--faces-constant-font-style, revert-layer));
+    font-family: var(--faces-character-font-family, var(--faces-constant-font-family, revert-layer));
+    font-size: var(--faces-character-font-size, var(--faces-constant-font-size, revert-layer));
+    text-decoration: var(--faces-character-text-decoration, var(--faces-constant-text-decoration, revert-layer));
+  }
+
+  [data-face="string.special.symbol"], :where([data-face^="string.special.symbol."]) {
+    color: var(--faces-string-special-symbol-color, var(--faces-constant-color, var(--tuna-orange-11)));
+    background-color: var(--faces-string-special-symbol-background, var(--faces-constant-background, revert-layer));
+    font-weight: var(--faces-string-special-symbol-font-weight, var(--faces-constant-font-weight, revert-layer));
+    font-style: var(--faces-string-special-symbol-font-style, var(--faces-constant-font-style, revert-layer));
+    font-family: var(--faces-string-special-symbol-font-family, var(--faces-constant-font-family, revert-layer));
+    font-size: var(--faces-string-special-symbol-font-size, var(--faces-constant-font-size, revert-layer));
+    text-decoration: var(--faces-string-special-symbol-text-decoration, var(--faces-constant-text-decoration, revert-layer));
+  }
+
+  [data-face="constant.builtin"], :where([data-face^="constant.builtin."]) {
+    color: var(--faces-constant-builtin-color, var(--faces-builtin-color, var(--tuna-cyan-11)));
+    background-color: var(--faces-constant-builtin-background, var(--faces-builtin-background, revert-layer));
+    font-weight: var(--faces-constant-builtin-font-weight, var(--faces-builtin-font-weight, revert-layer));
+    font-style: var(--faces-constant-builtin-font-style, var(--faces-builtin-font-style, revert-layer));
+    font-family: var(--faces-constant-builtin-font-family, var(--faces-builtin-font-family, revert-layer));
+    font-size: var(--faces-constant-builtin-font-size, var(--faces-builtin-font-size, revert-layer));
+    text-decoration: var(--faces-constant-builtin-text-decoration, var(--faces-builtin-text-decoration, revert-layer));
   }
 
   [data-face="keyword"], :where([data-face^="keyword."]) {
     color: var(--faces-keyword-color, var(--tuna-violet-11));
+    background-color: var(--faces-keyword-background, revert-layer);
+    font-weight: var(--faces-keyword-font-weight, revert-layer);
+    font-style: var(--faces-keyword-font-style, revert-layer);
+    font-family: var(--faces-keyword-font-family, revert-layer);
+    font-size: var(--faces-keyword-font-size, revert-layer);
+    text-decoration: var(--faces-keyword-text-decoration, revert-layer);
+  }
+
+  [data-face="keyword.conditional"], :where([data-face^="keyword.conditional."]) {
+    color: var(--faces-keyword-conditional-color, var(--faces-keyword-color, var(--tuna-violet-11)));
+    background-color: var(--faces-keyword-conditional-background, var(--faces-keyword-background, revert-layer));
+    font-weight: var(--faces-keyword-conditional-font-weight, var(--faces-keyword-font-weight, revert-layer));
+    font-style: var(--faces-keyword-conditional-font-style, var(--faces-keyword-font-style, revert-layer));
+    font-family: var(--faces-keyword-conditional-font-family, var(--faces-keyword-font-family, revert-layer));
+    font-size: var(--faces-keyword-conditional-font-size, var(--faces-keyword-font-size, revert-layer));
+    text-decoration: var(--faces-keyword-conditional-text-decoration, var(--faces-keyword-text-decoration, revert-layer));
+  }
+
+  [data-face="keyword.repeat"], :where([data-face^="keyword.repeat."]) {
+    color: var(--faces-keyword-repeat-color, var(--faces-keyword-color, var(--tuna-violet-11)));
+    background-color: var(--faces-keyword-repeat-background, var(--faces-keyword-background, revert-layer));
+    font-weight: var(--faces-keyword-repeat-font-weight, var(--faces-keyword-font-weight, revert-layer));
+    font-style: var(--faces-keyword-repeat-font-style, var(--faces-keyword-font-style, revert-layer));
+    font-family: var(--faces-keyword-repeat-font-family, var(--faces-keyword-font-family, revert-layer));
+    font-size: var(--faces-keyword-repeat-font-size, var(--faces-keyword-font-size, revert-layer));
+    text-decoration: var(--faces-keyword-repeat-text-decoration, var(--faces-keyword-text-decoration, revert-layer));
+  }
+
+  [data-face="keyword.return"], :where([data-face^="keyword.return."]) {
+    color: var(--faces-keyword-return-color, var(--faces-keyword-color, var(--tuna-violet-11)));
+    background-color: var(--faces-keyword-return-background, var(--faces-keyword-background, revert-layer));
+    font-weight: var(--faces-keyword-return-font-weight, var(--faces-keyword-font-weight, revert-layer));
+    font-style: var(--faces-keyword-return-font-style, var(--faces-keyword-font-style, revert-layer));
+    font-family: var(--faces-keyword-return-font-family, var(--faces-keyword-font-family, revert-layer));
+    font-size: var(--faces-keyword-return-font-size, var(--faces-keyword-font-size, revert-layer));
+    text-decoration: var(--faces-keyword-return-text-decoration, var(--faces-keyword-text-decoration, revert-layer));
+  }
+
+  [data-face="keyword.exception"], :where([data-face^="keyword.exception."]) {
+    color: var(--faces-keyword-exception-color, var(--faces-keyword-color, var(--tuna-violet-11)));
+    background-color: var(--faces-keyword-exception-background, var(--faces-keyword-background, revert-layer));
+    font-weight: var(--faces-keyword-exception-font-weight, var(--faces-keyword-font-weight, revert-layer));
+    font-style: var(--faces-keyword-exception-font-style, var(--faces-keyword-font-style, revert-layer));
+    font-family: var(--faces-keyword-exception-font-family, var(--faces-keyword-font-family, revert-layer));
+    font-size: var(--faces-keyword-exception-font-size, var(--faces-keyword-font-size, revert-layer));
+    text-decoration: var(--faces-keyword-exception-text-decoration, var(--faces-keyword-text-decoration, revert-layer));
   }
 
   [data-face="keyword.directive"], :where([data-face^="keyword.directive."]) {
     color: var(--faces-keyword-directive-color, var(--tuna-pink-11));
+    background-color: var(--faces-keyword-directive-background, var(--faces-keyword-background, revert-layer));
+    font-weight: var(--faces-keyword-directive-font-weight, var(--faces-keyword-font-weight, revert-layer));
+    font-style: var(--faces-keyword-directive-font-style, var(--faces-keyword-font-style, revert-layer));
+    font-family: var(--faces-keyword-directive-font-family, var(--faces-keyword-font-family, revert-layer));
+    font-size: var(--faces-keyword-directive-font-size, var(--faces-keyword-font-size, revert-layer));
+    text-decoration: var(--faces-keyword-directive-text-decoration, var(--faces-keyword-text-decoration, revert-layer));
   }
 
   [data-face="operator"], :where([data-face^="operator."]) {
     color: var(--faces-operator-color, var(--tuna-text));
+    background-color: var(--faces-operator-background, revert-layer);
+    font-weight: var(--faces-operator-font-weight, revert-layer);
+    font-style: var(--faces-operator-font-style, revert-layer);
+    font-family: var(--faces-operator-font-family, revert-layer);
+    font-size: var(--faces-operator-font-size, revert-layer);
+    text-decoration: var(--faces-operator-text-decoration, revert-layer);
   }
 
   [data-face="punctuation"], :where([data-face^="punctuation."]) {
     color: var(--faces-punctuation-color, var(--tuna-text));
+    background-color: var(--faces-punctuation-background, revert-layer);
+    font-weight: var(--faces-punctuation-font-weight, revert-layer);
+    font-style: var(--faces-punctuation-font-style, revert-layer);
+    font-family: var(--faces-punctuation-font-family, revert-layer);
+    font-size: var(--faces-punctuation-font-size, revert-layer);
+    text-decoration: var(--faces-punctuation-text-decoration, revert-layer);
+  }
+
+  [data-face="punctuation.bracket"], :where([data-face^="punctuation.bracket."]) {
+    color: var(--faces-punctuation-bracket-color, var(--faces-punctuation-color, var(--tuna-text)));
+    background-color: var(--faces-punctuation-bracket-background, var(--faces-punctuation-background, revert-layer));
+    font-weight: var(--faces-punctuation-bracket-font-weight, var(--faces-punctuation-font-weight, revert-layer));
+    font-style: var(--faces-punctuation-bracket-font-style, var(--faces-punctuation-font-style, revert-layer));
+    font-family: var(--faces-punctuation-bracket-font-family, var(--faces-punctuation-font-family, revert-layer));
+    font-size: var(--faces-punctuation-bracket-font-size, var(--faces-punctuation-font-size, revert-layer));
+    text-decoration: var(--faces-punctuation-bracket-text-decoration, var(--faces-punctuation-text-decoration, revert-layer));
+  }
+
+  [data-face="punctuation.delimiter"], :where([data-face^="punctuation.delimiter."]) {
+    color: var(--faces-punctuation-delimiter-color, var(--faces-punctuation-color, var(--tuna-text)));
+    background-color: var(--faces-punctuation-delimiter-background, var(--faces-punctuation-background, revert-layer));
+    font-weight: var(--faces-punctuation-delimiter-font-weight, var(--faces-punctuation-font-weight, revert-layer));
+    font-style: var(--faces-punctuation-delimiter-font-style, var(--faces-punctuation-font-style, revert-layer));
+    font-family: var(--faces-punctuation-delimiter-font-family, var(--faces-punctuation-font-family, revert-layer));
+    font-size: var(--faces-punctuation-delimiter-font-size, var(--faces-punctuation-font-size, revert-layer));
+    text-decoration: var(--faces-punctuation-delimiter-text-decoration, var(--faces-punctuation-text-decoration, revert-layer));
+  }
+
+  [data-face="punctuation.special"], :where([data-face^="punctuation.special."]) {
+    color: var(--faces-punctuation-special-color, var(--faces-punctuation-color, var(--tuna-text)));
+    background-color: var(--faces-punctuation-special-background, var(--faces-punctuation-background, revert-layer));
+    font-weight: var(--faces-punctuation-special-font-weight, var(--faces-punctuation-font-weight, revert-layer));
+    font-style: var(--faces-punctuation-special-font-style, var(--faces-punctuation-font-style, revert-layer));
+    font-family: var(--faces-punctuation-special-font-family, var(--faces-punctuation-font-family, revert-layer));
+    font-size: var(--faces-punctuation-special-font-size, var(--faces-punctuation-font-size, revert-layer));
+    text-decoration: var(--faces-punctuation-special-text-decoration, var(--faces-punctuation-text-decoration, revert-layer));
   }
 
   [data-face="function"], :where([data-face^="function."]) {
     color: var(--faces-function-color, var(--tuna-blue-11));
+    background-color: var(--faces-function-background, revert-layer);
+    font-weight: var(--faces-function-font-weight, revert-layer);
+    font-style: var(--faces-function-font-style, revert-layer);
+    font-family: var(--faces-function-font-family, revert-layer);
+    font-size: var(--faces-function-font-size, revert-layer);
+    text-decoration: var(--faces-function-text-decoration, revert-layer);
   }
 
   [data-face="function.call"], :where([data-face^="function.call."]) {
     color: var(--faces-function-call-color, var(--tuna-blue-11));
+    background-color: var(--faces-function-call-background, var(--faces-function-background, revert-layer));
+    font-weight: var(--faces-function-call-font-weight, var(--faces-function-font-weight, revert-layer));
+    font-style: var(--faces-function-call-font-style, var(--faces-function-font-style, revert-layer));
+    font-family: var(--faces-function-call-font-family, var(--faces-function-font-family, revert-layer));
+    font-size: var(--faces-function-call-font-size, var(--faces-function-font-size, revert-layer));
+    text-decoration: var(--faces-function-call-text-decoration, var(--faces-function-text-decoration, revert-layer));
+  }
+
+  [data-face="function.method"], :where([data-face^="function.method."]) {
+    color: var(--faces-function-method-color, var(--faces-function-color, var(--tuna-blue-11)));
+    background-color: var(--faces-function-method-background, var(--faces-function-background, revert-layer));
+    font-weight: var(--faces-function-method-font-weight, var(--faces-function-font-weight, revert-layer));
+    font-style: var(--faces-function-method-font-style, var(--faces-function-font-style, revert-layer));
+    font-family: var(--faces-function-method-font-family, var(--faces-function-font-family, revert-layer));
+    font-size: var(--faces-function-method-font-size, var(--faces-function-font-size, revert-layer));
+    text-decoration: var(--faces-function-method-text-decoration, var(--faces-function-text-decoration, revert-layer));
+  }
+
+  [data-face="function.method.call"], :where([data-face^="function.method.call."]) {
+    color: var(--faces-function-method-call-color, var(--faces-function-call-color, var(--tuna-blue-11)));
+    background-color: var(--faces-function-method-call-background, var(--faces-function-call-background, var(--faces-function-background, revert-layer)));
+    font-weight: var(--faces-function-method-call-font-weight, var(--faces-function-call-font-weight, var(--faces-function-font-weight, revert-layer)));
+    font-style: var(--faces-function-method-call-font-style, var(--faces-function-call-font-style, var(--faces-function-font-style, revert-layer)));
+    font-family: var(--faces-function-method-call-font-family, var(--faces-function-call-font-family, var(--faces-function-font-family, revert-layer)));
+    font-size: var(--faces-function-method-call-font-size, var(--faces-function-call-font-size, var(--faces-function-font-size, revert-layer)));
+    text-decoration: var(--faces-function-method-call-text-decoration, var(--faces-function-call-text-decoration, var(--faces-function-text-decoration, revert-layer)));
+  }
+
+  [data-face="function.builtin"], :where([data-face^="function.builtin."]) {
+    color: var(--faces-function-builtin-color, var(--faces-builtin-color, var(--tuna-cyan-11)));
+    background-color: var(--faces-function-builtin-background, var(--faces-builtin-background, revert-layer));
+    font-weight: var(--faces-function-builtin-font-weight, var(--faces-builtin-font-weight, revert-layer));
+    font-style: var(--faces-function-builtin-font-style, var(--faces-builtin-font-style, revert-layer));
+    font-family: var(--faces-function-builtin-font-family, var(--faces-builtin-font-family, revert-layer));
+    font-size: var(--faces-function-builtin-font-size, var(--faces-builtin-font-size, revert-layer));
+    text-decoration: var(--faces-function-builtin-text-decoration, var(--faces-builtin-text-decoration, revert-layer));
   }
 
   [data-face="type"], :where([data-face^="type."]) {
     color: var(--faces-type-color, var(--tuna-teal-11));
+    background-color: var(--faces-type-background, revert-layer);
+    font-weight: var(--faces-type-font-weight, revert-layer);
+    font-style: var(--faces-type-font-style, revert-layer);
+    font-family: var(--faces-type-font-family, revert-layer);
+    font-size: var(--faces-type-font-size, revert-layer);
+    text-decoration: var(--faces-type-text-decoration, revert-layer);
+  }
+
+  /* Emacs colours builtin types and exceptions as types, and a
+     constructor names a class. */
+  [data-face="type.builtin"], :where([data-face^="type.builtin."]) {
+    color: var(--faces-type-builtin-color, var(--faces-type-color, var(--tuna-teal-11)));
+    background-color: var(--faces-type-builtin-background, var(--faces-type-background, revert-layer));
+    font-weight: var(--faces-type-builtin-font-weight, var(--faces-type-font-weight, revert-layer));
+    font-style: var(--faces-type-builtin-font-style, var(--faces-type-font-style, revert-layer));
+    font-family: var(--faces-type-builtin-font-family, var(--faces-type-font-family, revert-layer));
+    font-size: var(--faces-type-builtin-font-size, var(--faces-type-font-size, revert-layer));
+    text-decoration: var(--faces-type-builtin-text-decoration, var(--faces-type-text-decoration, revert-layer));
+  }
+
+  [data-face="constructor"], :where([data-face^="constructor."]) {
+    color: var(--faces-constructor-color, var(--faces-type-color, var(--tuna-teal-11)));
+    background-color: var(--faces-constructor-background, var(--faces-type-background, revert-layer));
+    font-weight: var(--faces-constructor-font-weight, var(--faces-type-font-weight, revert-layer));
+    font-style: var(--faces-constructor-font-style, var(--faces-type-font-style, revert-layer));
+    font-family: var(--faces-constructor-font-family, var(--faces-type-font-family, revert-layer));
+    font-size: var(--faces-constructor-font-size, var(--faces-type-font-size, revert-layer));
+    text-decoration: var(--faces-constructor-text-decoration, var(--faces-type-text-decoration, revert-layer));
   }
 
   [data-face="variable"], :where([data-face^="variable."]) {
     color: var(--faces-variable-color, var(--tuna-text));
+    background-color: var(--faces-variable-background, revert-layer);
+    font-weight: var(--faces-variable-font-weight, revert-layer);
+    font-style: var(--faces-variable-font-style, revert-layer);
+    font-family: var(--faces-variable-font-family, revert-layer);
+    font-size: var(--faces-variable-font-size, revert-layer);
+    text-decoration: var(--faces-variable-text-decoration, revert-layer);
   }
 
   [data-face="variable.member"], :where([data-face^="variable.member."]) {
     color: var(--faces-variable-member-color, var(--faces-variable-color, var(--tuna-text)));
+    background-color: var(--faces-variable-member-background, var(--faces-variable-background, revert-layer));
+    font-weight: var(--faces-variable-member-font-weight, var(--faces-variable-font-weight, revert-layer));
+    font-style: var(--faces-variable-member-font-style, var(--faces-variable-font-style, revert-layer));
+    font-family: var(--faces-variable-member-font-family, var(--faces-variable-font-family, revert-layer));
+    font-size: var(--faces-variable-member-font-size, var(--faces-variable-font-size, revert-layer));
+    text-decoration: var(--faces-variable-member-text-decoration, var(--faces-variable-text-decoration, revert-layer));
   }
 
   /* Emacs's default theme draws a definition sienna on light
      backgrounds and light goldenrod on dark; brown is the palette's
      nearest. */
-  [data-face="variable.definition"], :where([data-face^="variable.definition."]),
-  [data-face="variable.parameter"], :where([data-face^="variable.parameter."]) {
+  [data-face="variable.definition"], :where([data-face^="variable.definition."]) {
     color: var(--faces-variable-definition-color, var(--tuna-brown-11));
+    background-color: var(--faces-variable-definition-background, var(--faces-variable-background, revert-layer));
+    font-weight: var(--faces-variable-definition-font-weight, var(--faces-variable-font-weight, revert-layer));
+    font-style: var(--faces-variable-definition-font-style, var(--faces-variable-font-style, revert-layer));
+    font-family: var(--faces-variable-definition-font-family, var(--faces-variable-font-family, revert-layer));
+    font-size: var(--faces-variable-definition-font-size, var(--faces-variable-font-size, revert-layer));
+    text-decoration: var(--faces-variable-definition-text-decoration, var(--faces-variable-text-decoration, revert-layer));
+  }
+
+  [data-face="variable.parameter"], :where([data-face^="variable.parameter."]) {
+    color: var(--faces-variable-parameter-color, var(--faces-variable-definition-color, var(--tuna-brown-11)));
+    background-color: var(--faces-variable-parameter-background, var(--faces-variable-definition-background, var(--faces-variable-background, revert-layer)));
+    font-weight: var(--faces-variable-parameter-font-weight, var(--faces-variable-definition-font-weight, var(--faces-variable-font-weight, revert-layer)));
+    font-style: var(--faces-variable-parameter-font-style, var(--faces-variable-definition-font-style, var(--faces-variable-font-style, revert-layer)));
+    font-family: var(--faces-variable-parameter-font-family, var(--faces-variable-definition-font-family, var(--faces-variable-font-family, revert-layer)));
+    font-size: var(--faces-variable-parameter-font-size, var(--faces-variable-definition-font-size, var(--faces-variable-font-size, revert-layer)));
+    text-decoration: var(--faces-variable-parameter-text-decoration, var(--faces-variable-definition-text-decoration, var(--faces-variable-text-decoration, revert-layer)));
+  }
+
+  [data-face="variable.builtin"], :where([data-face^="variable.builtin."]) {
+    color: var(--faces-variable-builtin-color, var(--faces-builtin-color, var(--tuna-cyan-11)));
+    background-color: var(--faces-variable-builtin-background, var(--faces-builtin-background, revert-layer));
+    font-weight: var(--faces-variable-builtin-font-weight, var(--faces-builtin-font-weight, revert-layer));
+    font-style: var(--faces-variable-builtin-font-style, var(--faces-builtin-font-style, revert-layer));
+    font-family: var(--faces-variable-builtin-font-family, var(--faces-builtin-font-family, revert-layer));
+    font-size: var(--faces-variable-builtin-font-size, var(--faces-builtin-font-size, revert-layer));
+    text-decoration: var(--faces-variable-builtin-text-decoration, var(--faces-builtin-text-decoration, revert-layer));
   }
 
   [data-face="property"], :where([data-face^="property."]) {
     color: var(--faces-property-color, var(--tuna-indigo-11));
+    background-color: var(--faces-property-background, revert-layer);
+    font-weight: var(--faces-property-font-weight, revert-layer);
+    font-style: var(--faces-property-font-style, revert-layer);
+    font-family: var(--faces-property-font-family, revert-layer);
+    font-size: var(--faces-property-font-size, revert-layer);
+    text-decoration: var(--faces-property-text-decoration, revert-layer);
   }
 
   [data-face="module"], :where([data-face^="module."]) {
     color: var(--faces-module-color, var(--tuna-brown-11));
+    background-color: var(--faces-module-background, revert-layer);
+    font-weight: var(--faces-module-font-weight, revert-layer);
+    font-style: var(--faces-module-font-style, revert-layer);
+    font-family: var(--faces-module-font-family, revert-layer);
+    font-size: var(--faces-module-font-size, revert-layer);
+    text-decoration: var(--faces-module-text-decoration, revert-layer);
+  }
+
+  [data-face="module.builtin"], :where([data-face^="module.builtin."]) {
+    color: var(--faces-module-builtin-color, var(--faces-builtin-color, var(--tuna-cyan-11)));
+    background-color: var(--faces-module-builtin-background, var(--faces-builtin-background, revert-layer));
+    font-weight: var(--faces-module-builtin-font-weight, var(--faces-builtin-font-weight, revert-layer));
+    font-style: var(--faces-module-builtin-font-style, var(--faces-builtin-font-style, revert-layer));
+    font-family: var(--faces-module-builtin-font-family, var(--faces-builtin-font-family, revert-layer));
+    font-size: var(--faces-module-builtin-font-size, var(--faces-builtin-font-size, revert-layer));
+    text-decoration: var(--faces-module-builtin-text-decoration, var(--faces-builtin-text-decoration, revert-layer));
   }
 
   [data-face="attribute"], :where([data-face^="attribute."]) {
     color: var(--faces-attribute-color, var(--tuna-purple-11));
+    background-color: var(--faces-attribute-background, revert-layer);
+    font-weight: var(--faces-attribute-font-weight, revert-layer);
+    font-style: var(--faces-attribute-font-style, revert-layer);
+    font-family: var(--faces-attribute-font-family, revert-layer);
+    font-size: var(--faces-attribute-font-size, revert-layer);
+    text-decoration: var(--faces-attribute-text-decoration, revert-layer);
+  }
+
+  [data-face="attribute.builtin"], :where([data-face^="attribute.builtin."]) {
+    color: var(--faces-attribute-builtin-color, var(--faces-builtin-color, var(--tuna-cyan-11)));
+    background-color: var(--faces-attribute-builtin-background, var(--faces-builtin-background, revert-layer));
+    font-weight: var(--faces-attribute-builtin-font-weight, var(--faces-builtin-font-weight, revert-layer));
+    font-style: var(--faces-attribute-builtin-font-style, var(--faces-builtin-font-style, revert-layer));
+    font-family: var(--faces-attribute-builtin-font-family, var(--faces-builtin-font-family, revert-layer));
+    font-size: var(--faces-attribute-builtin-font-size, var(--faces-builtin-font-size, revert-layer));
+    text-decoration: var(--faces-attribute-builtin-text-decoration, var(--faces-builtin-text-decoration, revert-layer));
   }
 
   [data-face="tag"], :where([data-face^="tag."]) {
     color: var(--faces-tag-color, var(--tuna-red-11));
+    background-color: var(--faces-tag-background, revert-layer);
+    font-weight: var(--faces-tag-font-weight, revert-layer);
+    font-style: var(--faces-tag-font-style, revert-layer);
+    font-family: var(--faces-tag-font-family, revert-layer);
+    font-size: var(--faces-tag-font-size, revert-layer);
+    text-decoration: var(--faces-tag-text-decoration, revert-layer);
   }
 
-  [data-face$=".builtin"] {
-    color: var(--faces-builtin-color, var(--tuna-cyan-11));
-  }
-
-  /* Emacs colours builtin types and exceptions as types, and a
-     constructor names a class. */
-  [data-face="type.builtin"], [data-face="constructor"], :where([data-face^="constructor."]) {
-    color: var(--faces-type-color, var(--tuna-teal-11));
+  [data-face="tag.builtin"], :where([data-face^="tag.builtin."]) {
+    color: var(--faces-tag-builtin-color, var(--faces-builtin-color, var(--tuna-cyan-11)));
+    background-color: var(--faces-tag-builtin-background, var(--faces-builtin-background, revert-layer));
+    font-weight: var(--faces-tag-builtin-font-weight, var(--faces-builtin-font-weight, revert-layer));
+    font-style: var(--faces-tag-builtin-font-style, var(--faces-builtin-font-style, revert-layer));
+    font-family: var(--faces-tag-builtin-font-family, var(--faces-builtin-font-family, revert-layer));
+    font-size: var(--faces-tag-builtin-font-size, var(--faces-builtin-font-size, revert-layer));
+    text-decoration: var(--faces-tag-builtin-text-decoration, var(--faces-builtin-text-decoration, revert-layer));
   }
 
   [data-face="markup.heading"], :where([data-face^="markup.heading."]) {
     color: var(--faces-markup-heading-color, var(--tuna-blue-11));
-    font-weight: var(--tuna-font-weight-bold);
+    background-color: var(--faces-markup-heading-background, revert-layer);
+    font-weight: var(--faces-markup-heading-font-weight, var(--tuna-font-weight-bold));
+    font-style: var(--faces-markup-heading-font-style, revert-layer);
+    font-family: var(--faces-markup-heading-font-family, revert-layer);
+    font-size: var(--faces-markup-heading-font-size, revert-layer);
+    text-decoration: var(--faces-markup-heading-text-decoration, revert-layer);
+  }
+
+  [data-face="markup.heading.1"], :where([data-face^="markup.heading.1."]) {
+    color: var(--faces-markup-heading-1-color, var(--faces-markup-heading-color, var(--tuna-blue-11)));
+    background-color: var(--faces-markup-heading-1-background, var(--faces-markup-heading-background, revert-layer));
+    font-weight: var(--faces-markup-heading-1-font-weight, var(--faces-markup-heading-font-weight, var(--tuna-font-weight-bold)));
+    font-style: var(--faces-markup-heading-1-font-style, var(--faces-markup-heading-font-style, revert-layer));
+    font-family: var(--faces-markup-heading-1-font-family, var(--faces-markup-heading-font-family, revert-layer));
+    font-size: var(--faces-markup-heading-1-font-size, var(--faces-markup-heading-font-size, revert-layer));
+    text-decoration: var(--faces-markup-heading-1-text-decoration, var(--faces-markup-heading-text-decoration, revert-layer));
+  }
+
+  [data-face="markup.heading.2"], :where([data-face^="markup.heading.2."]) {
+    color: var(--faces-markup-heading-2-color, var(--faces-markup-heading-color, var(--tuna-blue-11)));
+    background-color: var(--faces-markup-heading-2-background, var(--faces-markup-heading-background, revert-layer));
+    font-weight: var(--faces-markup-heading-2-font-weight, var(--faces-markup-heading-font-weight, var(--tuna-font-weight-bold)));
+    font-style: var(--faces-markup-heading-2-font-style, var(--faces-markup-heading-font-style, revert-layer));
+    font-family: var(--faces-markup-heading-2-font-family, var(--faces-markup-heading-font-family, revert-layer));
+    font-size: var(--faces-markup-heading-2-font-size, var(--faces-markup-heading-font-size, revert-layer));
+    text-decoration: var(--faces-markup-heading-2-text-decoration, var(--faces-markup-heading-text-decoration, revert-layer));
+  }
+
+  [data-face="markup.heading.3"], :where([data-face^="markup.heading.3."]) {
+    color: var(--faces-markup-heading-3-color, var(--faces-markup-heading-color, var(--tuna-blue-11)));
+    background-color: var(--faces-markup-heading-3-background, var(--faces-markup-heading-background, revert-layer));
+    font-weight: var(--faces-markup-heading-3-font-weight, var(--faces-markup-heading-font-weight, var(--tuna-font-weight-bold)));
+    font-style: var(--faces-markup-heading-3-font-style, var(--faces-markup-heading-font-style, revert-layer));
+    font-family: var(--faces-markup-heading-3-font-family, var(--faces-markup-heading-font-family, revert-layer));
+    font-size: var(--faces-markup-heading-3-font-size, var(--faces-markup-heading-font-size, revert-layer));
+    text-decoration: var(--faces-markup-heading-3-text-decoration, var(--faces-markup-heading-text-decoration, revert-layer));
+  }
+
+  [data-face="markup.heading.4"], :where([data-face^="markup.heading.4."]) {
+    color: var(--faces-markup-heading-4-color, var(--faces-markup-heading-color, var(--tuna-blue-11)));
+    background-color: var(--faces-markup-heading-4-background, var(--faces-markup-heading-background, revert-layer));
+    font-weight: var(--faces-markup-heading-4-font-weight, var(--faces-markup-heading-font-weight, var(--tuna-font-weight-bold)));
+    font-style: var(--faces-markup-heading-4-font-style, var(--faces-markup-heading-font-style, revert-layer));
+    font-family: var(--faces-markup-heading-4-font-family, var(--faces-markup-heading-font-family, revert-layer));
+    font-size: var(--faces-markup-heading-4-font-size, var(--faces-markup-heading-font-size, revert-layer));
+    text-decoration: var(--faces-markup-heading-4-text-decoration, var(--faces-markup-heading-text-decoration, revert-layer));
+  }
+
+  [data-face="markup.heading.5"], :where([data-face^="markup.heading.5."]) {
+    color: var(--faces-markup-heading-5-color, var(--faces-markup-heading-color, var(--tuna-blue-11)));
+    background-color: var(--faces-markup-heading-5-background, var(--faces-markup-heading-background, revert-layer));
+    font-weight: var(--faces-markup-heading-5-font-weight, var(--faces-markup-heading-font-weight, var(--tuna-font-weight-bold)));
+    font-style: var(--faces-markup-heading-5-font-style, var(--faces-markup-heading-font-style, revert-layer));
+    font-family: var(--faces-markup-heading-5-font-family, var(--faces-markup-heading-font-family, revert-layer));
+    font-size: var(--faces-markup-heading-5-font-size, var(--faces-markup-heading-font-size, revert-layer));
+    text-decoration: var(--faces-markup-heading-5-text-decoration, var(--faces-markup-heading-text-decoration, revert-layer));
+  }
+
+  [data-face="markup.heading.6"], :where([data-face^="markup.heading.6."]) {
+    color: var(--faces-markup-heading-6-color, var(--faces-markup-heading-color, var(--tuna-blue-11)));
+    background-color: var(--faces-markup-heading-6-background, var(--faces-markup-heading-background, revert-layer));
+    font-weight: var(--faces-markup-heading-6-font-weight, var(--faces-markup-heading-font-weight, var(--tuna-font-weight-bold)));
+    font-style: var(--faces-markup-heading-6-font-style, var(--faces-markup-heading-font-style, revert-layer));
+    font-family: var(--faces-markup-heading-6-font-family, var(--faces-markup-heading-font-family, revert-layer));
+    font-size: var(--faces-markup-heading-6-font-size, var(--faces-markup-heading-font-size, revert-layer));
+    text-decoration: var(--faces-markup-heading-6-text-decoration, var(--faces-markup-heading-text-decoration, revert-layer));
   }
 
   [data-face="markup.raw"], :where([data-face^="markup.raw."]) {
     color: var(--faces-markup-raw-color, var(--tuna-teal-11));
+    background-color: var(--faces-markup-raw-background, revert-layer);
+    font-weight: var(--faces-markup-raw-font-weight, revert-layer);
+    font-style: var(--faces-markup-raw-font-style, revert-layer);
+    font-family: var(--faces-markup-raw-font-family, var(--tuna-font-code));
+    font-size: var(--faces-markup-raw-font-size, revert-layer);
+    text-decoration: var(--faces-markup-raw-text-decoration, revert-layer);
+  }
+
+  [data-face="markup.raw.block"], :where([data-face^="markup.raw.block."]) {
+    color: var(--faces-markup-raw-block-color, var(--faces-markup-raw-color, var(--tuna-teal-11)));
+    background-color: var(--faces-markup-raw-block-background, var(--faces-markup-raw-background, revert-layer));
+    font-weight: var(--faces-markup-raw-block-font-weight, var(--faces-markup-raw-font-weight, revert-layer));
+    font-style: var(--faces-markup-raw-block-font-style, var(--faces-markup-raw-font-style, revert-layer));
+    font-family: var(--faces-markup-raw-block-font-family, var(--faces-markup-raw-font-family, var(--tuna-font-code)));
+    font-size: var(--faces-markup-raw-block-font-size, var(--faces-markup-raw-font-size, revert-layer));
+    text-decoration: var(--faces-markup-raw-block-text-decoration, var(--faces-markup-raw-text-decoration, revert-layer));
   }
 
   [data-face="markup.link"], :where([data-face^="markup.link."]) {
-    color: var(--tuna-link);
-    text-decoration-line: underline;
+    color: var(--faces-markup-link-color, var(--tuna-link));
+    background-color: var(--faces-markup-link-background, revert-layer);
+    font-weight: var(--faces-markup-link-font-weight, revert-layer);
+    font-style: var(--faces-markup-link-font-style, revert-layer);
+    font-family: var(--faces-markup-link-font-family, revert-layer);
+    font-size: var(--faces-markup-link-font-size, revert-layer);
+    text-decoration: var(--faces-markup-link-text-decoration, underline);
+  }
+
+  [data-face="markup.link.url"], :where([data-face^="markup.link.url."]) {
+    color: var(--faces-markup-link-url-color, var(--faces-markup-link-color, var(--tuna-link)));
+    background-color: var(--faces-markup-link-url-background, var(--faces-markup-link-background, revert-layer));
+    font-weight: var(--faces-markup-link-url-font-weight, var(--faces-markup-link-font-weight, revert-layer));
+    font-style: var(--faces-markup-link-url-font-style, var(--faces-markup-link-font-style, revert-layer));
+    font-family: var(--faces-markup-link-url-font-family, var(--faces-markup-link-font-family, revert-layer));
+    font-size: var(--faces-markup-link-url-font-size, var(--faces-markup-link-font-size, revert-layer));
+    text-decoration: var(--faces-markup-link-url-text-decoration, var(--faces-markup-link-text-decoration, underline));
   }
 
   [data-face="markup.quote"], :where([data-face^="markup.quote."]) {
-    color: var(--tuna-text-muted);
+    color: var(--faces-markup-quote-color, var(--tuna-text-muted));
+    background-color: var(--faces-markup-quote-background, revert-layer);
+    font-weight: var(--faces-markup-quote-font-weight, revert-layer);
+    font-style: var(--faces-markup-quote-font-style, revert-layer);
+    font-family: var(--faces-markup-quote-font-family, revert-layer);
+    font-size: var(--faces-markup-quote-font-size, revert-layer);
+    text-decoration: var(--faces-markup-quote-text-decoration, revert-layer);
   }
 
   [data-face="markup.strong"], :where([data-face^="markup.strong."]) {
-    font-weight: var(--tuna-font-weight-bold);
+    color: var(--faces-markup-strong-color, revert-layer);
+    background-color: var(--faces-markup-strong-background, revert-layer);
+    font-weight: var(--faces-markup-strong-font-weight, var(--tuna-font-weight-bold));
+    font-style: var(--faces-markup-strong-font-style, revert-layer);
+    font-family: var(--faces-markup-strong-font-family, revert-layer);
+    font-size: var(--faces-markup-strong-font-size, revert-layer);
+    text-decoration: var(--faces-markup-strong-text-decoration, revert-layer);
   }
 
   [data-face="markup.italic"], :where([data-face^="markup.italic."]) {
-    font-style: italic;
+    color: var(--faces-markup-italic-color, revert-layer);
+    background-color: var(--faces-markup-italic-background, revert-layer);
+    font-weight: var(--faces-markup-italic-font-weight, revert-layer);
+    font-style: var(--faces-markup-italic-font-style, italic);
+    font-family: var(--faces-markup-italic-font-family, revert-layer);
+    font-size: var(--faces-markup-italic-font-size, revert-layer);
+    text-decoration: var(--faces-markup-italic-text-decoration, revert-layer);
   }
 
   [data-face="markup.underline"], :where([data-face^="markup.underline."]) {
-    text-decoration-line: underline;
+    color: var(--faces-markup-underline-color, revert-layer);
+    background-color: var(--faces-markup-underline-background, revert-layer);
+    font-weight: var(--faces-markup-underline-font-weight, revert-layer);
+    font-style: var(--faces-markup-underline-font-style, revert-layer);
+    font-family: var(--faces-markup-underline-font-family, revert-layer);
+    font-size: var(--faces-markup-underline-font-size, revert-layer);
+    text-decoration: var(--faces-markup-underline-text-decoration, underline);
+  }
+
+  [data-face="markup.strikethrough"], :where([data-face^="markup.strikethrough."]) {
+    color: var(--faces-markup-strikethrough-color, revert-layer);
+    background-color: var(--faces-markup-strikethrough-background, revert-layer);
+    font-weight: var(--faces-markup-strikethrough-font-weight, revert-layer);
+    font-style: var(--faces-markup-strikethrough-font-style, revert-layer);
+    font-family: var(--faces-markup-strikethrough-font-family, revert-layer);
+    font-size: var(--faces-markup-strikethrough-font-size, revert-layer);
+    text-decoration: var(--faces-markup-strikethrough-text-decoration, line-through);
   }
 
   [data-face="diff.plus"], :where([data-face^="diff.plus."]) {
-    background: var(--tuna-added-surface);
-    color: var(--tuna-added);
+    color: var(--faces-diff-plus-color, var(--tuna-added));
+    background-color: var(--faces-diff-plus-background, var(--tuna-added-surface));
+    font-weight: var(--faces-diff-plus-font-weight, revert-layer);
+    font-style: var(--faces-diff-plus-font-style, revert-layer);
+    font-family: var(--faces-diff-plus-font-family, revert-layer);
+    font-size: var(--faces-diff-plus-font-size, revert-layer);
+    text-decoration: var(--faces-diff-plus-text-decoration, revert-layer);
   }
 
   [data-face="diff.minus"], :where([data-face^="diff.minus."]) {
-    background: var(--tuna-removed-surface);
-    color: var(--tuna-removed);
+    color: var(--faces-diff-minus-color, var(--tuna-removed));
+    background-color: var(--faces-diff-minus-background, var(--tuna-removed-surface));
+    font-weight: var(--faces-diff-minus-font-weight, revert-layer);
+    font-style: var(--faces-diff-minus-font-style, revert-layer);
+    font-family: var(--faces-diff-minus-font-family, revert-layer);
+    font-size: var(--faces-diff-minus-font-size, revert-layer);
+    text-decoration: var(--faces-diff-minus-text-decoration, revert-layer);
   }
 
   [data-face="diff.delta"], :where([data-face^="diff.delta."]) {
-    background: var(--tuna-changed-surface);
-    color: var(--tuna-changed);
+    color: var(--faces-diff-delta-color, var(--tuna-changed));
+    background-color: var(--faces-diff-delta-background, var(--tuna-changed-surface));
+    font-weight: var(--faces-diff-delta-font-weight, revert-layer);
+    font-style: var(--faces-diff-delta-font-style, revert-layer);
+    font-family: var(--faces-diff-delta-font-family, revert-layer);
+    font-size: var(--faces-diff-delta-font-size, revert-layer);
+    text-decoration: var(--faces-diff-delta-text-decoration, revert-layer);
   }
 
   [data-face="diagnostic.error"], :where([data-face^="diagnostic.error."]) {
-    text-decoration: underline wavy var(--tuna-error);
+    color: var(--faces-diagnostic-error-color, revert-layer);
+    background-color: var(--faces-diagnostic-error-background, revert-layer);
+    font-weight: var(--faces-diagnostic-error-font-weight, revert-layer);
+    font-style: var(--faces-diagnostic-error-font-style, revert-layer);
+    font-family: var(--faces-diagnostic-error-font-family, revert-layer);
+    font-size: var(--faces-diagnostic-error-font-size, revert-layer);
+    text-decoration: var(--faces-diagnostic-error-text-decoration, underline wavy var(--tuna-error));
     text-decoration-skip-ink: none;
   }
 
   [data-face="diagnostic.warning"], :where([data-face^="diagnostic.warning."]) {
-    text-decoration: underline wavy var(--tuna-warning);
+    color: var(--faces-diagnostic-warning-color, revert-layer);
+    background-color: var(--faces-diagnostic-warning-background, revert-layer);
+    font-weight: var(--faces-diagnostic-warning-font-weight, revert-layer);
+    font-style: var(--faces-diagnostic-warning-font-style, revert-layer);
+    font-family: var(--faces-diagnostic-warning-font-family, revert-layer);
+    font-size: var(--faces-diagnostic-warning-font-size, revert-layer);
+    text-decoration: var(--faces-diagnostic-warning-text-decoration, underline wavy var(--tuna-warning));
     text-decoration-skip-ink: none;
   }
 
   [data-face="diagnostic.info"], :where([data-face^="diagnostic.info."]) {
-    text-decoration: underline wavy var(--tuna-info);
+    color: var(--faces-diagnostic-info-color, revert-layer);
+    background-color: var(--faces-diagnostic-info-background, revert-layer);
+    font-weight: var(--faces-diagnostic-info-font-weight, revert-layer);
+    font-style: var(--faces-diagnostic-info-font-style, revert-layer);
+    font-family: var(--faces-diagnostic-info-font-family, revert-layer);
+    font-size: var(--faces-diagnostic-info-font-size, revert-layer);
+    text-decoration: var(--faces-diagnostic-info-text-decoration, underline wavy var(--tuna-info));
     text-decoration-skip-ink: none;
   }
 
   [data-face="diagnostic.hint"], :where([data-face^="diagnostic.hint."]) {
-    text-decoration: underline wavy var(--tuna-text-muted);
+    color: var(--faces-diagnostic-hint-color, revert-layer);
+    background-color: var(--faces-diagnostic-hint-background, revert-layer);
+    font-weight: var(--faces-diagnostic-hint-font-weight, revert-layer);
+    font-style: var(--faces-diagnostic-hint-font-style, revert-layer);
+    font-family: var(--faces-diagnostic-hint-font-family, revert-layer);
+    font-size: var(--faces-diagnostic-hint-font-size, revert-layer);
+    text-decoration: var(--faces-diagnostic-hint-text-decoration, underline wavy var(--tuna-text-muted));
     text-decoration-skip-ink: none;
   }
 
   [data-face="diagnostic.unnecessary"], :where([data-face^="diagnostic.unnecessary."]) {
-    color: var(--tuna-text-faint);
+    color: var(--faces-diagnostic-unnecessary-color, var(--tuna-text-faint));
+    background-color: var(--faces-diagnostic-unnecessary-background, revert-layer);
+    font-weight: var(--faces-diagnostic-unnecessary-font-weight, revert-layer);
+    font-style: var(--faces-diagnostic-unnecessary-font-style, revert-layer);
+    font-family: var(--faces-diagnostic-unnecessary-font-family, revert-layer);
+    font-size: var(--faces-diagnostic-unnecessary-font-size, revert-layer);
+    text-decoration: var(--faces-diagnostic-unnecessary-text-decoration, revert-layer);
+    text-decoration-skip-ink: none;
   }
 
   [data-face="diagnostic.deprecated"], :where([data-face^="diagnostic.deprecated."]) {
-    text-decoration-line: line-through;
+    color: var(--faces-diagnostic-deprecated-color, revert-layer);
+    background-color: var(--faces-diagnostic-deprecated-background, revert-layer);
+    font-weight: var(--faces-diagnostic-deprecated-font-weight, revert-layer);
+    font-style: var(--faces-diagnostic-deprecated-font-style, revert-layer);
+    font-family: var(--faces-diagnostic-deprecated-font-family, revert-layer);
+    font-size: var(--faces-diagnostic-deprecated-font-size, revert-layer);
+    text-decoration: var(--faces-diagnostic-deprecated-text-decoration, line-through);
   }
 
   [data-face="highlight"], :where([data-face^="highlight."]) {
-    background: var(--tuna-hover);
+    color: var(--faces-highlight-color, revert-layer);
+    background-color: var(--faces-highlight-background, var(--tuna-hover));
+    font-weight: var(--faces-highlight-font-weight, revert-layer);
+    font-style: var(--faces-highlight-font-style, revert-layer);
+    font-family: var(--faces-highlight-font-family, revert-layer);
+    font-size: var(--faces-highlight-font-size, revert-layer);
+    text-decoration: var(--faces-highlight-text-decoration, revert-layer);
   }
 
   [data-face="shadow"], :where([data-face^="shadow."]) {
-    color: var(--tuna-text-faint);
+    color: var(--faces-shadow-color, var(--tuna-text-faint));
+    background-color: var(--faces-shadow-background, revert-layer);
+    font-weight: var(--faces-shadow-font-weight, revert-layer);
+    font-style: var(--faces-shadow-font-style, revert-layer);
+    font-family: var(--faces-shadow-font-family, revert-layer);
+    font-size: var(--faces-shadow-font-size, revert-layer);
+    text-decoration: var(--faces-shadow-text-decoration, revert-layer);
   }
 
   [data-face="match"], :where([data-face^="match."]) {
-    background: var(--tuna-match);
+    color: var(--faces-match-color, revert-layer);
+    background-color: var(--faces-match-background, var(--tuna-match));
+    font-weight: var(--faces-match-font-weight, revert-layer);
+    font-style: var(--faces-match-font-style, revert-layer);
+    font-family: var(--faces-match-font-family, revert-layer);
+    font-size: var(--faces-match-font-size, revert-layer);
+    text-decoration: var(--faces-match-text-decoration, revert-layer);
   }
 
   [data-face="match.other"], :where([data-face^="match.other."]) {
-    background: var(--tuna-match-other);
-  }
-
-  /* A node standing alone that a span covers carries the span's face on
-     its own element, which draws nothing, so the face goes on what its
-     kind drew. */
-  .view .node[data-face="match"] > * {
-    background: var(--tuna-match);
-  }
-
-  .view .node[data-face="match.other"] > * {
-    background: var(--tuna-match-other);
+    color: var(--faces-match-other-color, revert-layer);
+    background-color: var(--faces-match-other-background, var(--tuna-match-other));
+    font-weight: var(--faces-match-other-font-weight, revert-layer);
+    font-style: var(--faces-match-other-font-style, revert-layer);
+    font-family: var(--faces-match-other-font-family, revert-layer);
+    font-size: var(--faces-match-other-font-size, revert-layer);
+    text-decoration: var(--faces-match-other-text-decoration, revert-layer);
   }
 
   [data-face="error"], :where([data-face^="error."]) {
-    color: var(--tuna-error);
+    color: var(--faces-error-color, var(--tuna-error));
+    background-color: var(--faces-error-background, revert-layer);
+    font-weight: var(--faces-error-font-weight, var(--tuna-font-weight-bold));
+    font-style: var(--faces-error-font-style, revert-layer);
+    font-family: var(--faces-error-font-family, revert-layer);
+    font-size: var(--faces-error-font-size, revert-layer);
+    text-decoration: var(--faces-error-text-decoration, revert-layer);
   }
 
   [data-face="warning"], :where([data-face^="warning."]) {
-    color: var(--tuna-warning);
+    color: var(--faces-warning-color, var(--tuna-warning));
+    background-color: var(--faces-warning-background, revert-layer);
+    font-weight: var(--faces-warning-font-weight, var(--tuna-font-weight-bold));
+    font-style: var(--faces-warning-font-style, revert-layer);
+    font-family: var(--faces-warning-font-family, revert-layer);
+    font-size: var(--faces-warning-font-size, revert-layer);
+    text-decoration: var(--faces-warning-text-decoration, revert-layer);
   }
 
   [data-face="success"], :where([data-face^="success."]) {
-    color: var(--tuna-success);
+    color: var(--faces-success-color, var(--tuna-success));
+    background-color: var(--faces-success-background, revert-layer);
+    font-weight: var(--faces-success-font-weight, var(--tuna-font-weight-bold));
+    font-style: var(--faces-success-font-style, revert-layer);
+    font-family: var(--faces-success-font-family, revert-layer);
+    font-size: var(--faces-success-font-size, revert-layer);
+    text-decoration: var(--faces-success-text-decoration, revert-layer);
   }
 
   [data-face="escape-glyph"], :where([data-face^="escape-glyph."]) {
-    color: var(--tuna-error);
+    color: var(--faces-escape-glyph-color, var(--tuna-error));
+    background-color: var(--faces-escape-glyph-background, revert-layer);
+    font-weight: var(--faces-escape-glyph-font-weight, revert-layer);
+    font-style: var(--faces-escape-glyph-font-style, revert-layer);
+    font-family: var(--faces-escape-glyph-font-family, revert-layer);
+    font-size: var(--faces-escape-glyph-font-size, revert-layer);
+    text-decoration: var(--faces-escape-glyph-text-decoration, revert-layer);
+  }
+
+  [data-face="key-binding"], :where([data-face^="key-binding."]) {
+    color: var(--faces-key-binding-color, var(--tuna-info));
+    background-color: var(--faces-key-binding-background, revert-layer);
+    font-weight: var(--faces-key-binding-font-weight, revert-layer);
+    font-style: var(--faces-key-binding-font-style, revert-layer);
+    font-family: var(--faces-key-binding-font-family, var(--tuna-font-code));
+    font-size: var(--faces-key-binding-font-size, revert-layer);
+    text-decoration: var(--faces-key-binding-text-decoration, revert-layer);
+  }
+}
+
+/* A node standing alone that a span covers carries the span's face on
+   its own element, which draws nothing, so the face goes on what its
+   kind drew. */
+@layer defaults {
+  .view .node[data-face="match"] > * {
+    background-color: var(--faces-match-background, var(--tuna-match));
+  }
+
+  .view .node[data-face="match.other"] > * {
+    background-color: var(--faces-match-other-background, var(--tuna-match-other));
   }
 }

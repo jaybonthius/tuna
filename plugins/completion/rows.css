@@ -22,8 +22,8 @@
     white-space: pre;
   }
 
-  /* This selector outweighs a face's rule, so it keeps off a match drawn
-     in a face. */
+  /* A rule here beats a face's rule, so it keeps off a match drawn in a
+     face. */
   .completion-text .completion-match:not([data-face]) {
     color: var(--completion-match-text, var(--tuna-link));
     font-weight: var(--tuna-font-weight-bold);

@@ -1,23 +1,43 @@
 @layer defaults, themes, preferences;
 
-@layer defaults {
+@layer defaults.faces {
   [data-face="completion.match-0"] {
     color: var(--completion-match-0-color, var(--tuna-blue-11));
-    font-weight: var(--tuna-font-weight-bold);
+    background-color: var(--completion-match-0-background, revert-layer);
+    font-weight: var(--completion-match-0-font-weight, var(--tuna-font-weight-bold));
+    font-style: var(--completion-match-0-font-style, revert-layer);
+    font-family: var(--completion-match-0-font-family, revert-layer);
+    font-size: var(--completion-match-0-font-size, revert-layer);
+    text-decoration: var(--completion-match-0-text-decoration, revert-layer);
   }
 
   [data-face="completion.match-1"] {
     color: var(--completion-match-1-color, var(--tuna-pink-11));
-    font-weight: var(--tuna-font-weight-bold);
+    background-color: var(--completion-match-1-background, revert-layer);
+    font-weight: var(--completion-match-1-font-weight, var(--tuna-font-weight-bold));
+    font-style: var(--completion-match-1-font-style, revert-layer);
+    font-family: var(--completion-match-1-font-family, revert-layer);
+    font-size: var(--completion-match-1-font-size, revert-layer);
+    text-decoration: var(--completion-match-1-text-decoration, revert-layer);
   }
 
   [data-face="completion.match-2"] {
     color: var(--completion-match-2-color, var(--tuna-green-11));
-    font-weight: var(--tuna-font-weight-bold);
+    background-color: var(--completion-match-2-background, revert-layer);
+    font-weight: var(--completion-match-2-font-weight, var(--tuna-font-weight-bold));
+    font-style: var(--completion-match-2-font-style, revert-layer);
+    font-family: var(--completion-match-2-font-family, revert-layer);
+    font-size: var(--completion-match-2-font-size, revert-layer);
+    text-decoration: var(--completion-match-2-text-decoration, revert-layer);
   }
 
   [data-face="completion.match-3"] {
     color: var(--completion-match-3-color, var(--tuna-amber-11));
-    font-weight: var(--tuna-font-weight-bold);
+    background-color: var(--completion-match-3-background, revert-layer);
+    font-weight: var(--completion-match-3-font-weight, var(--tuna-font-weight-bold));
+    font-style: var(--completion-match-3-font-style, revert-layer);
+    font-family: var(--completion-match-3-font-family, revert-layer);
+    font-size: var(--completion-match-3-font-size, revert-layer);
+    text-decoration: var(--completion-match-3-text-decoration, revert-layer);
   }
 }

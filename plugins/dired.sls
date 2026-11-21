@@ -1021,8 +1021,8 @@
 
 (define (%draw-header node view)
   (let ([used (document:node-attribute node 'used)] [available (document:node-attribute node 'available)])
-    (haml (:div.dired-header ([data-face "dired.header"])
-            (views:draw-children view node)
+    (haml (:div.dired-header
+            (:div ([data-face "dired.header"]) (views:draw-children view node))
             (:div.dired-summary
               (unless (hide-details?)
                 (:span "total used in directory " (size-text used)))

@@ -156,8 +156,21 @@
     --modus-fg-heading-1: light-dark(#000000, #ffffff);
     --modus-fg-heading-2: light-dark(#574316, #d2b580);
     --modus-fg-heading-3: light-dark(#193668, #82b0ec);
+    --modus-fg-heading-4: light-dark(#721045, #feacd0);
+    --modus-fg-heading-5: light-dark(#2a5045, #88ca9f);
+    --modus-fg-heading-6: light-dark(#7f0000, #ef8386);
     --modus-bg-search-current: light-dark(#f3d000, #7a6100);
     --modus-bg-search-lazy: light-dark(#a4d5f9, #2266ae);
+    --modus-fg-search-current: light-dark(#000000, #ffffff);
+    --modus-fg-search-lazy: light-dark(#000000, #ffffff);
+    --modus-bg-mark-select: light-dark(#bfefff, #004065);
+    --modus-fg-mark-select: light-dark(#00598b, #00d3d0);
+    --modus-bg-mark-delete: light-dark(#ffcfbf, #620f2a);
+    --modus-fg-mark-delete: light-dark(#a60000, #ff7f86);
+    --modus-underline-err: light-dark(#d00000, #ff5f5f);
+    --modus-underline-warning: light-dark(#808000, #d0bc00);
+    --modus-underline-note: light-dark(#008899, #00d3d0);
+    --modus-underline-link: light-dark(#3546c2, #79a8ff);
     --modus-fg-mode-line-active: light-dark(#000000, #ffffff);
     --modus-fg-region: light-dark(#000000, #ffffff);
 
@@ -229,6 +242,59 @@
     --faces-tag-color: var(--modus-fnname);
     --faces-markup-heading-color: var(--modus-fg-heading-1);
     --faces-markup-raw-color: var(--modus-fg-prose-code);
+    --faces-markup-heading-1-color: var(--modus-fg-heading-1);
+    --faces-markup-heading-2-color: var(--modus-fg-heading-2);
+    --faces-markup-heading-3-color: var(--modus-fg-heading-3);
+    --faces-markup-heading-4-color: var(--modus-fg-heading-4);
+    --faces-markup-heading-5-color: var(--modus-fg-heading-5);
+    --faces-markup-heading-6-color: var(--modus-fg-heading-6);
+    --faces-markup-quote-color: var(--modus-docstring);
+    --faces-markup-link-color: var(--modus-fg-link);
+    --faces-markup-link-text-decoration: underline var(--modus-underline-link);
+    --faces-markup-underline-text-decoration: underline var(--modus-fg-dim);
+    --faces-diagnostic-error-text-decoration: underline wavy var(--modus-underline-err);
+    --faces-diagnostic-warning-text-decoration: underline wavy var(--modus-underline-warning);
+    --faces-diagnostic-info-text-decoration: underline wavy var(--modus-underline-note);
+    --faces-diagnostic-hint-text-decoration: underline wavy var(--modus-underline-note);
+    --faces-diagnostic-unnecessary-color: currentcolor;
+    --faces-diagnostic-unnecessary-text-decoration: underline wavy var(--modus-underline-note);
+    --faces-match-color: var(--modus-fg-search-current);
+    --faces-match-other-color: var(--modus-fg-search-lazy);
+    --faces-escape-glyph-color: var(--modus-keybind);
+    --faces-key-binding-color: var(--modus-keybind);
+    --faces-key-binding-font-weight: var(--tuna-font-weight-bold);
+    --dired-marked-color: var(--modus-fg-mark-select);
+    --dired-marked-background: var(--modus-bg-mark-select);
+    --dired-marked-font-weight: var(--tuna-font-weight-bold);
+    --dired-flagged-color: var(--modus-fg-mark-delete);
+    --dired-flagged-background: var(--modus-bg-mark-delete);
+    --dired-flagged-font-weight: var(--tuna-font-weight-bold);
+    --dired-folder-font-weight: normal;
+    --faces-keyword-directive-font-weight: normal;
+
+    /* Modus's two options are left undeclared when off, so a face that
+       reads one with no fallback takes the weight or slant of the text
+       around it, as Modus leaves the attribute unspecified. */
+    --faces-keyword-font-weight: var(--modus-bold-constructs);
+    --faces-builtin-font-weight: var(--modus-bold-constructs);
+    --faces-type-font-weight: var(--modus-bold-constructs);
+    --faces-module-font-weight: var(--modus-bold-constructs);
+    --faces-attribute-font-weight: var(--modus-bold-constructs);
+    --faces-string-escape-font-weight: var(--modus-bold-constructs);
+    --faces-escape-glyph-font-weight: var(--modus-bold-constructs);
+    --faces-comment-font-style: var(--modus-italic-constructs);
+    --faces-markup-quote-font-style: var(--modus-italic-constructs);
+    /* Modus's spec for these replaces Emacs's bold one, so with the
+       option off they are normal, not the faces plugin's bold. */
+    --faces-error-font-weight: var(--modus-bold-constructs, normal);
+    --faces-warning-font-weight: var(--modus-bold-constructs, normal);
+    --faces-success-font-weight: var(--modus-bold-constructs, normal);
+    --completion-match-0-font-weight: var(--modus-bold-constructs, normal);
+    --completion-match-1-font-weight: var(--modus-bold-constructs, normal);
+    --completion-match-2-font-weight: var(--modus-bold-constructs, normal);
+    --completion-match-3-font-weight: var(--modus-bold-constructs, normal);
+    --dired-header-font-weight: var(--modus-bold-constructs, normal);
+    --dired-mark-font-weight: var(--modus-bold-constructs, normal);
     --minibuffer-prompt-color: var(--modus-fg-prompt);
     --echo-area-prompt-color: var(--modus-fg-prompt);
     --search-group-1-background: var(--modus-bg-blue-intense);

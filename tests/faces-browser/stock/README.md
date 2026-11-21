@@ -1,0 +1,5 @@
+# Stock Modus in Emacs
+
+Recorded from GNU Emacs 30.2 run as `emacs -Q` in a 24-bit colour terminal, with only modus-themes loaded (5.3.0, commit `c6a08aa1a8a70cc94eeb7939b26029187d5289f3`, https://github.com/protesilaos/modus-themes), and nothing else set but `modus-themes-bold-constructs`, `treesit-font-lock-level` and `treesit-extra-load-path`. That path gave `python-ts-mode` a `libtree-sitter-python.so` built on 2026-09-25 whose tree-sitter-python revision was not recorded, so it may not be the revision Tuna's tests pin; the grammar decides the Python runs.
+
+`stock-THEME-BOLD-LEVEL-EXT.tsv`: `../look.py` in `python-ts-mode` and `../look.sls` in `scheme-mode`, under `modus-operandi-tinted` (light) or `modus-vivendi-tinted` (dark), with `modus-themes-bold-constructs` nil (plain) or t (bold), at tree-sitter font-lock level 3 or 4. Each line is one run of text with the same `face` property: its start and end as 0-based character offsets, then the foreground and weight Emacs resolves for it, then the face.

@@ -24,7 +24,7 @@
   .dired-size,
   .dired-time,
   .dired-target {
-    color: var(--dired-details-text, var(--tuna-text-muted));
+    color: var(--dired-details-color, var(--tuna-text-muted));
   }
 
   .dired-name {
@@ -34,44 +34,82 @@
   .dired-summary {
     display: flex;
     column-gap: 1ch;
-    color: var(--dired-details-text, var(--tuna-text-muted));
+    color: var(--dired-details-color, var(--tuna-text-muted));
   }
 
   .dired-sort {
     margin-inline-start: auto;
   }
+}
 
-  [data-face="dired.header"] .line {
-    color: var(--dired-header-text, var(--tuna-text));
-    font-weight: var(--tuna-font-weight-semibold, bold);
+@layer defaults.faces {
+  [data-face="dired.header"] {
+    color: var(--dired-header-color, var(--tuna-text));
+    background-color: var(--dired-header-background, revert-layer);
+    font-weight: var(--dired-header-font-weight, var(--tuna-font-weight-semibold));
+    font-style: var(--dired-header-font-style, revert-layer);
+    font-family: var(--dired-header-font-family, revert-layer);
+    font-size: var(--dired-header-font-size, revert-layer);
+    text-decoration: var(--dired-header-text-decoration, revert-layer);
   }
 
   [data-face="dired.folder"] {
-    color: var(--dired-folder-text, var(--tuna-blue-11));
-    font-weight: var(--tuna-font-weight-semibold, bold);
+    color: var(--dired-folder-color, var(--tuna-blue-11));
+    background-color: var(--dired-folder-background, revert-layer);
+    font-weight: var(--dired-folder-font-weight, var(--tuna-font-weight-semibold));
+    font-style: var(--dired-folder-font-style, revert-layer);
+    font-family: var(--dired-folder-font-family, revert-layer);
+    font-size: var(--dired-folder-font-size, revert-layer);
+    text-decoration: var(--dired-folder-text-decoration, revert-layer);
   }
 
   [data-face="dired.link"] {
-    color: var(--dired-link-text, var(--tuna-cyan-11));
+    color: var(--dired-link-color, var(--tuna-cyan-11));
+    background-color: var(--dired-link-background, revert-layer);
+    font-weight: var(--dired-link-font-weight, revert-layer);
+    font-style: var(--dired-link-font-style, revert-layer);
+    font-family: var(--dired-link-font-family, revert-layer);
+    font-size: var(--dired-link-font-size, revert-layer);
+    text-decoration: var(--dired-link-text-decoration, revert-layer);
   }
 
   [data-face="dired.broken-link"] {
-    color: var(--dired-broken-link-text, var(--tuna-error));
-    text-decoration: line-through;
+    color: var(--dired-broken-link-color, var(--tuna-error));
+    background-color: var(--dired-broken-link-background, revert-layer);
+    font-weight: var(--dired-broken-link-font-weight, revert-layer);
+    font-style: var(--dired-broken-link-font-style, revert-layer);
+    font-family: var(--dired-broken-link-font-family, revert-layer);
+    font-size: var(--dired-broken-link-font-size, revert-layer);
+    text-decoration: var(--dired-broken-link-text-decoration, line-through);
   }
 
   [data-face="dired.mark"] {
-    color: var(--dired-mark-text, var(--tuna-warning));
-    font-weight: var(--tuna-font-weight-bold, bold);
+    color: var(--dired-mark-color, var(--tuna-warning));
+    background-color: var(--dired-mark-background, revert-layer);
+    font-weight: var(--dired-mark-font-weight, var(--tuna-font-weight-bold));
+    font-style: var(--dired-mark-font-style, revert-layer);
+    font-family: var(--dired-mark-font-family, revert-layer);
+    font-size: var(--dired-mark-font-size, revert-layer);
+    text-decoration: var(--dired-mark-text-decoration, revert-layer);
   }
 
   [data-face="dired.marked"] {
-    color: var(--dired-marked-text, var(--tuna-warning));
-    font-weight: var(--tuna-font-weight-bold, bold);
+    color: var(--dired-marked-color, var(--tuna-warning));
+    background-color: var(--dired-marked-background, revert-layer);
+    font-weight: var(--dired-marked-font-weight, var(--tuna-font-weight-bold));
+    font-style: var(--dired-marked-font-style, revert-layer);
+    font-family: var(--dired-marked-font-family, revert-layer);
+    font-size: var(--dired-marked-font-size, revert-layer);
+    text-decoration: var(--dired-marked-text-decoration, revert-layer);
   }
 
   [data-face="dired.flagged"] {
-    color: var(--dired-flagged-text, var(--tuna-error));
-    font-weight: var(--tuna-font-weight-bold, bold);
+    color: var(--dired-flagged-color, var(--tuna-error));
+    background-color: var(--dired-flagged-background, revert-layer);
+    font-weight: var(--dired-flagged-font-weight, var(--tuna-font-weight-bold));
+    font-style: var(--dired-flagged-font-style, revert-layer);
+    font-family: var(--dired-flagged-font-family, revert-layer);
+    font-size: var(--dired-flagged-font-size, revert-layer);
+    text-decoration: var(--dired-flagged-text-decoration, revert-layer);
   }
 }

@@ -112,14 +112,6 @@
     border-radius: var(--tuna-control-radius);
   }
 
-  .chat-removed {
-    background: var(--tuna-removed-surface);
-  }
-
-  .chat-added {
-    background: var(--tuna-added-surface);
-  }
-
   .chat-removed .line::before {
     content: "- ";
   }
@@ -133,8 +125,8 @@
     font-size: var(--tuna-font-size-ui);
   }
 
-  /* A notice with a face takes its colour from it; a class here would tie
-     with the face's attribute selector and win by link order. */
+  /* A notice with a face takes its colour from it, which a rule here
+     would beat. */
   .chat-notice:not([data-face]) {
     color: var(--tuna-text-muted);
   }

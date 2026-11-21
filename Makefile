@@ -4,10 +4,12 @@ OBJ := build/obj
 LIBDIRS := src::$(OBJ)/src:lib/chez-lang/src::$(OBJ)/lib/chez-lang/src
 TEST_LIBDIRS := $(LIBDIRS):tests/lib::$(OBJ)/tests/lib
 TEST_TIMEOUT ?= 60
+BROWSER_TEST_TIMEOUT ?= 300
 TESTS := $(sort $(wildcard tests/*-test.sps))
-SCRIPT_TESTS := $(sort $(wildcard tests/*-test.sh))
+BROWSER_TESTS := $(sort $(wildcard tests/*-browser-test.sh))
+SCRIPT_TESTS := $(filter-out $(BROWSER_TESTS),$(sort $(wildcard tests/*-test.sh)))
 TRANSCRIPTS := $(sort $(wildcard tests/*/*.transcript))
-RUNS := $(TESTS:%=run/%) $(SCRIPT_TESTS:%=run/%) $(TRANSCRIPTS:%=run/%)
+RUNS := $(TESTS:%=run/%) $(SCRIPT_TESTS:%=run/%) $(BROWSER_TESTS:%=run/%) $(TRANSCRIPTS:%=run/%)
 
 .PHONY: build test bench repl exe clean $(RUNS)
 
@@ -26,6 +28,9 @@ $(TESTS:%=run/%): run/%: build
 $(SCRIPT_TESTS:%=run/%): run/%: exe
 	@timeout $(TEST_TIMEOUT) sh $* build/bin/tuna
 
+$(BROWSER_TESTS:%=run/%): run/%: exe
+	@timeout $(BROWSER_TEST_TIMEOUT) sh $* build/bin/tuna
+
 $(TRANSCRIPTS:%=run/%): run/%: exe
 	@timeout $(TEST_TIMEOUT) sh tests/run-transcript.sh build/bin/tuna $*
 
@@ -37,7 +42,7 @@ $(PYTHON_GRAMMAR):
 	sh tests/build-grammar.sh libraries/chez-treesitter/vendor/tree-sitter-python \
 	  293fdc02038ee2bf0e2e206711b69c90ac0d413f $@
 
-$(filter run/tests/treesit-highlight/% run/tests/treesit/%,$(TRANSCRIPTS:%=run/%)): $(PYTHON_GRAMMAR)
+$(filter run/tests/treesit-highlight/% run/tests/treesit/%,$(TRANSCRIPTS:%=run/%)) run/tests/faces-browser-test.sh: $(PYTHON_GRAMMAR)
 
 # Every benchmark runs, so that one failure hides none of the others. Tuna
 # reports an error in init.ss and goes on, so a benchmark shows a crash by

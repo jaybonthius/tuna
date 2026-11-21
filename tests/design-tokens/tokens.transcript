@@ -40,7 +40,7 @@
 ; current line and the region, faint text 4.5:1 on the page, and focus 3:1
 ; on the page and on every bar, as the cursor is on the page.
 > (length pairs)
-145
+133
 > (low-contrast)
 ()
 ; The chrome stands off the islands on it.

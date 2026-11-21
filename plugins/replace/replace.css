@@ -1,7 +1,13 @@
 @layer defaults, themes, preferences;
 
-@layer defaults {
+@layer defaults.faces {
   [data-face="replace.match"] {
-    background: var(--replace-match-background, var(--tuna-error-surface));
+    color: var(--replace-match-color, revert-layer);
+    background-color: var(--replace-match-background, var(--tuna-error-surface));
+    font-weight: var(--replace-match-font-weight, revert-layer);
+    font-style: var(--replace-match-font-style, revert-layer);
+    font-family: var(--replace-match-font-family, revert-layer);
+    font-size: var(--replace-match-font-size, revert-layer);
+    text-decoration: var(--replace-match-text-decoration, revert-layer);
   }
 }
