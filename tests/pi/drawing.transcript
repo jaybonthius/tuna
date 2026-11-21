@@ -139,6 +139,15 @@
 > (sleep-for 0.1)
 > (list (map short (part-datums chat 'pi-chat:%widgets)) (substring (shown chat) (- (string-length (shown chat)) 21) (string-length (shown chat))))
 (((widget "Step 1\nStep 2\n")) "Step 1\nStep 2\n\nbelow\n")
+; A widget's machine data is not drawn, nor a widget of only that.
+> (say! f '(("type" . "extension_ui_request") ("id" . "w3") ("method" . "setWidget") ("widgetKey" . "subagent-async")
+            ("widgetLines" . #("PI_SUBAGENT_ASYNC_JSON:{\"kind\":\"pi-subagents.async-status-snapshot\",\"version\":1,\"runs\":[]}")))
+        '(("type" . "extension_ui_request") ("id" . "w4") ("method" . "setWidget") ("widgetKey" . "mixed")
+          ("widgetLines" . #("Running" "RUN_JSON:{\"n\": 1}" "NOTE: {x}" "{\"a\": 1}"))))
+> (wait-until (lambda () (= 2 (length (part-datums chat 'pi-chat:%widgets)))))
+> (sleep-for 0.1)
+> (map short (part-datums chat 'pi-chat:%widgets))
+((widget "Step 1\nStep 2\n") (widget "Running\nNOTE: {x}\n{\"a\": 1}\n"))
 ; When Pi exits the chat says so, with a button that restarts it.
 > (call-with-output-file (string-append (fake-dir f) "/exit") (lambda (p) (display "1" p)))
 > (wait-until (lambda () (eq? (pi:chat-activity chat) 'exited)))

@@ -56,6 +56,24 @@
 (("pool" . "3 pool(s)"))
 > (map (lambda (w) (list (pi:widget? w) (pi:widget-key w) (pi:widget-placement w) (pi:widget-lines w))) (pi:chat-widgets chat))
 ((#t "plan" above ("Step 1" "Step 2")) (#t "foot" below ("below")))
+; A line that is an upper-case name, a colon and a JSON object or array,
+; as pi-subagents writes for programs, is not one of a widget's lines,
+; and a widget of only such lines is none. A name before text that is
+; not an object or array, and JSON with no name, stay lines.
+> (say! f (ui-request "w5" "setWidget" '("widgetKey" . "subagent-async")
+                      '("widgetLines" . #("PI_SUBAGENT_ASYNC_JSON:{\"kind\":\"pi-subagents.async-status-snapshot\",\"version\":1,\"generatedAt\":1763600000000,\"caps\":{\"maxRuns\":20,\"maxChildrenPerNode\":8,\"maxDepth\":3,\"maxStringLength\":160,\"maxSerializedBytes\":32768},\"omitted\":{\"runs\":0,\"children\":0,\"byteLimitExceeded\":false},\"runs\":[{\"id\":\"a1b2c3\",\"kind\":\"subagent\",\"label\":\"worker\",\"state\":\"running\",\"startedAt\":1763600000000,\"updatedAt\":1763600000000,\"children\":[{\"id\":\"step:0\",\"kind\":\"step\",\"label\":\"worker\",\"state\":\"running\",\"agent\":\"worker\"}]}]}")))
+        (ui-request "w6" "setWidget" '("widgetKey" . "mixed") '("widgetLines" . #("Running 1 run" "RUN_2:[1, 2]" "done")))
+        (ui-request "w7" "setWidget" '("widgetKey" . "named")
+                    '("widgetLines" . #("NOTE: {not json}" "TODO:" "COUNT:3" "Note:{\"a\": 1}" "X:{\"a\": 1} trailing")))
+        (ui-request "w8" "setWidget" '("widgetKey" . "bare") '("widgetLines" . #("{\"a\": 1}" "[1]"))))
+> (wait-until (lambda () (= 5 (length (pi:chat-widgets chat)))))
+> (map (lambda (w) (list (pi:widget-key w) (pi:widget-lines w))) (pi:chat-widgets chat))
+(("plan" ("Step 1" "Step 2")) ("foot" ("below")) ("mixed" ("Running 1 run" "done")) ("named" ("NOTE: {not json}" "TODO:" "COUNT:3" "Note:{\"a\": 1}" "X:{\"a\": 1} trailing")) ("bare" ("{\"a\": 1}" "[1]")))
+; A widget set to only such lines goes, as one set to no lines does.
+> (say! f (ui-request "w9" "setWidget" '("widgetKey" . "mixed") '("widgetLines" . #("RUN_2:[3]"))))
+> (wait-until (lambda () (= 4 (length (pi:chat-widgets chat)))))
+> (map pi:widget-key (pi:chat-widgets chat))
+("plan" "foot" "named" "bare")
 ; An extension that sets the editor's text calls a hook.
 > (say! f (ui-request "e1" "set_editor_text" '("text" . "/review")))
 > (wait-until (lambda () (pair? editor-texts)))

@@ -68,3 +68,9 @@
 > (load-module! '(pi-chat))
 > (buffers:name (pi-chat:buffer chat))
 "*pi: home*"
+; A widget saved as its key, placement and lines restores.
+> (eval-in-module '(set-saved! %chats (map (lambda (v) (let ([v (vector-copy v)]) (vector-set! v 5 '(#("plan" above ("Step 1")))) v)) (%chats))) '(pi))
+> (eval-file (library-file "pi.sls"))
+> (define chat (car (pi:chats)))
+> (map (lambda (w) (list (pi:widget-key w) (pi:widget-placement w) (pi:widget-lines w))) (pi:chat-widgets chat))
+(("plan" above ("Step 1")))

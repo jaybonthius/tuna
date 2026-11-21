@@ -859,6 +859,24 @@
     (%save!)
     (%changed! chat)))
 
+;; Pi's protocol carries a widget only as lines of text, so an extension
+;; that reports to programs, as pi-subagents does, writes its data as a
+;; line such as PI_SUBAGENT_ASYNC_JSON:{...}, which is not for people.
+;; The rest must parse as an object or array, or prose such as
+;; "NOTE: {x}" would vanish.
+(define (%machine-line? line)
+  (let ([n (string-length line)])
+    (and (fx> n 0) (char<=? #\A (string-ref line 0) #\Z)
+         (let loop ([i 1])
+           (and (fx< i n)
+                (let ([c (string-ref line i)])
+                  (cond
+                    [(char=? c #\:)
+                     (let ([v (guard (e [(json-error? e) #f]) (string->json (substring line (fx+ i 1) n)))])
+                       (or (list? v) (vector? v)))]
+                    [(or (char<=? #\A c #\Z) (char<=? #\0 c #\9) (char=? c #\_)) (loop (fx+ i 1))]
+                    [else #f])))))))
+
 (define (%ui-request! chat link request)
   (let ([kind (ref request "method")] [replaying? (link-replaying? link)])
     (cond
@@ -881,15 +899,17 @@
            (%save!)
            (%changed! chat)))]
       [(equal? kind "setWidget")
-       (let ([key (ref request "widgetKey")] [lines (ref request "widgetLines")])
+       (let* ([key (ref request "widgetKey")]
+              [lines (let ([v (ref request "widgetLines")]) (and (vector? v) (filter string? (vector->list v))))]
+              [drawn (and lines (remp %machine-line? lines))])
          (when (string? key)
            (%chat-widgets-set! chat
              (let ([others (remp (lambda (w) (equal? (widget-key w) key)) (%chat-widgets chat))])
-               (if (vector? lines)
+               (if (and lines (or (null? lines) (pair? drawn)))
                    (append others
                      (list (%make-widget key
                              (if (equal? (ref request "widgetPlacement") "belowEditor") 'below 'above)
-                             (filter string? (vector->list lines)))))
+                             drawn)))
                    others)))
            (%save!)
            (%changed! chat)))]
