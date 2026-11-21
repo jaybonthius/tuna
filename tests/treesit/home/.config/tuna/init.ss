@@ -208,7 +208,7 @@
     ((table-ref web:input-handlers "scroll") client
      `(("type" . "scroll") ("view" . ,(views:id view))
        ("placement" . ,(car (numbers-after html "data-placement=\""))) ("report" . ,reports)
-       ("version" . ,(car (numbers-after html "data-version=\"")))
+       ("version" . ,(car (numbers-after html "data-version=\""))) ("slotVersion" . 0)
        ("top" . ,(mark top)) ("spacer" . ,(not (assv top marks))) ("fraction" . 0)
        ("left" . ,(mark top)) ("past" . 0) ("sides" . #())
        ("start" . ,(append (mark whole-from) '(("count" . 0))))
@@ -216,11 +216,7 @@
        ("atStart" . ,(and (search html "data-run-at-start" 0) (= top 1) #t))
        ("atEnd" . #f)
        ("columns" . 80) ("rows" . ,(quotient h 20)) ("pointVisible" . #t) ("lost" . #f)
-       ("wanted" . ,(let* ([screens (string->number (let ([i (search html "data-drawn-screens=\"" 0)])
-                                                       (substring html (+ i 20) (search html "\"" (+ i 20)))))]
-                           [lines (+ (exact (ceiling (/ (* screens h) 20))) 1)])
-                      `(("aboveLines" . ,lines) ("aboveChars" . ,(* lines 80)) ("belowLines" . ,lines) ("belowChars" . ,(* lines 80))
-                        ("side" . ,(exact (ceiling (* screens 80)))))))
+       ("wanted" . null)
        ("settled" . #t) ("hand" . #t) ("edge" . "top")))
     (void)))
 

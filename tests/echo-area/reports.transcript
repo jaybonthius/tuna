@@ -88,7 +88,7 @@
 > (advice-remove! echo-area:message! refuse-second)
 > (let ([log (messages)]) (substring log (- (string-length log) 41) (string-length log)))
 ! car: () is not a pair
-("() is not a pair" "<div class=\"echo-area-message\" role=\"status\" data-face=\"error\"><div class=\"line\" id=\"v3-2\" data-line=\"1\" data-before=\"0\" data-at=\"1\">() is not a pair</div></div>")
+("() is not a pair" "<div class=\"echo-area-message\" role=\"status\" data-face=\"error\"><div class=\"line\" id=\"v3-2\" data-line=\"1\" data-slot=\"0\" data-at=\"1\"><span class=\"view-point\"></span>() is not a pair</div></div>")
 (#t "spell:check: no dictionary")
 (#t "spell:check: no word with irritant 42")
 (#t "two irritants with irritants (1 \"b\")")
@@ -97,7 +97,7 @@
 (#t "g: &error with irritants (1 2)")
 (#t "non-condition value 42")
 ! spell:check: aspell is slow
-"<div class=\"echo-area-message\" role=\"status\" data-face=\"warning\"><div class=\"line\" id=\"v3-4\" data-line=\"1\" data-before=\"0\" data-at=\"1\">aspell is slow</div></div>"
+"<div class=\"echo-area-message\" role=\"status\" data-face=\"warning\"><div class=\"line\" id=\"v3-4\" data-line=\"1\" data-slot=\"0\" data-at=\"1\"><span class=\"view-point\"></span>aspell is slow</div></div>"
 ! notes:consent: not today
 ("text\n" "not today")
 "Before"
@@ -119,7 +119,7 @@
 "car: () is not a pair\nspell:check: no dictionary\nspell:check: no word with irritant 42\ntwo irritants with irritants (1 \"b\")\nf: bad 3 and \"x\"\nspell:check: slow\ng: &error with irritants (1 2)\nnon-condition value 42\nspell:check: aspell is slow\nnotes:consent: not today\nBefore\nnotes:draw: cannot draw [6 times]\nfirst\nsecond\nQuit [2 times]\n"
 ! both
 ("both" #f)
-"<div class=\"echo-area-message\" role=\"status\" data-face=\"error\"><div class=\"line\" id=\"v3-12\" data-line=\"1\" data-before=\"0\" data-at=\"1\">both</div></div>"
+"<div class=\"echo-area-message\" role=\"status\" data-face=\"error\"><div class=\"line\" id=\"v3-12\" data-line=\"1\" data-slot=\"0\" data-at=\"1\"><span class=\"view-point\"></span>both</div></div>"
 ! first
 ! second
 ! third

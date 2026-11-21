@@ -1,5 +1,5 @@
 #!tuna
-(import (document) (buffers) (views) (web) (haml) (views height-map) (scroll-report))
+(import (document) (buffers) (views) (web) (haml) (scroll-report))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -25,8 +25,13 @@
 
 (define (draw-paragraph node view) (haml (:div.p (views:draw-children view node))))
 
+(define (draw-reply node view) (haml (:div.reply (views:draw-children view node))))
+(define (draw-emphasis node view) (haml (:em (views:draw-children view node))))
+
 (buffers:define-kind code (content nodes))
 (buffers:define-kind paragraph (draw draw-paragraph))
+(buffers:define-kind reply (content nodes) (draw draw-reply))
+(buffers:define-kind emphasis (inline) (draw draw-emphasis))
 
 ;; Lines like source code, about 45 characters in 4 highlighted tokens,
 ;; or 100 characters in 10 for the heavy case.
@@ -55,14 +60,35 @@
           (buffers:set-spans! (buffers:layer b syntax) 0 (document:length (buffers:document b)) (reverse spans))
           (loop (cdr texts) (+ at (string-length (car texts)))
                 (append (reverse (spans-of-line at (car texts) heavy?)) spans))))
-    (collect (collect-maximum-generation))
+    (collect-rendezvous)
     b))
 
 (define (node-buffer lines)
   (set! made (+ made 1))
   (let ([b (buffers:make (format "bench-~a" made)
              (apply code '() (map (lambda (k) (paragraph '() (code-line k #f))) (iota lines))))])
-    (collect (collect-maximum-generation))
+    (collect-rendezvous)
+    b))
+
+(define (plain-buffer lines)
+  (set! made (+ made 1))
+  (let ([b (buffers:make (format "bench-~a" made) (apply string-append (map (lambda (k) (code-line k #f)) (iota lines))))])
+    (collect-rendezvous)
+    b))
+
+;; Replies of a chat: paragraphs whose lines hold emphasis, as a model's
+;; replies hold code spans and links.
+(define (chat-buffer replies)
+  (set! made (+ made 1))
+  (let ([b (buffers:make (format "bench-~a" made)
+             (apply code '()
+               (map (lambda (k)
+                      (reply '()
+                        (paragraph '() (format "Reply ~a explains " k) (emphasis '() "this") " and " (emphasis '() "that") " at length.\n")
+                        (paragraph '() "A second paragraph, longer, that a narrow view wraps onto a few rows of its own.\n")
+                        (paragraph '() (code-line k #f))))
+                    (iota replies))))])
+    (collect-rendezvous)
     b))
 
 (define desk (web:make-client 1))
@@ -108,19 +134,6 @@
     (ns-per-op 200 (lambda (i) (html->string (views:draw v desktop)) (html->string (views:draw v phone))))))
 
 (define (drawn-lines v) (length (scroll-report:lines-drawn (html->string (views:draw v desk)))))
-
-(define (big-map)
-  (let ([m (make-height-map 600000 22.0 #f (lambda (a z) (values (quotient (- z a) 10) (- z a) 0 0)))])
-    (do ([i 0 (fx+ i 1)]) ((fx= i 60000) m)
-      (height-map-measure! m (* i 10) (* (+ i 1) 10) 22.0 #f))))
-
-(define (map-edit-cost)
-  (let ([m (big-map)] [count (lambda (a z) (values (quotient (- z a) 10) (- z a) 0 0))])
-    (ns-per-op 2000 (lambda (i) (let ([p (* 10 (mod (* i 7919) 59000))]) (height-map-replace! m (+ p 3) (+ p 3) (+ p 4) count))))))
-
-(define (map-lookup-cost)
-  (let ([m (big-map)])
-    (ns-per-op 20000 (lambda (i) (height-map-position m (height-map-px m (* 10 (mod (* i 7919) 60000))))))))
 
 ;; Views drawn from atoms are saved after each batch that changed one;
 ;; the batch here moves one cursor among ten such views.
@@ -184,7 +197,7 @@
     (views:set-option! v views:wrap-lines #f)
     (views:set-point! v 500001)
     (report! v desk 1)
-    (collect (collect-maximum-generation))
+    (collect-rendezvous)
     v))
 
 (define matches (list->vector (map (lambda (k) (+ 1 (* 8 k))) (iota 125000))))
@@ -233,6 +246,10 @@
     (show "edit-other-views" (other-views-cost (file-buffer 1000 #f) (file-buffer 1000 #f)
                                                (map (lambda (k) (file-buffer 10 #f)) (iota 10))))
     (show "next-stop" (stop-cost typical))
-    (show "map-edit-60000" (map-edit-cost))
-    (show "map-lookup-60000" (map-lookup-cost))
-    (show "map-bytes-60000" (compute-size (big-map)))))
+    (let ([large (scrolled-view (plain-buffer 1000000))])
+      (show "draw-large" (draw-cost large))
+      (show "type-large" (ns-per-op 2000 (lambda (i) (buffers:replace! (views:buffer large) (views:point large) (views:point large) "x"))))))
+  (let ([chat (scrolled-view (chat-buffer 20000))])
+    (printf "drawn lines: ~a chat\n" (drawn-lines chat))
+    (show "draw-chat" (draw-cost chat))
+    (show "type-chat" (ns-per-op 2000 (lambda (i) (buffers:replace! (views:buffer chat) (views:point chat) (views:point chat) "x"))))))

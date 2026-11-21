@@ -43,14 +43,10 @@
 
 (define (html-of view client) (html->string (views:draw view client)))
 
-;; The first, last and count of lines drawn, and the lines each spacer
-;; stands for, above and below.
+;; The first, last and count of lines drawn.
 (define (drawn view client)
   (let* ([html (html-of view client)] [ls (map car (line-marks html))])
-    (define (spacer side)
-      (let ([i (search html (string-append "data-spacer=\"" side "\"") 0)])
-        (if i (list (car (numbers-after (substring html i (search html ">" i)) "data-lines=\""))) '())))
-    (list (car ls) (car (reverse ls)) (length ls) (spacer "above") (spacer "below"))))
+    (list (car ls) (car (reverse ls)) (length ls))))
 
 (define seen '())
 
@@ -78,8 +74,8 @@
 ;; Stands for the page of a view that does not wrap, each line 20 px:
 ;; TOP is the line at the top edge and OFFSET the px of it above the
 ;; edge. A line that is not drawn lies in a spacer, which names it by
-;; its counts, a line per row. The first and last lines wholly in view
-;; keep the configuration's scroll margin of 2 lines from the edges.
+;; its slot. The first and last lines wholly in view keep the
+;; configuration's scroll margin of 2 lines from the edges.
 (define (report! client view top offset settled? . overrides)
   (let* ([html (html-of view client)]
          [marks (line-marks html)]
@@ -93,22 +89,45 @@
      (map (lambda (field) (or (assoc (car field) overrides) field))
      `(("type" . "scroll") ("view" . ,(views:id view))
        ("placement" . ,(car (numbers-after html "data-placement=\""))) ("report" . ,reports)
-       ("version" . ,(car (numbers-after html "data-version=\"")))
-       ("top" . ,(mark top)) ("spacer" . ,spacer?) ("fraction" . ,(/ offset 20))
+       ("version" . ,(car (numbers-after html "data-version=\""))) ("slotVersion" . ,(car (numbers-after html "data-slot-version=\"")))
+       ("top" . ,(if spacer? (list (cons "slot" (slot-at view (line-start view top)))) (mark top))) ("spacer" . ,spacer?) ("fraction" . ,(/ offset 20))
        ("left" . ,(mark top)) ("past" . 0) ("sides" . #())
        ("start" . ,(append (mark whole-from) '(("count" . 0))))
        ("end" . ,(append (mark (max whole-from whole-to)) '(("count" . 0))))
        ("atStart" . ,(and (search html "data-run-at-start" 0) (= top 1) (= offset 0) #t))
-       ("atEnd" . ,(and (search html "data-run-at-end" 0) (not (search html "data-spacer=\"below\"" 0))
+       ("atEnd" . ,(and (search html "data-run-at-end" 0)
                         (>= (+ top (quotient (+ h offset) 20)) (car (car (reverse marks)))) #t))
        ("columns" . 80) ("rows" . ,(quotient h 20)) ("pointVisible" . #t) ("lost" . #f)
-       ("wanted" . ,(let* ([screens (string->number (let ([i (search html "data-drawn-screens=\"" 0)])
-                                                       (substring html (+ i 20) (search html "\"" (+ i 20)))))]
-                           [lines (+ (exact (ceiling (/ (* screens h) 20))) 1)])
-                      `(("aboveLines" . ,lines) ("aboveChars" . ,(* lines 80)) ("belowLines" . ,lines) ("belowChars" . ,(* lines 80))
-                        ("side" . ,(exact (ceiling (* screens 80)))))))
+       ("wanted" . null)
        ("settled" . ,settled?) ("hand" . #t) ("edge" . "top"))))
     (void)))
+
+;; The slot of position P in a view of its whole buffer, as views counts
+;; it: line breaks, atoms standing alone and node openings and closings
+;; before it, from the first position after the root's opening.
+(define (slot-at view p)
+  (let ([d (buffers:document (views:buffer view))])
+    (define (count p)
+      (+ (- (document:line d p) 1)
+         (- (document:offset d p (document:unit atoms)) (document:offset d p (document:unit in-line-atoms)))
+         (- p (document:offset d p (document:unit characters)))))
+    (- (count p) (count 1))))
+
+;; A report's ask for the run to reach the items at positions ABOVE and
+;; BELOW, or the lines ABOVE and BELOW.
+(define (ask-at view above below)
+  (cons "wanted" `(("above" ("slot" . ,(slot-at view above))) ("below" ("slot" . ,(slot-at view below))) ("side" . 160))))
+
+(define (ask-lines above below)
+  (cons "wanted" `(("above" ("slot" . ,(- above 1))) ("below" ("slot" . ,(- below 1))) ("side" . 160))))
+
+;; A report from a page that asks for two view heights beyond each edge
+;; of what it shows, as a page does when what it has drawn falls short.
+(define (asking! client view top offset settled? . overrides)
+  (let* ([rows (quotient (height-of client) 20)]
+         [last (document:line (buffers:document (views:buffer view)) (document:length (buffers:document (views:buffer view))))])
+    (apply report! client view top offset settled?
+           (append overrides (list (ask-lines (max 1 (- top (* 2 rows))) (min last (+ top rows -1 (* 2 rows)))))))))
 
 (define (line-of view p) (document:line (buffers:document (views:buffer view)) p))
 (define (line-start view n) (document:line-start (buffers:document (views:buffer view)) n))

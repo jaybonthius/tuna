@@ -37,9 +37,10 @@ echo "$output" | awk '
     unit["edit-ten-views"] = "ns"
     unit["edit-other-views"] = "ns"
     unit["next-stop"] = "ns"
-    unit["map-edit-60000"] = "ns"
-    unit["map-lookup-60000"] = "ns"
-    unit["map-bytes-60000"] = "bytes"
+    unit["draw-large"] = "ns"
+    unit["type-large"] = "ns"
+    unit["draw-chat"] = "ns"
+    unit["type-chat"] = "ns"
     unit["draw-one-line"] = "ns"
     unit["draw-one-line-source"] = "ns"
     missing = 0

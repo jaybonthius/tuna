@@ -274,7 +274,7 @@
 > (classes)
 ("ui-section" "ui-section" "ui-section current" "ui-section hidden" "ui-section" "ui-section" "ui-section" "ui-section" "ui-section" "ui-section" "ui-section hidden")
 > (element v "<span class=\"ui-section-chevron\"" "span")
-"<span class=\"ui-section-chevron\" data-keymap=\"2 clickable\" aria-hidden=\"true\">▾</span>"
+"<span class=\"ui-section-chevron\" data-keymap=\"1 clickable\" aria-hidden=\"true\">▾</span>"
 > (let ([s (html v)]) (list (and (element v "<span class=\"ui-section-ellipsis\"" "span") #t)))
 (#t)
 > (set-option! ui:highlight-current-section? #f)

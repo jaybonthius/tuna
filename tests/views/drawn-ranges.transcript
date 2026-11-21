@@ -26,46 +26,47 @@
 > (name! v 'v)
 > (list (views:drawn-ranges v) (told))
 (() ())
-; A client's first screen draws the view 100 lines beyond each edge, from
+; A client's first screen draws the view 60 items beyond each edge, from
 ; the start of the first line drawn to the end of the last, and the hook
 ; runs once, with the view and its buffer, current.
 > (show! desktop v)
 > (list (ranges v) (told))
-(((1 101)) ((v "long" #t)))
-; The page's first report sets the range to what it asks.
-> (report! desktop v 1 0 #f)
+(((1 61)) ((v "long" #t)))
+; A report that asks sets the range to what it asks.
+> (asking! desktop v 1 0 #f)
 > (list (ranges v) (told))
-(((1 59)) ((v "long" #t)))
-; Each report of a moved page moves the range, and the hook runs.
+(((1 60)) ((v "long" #t)))
+; A page moved into what is not drawn is drawn around its place, and the
+; hook runs; each ask moves the range again.
 > (report! desktop v 150 0 #f)
 > (list (ranges v) (told))
-(((109 191)) ((v "long" #t)))
-> (report! desktop v 150 0 #f)
+(((90 210)) ((v "long" #t)))
+> (asking! desktop v 150 0 #f)
 > (list (ranges v) (told))
-(((111 208)) ((v "long" #t)))
-> (report! desktop v 151 5 #t)
+(((110 209)) ((v "long" #t)))
+> (asking! desktop v 151 5 #t)
 > (list (ranges v) (told))
-(((113 209)) ((v "long" #t)))
-> (report! desktop v 152 0 #t)
+(((111 210)) ((v "long" #t)))
+> (asking! desktop v 152 0 #t)
 > (list (ranges v) (told))
-(((113 210)) ((v "long" #t)))
-> (report! desktop v 153 0 #t)
+(((112 211)) ((v "long" #t)))
+> (asking! desktop v 153 0 #t)
 > (list (ranges v) (told))
-(((114 211)) ((v "long" #t)))
+(((113 212)) ((v "long" #t)))
 ; A report that repeats the last, and a batch that changes nothing drawn,
 ; run no hook.
-> (report! desktop v 153 0 #t)
+> (asking! desktop v 153 0 #t)
 > (list (ranges v) (told))
-(((114 211)) ())
+(((113 212)) ())
 > (list (ranges v) (told))
-(((114 211)) ())
+(((113 212)) ())
 ; The ends move with an edit, which runs no hook.
 > (begin (buffers:insert! b (line-start v 160) "new line\n") (void))
 > (list (ranges v) (told))
-(((114 212)) ())
+(((113 213)) ())
 > (begin (buffers:replace! b (line-start v 160) (line-start v 161) "") (void))
 > (list (ranges v) (told))
-(((114 211)) ())
+(((113 212)) ())
 ; Text typed at the end of a buffer whose end is drawn stays in the
 ; range, as text typed inside it does, and runs no hook.
 > (define s (buffers:make "short" "one\ntwo\n"))
@@ -113,85 +114,85 @@
 ; leaves the range short or long for what the page asks.
 > (views:fold! v (line-start v 170) (line-start v 180))
 > (list (ranges v) (told))
-(((114 221)) ((v "long" #t)))
+(((113 212)) ())
 > (views:unfold! v (line-start v 175))
 > (list (ranges v) (told))
-(((114 221)) ())
+(((113 212)) ())
 > (views:fold! v (line-start v 120) (line-start v 200))
 > (list (ranges v) (told))
-(((114 221)) ())
+(((113 212)) ())
 > (views:unfold! v (line-start v 150))
 > (list (ranges v) (told))
-(((114 221)) ())
+(((113 212)) ())
 ; Narrowing to a region holding the place and the range keeps it, and so
 ; does widening again. Narrowing to a region that does not hold the place
 ; scrolls to the region's start; widening then leaves the range short.
 > (views:narrow! v (line-start v 50) (line-start v 260))
 > (list (ranges v) (told))
-(((114 221)) ())
+(((113 212)) ())
 > (views:widen! v)
 > (list (ranges v) (told))
-(((114 221)) ())
+(((113 212)) ())
 > (views:narrow! v (line-start v 20) (line-start v 60))
 > (list (ranges v) (told))
 (((20 59)) ((v "long" #t)))
 > (views:widen! v)
 > (list (ranges v) (told))
-(((19 101)) ((v "long" #t)))
+(((1 120)) ((v "long" #t)))
 ; A jump draws the range anew around the new place.
 > (views:scroll-to! v (line-start v 250) (views:align top))
 > (list (ranges v) (told))
-(((209 291)) ((v "long" #t)))
-> (report! desktop v 250 0 #f)
+(((190 300)) ((v "long" #t)))
+> (asking! desktop v 250 0 #f)
 > (list (ranges v) (told))
-(((211 300)) ((v "long" #t)))
-; A paste inside the range carries its end along; the next report sets it
-; to what the page asks.
+(((210 300)) ((v "long" #t)))
+; A paste inside the range makes it more than twice what the page asked
+; for, so it is drawn around the page's place again, and the next ask
+; sets it to what the page asks.
 > (begin (buffers:insert! b (line-start v 260) (lines 300)) (void))
 > (list (ranges v) (told))
-(((211 600)) ())
-> (report! desktop v 250 0 #f)
+(((192 600)) ((v "long" #t)))
+> (asking! desktop v 250 0 #f)
 > (list (ranges v) (told))
-(((211 308)) ((v "long" #t)))
+(((210 309)) ((v "long" #t)))
 ; A taller page asks for more, which moves the range; new columns that
 ; leave the ask as it was keep it.
-> (define taller '(("aboveLines" . 81) ("aboveChars" . 6480) ("belowLines" . 81) ("belowChars" . 6480) ("side" . 160)))
-> (report! desktop v 250 0 #f (cons "rows" 40) (cons "wanted" taller))
+> (report! desktop v 250 0 #f (cons "rows" 40) (ask-lines 170 349))
 > (list (ranges v) (told))
-(((171 348)) ((v "long" #t)))
-> (report! desktop v 250 0 #f (cons "rows" 40) (cons "columns" 60) (cons "wanted" taller))
+(((170 349)) ((v "long" #t)))
+> (report! desktop v 250 0 #f (cons "rows" 40) (cons "columns" 60) (ask-lines 170 349))
 > (list (ranges v) (told))
-(((171 348)) ())
+(((170 349)) ())
 ; Each client has a range of its own. Ranges of one view that change in
 ; one batch run the hook once.
 > (show! phone v)
 > (list (ranges v) (told))
-(((150 350) (171 348)) ((v "long" #t)))
-> (report! phone v 250 0 #f)
+(((170 349) (190 310)) ((v "long" #t)))
+> (asking! phone v 250 0 #f)
 > (list (ranges v) (told))
-(((171 348) (231 278)) ((v "long" #t)))
-> (begin (report! desktop v 240 0 #f) (report! phone v 240 0 #f))
+(((170 349) (230 279)) ((v "long" #t)))
+> (begin (asking! desktop v 240 0 #f) (asking! phone v 240 0 #f))
 > (list (ranges v) (told))
-(((201 298) (221 268)) ((v "long" #t)))
+(((200 299) (220 269)) ((v "long" #t)))
 ; A client that leaves takes its ranges with it.
 > (begin (show! phone) (web:client-removed phone))
 > (list (ranges v) (told))
-(((201 298)) ((v "long" #t)))
+(((200 299)) ((v "long" #t)))
 ; Two clients that draw the same range give it twice.
 > (define laptop (web:make-client 3))
-> (begin (show! laptop v) (report! laptop v 240 0 #f))
+> (begin (show! laptop v) (asking! laptop v 240 0 #f))
 > (list (ranges v) (told))
-(((201 298) (201 298)) ((v "long" #t)))
+(((200 299) (200 299)) ((v "long" #t)))
 > (begin (show! laptop) (web:client-removed laptop))
 > (list (ranges v) (told))
-(((201 298)) ((v "long" #t)))
+(((200 299)) ((v "long" #t)))
 ; A draw for no client adds no range.
 > (define o (buffers:make "other" (lines 50)))
 > (define w (views:make o))
 > (name! w 'w)
 > (begin (views:draw w #f) (void))
 > (list (views:drawn-ranges w) (ranges v) (told))
-(() ((201 298)) ())
+(() ((200 299)) ())
 ; A screen that leaves a view out holds no range of it from then on; the
 ; hook runs for it a batch later.
 > (define seen #f)
@@ -203,7 +204,7 @@
 > (remove-hook! views:drawn-ranges-changed look)
 > (show! desktop v w)
 > (list (ranges w) (ranges v) (told))
-(((1 50)) ((201 298)) ((v "long" #t)))
+(((1 50)) ((200 299)) ((v "long" #t)))
 ; A view that shows another buffer runs the hook for the buffer it left,
 ; then for the one it shows, each current.
 > (define t (buffers:make "third" (lines 100)))
@@ -212,13 +213,13 @@
 (((1 100)) ((v "long" #t) (v "third" #t)))
 > (begin (views:previous-buffer! v) (void))
 > (list (ranges v) (told))
-(((150 350)) ((v "third" #t) (v "long" #t)))
+(((130 370)) ((v "third" #t) (v "long" #t)))
 > (views:preview-buffer! v o)
 > (list (ranges v) (told))
 (((1 50)) ((v "long" #t) (v "other" #t)))
 > (views:end-preview! v)
 > (list (ranges v) (told))
-(((150 350)) ((v "other" #t) (v "long" #t)))
+(((130 370)) ((v "other" #t) (v "long" #t)))
 ; A killed buffer is never told of: the hook runs only for the buffer that
 ; replaces it, and for none when nothing does.
 > (views:set-buffer! v t)
@@ -226,7 +227,7 @@
 (((1 100)) ((v "long" #t) (v "third" #t)))
 > (begin (buffers:kill! t) (void))
 > (list (buffers:name (views:buffer v)) (ranges v) (told))
-("long" ((150 350)) ((v "long" #t)))
+("long" ((130 370)) ((v "long" #t)))
 > (define k (buffers:make "kept" (lines 10)))
 > (define x (views:make k))
 > (name! x 'x)
@@ -244,11 +245,11 @@
 > (views:scroll-to! v (line-start v 20) (views:align top))
 ! car: () is not a pair
 > (list (ranges v) (told))
-(((1 120)) ((v "long" #t)))
+(((1 140)) ((v "long" #t)))
 > (views:scroll-to! v (line-start v 200) (views:align top))
 ! car: () is not a pair
 > (list (ranges v) (told))
-(((100 300)) ((v "long" #t)))
+(((80 320)) ((v "long" #t)))
 > (remove-hook! views:drawn-ranges-changed fails)
 ; An entry that moves the range it is told of runs the hook again once
 ; the move is drawn; moving it once, it runs twice and stops.
@@ -260,9 +261,9 @@
 > (add-hook! views:drawn-ranges-changed move-once)
 > (views:scroll-to! v (line-start v 20) (views:align top))
 > (list (ranges v) moves (told))
-(((1 200)) 1 ((v "long" #t) (v "long" #t)))
+(((1 220)) 1 ((v "long" #t) (v "long" #t)))
 > (list (ranges v) moves (told))
-(((1 200)) 1 ())
+(((1 220)) 1 ())
 > (remove-hook! views:drawn-ranges-changed move-once)
 ; An entry that moves the range on every call runs the hook every batch,
 ; and forms are still read and run between rounds.
@@ -301,4 +302,4 @@
 (((1 . 100001)) ((y "minified" #t)))
 > (views:set-option! y views:wrap-lines #t)
 > (list (views:drawn-ranges y) (told))
-(((1 . 20993)) ((y "minified" #t)))
+(((1 . 61953)) ((y "minified" #t)))

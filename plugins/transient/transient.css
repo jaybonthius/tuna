@@ -12,6 +12,12 @@
     padding-inline: var(--tuna-space-5);
   }
 
+  /* The menu's view is as tall as the menu and never scrolled; room kept
+     for a scroll bar would only narrow it. */
+  .view:has(> .view-lines > .transient-menu) {
+    scrollbar-gutter: auto;
+  }
+
   .transient-title {
     flex: 1 0 100%;
     margin: 0;

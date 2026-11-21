@@ -84,12 +84,12 @@
 > (string? (html-of lv desktop))
 > (car runs)
 #t
-(1 60)
+(1 79)
 > (report! desktop lv 151 0 #t)
 > (string? (html-of lv desktop))
 > (car runs)
 #t
-(110 193)
+(91 212)
 > (table-remove! views:span-sources each-line)
 ; A span covering a node standing alone puts its face on the node's
 ; element, as it would colour characters.
@@ -108,8 +108,8 @@
 > (image-node (html-of pv desktop))
 > (table-remove! views:span-sources cover-image)
 > (image-node (html-of pv desktop))
-"<div class=\"node whole\" id=\"v3-3\" data-at=\"5\" data-to=\"6\" data-line=\"2\" data-before=\"2\" data-face=\"match\">"
-"<div class=\"node whole\" id=\"v3-3\" data-at=\"5\" data-to=\"6\" data-line=\"2\" data-before=\"2\">"
+"<div class=\"node whole\" id=\"v3-3\" data-at=\"5\" data-to=\"6\" data-line=\"2\" data-slot=\"3\" data-face=\"match\">"
+"<div class=\"node whole\" id=\"v3-3\" data-at=\"5\" data-to=\"6\" data-line=\"2\" data-slot=\"3\">"
 ; views:folds-at gives the bounds of each fold holding a position.
 > (views:fold! lv 10 40)
 > (views:fold! lv 20 30)

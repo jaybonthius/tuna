@@ -39,7 +39,7 @@
 > (element (view) "<div class=\"ui-row\"><span class=\"ui-label\">notes" "div")
 "<div class=\"ui-row\"><span class=\"ui-label\">notes.org</span><span class=\"ui-label ui-showcase-muted\">~/notes</span><span class=\"ui-label ui-showcase-faint\">2 KB</span></div>"
 > (element (view) "<div class=\"ui-showcase-heading\"><div class=\"line\"" "div")
-"<div class=\"ui-showcase-heading\"><div class=\"line\" id=\"v1-6\" data-line=\"4\" data-before=\"94\" data-at=\"98\">Buttons: ui:define-button</div>"
+"<div class=\"ui-showcase-heading\"><div class=\"line\" id=\"v1-6\" data-line=\"4\" data-slot=\"6\" data-at=\"98\">Buttons: ui:define-button</div>"
 ; The first list holds eight rows under two headings, the second three
 ; hundred. The selected row is marked aria-current.
 > (define (rows-of node) (- (document:node-end node) (document:node-start node) 2))
@@ -48,7 +48,7 @@
 > (element (view) "<li class=\"ui-list-heading\"" "li")
 "<li class=\"ui-list-heading\"><span>Notes</span></li>"
 > (element (view) "<li class=\"ui-list-row\" aria-current=\"true\"" "li")
-"<li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"2 clickable\"><div class=\"ui-row\"><span class=\"ui-label\">init.ss</span><span class=\"ui-label ui-showcase-muted\">configuration</span></div></li>"
+"<li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"1 clickable\"><div class=\"ui-row\"><span class=\"ui-label\">init.ss</span><span class=\"ui-label ui-showcase-muted\">configuration</span></div></li>"
 ; The buffer is read-only: in ui:showcase-mode, derived from
 ; modes:special, printing keys and g are undefined, and any edit through
 ; buffers:replace! is refused.
@@ -110,7 +110,7 @@
 > (list (rows-of (short)) (rows-of (long)) (document:node-attribute (live 'ui:%sample-button) 'n))
 (8 300 2)
 > (element (view) "<li class=\"ui-list-row\" aria-current=\"true\"" "li")
-"<li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"2 clickable\"><div class=\"ui-row\"><span class=\"ui-label\">notes.org</span><span class=\"ui-label ui-showcase-muted\">outline</span></div></li>"
+"<li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"1 clickable\"><div class=\"ui-row\"><span class=\"ui-label\">notes.org</span><span class=\"ui-label ui-showcase-muted\">outline</span></div></li>"
 ; Another buffer named *Showcase* is not the showcase: reloading ui
 ; leaves it alone, and the command refuses to take its name.
 > (buffers:kill! b)

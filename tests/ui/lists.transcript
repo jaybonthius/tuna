@@ -13,7 +13,7 @@
 > (generations)
 (0 0 0 0 0)
 > (element (view) "<ul" "ul")
-"<ul class=\"ui-list\" data-keymap=\"3 inert\"><div class=\"node whole at-cursor primary\" id=\"v1-2\" data-at=\"1\" data-to=\"2\" data-line=\"1\" data-before=\"0\"><li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"2 clickable\"><span class=\"ui-label\">0</span></li></div><div class=\"node whole\" id=\"v1-3\" data-at=\"2\" data-to=\"3\" data-line=\"1\" data-before=\"1\"><li class=\"ui-list-row\" data-keymap=\"2 clickable\"><span class=\"ui-label\">1</span></li></div><div class=\"node whole\" id=\"v1-4\" data-at=\"3\" data-to=\"4\" data-line=\"1\" data-before=\"2\"><li class=\"ui-list-row\" data-keymap=\"2 clickable\"><span class=\"ui-label\">2</span></li></div><div class=\"node whole\" id=\"v1-5\" data-at=\"4\" data-to=\"5\" data-line=\"1\" data-before=\"3\"><li class=\"ui-list-row\" data-keymap=\"2 clickable\"><span class=\"ui-label\">3</span></li></div><div class=\"node whole\" id=\"v1-6\" data-at=\"5\" data-to=\"6\" data-line=\"1\" data-before=\"4\"><li class=\"ui-list-row\" data-keymap=\"2 clickable\"><span class=\"ui-label\">4</span></li></div></ul>"
+"<ul class=\"ui-list\" data-keymap=\"2 inert\"><div class=\"node whole at-cursor primary\" id=\"v1-2\" data-at=\"1\" data-to=\"2\" data-line=\"1\" data-slot=\"0\"><li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"1 clickable\"><span class=\"ui-label\">0</span></li></div><div class=\"node whole\" id=\"v1-3\" data-at=\"2\" data-to=\"3\" data-line=\"1\" data-slot=\"1\"><li class=\"ui-list-row\" data-keymap=\"1 clickable\"><span class=\"ui-label\">1</span></li></div><div class=\"node whole\" id=\"v1-4\" data-at=\"3\" data-to=\"4\" data-line=\"1\" data-slot=\"2\"><li class=\"ui-list-row\" data-keymap=\"1 clickable\"><span class=\"ui-label\">2</span></li></div><div class=\"node whole\" id=\"v1-5\" data-at=\"4\" data-to=\"5\" data-line=\"1\" data-slot=\"3\"><li class=\"ui-list-row\" data-keymap=\"1 clickable\"><span class=\"ui-label\">3</span></li></div><div class=\"node whole\" id=\"v1-6\" data-at=\"5\" data-to=\"6\" data-line=\"1\" data-slot=\"4\"><li class=\"ui-list-row\" data-keymap=\"1 clickable\"><span class=\"ui-label\">4</span></li></div></ul>"
 ; Point rests before the selected row's atom, so the cursor is drawn on
 ; the row, which ui:describe-list numbers among all the rows.
 > (ui:set-rows! b (lst) 100 number-row choose)
@@ -33,8 +33,8 @@
 > (list (selected) (- (buffers:version b) v0))
 (99 0)
 ; Only the rows a view draws are drawn: before its page reports, a view
-; draws 100 items each side of point, so a list of 1000 rows with point
-; on row 500 calls the drawer for rows 400 to 600 alone.
+; draws 60 items each side of point, so a list of 1000 rows with point
+; on row 500 calls the drawer for rows 440 to 560 alone.
 > (define drawn-rows (make-eqv-hashtable))
 > (ui:set-rows! b (lst) 1000 (lambda (i) (hashtable-set! drawn-rows i #t) (number-row i)) choose)
 > (ui:select-row! (lst) (view) 500)
@@ -42,7 +42,7 @@
 > (string? (html (view)))
 #t
 > (let ([rows (vector->list (hashtable-keys drawn-rows))]) (list (length rows) (apply min rows) (apply max rows)))
-(201 400 600)
+(121 440 560)
 ; A million rows are one edit.
 > (ui:set-rows! b (lst) 1000000 number-row choose)
 > (ui:select-row! (lst) (view) 999999)
@@ -77,7 +77,7 @@
 > (list (selected) (ui:selected-row (lst) other))
 (96 98)
 > (map (lambda (v) (element v "<li class=\"ui-list-row\" aria-current" "li")) (list (view) other))
-("<li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"2 clickable\"><span class=\"ui-label\">96</span></li>" "<li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"2 clickable\"><span class=\"ui-label\">98</span></li>")
+("<li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"1 clickable\"><span class=\"ui-label\">96</span></li>" "<li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"1 clickable\"><span class=\"ui-label\">98</span></li>")
 ; New rows keep each view's selected index, clamped to their count, and
 ; are of a new generation; every call makes one, so a click on a screen
 ; drawn before it is stale.
@@ -169,13 +169,13 @@
 > (load-module! '(maker))
 > (show! (buffers:find "*made*"))
 > (element (view) "<ul" "ul")
-"<ul class=\"ui-list\" data-keymap=\"3 inert\"><div class=\"node whole at-cursor primary\" id=\"v1-921\" data-at=\"1\" data-to=\"2\" data-line=\"1\" data-before=\"0\"><li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"2 clickable\"><span class=\"ui-label\">p!</span></li></div><div class=\"node whole\" id=\"v1-922\" data-at=\"2\" data-to=\"3\" data-line=\"1\" data-before=\"1\"><li class=\"ui-list-row\" data-keymap=\"2 clickable\"><span class=\"ui-label\">q!</span></li></div></ul>"
+"<ul class=\"ui-list\" data-keymap=\"2 inert\"><div class=\"node whole at-cursor primary\" id=\"v1-643\" data-at=\"1\" data-to=\"2\" data-line=\"1\" data-slot=\"0\"><li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"1 clickable\"><span class=\"ui-label\">p!</span></li></div><div class=\"node whole\" id=\"v1-644\" data-at=\"2\" data-to=\"3\" data-line=\"1\" data-slot=\"1\"><li class=\"ui-list-row\" data-keymap=\"1 clickable\"><span class=\"ui-label\">q!</span></li></div></ul>"
 > (unload-module! '(maker))
 > (element (view) "<ul" "ul")
 ! maker:shout: module (maker) is unloaded
-"<ul class=\"ui-list\" data-keymap=\"3 inert\"><span class=\"cursor primary\"></span><div class=\"node whole\" id=\"v1-921\" data-at=\"1\" data-to=\"2\" data-line=\"1\" data-before=\"0\"></div><div class=\"node whole\" id=\"v1-922\" data-at=\"2\" data-to=\"3\" data-line=\"1\" data-before=\"1\"></div></ul>"
-"<ul class=\"ui-list\" data-keymap=\"3 inert\"><span class=\"cursor primary\"></span><div class=\"node whole\" id=\"v1-921\" data-at=\"1\" data-to=\"2\" data-line=\"1\" data-before=\"0\"></div><div class=\"node whole\" id=\"v1-922\" data-at=\"2\" data-to=\"3\" data-line=\"1\" data-before=\"1\"></div></ul>"
-"<li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"2 clickable\"><span class=\"ui-label\">p!</span></li>"
+"<ul class=\"ui-list\" data-keymap=\"2 inert\"><span class=\"cursor primary\"></span><div class=\"node whole\" id=\"v1-643\" data-at=\"1\" data-to=\"2\" data-line=\"1\" data-slot=\"0\"></div><div class=\"node whole\" id=\"v1-644\" data-at=\"2\" data-to=\"3\" data-line=\"1\" data-slot=\"1\"></div></ul>"
+"<ul class=\"ui-list\" data-keymap=\"2 inert\"><span class=\"cursor primary\"></span><div class=\"node whole\" id=\"v1-643\" data-at=\"1\" data-to=\"2\" data-line=\"1\" data-slot=\"0\"></div><div class=\"node whole\" id=\"v1-644\" data-at=\"2\" data-to=\"3\" data-line=\"1\" data-slot=\"1\"></div></ul>"
+"<li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"1 clickable\"><span class=\"ui-label\">p!</span></li>"
 > (element (view) "<ul" "ul")
 > (press! "RET")
 ; The same holds for rows a command of the maker set.
@@ -212,7 +212,7 @@
 #f
 > (ui:set-rows! f (failing) 2 (lambda (i) (picky (* 2 i))) choose)
 > (element (view) "<li" "li")
-"<li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"2 clickable\"><span class=\"ui-label\">0</span></li>"
+"<li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"1 clickable\"><span class=\"ui-label\">0</span></li>"
 ; A choose procedure that raises is reported by the command that ran it;
 ; the list then draws as nothing and chooses nothing.
 > (ui:set-rows! f (failing) 2 number-row (lambda (n) (error 'refuse "not this one")))
@@ -257,7 +257,7 @@
 ; position and the cursor's outline, so the outline never surrounds it.
 > (ui:select-row! (hl) (view) 3)
 > (element (view) "<li class=\"ui-list-heading\"><span>mid" "div")
-"<li class=\"ui-list-heading\"><span>mid</span></li><div class=\"node whole at-cursor primary\" id=\"v1-935\" data-at=\"4\" data-to=\"5\" data-line=\"1\" data-before=\"3\"><li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"2 clickable\"><span class=\"ui-label\">3</span></li></div>"
+"<li class=\"ui-list-heading\"><span>mid</span></li><div class=\"node whole at-cursor primary\" id=\"v1-657\" data-at=\"4\" data-to=\"5\" data-line=\"1\" data-slot=\"3\"><li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"1 clickable\"><span class=\"ui-label\">3</span></li></div>"
 ; A press and a release on a heading name the list's own node, not a
 ; row, so they choose nothing and leave point, here on row 5; a click on
 ; a row chooses it.
@@ -276,7 +276,7 @@
 > (set! chosen '())
 ; A view draws rows near point, so the first row it draws may be inside
 ; a group: it names the group. Of 1000 rows in groups of 100, with point
-; on row 550, a view whose page has not reported draws rows 450 to 650.
+; on row 550, a view whose page has not reported draws rows 490 to 610.
 > (ui:set-rows! h (hl) 1000 number-row choose (lambda (i) (string-append "from " (number->string (* 100 (quotient i 100))))))
 > (ui:select-row! (hl) (view) 550)
 > (headings (view))
@@ -322,7 +322,7 @@
 > picked
 (2)
 > (element (view) "<ul" "ul")
-"<ul class=\"ui-list\"><div class=\"node whole\" id=\"v1-1257\" data-at=\"1\" data-to=\"2\" data-line=\"1\" data-before=\"0\"><li class=\"ui-list-row\"><span class=\"ui-label\">0</span></li></div><div class=\"node whole\" id=\"v1-1258\" data-at=\"2\" data-to=\"3\" data-line=\"1\" data-before=\"1\"><li class=\"ui-list-row\"><span class=\"ui-label\">1</span></li></div><div class=\"node whole at-cursor primary\" id=\"v1-1259\" data-at=\"3\" data-to=\"4\" data-line=\"1\" data-before=\"2\"><li class=\"ui-list-row\" aria-current=\"true\"><span class=\"ui-label\">2</span></li></div></ul>"
+"<ul class=\"ui-list\"><div class=\"node whole\" id=\"v1-859\" data-at=\"1\" data-to=\"2\" data-line=\"1\" data-slot=\"0\"><li class=\"ui-list-row\"><span class=\"ui-label\">0</span></li></div><div class=\"node whole\" id=\"v1-860\" data-at=\"2\" data-to=\"3\" data-line=\"1\" data-slot=\"1\"><li class=\"ui-list-row\"><span class=\"ui-label\">1</span></li></div><div class=\"node whole at-cursor primary\" id=\"v1-861\" data-at=\"3\" data-to=\"4\" data-line=\"1\" data-slot=\"2\"><li class=\"ui-list-row\" aria-current=\"true\"><span class=\"ui-label\">2</span></li></div></ul>"
 ; A click attribute other than choose and select is refused.
 > (define bad (buffers:make "*bad*" (ui:list '((click . chose)))))
 > (raised (lambda () (ui:set-rows! bad (document:token (buffers:document bad) 0) 1 number-row (lambda (i) i))))

@@ -59,7 +59,7 @@
 ; A message of "" clears it at once and logs nothing.
 > (echo-area:message! "")
 > (list (echo-area:current-message) (echo-area-element))
-(#f "<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-6\" data-line=\"1\" data-before=\"0\" data-at=\"1\"><br></div></div>")
+(#f "<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-6\" data-line=\"1\" data-slot=\"0\" data-at=\"1\"><span class=\"view-point\"></span><br></div></div>")
 ; Each message is logged; an equal one counts on the last line, and a
 ; message of several lines takes several lines.
 > (echo-area:message! "Saved")
@@ -163,14 +163,16 @@ echo-area:show-messages
 > (echo-area:message! "Hidden")
 > (list (echo-area:current-message) (echo-area-element) (messages))
 ("Hidden" #f "Late\nHidden\n")
-> (let* ([s (html->string (views:draw (echo-view) client))] [n (string-length s)]) (substring s (- n 59) n))
-"<div class=\"view-lines\" data-click=\"clickable\"></div></div>"
+> (let* ([s (html->string (views:draw (echo-view) client))]
+         [n (- (string-length s) (string-length (format "<div class=\"view-spacer\" id=\"view-~a-below\" data-spacer=\"below\" data-ignore-morph aria-hidden=\"true\"></div></div>" (views:id (echo-view)))))])
+    (substring s (- n 53) n))
+"<div class=\"view-lines\" data-click=\"clickable\"></div>"
 > (press! "C-a")
 > (echo-area:current-message)
 #f
 > (advice-remove! echo-area:hidden? hide)
 > (echo-area-element)
-"<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-14\" data-line=\"1\" data-before=\"0\" data-at=\"1\"><br></div></div>"
+"<div class=\"echo-area-message\" role=\"status\"><div class=\"line\" id=\"v3-14\" data-line=\"1\" data-slot=\"0\" data-at=\"1\"><span class=\"view-point\"></span><br></div></div>"
 ; echo-area:current-face is the current message's face, or #f.
 > (echo-area:message! "Plain")
 > (echo-area:current-face)

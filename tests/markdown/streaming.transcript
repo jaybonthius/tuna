@@ -140,7 +140,7 @@
 > (define in-code (buffers:anchor chat:chat 21))
 > (define version (buffers:version chat:chat))
 > (element (view) "<div class=\"markdown-code-block\"" "div")
-"<div class=\"markdown-code-block\" data-language=\"scheme\" data-face=\"markup.raw\"><div class=\"line\" id=\"v1-4\" data-line=\"2\" data-before=\"6\" data-at=\"10\">(define <span class=\"cursor-on primary\">(</span>f x)</div></div>"
+"<div class=\"markdown-code-block\" data-language=\"scheme\" data-face=\"markup.raw\"><div class=\"line\" id=\"v1-4\" data-line=\"2\" data-slot=\"4\" data-at=\"10\">(define <span class=\"cursor-on primary\">(</span>f x)</div></div>"
 > (chat:receive! "  (* x 2))\n")
 > (datums chat:chat)
 ((chat:reply () (markdown:paragraph ((key . 0)) "Code:\n") (markdown:code-block ((key . 1) (language . "scheme")) "(define (f x)\n  (* x 2))\n")))
@@ -150,4 +150,4 @@
        (buffers:edits-since chat:chat version))
 ((24 () ("  (* x 2))\n")))
 > (element (view) "<div class=\"markdown-code-block\"" "div")
-"<div class=\"markdown-code-block\" data-language=\"scheme\" data-face=\"markup.raw\"><div class=\"line\" id=\"v1-4\" data-line=\"2\" data-before=\"6\" data-at=\"10\">(define <span class=\"cursor-on primary\">(</span>f x)</div><div class=\"line\" id=\"v1-6\" data-line=\"3\" data-before=\"20\">  (* x 2))</div></div>"
+"<div class=\"markdown-code-block\" data-language=\"scheme\" data-face=\"markup.raw\"><div class=\"line\" id=\"v1-4\" data-line=\"2\" data-slot=\"4\" data-at=\"10\">(define <span class=\"cursor-on primary\">(</span>f x)</div><div class=\"line\" id=\"v1-6\" data-line=\"3\" data-slot=\"5\">  (* x 2))</div></div>"

@@ -81,11 +81,12 @@
 ;; The view's own element carries a placement number that differs from
 ;; run to run, so tests compare what the prompts draw.
 (define (html v)
-  (let* ([s (html->string (views:draw v client))] [open "<div class=\"minibuffer-prompts\">"])
+  (let* ([s (html->string (views:draw v client))] [open "<div class=\"minibuffer-prompts\">"]
+         [end (- (string-length s) (string-length (format "</div><div class=\"view-spacer\" id=\"view-~a-below\" data-spacer=\"below\" data-ignore-morph aria-hidden=\"true\"></div></div>" (views:id v))))])
     (let loop ([i 0])
       (cond
         [(> (+ i (string-length open)) (string-length s)) s]
-        [(string=? (substring s i (+ i (string-length open))) open) (substring s i (- (string-length s) 12))]
+        [(string=? (substring s i (+ i (string-length open))) open) (substring s i end)]
         [else (loop (+ i 1))]))))
 
 (define (between s open close)

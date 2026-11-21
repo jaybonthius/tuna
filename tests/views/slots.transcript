@@ -1,0 +1,111 @@
+; Each screen tells the page the view's slots: the count, a version, and
+; the changes since the client's previous screen, as the version it
+; counts from and a start, slots removed and slots inserted per change.
+; Each batch ends by drawing the views shown, as the layout does; a form
+; runs several batches, and the screen kept is the first to carry a
+; slot version.
+> (define (slot-attributes-of html)
+    (let ([edits (search html "data-slot-edits=\"" 0)])
+      (list (car (numbers-after html "data-slots=\"")) (car (numbers-after html "data-slot-version=\""))
+            (and edits (substring html (+ edits 17) (search html "\"" (+ edits 17)))))))
+> (define shown '())
+> (define screens (make-eq-hashtable))
+> (advice-add! batch-ended
+    (lambda (ended)
+      (ended)
+      (for-each
+        (lambda (view)
+          (let ([html (html-of view desktop)] [kept (hashtable-ref screens view #f)])
+            (unless (and kept (equal? (cadr (slot-attributes-of kept)) (cadr (slot-attributes-of html))))
+              (hashtable-set! screens view html))))
+        shown)))
+> (define (slot-attributes view client) (slot-attributes-of (hashtable-ref screens view "")))
+> (define b (buffers:make "plain" (lines 200)))
+> (define v (views:make b))
+> (set! shown (list v))
+> (report! desktop v 60 0 #t)
+> (slot-attributes v desktop)
+(201 1 #f)
+; A character typed in a line changes that line's slot alone; a newline
+; typed in it adds one.
+> (begin (buffers:insert! b (+ (line-start v 70) 2) "x") (void))
+> (slot-attributes v desktop)
+(201 2 "1 69 1 1")
+> (begin (buffers:insert! b (+ (line-start v 70) 2) "\n") (void))
+> (slot-attributes v desktop)
+(202 3 "2 69 1 2")
+> (begin (buffers:replace! b (+ (line-start v 70) 2) (+ (line-start v 70) 4) "") (void))
+> (slot-attributes v desktop)
+(201 4 "3 69 2 1")
+; Three lines inserted above the view, as from another view of the
+; buffer, leave the same text at the top, now three lines further on,
+; and point with its text.
+> (define w (views:make b))
+> (views:set-point! v (line-start v 109))
+> (report! desktop v 104 0 #t)
+> (begin (buffers:insert! b (line-start v 2) "a\nb\nc\n") (void))
+> (list (line-of v (views:top v desktop)) (line-of v (views:point v)))
+(107 112)
+> (begin (buffers:replace! b (line-start v 2) (line-start v 5) "") (void))
+; A fold over lines 10 to 30 joins them into one line, so 20 slots go,
+; and come back when it opens; the place in the view stays.
+> (report! desktop v 60 0 #t)
+> (slot-attributes v desktop)
+(201 6 "5 1 4 1")
+> (views:fold! v (line-start v 10) (- (line-start v 31) 1))
+> (list (slot-attributes v desktop) (line-of v (views:top v desktop)))
+((181 7 "6 9 21 1") 60)
+> (views:unfold! v (line-start v 10))
+> (list (slot-attributes v desktop) (line-of v (views:top v desktop)))
+((201 8 "7 9 1 21") 60)
+; Point that ends a batch inside a fold opens it, and the slots come
+; back.
+> (views:fold! v (line-start v 62) (- (line-start v 71) 1))
+> (slot-attributes v desktop)
+(193 9 "8 61 9 1")
+> (views:set-point! v (line-start v 65))
+> (batch-ended)
+> (list (views:folded? v (line-start v 65)) (slot-attributes v desktop))
+(#f (201 10 "9 61 1 9"))
+; Narrowing to lines 40 to 120 keeps the top at 60; to 100 to 150, the
+; narrowing's start goes to the top; widening keeps it there. Each tells
+; the page no changes, so it forgets its heights.
+> (report! desktop v 60 0 #t)
+> (views:narrow! v (line-start v 40) (line-start v 121))
+> (list (line-of v (views:top v desktop)) (slot-attributes v desktop))
+(60 (82 11 #f))
+> (views:widen! v)
+> (views:scroll-to! v (line-start v 60) (views:align top))
+> (report! desktop v 60 0 #t)
+> (views:narrow! v (line-start v 100) (line-start v 151))
+> (list (slot-attributes v desktop) (placement v desktop))
+((52 13 #f) (new follow 100))
+> (report! desktop v 100 0 #t)
+> (views:widen! v)
+> (list (line-of v (views:top v desktop)) (slot-attributes v desktop))
+(100 (201 14 #f))
+; A character typed right after the second of three rows standing alone
+; puts the three in one line, which changes the slot of the first row,
+; before the edit; the change is widened to cover it, and deleting the
+; character splits them again.
+> (import (md))
+> (define (row) (md:image '((src . "x.png"))))
+> (define r (buffers:make "rows" (buffers:text '() (md:para '() (row) (row) (row)) "tail\n")))
+> (define rv (views:make r))
+> (set! shown (list v rv))
+> (slot-attributes rv desktop)
+(7 1 #f)
+> (define list-start (+ (document:node-start (document:token (buffers:document r) 1)) 1))
+> (begin (buffers:insert! r (+ list-start 2) "x") (void))
+> (slot-attributes rv desktop)
+(4 2 "1 0 7 4")
+> (begin (buffers:replace! r (+ list-start 2) (+ list-start 3) "") (void))
+> (slot-attributes rv desktop)
+(7 3 "2 0 4 7")
+; A page that has reported a view of 40 rows has a new view drawn three
+; view heights of items beyond each edge, not a constant.
+> (report! desktop v 100 0 #t (cons "rows" 40))
+> (define big (views:make (buffers:make "big" (lines 1000))))
+> (views:set-point! big (line-start big 500))
+> (drawn big desktop)
+(380 620 241)

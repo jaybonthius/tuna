@@ -188,9 +188,9 @@
       (set! reports (+ reports 1))
       ((table-ref web:input-handlers "scroll") client
        `(("type" . "scroll") ("view" . ,(views:id v)) ("placement" . ,(placement v)) ("report" . ,reports)
-         ("version" . ,(buffers:version big)) ("top" . ,(mark 0)) ("spacer" . #f) ("fraction" . 0) ("left" . null)
+         ("version" . ,(buffers:version big)) ("slotVersion" . 0) ("top" . ,(mark 0)) ("spacer" . #f) ("fraction" . 0) ("left" . null)
          ("past" . 0) ("sides" . #()) ("start" . ,(mark 2)) ("end" . ,(mark 7)) ("atStart" . #f) ("atEnd" . #f)
-         ("columns" . 80) ("rows" . 10) ("pointVisible" . #t) ("wanted" . (("aboveLines" . 41) ("aboveChars" . 3280) ("belowLines" . 41) ("belowChars" . 3280) ("side" . 160)))
+         ("columns" . 80) ("rows" . 10) ("pointVisible" . #t) ("wanted" . null)
          ("settled" . #t) ("hand" . #t) ("edge" . "top")))))
 > (set! after-jumps '())
 ; The hand scrolls just after the first preview, so before the job's

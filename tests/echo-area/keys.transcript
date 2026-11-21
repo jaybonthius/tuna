@@ -121,7 +121,7 @@
 > (echo)
 "Key: C-x-"
 > (echo-element)
-"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"2 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">Key: </span>C-x-</div></div>"
+"<div class=\"echo-area-message\" role=\"status\" data-keymap=\"1 clickable\"><div class=\"echo-area-echo\"><span class=\"echo-area-prompt\">Key: </span>C-x-</div></div>"
 > (press! "4")
 > (echo)
 "Key: C-x 4-"
