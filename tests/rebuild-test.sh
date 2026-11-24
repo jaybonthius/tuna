@@ -17,7 +17,7 @@ mkdir -p "$dir/home/.config/tuna/lib" "$dir/library" "$dir/work"
 printf '#!tuna\n(define (text name) (string-append "Hello, " name "!"))\n' \
   > "$dir/home/.config/tuna/lib/greet.sls"
 printf '(import (tuna) (greet))\n(import (console))\n' > "$dir/home/.config/tuna/init.ss"
-sh boot/copy-library.sh "$(dirname "$tuna")/plugins" "$dir/library"
+sh tests/test-home.sh "$tuna" "$dir/library" "$dir/home"
 
 run() {
   (cd "$dir/work" && echo '(greet:text "Harpo")' |

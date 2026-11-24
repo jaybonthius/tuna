@@ -3,7 +3,7 @@
 0
 > (define chat (pi:start (string-append (getenv "HOME") "/long") "long-session"))
 > (define f (fake-of chat))
-> (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
+> (testing:wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
 > (for-each (lambda (n)
               (let ([u (string-append "u" (number->string n))] [a (string-append "a" (number->string n))])
                 (append-entry! f (entry u (if (= n 0) #f (string-append "a" (number->string (- n 1)))) (user-message (string-append "Ask " (number->string n)))))
@@ -14,10 +14,10 @@
 ; message shows as its plain text until its blocks arrive.
 > (eval-file (library-file "pi.sls"))
 > (define chat (car (pi:chats)))
-> (wait-until (lambda () (= 100 (length (pi:chat-transcript chat)))))
+> (testing:wait-until (lambda () (= 100 (length (pi:chat-transcript chat)))))
 > (load-module! '(pi-chat))
 > (in-client (lambda () (chat:show! chat)))
-> (wait-until (lambda () (and (= 100 (length (drawn chat))) (equal? (list-ref (drawn chat) 99) '(reply (stop . stop) (md "Reply 49\n"))))))
+> (testing:wait-until (lambda () (and (= 100 (length (drawn chat))) (equal? (list-ref (drawn chat) 99) '(reply (stop . stop) (md "Reply 49\n"))))))
 > (list (length (drawn chat)) (list-ref (drawn chat) 98) (list-ref (drawn chat) 99))
 (100 (user-message (md "Ask 49\n")) (reply (stop . stop) (md "Reply 49\n")))
 > (cddr (caddr (list-ref (part-datums chat 'chat:transcript) 99)))

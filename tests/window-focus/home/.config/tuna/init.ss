@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (haml) (web))
+(import (tuna) (testing) (tuna plugins) (document) (haml) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin layout-tabs)
@@ -32,22 +32,17 @@
 (define (press! . keys)
   (for-each (lambda (key) (in-client (lambda () (keys:press! client key)))) keys))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 500))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 ;; A prompt pauses its command's task, so a test reads in a task of its
 ;; own and waits for the prompt.
 (define (ask!)
   (let ([t (spawn-task (lambda () (guard (c [(quit-condition? c) 'quit]) (in-client (lambda () (minibuffer:read "Q: "))))))])
-    (wait-until minibuffer:current-prompt)
+    (testing:wait-until minibuffer:current-prompt)
     t))
 
 (define (start-keys! . keys)
   (let ([t (spawn-task (lambda () (guard (c [(quit-condition? c) 'quit]) (apply press! keys))))])
-    (wait-until (lambda () (or (minibuffer:current-prompt) (task-done? t))))
+    (testing:wait-until (lambda () (or (minibuffer:current-prompt) (task-done? t))))
     t))
 
 (define (end! t . keys)
@@ -55,7 +50,7 @@
     [(pair? keys) (apply press! keys)]
     [(eq? (layout:selected-view) (prompt-view)) (press! "C-g")]
     [else (in-client minibuffer:abort)])
-  (wait-until (lambda () (task-done? t)))
+  (testing:wait-until (lambda () (task-done? t)))
   (void))
 
 (define (prompt!) (end! (ask!)))

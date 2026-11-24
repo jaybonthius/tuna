@@ -15,7 +15,7 @@
 > one
 ("one" #<kill>)
 > (define expected (list '("newest") '("one" "Hello") (list long-a)))
-> (wait-until (lambda () (equal? (saved-texts) expected)))
+> (testing:wait-until (lambda () (equal? (saved-texts) expected)))
 > (equal? (saved-texts) expected)
 #t
 ; Reloading the plugin's source keeps the text, the configuration's
@@ -39,7 +39,7 @@
 > (begin (kill-ring:push! (list "last")) (unload-module! '(kill-ring)))
 > (definition-changes batch-ended)
 (((tuna) define #f))
-> (wait-until (lambda () (equal? (car (saved-texts)) '("last"))))
+> (testing:wait-until (lambda () (equal? (car (saved-texts)) '("last"))))
 > (car (saved-texts))
 ("last")
 > (load-module! '(kill-ring))

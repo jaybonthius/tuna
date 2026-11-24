@@ -6,7 +6,7 @@
     (lambda (t mark code command) (set! marks (cons (list mark code command) marks))))
 > (define t (shell!))
 > (terminal:send! t "cd /tmp && ls -d /tmp && false\r")
-> (wait-until (lambda () (equal? (terminal:directory t) "/tmp")))
+> (testing:wait-until (lambda () (equal? (terminal:directory t) "/tmp")))
 > (wait-for t "\n$ ")
 > (screen-lines t)
 ("$ cd /tmp && ls -d /tmp && false" "/tmp" "$ ")
@@ -18,7 +18,7 @@
 > (define titles '())
 > (add-hook! terminal:title-changed (lambda (t) (set! titles (cons (terminal:title t) titles))))
 > (terminal:send! t "printf '\\e]2;building\\a'\r")
-> (wait-until (lambda () (pair? titles)))
+> (testing:wait-until (lambda () (pair? titles)))
 > (list titles (terminal:title t))
 (("building") "building")
 ; The shell's marks lead to each prompt's input.

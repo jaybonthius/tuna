@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (web) (keys) (commands) (document) (buffers) (views))
+(import (tuna) (testing) (tuna plugins) (web) (keys) (commands) (document) (buffers) (views))
 ;; ask's readers are the tests': each question is kept, and answered
 ;; from a queue the transcript fills.
 (define said '())
@@ -49,11 +49,6 @@
 
 (define (view) (layout:selected-view))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define home (getenv "HOME"))
 
@@ -160,7 +155,7 @@
 (define (settle!)
   (let loop ([n 0])
     (sleep-for 0.05)
-    (wait-until (lambda () (= started ended)))
+    (testing:wait-until (lambda () (= started ended)))
     (let ([b (status-buffer)])
       (when b (git-mode:wait-until-current b)))
     (unless (or (= n 3) (and (= started ended) (not (exists (lambda (r) (git:queued? r)) (repositories)))))

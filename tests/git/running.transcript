@@ -63,7 +63,7 @@
 > (define started (git:start repo '("tag" "v4") (lambda (c) (set! order (cons 'on-end order)))))
 > (git:command? started)
 #t
-> (wait-until (lambda () (git:command-exit started)))
+> (testing:wait-until (lambda () (git:command-exit started)))
 > (reverse order)
 (on-end hook)
 > (git:command-exit started)
@@ -71,7 +71,7 @@
 ; Its environment clause is added to git's; any other clause raises.
 > (define shown (git:start repo '("var" "GIT_EDITOR") (lambda (c) #f)
                   (processes:options [environment '(("GIT_EDITOR" . "my-editor"))])))
-> (wait-until (lambda () (git:command-exit shown)))
+> (testing:wait-until (lambda () (git:command-exit shown)))
 > (git:command-output shown)
 "my-editor\n"
 > (git:start repo '("status") (lambda (c) #f) (processes:options [directory "/"]))
@@ -81,13 +81,13 @@
 "0"
 ; git:stop! ends a running command, which fails with the signal's status.
 > (define sleeper (git:start repo '("-c" "alias.nap=!sleep 30" "nap") (lambda (c) #f)))
-> (wait-until (lambda () (git:running repo)))
+> (testing:wait-until (lambda () (git:running repo)))
 > (eq? (git:running repo) sleeper)
 #t
 > (git:queued? repo)
 #t
 > (git:stop! sleeper)
-> (wait-until (lambda () (git:command-exit sleeper)))
+> (testing:wait-until (lambda () (git:command-exit sleeper)))
 > (git:command-exit sleeper)
 -1
 > (git:queued? repo)

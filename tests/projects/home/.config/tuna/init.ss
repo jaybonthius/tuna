@@ -1,13 +1,8 @@
-(import (tuna) (tuna plugins) (tuna eval))
+(import (tuna) (testing) (tuna plugins) (tuna eval))
 (use-plugin projects)
 
 (define home (getenv "HOME"))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define (sh command)
   (unless (zero? (system (string-append "{ set -e; cd \"$HOME\"; " command "; } < /dev/null")))
@@ -29,7 +24,7 @@
         (if (eof-object? files)
             (set! done? #t)
             (set! paths (append (vector->list files) paths)))))
-    (wait-until (lambda () done?))
+    (testing:wait-until (lambda () done?))
     (list-sort string<? paths)))
 
 (define (listed-in folder) (listed (projects:find (string-append home "/" folder))))

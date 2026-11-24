@@ -56,16 +56,16 @@
 ; It is the caller's own process while it runs, and a quit or raise that
 ; ends the task stops it.
 > (define running (spawn-task (lambda () (processes:run "sleep" '("10")))))
-> (wait-until (lambda () (pair? (processes:all))))
+> (testing:wait-until (lambda () (pair? (processes:all))))
 > (define sleeper (car (processes:all)))
 > (list (processes:owner sleeper) (processes:command-line sleeper))
 ((repl) ("sleep" "10"))
 > (signal-task running 'stop)
 ! non-condition value stop
-> (wait-until (lambda () (processes:status sleeper)))
+> (testing:wait-until (lambda () (processes:status sleeper)))
 > (processes:status sleeper)
 -1
-> (wait-until (lambda () (null? (processes:all))))
+> (testing:wait-until (lambda () (null? (processes:all))))
 > (processes:all)
 ()
 ; Arguments are checked.

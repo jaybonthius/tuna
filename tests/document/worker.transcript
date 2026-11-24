@@ -1,14 +1,10 @@
 ; A job reads the version of a buffer it was given.
 > (define buffer (buffers:make "lines" (string-append (make-string 120 #\a) "\nshort\n" (make-string 101 #\b) "\n")))
 > (long-lines:check! buffer)
-#<job long-lines>
-> (sleep-for 0.2)
 (0 0 122)(0 128 230)
 > (buffers:replace! buffer 1 1 (make-string 10 #\c))
 #<edit 1>
 > (long-lines:check! buffer)
-#<job long-lines>
-> (sleep-for 0.2)
 (1 0 132)(1 138 240)
 ; Freezing passes only the parts made since the last freeze, and a frozen
 ; document freezes to itself.
@@ -44,7 +40,7 @@
             (loop (+ k 1)
                   (document:replace f (* k 7) (+ (* k 7) 2) (document:from-datum (if (even? k) "\n\n\n" "λ")))
                   (cons (summary k f) acc))))))
-> (wait-until (lambda () (= (length answers) 60)))
+> (testing:wait-until (lambda () (= (length answers) 60)))
 > (equal? (list-sort (lambda (a b) (< (car a) (car b))) answers) (reverse expected))
 #t
 ; Quits requested every millisecond land in this library's code on the

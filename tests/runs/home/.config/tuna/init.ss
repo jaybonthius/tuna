@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (web) (keys) (commands) (document) (buffers) (views) (modes) (processes))
+(import (tuna) (testing) (tuna plugins) (web) (keys) (commands) (document) (buffers) (views) (modes) (processes))
 (use-plugin layout)
 (use-plugin editing)
 (use-plugin echo-area)
@@ -23,13 +23,8 @@
   (parameterize ([web:current-client client])
     (views:call-with-view (layout:selected-view) thunk)))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
-(define (ended? b) (wait-until (lambda () (runs:status b))) (runs:status b))
+(define (ended? b) (testing:wait-until (lambda () (runs:status b))) (runs:status b))
 
 (define (text b) (document:text (buffers:document b)))
 

@@ -32,7 +32,7 @@ $(BROWSER_TESTS:%=run/%): run/%: exe
 	@timeout $(BROWSER_TEST_TIMEOUT) sh $* build/bin/tuna
 
 $(TRANSCRIPTS:%=run/%): run/%: exe
-	@timeout $(TEST_TIMEOUT) sh tests/run-transcript.sh build/bin/tuna $*
+	@TEST_TIMEOUT=$(TEST_TIMEOUT) sh tests/run-transcript.sh build/bin/tuna $*
 
 # The treesit tests highlight with tree-sitter-python at the commit Tuna
 # pins, built from the copy chez-treesitter vendors, so no test fetches it.
@@ -101,7 +101,7 @@ exe: build
 	cd build/boot && ld -r -b binary -z noexecstack -o boot-files.o petite.boot scheme.boot tuna.boot
 	cc -O2 -I$(CHEZ_DIR) -o build/bin/tuna boot/main.c build/boot/boot-files.o \
 	  $(CHEZ_DIR)/libkernel.a $(CHEZ_DIR)/liblz4.a $(CHEZ_DIR)/libz.a -lm -ltinfo
-	rm -rf build/bin/plugins build/bin/libraries
+	rm -rf build/bin/plugins build/bin/plugins-cache build/bin/libraries
 	sh boot/copy-library.sh plugins build/bin/plugins
 	sh boot/copy-library.sh libraries build/bin/libraries
 	sh boot/build-plugins.sh build/bin/tuna

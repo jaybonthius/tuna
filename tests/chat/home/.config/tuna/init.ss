@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (tuna eval) (document) (haml) (web))
+(import (tuna) (testing) (tuna plugins) (tuna eval) (document) (haml) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -10,11 +10,6 @@
 (use-plugin kill-ring)
 (use-plugin fake-agents)
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 500))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define client (web:add-client! 1))
 

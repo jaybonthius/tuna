@@ -146,8 +146,8 @@
 > (define calls 0)
 > (define t (start! (lambda ()
     (completion:read "? " (list (completion:source (candidates (vector "a" "b")) (faces (lambda (text value) (set! calls (+ calls 1)) (error 'shade "no shade"))))) #f))))
-> (string? (lines-html (list-view)))
 ! shade: no shade
+> (string? (lines-html (list-view)))
 #t
 > (list calls (map (lambda (m) (completion:row-faces (session) m)) (match-list (session))))
 (1 (() ()))
@@ -204,7 +204,7 @@
 > (add-hook! jump-history:after-jump scroll-once!)
 > (define t (start! (lambda () (press! "M-s" "l"))))
 > (define s (session))
-> (wait-until (lambda () (and (not (completion:session-busy? s)) (= (completion:matches-count (completion:session-matches s)) 60000))))
+> (testing:wait-until (lambda () (and (not (completion:session-busy? s)) (= (completion:matches-count (completion:session-matches s)) 60000))))
 > (list (< scrolled-at 60000) (completion:matches-count (completion:session-matches s)) (selected-text s))
 (#t 60000 "row 29999")
 > (list (length after-jumps) (line-of (views:top src #f)))

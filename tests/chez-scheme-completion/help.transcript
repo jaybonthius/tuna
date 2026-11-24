@@ -72,7 +72,7 @@
 ; symbol's class; a table is a variable.
 > (start! "C-h" "f")
 > (type! "help:key")
-> (wait-until (lambda () (let ([s (session)]) (and s (not (completion:session-busy? s))))))
+> (testing:wait-until (lambda () (let ([s (session)]) (and s (not (completion:session-busy? s))))))
 > (row-of (session) "help:keymap")
 ("help:keymap" help:keymap completion:name-category ("variable"))
 > (press! "C-g")

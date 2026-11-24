@@ -23,7 +23,7 @@ terminal:mode
 ("hello" "world" "it" "got it" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "" "")
 ; When the program ends, its buffer is killed.
 > (terminal:send! t "\r")
-> (wait-until (lambda () (not (buffers:live? t))))
+> (testing:wait-until (lambda () (not (buffers:live? t))))
 > (list (buffers:live? t) (processes:status p))
 (#f 0)
 ; A second terminal of a name in use gets <2>; options give the folder
@@ -56,7 +56,7 @@ terminal:mode
 > (define statuses '())
 > (add-hook! terminal:exited (lambda (t status) (set! statuses (cons (list (buffers:name t) status) statuses))))
 > (define d (terminal:start '("sh" "-c" "echo bye; exit 3")))
-> (wait-until (lambda () (pair? statuses)))
+> (testing:wait-until (lambda () (pair? statuses)))
 > (list statuses (buffers:live? d) (screen-lines d))
 ((("*sh*<4>" 3)) #t ("bye"))
 > (in-client (lambda () (layout:switch-to-buffer d)))
@@ -68,7 +68,7 @@ terminal:mode
 > (define ap (terminal:process a))
 > (buffers:kill! a)
 #t
-> (wait-until (lambda () (processes:status ap)))
+> (testing:wait-until (lambda () (processes:status ap)))
 > (processes:status ap)
 -1
 ; The plugin's writes leave no unsaved text, so killing an idle shell

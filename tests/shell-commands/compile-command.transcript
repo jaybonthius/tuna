@@ -22,7 +22,7 @@
           (lambda ()
             (with-options ([shell-commands:compile-command "echo bound"])
               (commands:run shell-commands:compile "echo second")))))))
-> (wait-until (lambda () (task-done? task)))
+> (testing:wait-until (lambda () (task-done? task)))
 > (ended? (buffers:find "*compilation*"))
 0
 > (output (buffers:find "*compilation*"))

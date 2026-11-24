@@ -1,6 +1,6 @@
 > (define chat (pi:start (getenv "HOME")))
 > (define f (fake-of chat))
-> (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
+> (testing:wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
 > (in-client (lambda () (chat:show! chat)))
 > (define b (chat:buffer chat))
 ; The chat is a buffer of its own mode, named after its folder, and
@@ -39,7 +39,7 @@
 ; the chat says why.
 > (type! "more")
 > (refuse! f r "Cannot submit a prompt while compaction is in progress")
-> (wait-until (lambda () (string=? (shown chat) "Pi refused the prompt: Cannot submit a prompt while compaction is in progress\nThen\ntest\nmore\n")))
+> (testing:wait-until (lambda () (string=? (shown chat) "Pi refused the prompt: Cannot submit a prompt while compaction is in progress\nThen\ntest\nmore\n")))
 > (shown chat)
 "Pi refused the prompt: Cannot submit a prompt while compaction is in progress\nThen\ntest\nmore\n"
 > (fake-answers-set! f '())
@@ -70,7 +70,7 @@
 ; prompt, steers first; C-c C-k stops Pi and does the same.
 > (answer! f "clear_queue" (lambda (f r) '(("steering" . #("a")) ("followUp" . #("b")))))
 > (say! f (event "queue_update" '("steering" . #("a")) '("followUp" . #("b"))))
-> (wait-until (lambda () (string=? (shown chat) "Pi refused the prompt: Cannot submit a prompt while compaction is in progress\nSteer a\nFollow-up b\nThen\ntest\nmore\n")))
+> (testing:wait-until (lambda () (string=? (shown chat) "Pi refused the prompt: Cannot submit a prompt while compaction is in progress\nSteer a\nFollow-up b\nThen\ntest\nmore\n")))
 > (shown chat)
 "Pi refused the prompt: Cannot submit a prompt while compaction is in progress\nSteer a\nFollow-up b\nThen\ntest\nmore\n"
 > (press! "M->")
@@ -96,12 +96,12 @@
         (event "message_start" (cons "message" (assistant-message "pending")))
         (update '(("type" . "text_start") ("contentIndex" . 0)))
         (update '(("type" . "text_delta") ("contentIndex" . 0) ("delta" . "Working"))))
-> (wait-until (lambda () (shows? "Working\n")))
+> (testing:wait-until (lambda () (shows? "Working\n")))
 > (press! "C-/")
 > (shown chat)
 "Pi refused the prompt: Cannot submit a prompt while compaction is in progress\nWorking\nSteer a\nFollow-up b\na\nb\na\nb\nThen\ntest\nmore\n"
 > (say! f (update '(("type" . "text_delta") ("contentIndex" . 0) ("delta" . " on it"))))
-> (wait-until (lambda () (shows? "Working on it")))
+> (testing:wait-until (lambda () (shows? "Working on it")))
 > (press! "C-/")
 > (shown chat)
 "Pi refused the prompt: Cannot submit a prompt while compaction is in progress\nWorking on it\nSteer a\nFollow-up b\na\nb\nThen\ntest\nmore\n"
@@ -148,7 +148,7 @@
 ; The draft is the session's, so it outlives the chat: another chat's
 ; prompt edits leave it.
 > (define other (pi:start (getenv "HOME")))
-> (wait-until (lambda () (eq? (pi:chat-activity other) 'idle)))
+> (testing:wait-until (lambda () (eq? (pi:chat-activity other) 'idle)))
 > (in-client (lambda () (chat:show! other)))
 > (type! "x")
 > (sleep-for 0.1)
@@ -160,7 +160,7 @@
 > (define other-id (pi:chat-session-id other))
 > (fake-state-set! (fake-of other) '(("sessionId" . "s-new")))
 > (result (start! (lambda () (pi:new-session! other))))
-> (wait-until (lambda () (equal? (pi:chat-session-id other) "s-new")))
+> (testing:wait-until (lambda () (equal? (pi:chat-session-id other) "s-new")))
 > (sleep-for 0.1)
 > (list (shown other) (assoc other-id (pi-chat:drafts)) (assoc "s-new" (pi-chat:drafts)))
 ("x\n" #f ("s-new" . "x"))
@@ -169,7 +169,7 @@
 > (map cdr (pi-chat:drafts))
 ("unsent")
 > (define again (pi:start (getenv "HOME") other-id))
-> (wait-until (lambda () (eq? (pi:chat-activity again) 'idle)))
+> (testing:wait-until (lambda () (eq? (pi:chat-activity again) 'idle)))
 > (shown again)
 "\n"
 ; A reload of the plugin keeps the draft moving with its chat.
@@ -179,7 +179,7 @@
 > (eval-file (string-append (getenv "TUNA_LIBRARY") "/chat.sls"))
 > (fake-state-set! (fake-of again) '(("sessionId" . "s-after")))
 > (result (start! (lambda () (pi:new-session! again))))
-> (wait-until (lambda () (equal? (pi:chat-session-id again) "s-after")))
+> (testing:wait-until (lambda () (equal? (pi:chat-session-id again) "s-after")))
 > (sleep-for 0.1)
 > (list (assoc other-id (pi-chat:drafts)) (assoc "s-after" (pi-chat:drafts)))
 (#f ("s-after" . "kept"))
@@ -190,7 +190,7 @@
 > (add-hook! pi:chat-changed (lambda (c) (when (and (eq? c again) (equal? (pi:chat-session-id c) chat-id) (buffers:live? again-buffer)) (buffers:kill! again-buffer))))
 > (fake-state-set! (fake-of again) (list (cons "sessionId" chat-id)))
 > (define moving (start! (lambda () (pi:switch-session! again (string-append "/sessions/" chat-id ".jsonl")))))
-> (wait-until (lambda () (not (buffers:live? again-buffer))))
+> (testing:wait-until (lambda () (not (buffers:live? again-buffer))))
 > (sleep-for 0.1)
 > (list (cdr (assoc chat-id (pi-chat:drafts))) (assoc "s-after" (pi-chat:drafts)))
 ("unsent\nkept" #f)
@@ -200,7 +200,7 @@
 > (type! "typed")
 > (fake-state-set! (fake-of other) (list (cons "sessionId" chat-id)))
 > (result (start! (lambda () (pi:switch-session! other (string-append "/sessions/" chat-id ".jsonl")))))
-> (wait-until (lambda () (equal? (pi:chat-session-id other) chat-id)))
+> (testing:wait-until (lambda () (equal? (pi:chat-session-id other) chat-id)))
 > (sleep-for 0.1)
 > (list (shown other) (cdr (assoc chat-id (pi-chat:drafts))) (assoc "s-new" (pi-chat:drafts)))
 ("unsent\nkept\ntyped\n" "unsent\nkept\ntyped" #f)
@@ -210,7 +210,7 @@
 ; gives the text sent and point's place in it.
 > (define edges (pi:start (getenv "HOME")))
 > (define ef (fake-of edges))
-> (wait-until (lambda () (eq? (pi:chat-activity edges) 'idle)))
+> (testing:wait-until (lambda () (eq? (pi:chat-activity edges) 'idle)))
 > (in-client (lambda () (chat:show! edges)))
 > (define (node-of chat kind)
     (let* ([doc (buffers:document (chat:buffer chat))] [n (document:length doc)])
@@ -232,7 +232,7 @@
 > (define (ui-request id method . fields) (append `(("type" . "extension_ui_request") ("id" . ,id) ("method" . ,method)) fields))
 > (say! ef (ui-request "pw1" "setWidget" '("widgetKey" . "w1") '("widgetLines" . #("w1")))
          (ui-request "pw2" "setWidget" '("widgetKey" . "w2") '("widgetLines" . #("w2")) '("widgetPlacement" . "belowEditor")))
-> (wait-until (lambda () (= 2 (length (pi:chat-widgets edges)))))
+> (testing:wait-until (lambda () (= 2 (length (pi:chat-widgets edges)))))
 > (sleep-for 0.1)
 > (shown edges)
 "w1\nhi there\nw2\n"
@@ -262,7 +262,7 @@
 "hi there"
 ; A question's field is isolating too.
 > (say! ef (ui-request "q1" "input" '("title" . "Name?")))
-> (wait-until (lambda () (node-of edges 'chat:field)))
+> (testing:wait-until (lambda () (node-of edges 'chat:field)))
 > (define (field-text) (let ([n (node-of edges 'chat:field)]) (document:text (buffers:document (chat:buffer edges)) (+ (document:node-start n) 1) (- (document:node-end n) 2))))
 > (define (on-field offset . keys)
     (in-client

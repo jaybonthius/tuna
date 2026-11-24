@@ -4,17 +4,17 @@
 > (views:set-point! (view) 5)
 > (press! "C-s" "f" "o" "o" "C-s" "C-s" "RET")
 > (list (point) (jump-history:places))
+(20 ((#<buffer j> . 5)))
 > (press! "M-,")
 > (point)
-(20 ((#<buffer j> . 5)))
 5
 ; C-g and ESC record nothing.
 > (define before (length (jump-history:places)))
 > (press! "C-s" "f" "o" "o" "C-s" "C-g")
+! &quit
 > (press! "C-s" "b" "a" "r" "ESC")
+! &quit
 > (list (point) (= before (length (jump-history:places))))
-! &quit
-! &quit
 (5 #t)
 ; A key that ends the search records as RET does.
 > (press! "C-s" "b" "a" "r" "C-f")

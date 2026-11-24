@@ -19,7 +19,8 @@ if [ -f "$library/tuna.deps" ]; then
 fi
 
 # Loading each main module once makes a plugin that fails to compile, or
-# compiles with a warning, fail the build.
+# compiles with a warning, fail the build. The objects it leaves are kept
+# for tests, which would otherwise compile the same plugins in every home.
 home=$(mktemp -d "${TMPDIR:-/tmp}/tuna-build-plugins.XXXXXX")
 trap 'rm -rf "$home"' EXIT
 mkdir -p "$home/.config/tuna"
@@ -32,3 +33,5 @@ if [ -n "$output" ]; then
   echo "$output"
   exit 1
 fi
+rm -rf "$(dirname "$tuna")/plugins-cache"
+cp -R "$home/.cache/tuna/library" "$(dirname "$tuna")/plugins-cache"

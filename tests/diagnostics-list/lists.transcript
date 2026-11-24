@@ -98,8 +98,8 @@
 > (define (broken b) (error 'broken "no linter"))
 > (buffers:with-buffer notes (add-local-hook! diagnostics:checkers broken))
 > (buffers:with-buffer notes (commands:run diagnostics:check))
-> (sleep-for 0.05)
 ! broken: no linter
+> (sleep-for 0.05)
 > (status nv)
 ("1" "1" "1" "!")
 > (mode! notes #f)

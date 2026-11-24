@@ -1,13 +1,13 @@
 > (define chat (pi:start (getenv "HOME")))
 > (define f (fake-of chat))
-> (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
+> (testing:wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
 > (define (ui-request id method . fields) (append `(("type" . "extension_ui_request") ("id" . ,id) ("method" . ,method)) fields))
 ; Each question Pi waits on is a record, oldest first.
 > (say! f (ui-request "d1" "select" '("title" . "Allow rm?") '("options" . #("Allow" "Block")))
         (ui-request "d2" "confirm" '("title" . "Clear session?") '("message" . "All messages will be lost."))
         (ui-request "d3" "input" '("title" . "Name") '("placeholder" . "a name"))
         (ui-request "d4" "editor" '("title" . "Edit") '("prefill" . "Line 1\nLine 2")))
-> (wait-until (lambda () (= 4 (length (pi:chat-dialogs chat)))))
+> (testing:wait-until (lambda () (= 4 (length (pi:chat-dialogs chat)))))
 > (map (lambda (d) (list (pi:dialog? d) (pi:dialog-method d) (pi:dialog-title d) (pi:dialog-message d) (pi:dialog-options d)
                          (pi:dialog-text d) (pi:dialog-deadline d)))
        (pi:chat-dialogs chat))
@@ -22,7 +22,7 @@
 > (pi:cancel! chat (cadddr ds))
 > (pi:chat-dialogs chat)
 ()
-> (wait-until (lambda () (= 4 (length (filter (lambda (r) (equal? (ref r "type") "extension_ui_response")) (fake-requests f))))))
+> (testing:wait-until (lambda () (= 4 (length (filter (lambda (r) (equal? (ref r "type") "extension_ui_response")) (fake-requests f))))))
 > (map (lambda (r) (list-tail r 2)) (filter (lambda (r) (equal? (ref r "type") "extension_ui_response")) (fake-requests f)))
 ((("value" . "Block")) (("confirmed" . #t)) (("value" . "Zeppo")) (("cancelled" . #t)))
 > (map (lambda (r) (ref r "id")) (filter (lambda (r) (equal? (ref r "type") "extension_ui_response")) (fake-requests f)))
@@ -34,10 +34,10 @@
 ! pi:answer!: not a string with irritant #t
 ; A question leaves at its deadline, when Pi stops waiting.
 > (say! f (ui-request "d5" "confirm" '("title" . "Quick?") '("timeout" . 300)))
-> (wait-until (lambda () (= 1 (length (pi:chat-dialogs chat)))))
+> (testing:wait-until (lambda () (= 1 (length (pi:chat-dialogs chat)))))
 > (time? (pi:dialog-deadline (car (pi:chat-dialogs chat))))
 #t
-> (wait-until (lambda () (null? (pi:chat-dialogs chat))))
+> (testing:wait-until (lambda () (null? (pi:chat-dialogs chat))))
 > (pi:chat-dialogs chat)
 ()
 ; Extensions' status texts and widgets, latest per key; an absent text
@@ -51,7 +51,7 @@
         (ui-request "w3" "setWidget" '("widgetKey" . "gone") '("widgetLines" . #("x")))
         (ui-request "w4" "setWidget" '("widgetKey" . "gone"))
         (ui-request "t1" "setTitle" '("title" . "pi - x")))
-> (wait-until (lambda () (= 2 (length (pi:chat-widgets chat)))))
+> (testing:wait-until (lambda () (= 2 (length (pi:chat-widgets chat)))))
 > (pi:chat-statuses chat)
 (("pool" . "3 pool(s)"))
 > (map (lambda (w) (list (pi:widget? w) (pi:widget-key w) (pi:widget-placement w) (pi:widget-lines w))) (pi:chat-widgets chat))
@@ -66,29 +66,29 @@
         (ui-request "w7" "setWidget" '("widgetKey" . "named")
                     '("widgetLines" . #("NOTE: {not json}" "TODO:" "COUNT:3" "Note:{\"a\": 1}" "X:{\"a\": 1} trailing")))
         (ui-request "w8" "setWidget" '("widgetKey" . "bare") '("widgetLines" . #("{\"a\": 1}" "[1]"))))
-> (wait-until (lambda () (= 5 (length (pi:chat-widgets chat)))))
+> (testing:wait-until (lambda () (= 5 (length (pi:chat-widgets chat)))))
 > (map (lambda (w) (list (pi:widget-key w) (pi:widget-lines w))) (pi:chat-widgets chat))
 (("plan" ("Step 1" "Step 2")) ("foot" ("below")) ("mixed" ("Running 1 run" "done")) ("named" ("NOTE: {not json}" "TODO:" "COUNT:3" "Note:{\"a\": 1}" "X:{\"a\": 1} trailing")) ("bare" ("{\"a\": 1}" "[1]")))
 ; A widget set to only such lines goes, as one set to no lines does.
 > (say! f (ui-request "w9" "setWidget" '("widgetKey" . "mixed") '("widgetLines" . #("RUN_2:[3]"))))
-> (wait-until (lambda () (= 4 (length (pi:chat-widgets chat)))))
+> (testing:wait-until (lambda () (= 4 (length (pi:chat-widgets chat)))))
 > (map pi:widget-key (pi:chat-widgets chat))
 ("plan" "foot" "named" "bare")
 ; An extension that sets the editor's text calls a hook.
 > (say! f (ui-request "e1" "set_editor_text" '("text" . "/review")))
-> (wait-until (lambda () (pair? editor-texts)))
+> (testing:wait-until (lambda () (pair? editor-texts)))
 > editor-texts
 ("/review")
 ; A question gone at its deadline stays gone when pi loads again and
 ; replays its request from the log, as does one whose deadline passed
 ; while pi was off.
 > (say! f (ui-request "d6" "confirm" '("title" . "Soon?") '("timeout" . 300)))
-> (wait-until (lambda () (= 1 (length (pi:chat-dialogs chat)))))
+> (testing:wait-until (lambda () (= 1 (length (pi:chat-dialogs chat)))))
 > (unload-module! '(pi))
 > (sleep-for 0.4)
 > (load-module! '(pi))
 > (define chat (car (pi:chats)))
-> (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
+> (testing:wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
 > (sleep-for 0.3)
 > (pi:chat-dialogs chat)
 ()

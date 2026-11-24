@@ -142,16 +142,16 @@
 > (define r (marked "r" "#r" marks:raising))
 > (faces r)
 (("#r" comment))
-> (buffers:insert! r 3 "!")
-4
-> (faces r)
+> (begin (buffers:insert! r 3 "!") (testing:wait-until (lambda () (null? (spans-of r syntax-highlighting:faces)))) (faces r))
 ! (syntax-highlighting) marks: the highlighter raised
 ()
 > (begin (sleep-for 0.2) (job-events))
 ((start #<job %raising>))
-> (syntax-highlighting:update! r)
-> (faces r)
+> (define reported 0)
+> (advice-add! report (lambda (original c) (set! reported (+ reported 1)) (original c)))
+> (let ([n reported]) (syntax-highlighting:update! r) (testing:wait-until (lambda () (> reported n))))
 ! (syntax-highlighting) marks: the highlighter raised
+> (faces r)
 ()
 > (job-events)
 ((start #<job %raising>))
@@ -167,8 +167,8 @@
 > (list (faces r) (job-events))
 (() ((stop #<job %marks>)))
 > (syntax-highlighting:update! r)
-> (job-events)
 ! (syntax-highlighting) marks:input: the input raised
+> (job-events)
 ()
 ; input-changed! leaves a buffer whose input raised as it is: no job
 ; starts, and nothing is reported again.

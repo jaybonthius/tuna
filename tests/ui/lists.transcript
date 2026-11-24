@@ -171,12 +171,11 @@
 > (element (view) "<ul" "ul")
 "<ul class=\"ui-list\" data-keymap=\"3 inert\"><div class=\"node whole at-cursor primary\" id=\"v1-921\" data-at=\"1\" data-to=\"2\" data-line=\"1\" data-before=\"0\"><li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"2 clickable\"><span class=\"ui-label\">p!</span></li></div><div class=\"node whole\" id=\"v1-922\" data-at=\"2\" data-to=\"3\" data-line=\"1\" data-before=\"1\"><li class=\"ui-list-row\" data-keymap=\"2 clickable\"><span class=\"ui-label\">q!</span></li></div></ul>"
 > (unload-module! '(maker))
-> (element (view) "<ul" "ul")
 ! maker:shout: module (maker) is unloaded
-"<ul class=\"ui-list\" data-keymap=\"3 inert\"><span class=\"cursor primary\"></span><div class=\"node whole\" id=\"v1-921\" data-at=\"1\" data-to=\"2\" data-line=\"1\" data-before=\"0\"></div><div class=\"node whole\" id=\"v1-922\" data-at=\"2\" data-to=\"3\" data-line=\"1\" data-before=\"1\"></div></ul>"
-"<ul class=\"ui-list\" data-keymap=\"3 inert\"><span class=\"cursor primary\"></span><div class=\"node whole\" id=\"v1-921\" data-at=\"1\" data-to=\"2\" data-line=\"1\" data-before=\"0\"></div><div class=\"node whole\" id=\"v1-922\" data-at=\"2\" data-to=\"3\" data-line=\"1\" data-before=\"1\"></div></ul>"
-"<li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"2 clickable\"><span class=\"ui-label\">p!</span></li>"
 > (element (view) "<ul" "ul")
+"<ul class=\"ui-list\" data-keymap=\"3 inert\"><span class=\"cursor primary\"></span><div class=\"node whole\" id=\"v1-921\" data-at=\"1\" data-to=\"2\" data-line=\"1\" data-before=\"0\"></div><div class=\"node whole\" id=\"v1-922\" data-at=\"2\" data-to=\"3\" data-line=\"1\" data-before=\"1\"></div></ul>"
+> (element (view) "<ul" "ul")
+"<ul class=\"ui-list\" data-keymap=\"3 inert\"><span class=\"cursor primary\"></span><div class=\"node whole\" id=\"v1-921\" data-at=\"1\" data-to=\"2\" data-line=\"1\" data-before=\"0\"></div><div class=\"node whole\" id=\"v1-922\" data-at=\"2\" data-to=\"3\" data-line=\"1\" data-before=\"1\"></div></ul>"
 > (press! "RET")
 ; The same holds for rows a command of the maker set.
 > (with-output-to-file (string-append (getenv "HOME") "/.config/tuna/lib/maker2.sls")
@@ -192,9 +191,10 @@
 > (in-client (lambda () (commands:run maker2:fill-made)))
 > (show! (buffers:find "*made2*"))
 > (element (view) "<li" "li")
+"<li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"2 clickable\"><span class=\"ui-label\">p!</span></li>"
 > (unload-module! '(maker2))
-> (element (view) "<li" "li")
 ! maker2:shout: module (maker2) is unloaded
+> (element (view) "<li" "li")
 #f
 > (element (view) "<li" "li")
 #f
@@ -205,8 +205,8 @@
 > (show! f)
 > (define (picky n) (if (= n 1) (error 'picky "no row one") (number-row n)))
 > (ui:set-rows! f (failing) 3 picky choose)
-> (element (view) "<li" "li")
 ! picky: no row one
+> (element (view) "<li" "li")
 #f
 > (element (view) "<li" "li")
 #f
@@ -299,8 +299,8 @@
 ; A heading procedure that raises, or returns what is neither a string
 ; nor #f, fails the list as a draw procedure does.
 > (ui:set-rows! h (hl) 2 number-row choose (lambda (n) 'x))
-> (element (view) "<li" "li")
 ! ui:set-rows!: a heading procedure returned neither a string nor #f with irritant x
+> (element (view) "<li" "li")
 #f
 > (raised (lambda () (ui:set-rows! h (hl) 0 number-row choose 'x)))
 (ui:set-rows! "not a procedure")

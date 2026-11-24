@@ -7,16 +7,21 @@ case $tuna in
   *) tuna=$PWD/$tuna ;;
 esac
 folder=$(dirname "$transcript")
+tests=$(dirname "$0")
+limit=${TEST_TIMEOUT:-60}
 dir=$(mktemp -d "${TMPDIR:-/tmp}/tuna-transcript.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
 
-mkdir "$dir/home" "$dir/work" "$dir/library"
+mkdir "$dir/home" "$dir/work"
+sh "$tests/test-home.sh" "$tuna" "$dir/library" "$dir/home"
 if [ -d "$folder/home" ]; then
   cp -R "$folder/home/." "$dir/home/"
 fi
-# Tuna's own library is the one built beside the executable, since some
-# of its plugins build native code, and the test's.
-sh "$(dirname "$0")/../boot/copy-library.sh" "$(dirname "$tuna")/plugins" "$dir/library"
+# A folder takes a module other folders share, such as the web stand-in,
+# by linking to it from its lib/; the link would lead nowhere from the copy.
+if [ -d "$folder/home/.config/tuna/lib" ]; then
+  cp -RL --remove-destination "$folder/home/.config/tuna/lib/." "$dir/home/.config/tuna/lib/"
+fi
 if [ -d "$folder/library" ]; then
   cp -R "$folder/library/." "$dir/library/"
 fi
@@ -74,19 +79,25 @@ if [ -e "$folder/remotes" ]; then
     "$dir" > "$dir/home/.gitconfig"
 fi
 
-: > "$dir/input"
-: > "$dir/expected"
-awk -v input="$dir/input" -v expected="$dir/expected" '
+# A marker form follows each entry, so each entry's output is compared
+# under that entry. Without the flush, a marker could reach the output
+# before what the entry printed.
+marker=$(printf '\036')
+awk -v m="$marker" '
+  function mark() { printf "(begin (fresh-line) (display \"%s\") (newline) (flush-output-port))\n", m }
+  BEGIN { mark() }
   /^;/ { next }
-  /^> / { print substr($0, 3) > input; continuing = 1; next }
-  continuing && /^[ \t]/ { print > input; next }
-  { continuing = 0; print > expected }
-' "$transcript"
+  /^> / { if (entry) mark(); print substr($0, 3); continuing = 1; entry = 1; next }
+  continuing && /^[ \t]/ { print; next }
+  { continuing = 0 }
+  END { if (entry) mark() }
+' "$transcript" > "$dir/input"
 
 # The working folder is empty, so nothing beside the test is found by a
-# relative path.
+# relative path. Tuna runs under the timeout, not the runner, so a hang
+# still shows what Tuna printed before it.
 status=0
-(cd "$dir/work" && TUNA_LIBRARY="$dir/library" "$tuna" < "$dir/input" > "$dir/actual" 2>&1) || status=$?
+(cd "$dir/work" && TUNA_LIBRARY="$dir/library" timeout -k 10 "$limit" "$tuna" < "$dir/input" > "$dir/actual" 2>&1) || status=$?
 
 # Each run has a fresh home folder, so a transcript writes its path as
 # $HOME, and the remotes' as remotes; not as ~, which Tuna itself writes
@@ -95,13 +106,53 @@ status=0
 sed -E -e "s|$dir/home|\$HOME|g" -e "s|$dir/remotes|remotes|g" \
   -e 's/(127\.0\.0\.1:| port )[0-9]+/\1PORT/g' "$dir/actual" > "$dir/shown"
 
-if [ "$status" -ne 0 ]; then
-  echo "$transcript: FAIL: exit status $status"
-  cat "$dir/shown"
-  exit 1
-fi
-if ! diff -u --label expected --label actual "$dir/expected" "$dir/shown"; then
-  echo "$transcript: FAIL"
+# Output before the first entry and at exit has no entry of its own: it
+# is block 0, and any block after the last entry's.
+awk -v m="$marker" -v shown="$dir/shown" '
+  { line[NR] = $0 }
+  END {
+    blocks = 0
+    while ((getline l < shown) > 0) {
+      if (l == m) { blocks++; continue }
+      block[blocks] = block[blocks] l "\n"
+    }
+    entries = 0
+    for (i = 1; i <= NR; i++) {
+      if (line[i] ~ /^;/) { kind[i] = "comment"; entry[i] = entries; continue }
+      if (line[i] ~ /^> /) { entries++; continuing = 1; kind[i] = "input" }
+      else if (continuing && line[i] ~ /^[ \t]/) kind[i] = "input"
+      else { continuing = 0; kind[i] = "expected" }
+      entry[i] = entries
+      if (kind[i] == "input") last_input[entries] = i
+      else if (!(entries in first_expected)) first_expected[entries] = i
+    }
+    for (e = 0; e <= entries; e++)
+      if (e in first_expected) at[first_expected[e]] = e
+      else if (e > 0) after[last_input[e]] = e
+    for (i = 1; i <= NR; i++) {
+      if (i in at) printf "%s", block[at[i]]
+      if (line[i] ~ /^> / && entry[i] == 1 && !(0 in first_expected)) printf "%s", block[0]
+      if (kind[i] != "expected") print line[i]
+      if (i in after) printf "%s", block[after[i]]
+    }
+    if (entries == 0 && !(0 in first_expected)) printf "%s", block[0]
+    for (e = entries + 1; e <= blocks; e++) printf "%s", block[e]
+  }
+' "$transcript" > "$dir/transcript"
+
+# A failure keeps its actual transcript, so an intended change is a copy.
+kept=${ACTUAL_TRANSCRIPTS:-$(cd "$(dirname "$tuna")/.." && pwd)/actual}/${transcript#/}
+rm -f "$kept"
+if [ "$status" -ne 0 ] || ! cmp -s "$transcript" "$dir/transcript"; then
+  diff -u --label "$transcript" --label actual "$transcript" "$dir/transcript" || true
+  mkdir -p "$(dirname "$kept")"
+  cp "$dir/transcript" "$kept"
+  case $status in
+    0) echo "$transcript: FAIL" ;;
+    124) echo "$transcript: FAIL: timed out after $limit s" ;;
+    *) echo "$transcript: FAIL: exit status $status" ;;
+  esac
+  echo "actual transcript: $kept"
   exit 1
 fi
 echo "$transcript: ok"

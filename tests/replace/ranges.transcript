@@ -4,9 +4,9 @@
 > (views:set-point! (view) 8)
 > (replace! "M-%" "a" "xyz")
 > (list (asked) (views:mark (view)))
+((4 "Query replacing a with xyz: (? for help) " "a") #f)
 > (press! "!")
 > (text)
-((4 "Query replacing a with xyz: (? for help) " "a") #f)
 "a xyz xyz xyz a\n"
 ; A match crossing the range's end is cut there, and the pattern sees the
 ; view's bounds, as in Emacs: a+ over the first two characters of aaaa
@@ -18,11 +18,13 @@
 > (replace! "C-M-%" "a+" "b")
 > (press! "!")
 > (text)
+"baa\n"
 > (define d (show "d" "foobar\n"))
 > (views:set-mark! (view) 1)
 > (views:set-point! (view) 4)
 > (replace! "C-M-%" "\\bfoo\\b" "baz")
 > (list (session) (text) (last-message))
+(#f "foobar\n" "Replaced 0 occurrences")
 > (views:set-mark! (view) 1)
 > (views:set-point! (view) 4)
 > (start! "C-u" "M-%")
@@ -33,8 +35,6 @@
 > (press! "RET")
 > (sleep-for 0.05)
 > (list (session) (text) (last-message))
-"baa\n"
-(#f "foobar\n" "Replaced 0 occurrences")
 (#f "foobar\n" "Replaced 0 occurrences")
 ; C-u M-% user and C-M-% \buser\b agree on user_id in fundamental, where
 ; _ is not a word character.
@@ -48,11 +48,11 @@
 > (sleep-for 0.05)
 > (press! "!")
 > (text)
+"uid_id uid\n"
 > (define u2 (show "u2" "user_id user\n"))
 > (replace! "C-M-%" "\\buser\\b" "uid")
 > (press! "!")
 > (text)
-"uid_id uid\n"
 "uid_id uid\n"
 ; ^ does not match at a region's start in mid-line.
 > (define m (show "m" "xab ab\n"))
@@ -70,9 +70,9 @@
 > (views:set-cursor! c2 12 8)
 > (replace! "M-%" "a" "bb")
 > (asked)
+(2 "Query replacing a with bb: (? for help) " "a")
 > (press! "!")
 > (text)
-(2 "Query replacing a with bb: (? for help) " "a")
 "bb bb a a bb bb\n"
 ; The scan, the highlights and the count hold the matches the session asks
 ; about, and only those.
@@ -82,7 +82,7 @@
 > (replace! "M-%" "a" "b")
 > (sleep-for 0.2)
 > (let ([sc (replace:session-scan (session))]) (list (search:scan-count sc) (search:scan-done? sc)))
-> (faced (html->string (views:draw (view) client)))
-> (press! "q")
 (3 #t)
+> (faced (html->string (views:draw (view) client)))
 (("replace.match" "a") ("match.other" "a") ("match.other" "a"))
+> (press! "q")

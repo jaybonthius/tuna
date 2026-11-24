@@ -20,12 +20,7 @@
             (let ([now (summary lines)])
               (buffers:replace! lines (+ 1 (* k 7)) (+ 3 (* k 7)) (if (even? k) "\n\n\n" "λ"))
               (loop (+ k 1) (cons now acc)))))))
-> (define (wait-until done?)
-    (let loop ([n 0])
-      (unless (or (done?) (= n 1000))
-        (sleep-for 0.01)
-        (loop (+ n 1)))))
-> (wait-until (lambda () (= (length answers) 60)))
+> (testing:wait-until (lambda () (= (length answers) 60)))
 > (equal? (list-sort (lambda (a b) (< (car a) (car b))) answers) (reverse expected))
 #t
 ; Only the main thread changes a buffer.
@@ -35,7 +30,7 @@
       (lambda ()
         (guard (c [#t (set! from-thread (list (condition-who c) (condition-message c)))])
           (buffers:replace! lines 1 1 "x"))))
-    (wait-until (lambda () from-thread))
+    (testing:wait-until (lambda () from-thread))
     from-thread)
 (buffers:replace! "not on the main thread")
 ; Reads that walk the log or the kinds are for the main thread too, since
@@ -46,7 +41,7 @@
         (lambda ()
           (guard (c [#t (set! answer (list (condition-who c) (condition-message c)))])
             (thunk))))
-      (wait-until (lambda () answer))
+      (testing:wait-until (lambda () answer))
       answer))
 > (define refusals
     (map from-another-thread

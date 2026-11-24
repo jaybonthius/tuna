@@ -3,7 +3,7 @@
 > (remove-hook! docs-at-point:sources signature)
 > (buffers:with-buffer notes (add-local-hook! docs-at-point:sources signature))
 > (press! "C-f")
-> (wait-until (lambda () (echo-area:current-message)))
+> (testing:wait-until (lambda () (echo-area:current-message)))
 > (echo-area:current-message)
 "alpha: (alpha x)"
 ; The same view switched to a buffer no source applies to.
@@ -19,7 +19,7 @@
 ; The mode turned off in the docs' own buffer.
 > (layout:switch-to-buffer notes)
 > (press! "M-f")
-> (wait-until (lambda () (echo-area:current-message)))
+> (testing:wait-until (lambda () (echo-area:current-message)))
 > (echo-area:current-message)
 "alpha: (alpha x)"
 > (buffers:with-buffer notes (set-option-local! docs-at-point:mode #f))
@@ -33,7 +33,7 @@
 ; Once the buffer's sources are gone, the next changed place clears its
 ; docs, and they do not show again.
 > (press! "C-a")
-> (wait-until (lambda () (echo-area:current-message)))
+> (testing:wait-until (lambda () (echo-area:current-message)))
 > (echo-area:current-message)
 "alpha: (alpha x)"
 > (buffers:with-buffer notes (remove-local-hook! docs-at-point:sources signature))

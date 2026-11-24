@@ -64,7 +64,7 @@
 ; Two connections each read their own frames.
 > (define both (list (spawn-task (lambda () (jsonrpc:request c "echo" '#("c"))))
                      (spawn-task (lambda () (jsonrpc:request quiet "echo" '#("quiet"))))))
-> (wait-until (lambda () (for-all task-done? both)))
+> (testing:wait-until (lambda () (for-all task-done? both)))
 > (map join-task both)
 (#("c") #("quiet"))
 ; Bad arguments raise.

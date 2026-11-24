@@ -9,7 +9,7 @@
       (lambda (v)
         (unless (task? (current-task)) (set! off-main (+ off-main 1)))
         (vector-set! received (car v) (cons (cdr v) (vector-ref received (car v)))))))
-> (wait-until (lambda () (for-all (lambda (l) (= (length l) 2000)) (vector->list received))))
+> (testing:wait-until (lambda () (for-all (lambda (l) (= (length l) 2000)) (vector->list received))))
 > (list off-main (for-all (lambda (l) (equal? (reverse l) (iota 2000))) (vector->list received)))
 (0 #t)
 ; Stops race the starts: stopping a job before its body runs, or while it
@@ -20,12 +20,12 @@
 > (define early (map (lambda (i) (start-spin)) (iota 10)))
 > (define late (map (lambda (i) (start-spin)) (iota 10)))
 > (for-each jobs:stop! early)
-> (wait-until (lambda () (= (length ended) 10)))
+> (testing:wait-until (lambda () (= (length ended) 10)))
 > (sleep-for 0.05)
 > ended
 (stopped stopped stopped stopped stopped stopped stopped stopped stopped stopped)
 > (for-each jobs:stop! late)
-> (wait-until (lambda () (= (length ended) 20)))
+> (testing:wait-until (lambda () (= (length ended) 20)))
 > (for-all (lambda (e) (eq? e 'stopped)) ended)
 #t
 ; Vectors frozen on several threads at once, while a job sends values
@@ -38,7 +38,7 @@
       (lambda ()
         (do ([i 0 (+ i 1)]) ((= i 2000))
           (jobs:send! bouncing (list (jobs:freeze (vector k i)) (jobs:freeze (vector (list i)))))))))
-> (wait-until (lambda () (= bounced 8000)))
+> (testing:wait-until (lambda () (= bounced 8000)))
 > (jobs:stop! bouncing)
 > bounced
 8000
@@ -80,7 +80,7 @@
     quits)
 500
 > (jobs:send! echoing 'after)
-> (wait-until (lambda () (memq 'after answers)))
+> (testing:wait-until (lambda () (memq 'after answers)))
 > answers
 (after)
 > (jobs:stop! echoing)
@@ -115,7 +115,7 @@
 > (after-storm
     (lambda ()
       (let ([before delivered])
-        (wait-until (lambda () (> delivered before)))
+        (testing:wait-until (lambda () (> delivered before)))
         (console-error-port stderr)
         (list (> delivered before) (unbox reported)))))
 (#t #t)
@@ -156,7 +156,7 @@ started
         (loop))))
 > (list landed (> started 0))
 (100 #t)
-> (wait-until (lambda () (>= finished-jobs started)))
+> (testing:wait-until (lambda () (>= finished-jobs started)))
 > (>= finished-jobs started)
 #t
 > (jobs:define-worker (echo-once x emit) (emit x))

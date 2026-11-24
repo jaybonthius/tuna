@@ -56,7 +56,7 @@
 > (buffers:insert! typed 1 "zz")
 3
 > (with-output-to-file (at "go") void)
-> (wait-until (lambda () (string=? (text typed) "zzxx AAA BBB\n")))
+> (testing:wait-until (lambda () (string=? (text typed) "zzxx AAA BBB\n")))
 > (text typed)
 "zzxx AAA BBB\n"
 ; C-g during the second of three runs replaces nothing.
@@ -66,11 +66,11 @@
 > (start! "C-u" "M-|")
 > (type! "if [ -e seen ]; then sleep 30; else touch seen; fi; tr a-z A-Z")
 > (press! "RET")
-> (wait-until (lambda () (file-exists? (at "seen"))))
+> (testing:wait-until (lambda () (file-exists? (at "seen"))))
 > (settle)
 > (press! "C-g")
-> (settle)
 ! &quit
+> (settle)
 > (list (text three) (filter (lambda (p) (exists (lambda (a) (search a "sleep 30" 0)) (processes:command-line p))) (processes:all)))
 ("aa bb cc\n" ())
 ; With the region a rectangle, M-| takes each cursor's input from

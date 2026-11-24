@@ -4,7 +4,7 @@
 > (buffers:with-buffer notes (add-local-hook! docs-at-point:sources signature))
 > (press! "C-f")
 > (press! "C-h" ".")
-> (wait-until (lambda () (buffers:find "*Docs*")))
+> (testing:wait-until (lambda () (buffers:find "*Docs*")))
 > (sleep-for 0.2)
 > (document:text (buffers:document (buffers:find "*Docs*")))
 "alpha\n(alpha x)\n"

@@ -26,7 +26,7 @@
 > (web:take-page-calls!)
 ((1 "keys-settings" (("quitKeys" . #("C-g" "ESC")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #t))))
 > (terminal:send! t "printf '\\e]52;c;aGVsbG8=\\a'\r")
-> (wait-until (lambda () (equal? (kill-ring:text (kill-ring:current)) "hello")))
+> (testing:wait-until (lambda () (equal? (kill-ring:text (kill-ring:current)) "hello")))
 > (kill-ring:text (kill-ring:current))
 "hello"
 > (web:take-page-calls!)

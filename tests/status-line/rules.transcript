@@ -89,8 +89,8 @@
 ; A value that is not a place goes to report once, and its segment is
 ; not shown; a key that is not a segment is left out.
 > (table-set! status-line:segments seg-a 'left)
-> (map car (status (view)))
 ! status-line:segments: not a place with irritant left
+> (map car (status (view)))
 ("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "seg-b" "status-line:major-mode" "status-line:minor-modes")
 > (map car (status (view)))
 ("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "seg-b" "status-line:major-mode" "status-line:minor-modes")
@@ -109,12 +109,12 @@
 > (status-line:define-segment flaky (show show-flaky))
 > (status-line:define-segment number (show show-number))
 > (table-set! status-line:segments flaky (status-line:left 40))
+! car: () is not a pair
+! car: () is not a pair
 > (table-set! status-line:segments number (status-line:left 41))
+! number: a show procedure returned what is not HTML, a string or #f with irritant 42
+! number: a show procedure returned what is not HTML, a string or #f with irritant 42
 > (cdr (assoc "flaky" (status (view))))
-! car: () is not a pair
-! car: () is not a pair
-! number: a show procedure returned what is not HTML, a string or #f with irritant 42
-! number: a show procedure returned what is not HTML, a string or #f with irritant 42
 ""
 > (cdr (assoc "flaky" (status (view))))
 ""

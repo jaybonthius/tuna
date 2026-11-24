@@ -38,8 +38,8 @@ completion:buffer-category
 > (list (task-done? t) (input))
 (#f "foo")
 > (press! "C-g")
-> (result t)
 ! &quit
+> (result t)
 ; actions:quit-after-action? set to #f keeps the read, and C-u quits it.
 > (set-option! actions:quit-after-action? #f)
 > (define bar (buffers:make "bar" ""))
@@ -148,23 +148,23 @@ completion:buffer-category
 > (wait-matches (session))
 > (define a (act! "C-."))
 > (press! "z")
-> (result a)
 ! actions:read-action: z is not an action
+> (result a)
 > (define a (act! "C-."))
 > (press! "C-g")
-> (result a)
 ! &quit
+> (result a)
 > (echo-area:current-message)
 "Quit"
 > (task-done? t)
 #f
 > (press! "C-g")
-> (result t)
 ! &quit
+> (result t)
 ; Outside a read there is no target.
 > (define a (act! "C-."))
-> (result a)
 ! actions:act: No target found
+> (result a)
 ; Every target has the general actions: a read whose sources have no
 ; category, and a location, whose keymap binds nothing. w copies the
 ; target's whole text; the read is quit.
@@ -211,7 +211,7 @@ quit
 > (wait-matches (session))
 > (define a (act! "C-."))
 > (press! "x")
-> (wait-until (lambda () (keys:reading client)))
+> (testing:wait-until (lambda () (keys:reading client)))
 > (press! "k")
 ! &quit
 > (result a)
@@ -222,13 +222,13 @@ quit
 > (wait-matches (session))
 > (define a (act! "C-."))
 > (press! "x")
-> (wait-until (lambda () (keys:reading client)))
+> (testing:wait-until (lambda () (keys:reading client)))
 > (press! "z")
-> (result a)
 ! actions:read-action: x z is not an action
+> (result a)
 > (press! "C-g")
-> (result t)
 ! &quit
+> (result t)
 > (keys:unbind! completion:buffer-action-keymap "x k")
 ; completion:answer-input! answers a prompt that is not a completion
 ; read with its input, and a read with the candidate its input names;
@@ -265,7 +265,7 @@ quit
       (type! "prefixed")
       (wait-matches (session))
       (let ([a (act! "C-.")])
-        (for-each (lambda (key) (press! key) (wait-until (lambda () (or (task-done? a) (keys:reading client))))) keys)
+        (for-each (lambda (key) (press! key) (testing:wait-until (lambda () (or (task-done? a) (keys:reading client))))) keys)
         (result a)
         (result t)
         (echo-area:current-message))))
@@ -296,14 +296,14 @@ quit
 > (wait-matches (session))
 > (define a (act! "C-u" "C-."))
 > (press! "C-u")
-> (wait-until (lambda () (keys:reading client)))
+> (testing:wait-until (lambda () (keys:reading client)))
 > (press! "p")
 > (result a)
 > (list (echo-area:current-message) (task-done? t))
 ("(4) prefixed" #f)
 > (press! "C-g")
-> (result t)
 ! &quit
+> (result t)
 > (commands:define-command (say-prefix)
     "Says the prefix argument."
     (echo-area:message! "~s" (commands:prefix-argument)))
@@ -361,8 +361,8 @@ quit
 > (list (task-done? t) (input) (buffers:name (views:buffer before)) (eq? (view) (minibuffer:prompt-view (prompt))))
 (#f "shown" "shown" #t)
 > (press! "C-g")
-> (result t)
 ! &quit
+> (result t)
 > (define two (buffers:make "two" "ab\n"))
 > (layout:switch-to-buffer two)
 > (views:set-point! (view) 1)
@@ -377,8 +377,8 @@ quit
 > (list (task-done? t) (input) (document:text (buffers:document two) 0 (document:length (buffers:document two))))
 (#f "shown" "shownashownb\n")
 > (press! "C-g")
-> (result t)
 ! &quit
+> (result t)
 > (define t (start! (lambda () (press! "C-x" "b"))))
 > (type! "shown")
 > (wait-matches (session))
@@ -434,8 +434,8 @@ quit
 > (list (task-done? t) (echo-area:current-message) (eq? (view) (minibuffer:prompt-view (prompt))))
 (#f "after warned" #t)
 > (press! "C-g")
-> (result t)
 ! &quit
+> (result t)
 > (keys:unbind! completion:buffer-action-keymap "v")
 ; With nothing selected, a read whose sources share a category targets its
 ; input with that category: a folder's name typed in C-x C-f, and a file
@@ -449,8 +449,8 @@ quit
 > (keys:reading-prompt client)
 "Act on ~/src/: "
 > (press! "C-g")
-> (result a)
 ! &quit
+> (result a)
 > (type! "new.txt")
 > (sleep-for 0.3)
 > (completion:selected (session))
@@ -478,8 +478,8 @@ quit
 > (completion:session-categories (session))
 (completion:file-category completion:buffer-category)
 > (define a (act! "C-."))
-> (result a)
 ! actions:act: No target found
+> (result a)
 > (press! "C-g")
 ! &quit
 > (result t)
@@ -503,7 +503,7 @@ quit
 > (wait-matches (session))
 > (define outer (prompt))
 > (define a (start! (lambda () (press! "C-."))))
-> (wait-until (lambda () (not (eq? (prompt) outer))))
+> (testing:wait-until (lambda () (not (eq? (prompt) outer))))
 > (type! "show-pre")
 > (sleep-for 0.3)
 > (press! "RET")

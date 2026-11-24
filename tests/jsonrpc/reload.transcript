@@ -9,7 +9,7 @@
 > (processes:status process)
 #f
 > (unload-module! '(jsonrpc))
-> (wait-until (lambda () (processes:status process)))
+> (testing:wait-until (lambda () (processes:status process)))
 > (integer? (processes:status process))
 #t
 > (join-task waiting)

@@ -61,8 +61,8 @@ END
 printf ':root { --tuna-region: #264f78; }\n' > "$home/user.css"
 
 cat > "$dir/design-tokens-web/pages.transcript" <<'END'
-> (http:wait-for-server)
 Tuna is at http://127.0.0.1:PORT/
+> (http:wait-for-server)
 ; Every page links the token file and the faces' rules, served as CSS.
 > (http:head-files)
 ("/files/1/design-tokens.css?v=1" "/files/2/faces.css?v=1")
@@ -87,4 +87,6 @@ Tuna is at http://127.0.0.1:PORT/
 ("/files/1/design-tokens.css?v=1" "/files/2/faces.css?v=1" "/files/4/user.css?v=1")
 END
 
-sh tests/run-transcript.sh "$tuna" "$dir/design-tokens-web/pages.transcript"
+# Under make's limit, so a hang stops here, where the runner shows how far
+# the transcript got.
+TEST_TIMEOUT=40 sh tests/run-transcript.sh "$tuna" "$dir/design-tokens-web/pages.transcript"

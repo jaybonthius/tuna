@@ -16,7 +16,7 @@
       (lambda (ended) (note! (list 'ended ended (current-owner))))))
 > (list (jobs:job? job) (jobs:job? match-names) job)
 (#t #f #<job match-names>)
-> (wait-until (lambda () (= (length log) 3)))
+> (testing:wait-until (lambda () (= (length log) 3)))
 > (taken!)
 (((repl) #t) ((repl) #t) (ended #f (repl)))
 ; A worker that imports a library, and a task that waits for a job's
@@ -26,9 +26,9 @@
     (emit (word-count text)))
 > word-count
 #<worker word-count>
-> (jobs:start word-count "to be or not" (lambda (n) (display n)))
-#<job word-count>
-> (sleep-for 0.1)
+> (let ([ended? #f])
+    (jobs:start word-count "to be or not" (lambda (n) (display n)) (lambda (ended) (set! ended? #t)))
+    (testing:wait-until (lambda () ended?)))
 4
 > (define (job-values worker input)
     (let ([results '()])
@@ -113,7 +113,7 @@
 > (begin (jobs:send! parsing "a") (jobs:send! parsing "ab") (jobs:send! parsing "abcdefg"))
 > (sleep-for 0.05)
 > (jobs:send! parsing 'done)
-> (wait-until (lambda () (= (length log) 5)))
+> (testing:wait-until (lambda () (= (length log) 5)))
 > (taken!)
 ((parsed 0 "abc") (parsed 1 "abcd") (parsed 4 "abcdefg") (idle #t) (ended #f))
 > (jobs:send! parsing "after the end does nothing")
@@ -121,7 +121,7 @@
 > (jobs:define-worker (waits-forever x emit receive) (emit (receive +inf.0)))
 > (define forever (jobs:start waits-forever 0 note!))
 > (jobs:send! forever 'got)
-> (wait-until (lambda () (= (length log) 1)))
+> (testing:wait-until (lambda () (= (length log) 1)))
 > (taken!)
 (got)
 ; A stop ends a job waiting to receive or to emit at once, and a busy one
@@ -130,21 +130,21 @@
 > (define waiting (jobs:start parser "x" note! (lambda (ended) (note! (list 'ended ended)))))
 > (sleep-for 0.05)
 > (jobs:stop! waiting)
-> (wait-until (lambda () (= (length log) 2)))
+> (testing:wait-until (lambda () (= (length log) 2)))
 > (taken!)
 ((parsed 0 "x") (ended stopped))
 > (jobs:define-worker (spin x emit) (emit 'spinning) (let loop () (loop)))
 > (define spinning (jobs:start spin 0 note! (lambda (ended) (note! (list 'ended ended)))))
 > (sleep-for 0.05)
 > (jobs:stop! spinning)
-> (wait-until (lambda () (= (length log) 2)))
+> (testing:wait-until (lambda () (= (length log) 2)))
 > (taken!)
 (spinning (ended stopped))
 > (jobs:stop! spinning)
 > (jobs:define-worker (sleeper x emit) (sleep (make-time 'time-duration 100000000 0)) (emit 'woke))
 > (define sleeping (jobs:start sleeper 0 note! (lambda (ended) (note! (list 'ended ended)))))
 > (begin (sleep-for 0.02) (jobs:stop! sleeping))
-> (wait-until (lambda () (= (length log) 1)))
+> (testing:wait-until (lambda () (= (length log) 1)))
 > (taken!)
 ((ended stopped))
 ; A stop cannot skip the out of a critical wind, and a guard does not
@@ -160,7 +160,7 @@
 > (define cleaning (jobs:start cleans 0 note! (lambda (ended) (note! (list 'ended ended)))))
 > (sleep-for 0.05)
 > (jobs:stop! cleaning)
-> (wait-until (lambda () (= (length log) 3)))
+> (testing:wait-until (lambda () (= (length log) 3)))
 > (list (taken!) (counted))
 ((running cleaned (ended stopped)) 1)
 ; Values are checked where they cross: in jobs:start, jobs:send! and
@@ -195,9 +195,9 @@
 > (define echoing
     (jobs:start parser "" note! (lambda (ended) (note! (list 'ended ended)))))
 > (thread-join (fork-thread (lambda () (jobs:send! echoing "sent from a thread"))))
-> (wait-until (lambda () (= (length log) 2)))
+> (testing:wait-until (lambda () (= (length log) 2)))
 > (thread-join (fork-thread (lambda () (jobs:stop! echoing))))
-> (wait-until (lambda () (= (length log) 3)))
+> (testing:wait-until (lambda () (= (length log) 3)))
 > (taken!)
 ((parsed 0 "") (parsed 1 "sent from a thread") (ended stopped))
 ; A frozen vector is checked once; values holding it pass as plain data.

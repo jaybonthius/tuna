@@ -15,7 +15,7 @@ fail() {
 
 home=$dir/home
 mkdir -p "$home/.config/tuna/lib" "$dir/library" "$dir/work"
-sh "$(dirname "$0")/../boot/copy-library.sh" "$(dirname "$tuna")/plugins" "$dir/library"
+sh "$(dirname "$0")/test-home.sh" "$tuna" "$dir/library" "$home"
 # No server starts: the web plugin is the transcripts' stand-in.
 cp "$(dirname "$0")/terminal/home/.config/tuna/lib/web.sls" "$home/.config/tuna/lib/web.sls"
 cat > "$home/.config/tuna/init.ss" <<'END'

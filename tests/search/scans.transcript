@@ -30,16 +30,16 @@
 ; The old matches follow the edit, whether or not the new ones have
 ; arrived yet.
 > (map (lambda (m) (span e m)) (filter (lambda (m) (> (search:match-start m) 1)) (search:scan-matches es 0 (end-of e))))
+((11 17 "needle") (21 27 "needle"))
 > (let wait ([n 0]) (unless (or (= n 300) (search:scan-done? es)) (sleep-for 0.01) (wait (+ n 1))))
 > (map (lambda (m) (span e m)) (search:scan-matches es 0 (end-of e)))
-((11 17 "needle") (21 27 "needle"))
 ((1 7 "needle") (11 17 "needle") (21 27 "needle"))
 ; A stopped scan keeps its matches and follows no more edits.
 > (search:stop-scan! es)
 > (buffers:replace! e 1 1 "needle ")
+#<edit 2>
 > (sleep-for 0.1)
 > (search:scan-count es)
-#<edit 2>
 3
 ; A scan of a region in a buffer of many atoms gathers the texts of the
 ; atoms near it, and those further on only when a match reaching the
@@ -52,12 +52,12 @@
 > (define (note-atoms atom-texts doc start end) (set! asked (cons (list start end) asked)) (atom-texts doc start end))
 > (advice-add! buffers:atom-texts note-atoms)
 > (scan-spans many (scanned many (search:make-query "row 1[0-5]$" search:regexp) 10 20))
+((11 12 "row 10\n") (12 13 "row 11\n") (13 14 "row 12\n") (14 15 "row 13\n") (15 16 "row 14\n") (16 17 "row 15\n"))
 > (reverse asked)
+((10 20))
 > (set! asked '())
 > (scan-spans many (scanned many (search:make-query "(?s)row 1[0-5]\\n.*row 99990" search:regexp) 10 20 10 (end-of many)))
-> (reverse asked)
-> (advice-remove! buffers:atom-texts note-atoms)
-((11 12 "row 10\n") (12 13 "row 11\n") (13 14 "row 12\n") (14 15 "row 13\n") (15 16 "row 14\n") (16 17 "row 15\n"))
-((10 20))
 ()
+> (reverse asked)
 ((10 65556) (65556 100002))
+> (advice-remove! buffers:atom-texts note-atoms)

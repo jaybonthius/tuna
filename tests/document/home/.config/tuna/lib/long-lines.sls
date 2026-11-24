@@ -1,5 +1,5 @@
 #!tuna
-(import (jobs) (buffers))
+(import (testing) (jobs) (buffers))
 
 (jobs:define-worker (long-lines version emit)
   (import (document))
@@ -13,5 +13,8 @@
           (emit (list (car version) start end)))))))
 
 (define (check! buffer)
-  (jobs:start long-lines (cons (buffers:version buffer) (buffers:document buffer))
-              (lambda (result) (display result))))
+  (let ([ended? #f])
+    (jobs:start long-lines (cons (buffers:version buffer) (buffers:document buffer))
+                (lambda (result) (display result))
+                (lambda (ended) (set! ended? #t)))
+    (testing:wait-until (lambda () ended?))))

@@ -1,5 +1,5 @@
-> (http:wait-for-server)
 Tuna is at http://127.0.0.1:PORT/
+> (http:wait-for-server)
 ; A client is connected while its stream is open.
 > (define p (http:page))
 > (web:clients)
@@ -84,7 +84,7 @@ timeout
 ! web:call-page!: (json) cannot write it with irritant #<procedure car>
 ; A client whose stream has closed gets neither screens nor calls.
 > (http:close! p)
-> (wait-until (lambda () (web:call-page! c "ping" 0) (null? (web:clients))))
+> (testing:wait-until (lambda () (web:call-page! c "ping" 0) (null? (web:clients))))
 > (web:clients)
 ()
 > (web:send-screen! c (haml (:p "unseen")) "Tuna")

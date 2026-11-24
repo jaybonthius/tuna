@@ -5,16 +5,16 @@
 > (in-occur!)
 > (press! "M-n")
 > (where)
+(1 "one foo")
 > (press! "M-n")
 > (where)
+(3 "foo")
 > (press! "M-n")
 > (where)
+(3 "foo three foo")
 > (views:set-point! (view) (- (views:point (view)) 2))
 > (press! "M-n")
 > (where)
-(1 "one foo")
-(3 "foo")
-(3 "foo three foo")
 (3 "foo three foo")
 ; M-p goes to the end of the previous match.
 > (press! "M-p")
@@ -23,21 +23,21 @@
 ; Digits count; a negative count turns M-n backward.
 > (press! "2" "M-n")
 > (where)
+(5 "five foo")
 > (press! "M-n")
+! occur:next: No more matches
 > (where)
+(5 "five foo")
 > (press! "-" "M-n")
 > (where)
+(3 "foo three foo")
 > (press! "-" "M-p")
 > (where)
+(5 "five foo")
 > (views:set-point! (view) 2)
 > (press! "M-p")
-> (where)
-(5 "five foo")
-! occur:next: No more matches
-(5 "five foo")
-(3 "foo three foo")
-(5 "five foo")
 ! occur:previous: No earlier matches
+> (where)
 (heading "")
 ; n moves from the line's end to the next match, shows its line's
 ; first match in another view, highlighted, *Occur* selected, and says
@@ -45,30 +45,30 @@
 > (views:set-point! (view) (find-text (occur-buffer) "one foo"))
 > (press! "n")
 > (list (where) (wins) (last-message))
+((3 "foo") (("src" 13 #f) ("*Occur*" 63 #t)) "Next locus from *Occur*")
 > (define (lit) (filter (lambda (f) (string=? (car f) "pulse.highlight"))
                         (faced (html->string (views:draw (find (lambda (v) (eq? (views:buffer v) (buffers:find "src"))) (layout:views)) client)))))
 > (list (lit) (marked))
+((("pulse.highlight" "foo") ("pulse.highlight" "foo")) 3)
 > (views:set-point! (view) (find-text (occur-buffer) "one foo"))
 > (press! "2" "n")
 > (list (where) (wins))
-((3 "foo") (("src" 13 #f) ("*Occur*" 63 #t)) "Next locus from *Occur*")
-((("pulse.highlight" "foo") ("pulse.highlight" "foo")) 3)
 ((3 "foo three foo") (("src" 13 #f) ("*Occur*" 73 #t)))
 ; p from the line's start goes to the previous match, the last on a
 ; line with two.
 > (views:set-point! (view) (find-text (occur-buffer) "five foo"))
 > (press! "p")
 > (list (where) (wins) (last-message))
+((3 "foo three foo") (("src" 13 #f) ("*Occur*" 73 #t)) "Previous locus from *Occur*")
 > (list (lit) (marked))
+((("pulse.highlight" "foo") ("pulse.highlight" "foo")) 3)
 > (views:set-point! (view) (find-text (occur-buffer) "one foo"))
 > (press! "p")
+! occur:show-previous: No more matches
 > (views:set-point! (view) (find-text (occur-buffer) "five foo"))
 > (press! "n")
-> (where)
-((3 "foo three foo") (("src" 13 #f) ("*Occur*" 73 #t)) "Previous locus from *Occur*")
-((("pulse.highlight" "foo") ("pulse.highlight" "foo")) 3)
-! occur:show-previous: No more matches
 ! occur:show-next: No more matches
+> (where)
 (5 "")
 ; n and p act in the current *Occur*, even when another was listed
 ; later.

@@ -66,8 +66,8 @@
 > (input)
 "echo bar"
 > (press! "C-g")
-> (settle)
 ! &quit
+> (settle)
 ; With no run in the build's buffer, the folder is the current buffer's.
 > (buffers:kill! build)
 #t
@@ -151,7 +151,7 @@ runs:mode
       (with-options ([files:directory-override (cons (buffers:current) root)]
                      [shell-commands:compile-buffer-name (lambda () (string-append "*compilation " root "*"))])
         (commands:run shell-commands:compile))))
-> (wait-until (lambda () (files:buffer-visiting (at "other/bar.py"))))
+> (testing:wait-until (lambda () (files:buffer-visiting (at "other/bar.py"))))
 > (define bar (files:buffer-visiting (at "other/bar.py")))
 > (layout:switch-to-buffer bar)
 > (define task (spawn-task (lambda () (in-client (lambda () (commands:run project-compile))))))
@@ -178,6 +178,6 @@ runs:mode
         (in-client (lambda () (commands:run shell-commands:shell-command "pwd" #f))))
       (set! done #t)))
 #<task>
-> (wait-until (lambda () done))
+> (testing:wait-until (lambda () done))
 > (message)
 "$HOME/proj"

@@ -36,10 +36,10 @@
 ; Docs at point: each server's hover is a source of its own, so the slow
 ; server's does not hold back the fast one's.
 > (in-client (lambda () (docs-at-point:ask-sources (view))))
-> (wait-until (lambda () (equal? (echo-area:current-message) "total: types")))
+> (testing:wait-until (lambda () (equal? (echo-area:current-message) "total: types")))
 > (echo-area:current-message)
 "total: types"
-> (wait-until (lambda () (not (equal? (echo-area:current-message) "total: types"))))
+> (testing:wait-until (lambda () (not (equal? (echo-area:current-message) "total: types"))))
 > (echo-area:current-message)
 "total: types\ntotal: style"
 ; A signature shows with its active parameter in the highlight face.
@@ -48,11 +48,12 @@
                                                                  ("activeSignature" . 0) ("activeParameter" . 1)))
                        '(name . "types"))
 > (configure! "style" '(capabilities ("textDocumentSync" . 2)) '(name . "style"))
+> (define opened (map (lambda (name) (length (of-method name "textDocument/didOpen"))) '("types" "style")))
 > (lsp:reconnect (car (lsp:connections)))
 > (lsp:reconnect (car (lsp:connections)))
-> (wait-until (lambda () (and (= 2 (length (of-method "types" "textDocument/didOpen"))) (= 2 (length (of-method "style" "textDocument/didOpen"))))))
+> (for-each (lambda (name n) (wait-for name "textDocument/didOpen" (+ n 1))) '("types" "style") opened)
 > (in-client (lambda () (docs-at-point:ask-sources (view))))
-> (wait-until (lambda () (equal? (echo-area:current-message) "total(items, start)")))
+> (testing:wait-until (lambda () (equal? (echo-area:current-message) "total(items, start)")))
 > (list (echo-area:current-message) (echo-area:current-spans))
 ("total(items, start)" ((13 18 highlight)))
 ; Highlights come after the idle delay, from the first server that gives
@@ -60,8 +61,9 @@
 > (configure! "types" '(capabilities ("textDocumentSync" . 2) ("documentHighlightProvider" . #t))
                        '(responses ("textDocument/documentHighlight" . #((("range" ("start" ("line" . 0) ("character" . 0)) ("end" ("line" . 0) ("character" . 5)))))))
                        '(name . "types"))
+> (define opened (length (of-method "types" "textDocument/didOpen")))
 > (lsp:reconnect (car (lsp:connections)))
-> (wait-until (lambda () (= 3 (length (of-method "types" "textDocument/didOpen")))))
+> (wait-for "types" "textDocument/didOpen" (+ opened 1))
 > (define (lit)
     (let ([l (find (lambda (l) (= (buffers:layer-priority l) 5)) (buffers:layers a (view)))])
       (if l (map (lambda (s) (list (car s) (cadr s) (cdr (assq 'face (caddr s))))) (buffers:spans l 0 (document:length (buffers:document a)))) '())))
@@ -69,7 +71,7 @@
 > (press! "C-a")
 > (lit)
 ()
-> (wait-until (lambda () (pair? (lit))))
+> (testing:wait-until (lambda () (pair? (lit))))
 > (lit)
 ((1 6 (lsp.highlight highlight)))
 > (press! "C-f")
@@ -81,8 +83,9 @@
 > (configure! "types" '(capabilities ("textDocumentSync" . 2) ("hoverProvider" . #t))
                        '(responses ("textDocument/hover" ("contents" ("kind" . "markdown") ("value" . "```python\ndef total(items) -> int\n```\n---\nSums the items."))))
                        '(name . "types"))
+> (define opened (length (of-method "types" "textDocument/didOpen")))
 > (lsp:reconnect (car (lsp:buffer-connections a)))
-> (wait-until (lambda () (= 4 (length (of-method "types" "textDocument/didOpen")))))
+> (wait-for "types" "textDocument/didOpen" (+ opened 1))
 > (define asked (start! (lambda () (lsp:hover (car (lsp:buffer-connections a)) (view)))))
 > (let ([doc (result asked)]) (list (docs-at-point:doc-markdown? doc) (docs-at-point:doc-echo doc)))
 (#t "def total(items) -> int")

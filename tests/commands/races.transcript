@@ -19,7 +19,7 @@ plain
           (set! result
             (guard (c [#t (list (condition-who c) (condition-message c))])
               (thunk)))))
-      (wait-until (lambda () result))
+      (testing:wait-until (lambda () result))
       result))
 > (map on-thread
     (list (lambda () (commands:run plain))
@@ -41,7 +41,7 @@ plain
     (event! 'waiting x (name-of (commands:this-command)) (name-of (commands:last-command)))
     x)
 > (define paused (spawn-task (lambda () (commands:run waiting))))
-> (wait-until (lambda () resume-waiting))
+> (testing:wait-until (lambda () resume-waiting))
 > (list (commands:this-command) (name-of (commands:last-command)))
 (#f forking)
 > (commands:run plain)
@@ -54,13 +54,13 @@ resumed
 ; resumes, and its run ends.
 > (set! resume-waiting #f)
 > (define paused (spawn-task (lambda () (commands:run waiting))))
-> (wait-until (lambda () resume-waiting))
+> (testing:wait-until (lambda () resume-waiting))
 > (begin (resume-waiting (lambda () (raise 'cancelled))) (call-with-values (lambda () (join-task paused)) list))
 ! non-condition value cancelled
 ()
 > (set! resume-waiting #f)
 > (define paused (spawn-task (lambda () (commands:run waiting))))
-> (wait-until (lambda () resume-waiting))
+> (testing:wait-until (lambda () resume-waiting))
 > (begin (signal-task paused 'stop) (call-with-values (lambda () (join-task paused)) list))
 ! non-condition value stop
 ()

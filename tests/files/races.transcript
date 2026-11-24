@@ -40,7 +40,7 @@
 > (guard (c [(symbol? c) c]) (files:save-buffer one))
 stopped
 > (remove-hook! files:before-save signal-saver)
-> (wait-until (lambda () (not (buffers:modified? one))))
+> (testing:wait-until (lambda () (not (buffers:modified? one))))
 > (list (buffers:modified? one) (disk-checks:read-text "~/one.txt"))
 (#f "typed cbaone\n")
 > (buffers:replace! one 1 1 "d")
@@ -60,7 +60,7 @@ stopped
 > (buffers:replace! one 1 1 "t")
 #<edit 7>
 > (define next-saver (spawn-task (lambda () (files:save-buffer one))))
-> (wait-until (lambda () (task-done? next-saver)))
+> (testing:wait-until (lambda () (task-done? next-saver)))
 > (list (task-done? next-saver) (buffers:modified? one) (disk-checks:read-text "~/one.txt"))
 (#t #f "tsdtyped cbaone\n")
 ; A buffer killed while its save waits is written, and gets no after-save.
@@ -89,11 +89,11 @@ stopped
 > (call-with-output-file (string-append (getenv "HOME") "/big.txt") (lambda (p) (display big p)))
 > (define visitor (spawn-task (lambda () (files:visit "~/big.txt"))))
 > (define unloader (spawn-task (lambda () (unload-module! '(files)))))
-> (guard (c [(error? c) (list (condition-who c) (condition-message c))]) (join-task visitor))
 ! files:read-document: the files plugin was unloaded
+> (guard (c [(error? c) (list (condition-who c) (condition-message c))]) (join-task visitor))
 (files:read-document "the files plugin was unloaded")
 > (load-module! '(files))
-> (wait-until (lambda () (files:buffer-visiting "~/one.txt")))
+> (testing:wait-until (lambda () (files:buffer-visiting "~/one.txt")))
 > (list-sort string<? (map buffers:name (files:buffers)))
 ("one.txt" "same.txt<p>" "same.txt<q>")
 ; It also ends the tasks of other modules waiting for a buffer's turn.
@@ -103,13 +103,13 @@ stopped
 > (define first-saver (spawn-task (lambda () (files:save-buffer large))))
 > (define second-saver (spawn-task (lambda () (files:save-buffer large))))
 > (define unloader (spawn-task (lambda () (unload-module! '(files)))))
+! files:save-buffer: the files plugin was unloaded
+! files:save-buffer: the files plugin was unloaded
 > (map (lambda (t) (guard (c [(error? c) (list (condition-who c) (condition-message c))]) (join-task t)))
        (list first-saver second-saver))
-! files:save-buffer: the files plugin was unloaded
-! files:save-buffer: the files plugin was unloaded
 ((files:save-buffer "the files plugin was unloaded") (files:save-buffer "the files plugin was unloaded"))
 > (load-module! '(files))
-> (wait-until (lambda () (files:buffer-visiting "~/big.txt")))
+> (testing:wait-until (lambda () (files:buffer-visiting "~/big.txt")))
 > (buffers:kill! large)
 #t
 ; Quits land in edits, saves, their jobs' deliveries and the bookkeeping.
@@ -293,7 +293,7 @@ quit
     (set! order (cons 'entry-ends order)))
 > (add-hook! files:after-rename pausing)
 > (begin (files:rename-file "~/order-a.txt" "~/order-c.txt") (set! order (cons 'rename-returned order)))
-> (wait-until (lambda () (memq 'entry-ends order)))
+> (testing:wait-until (lambda () (memq 'entry-ends order)))
 > (reverse order)
 (entry-starts rename-returned entry-ends)
 > (remove-hook! files:after-rename pausing)

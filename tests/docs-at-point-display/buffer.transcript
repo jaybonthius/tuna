@@ -8,7 +8,7 @@
 > (add-hook! docs-at-point:sources described 1)
 > (set-option! docs-at-point:strategy docs-at-point:all)
 > (press! "C-h" ".")
-> (wait-until (lambda () (buffers:find "*Docs*")))
+> (testing:wait-until (lambda () (buffers:find "*Docs*")))
 > (sleep-for 0.1)
 > (define docs (buffers:find "*Docs*"))
 > (document:datums (buffers:document docs))

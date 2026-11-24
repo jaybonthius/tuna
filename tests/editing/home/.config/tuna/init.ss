@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (web) (md) (layout-split))
+(import (tuna) (testing) (tuna plugins) (document) (web) (md) (layout-split))
 ;; ask's own writer raises each message as a warning, whose handler runs
 ;; outside the guards of the code that said it; the tests keep the
 ;; messages to read them.

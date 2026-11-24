@@ -5,24 +5,24 @@
 > (in-occur!)
 > (press! "r")
 > (buffers:name (views:buffer (view)))
+"*Occur: src*"
 > (layout:select! (find (lambda (v) (eq? (views:buffer v) b)) (layout:views)))
 > (occur! (search:make-query "foo" search:regexp) 0 #f)
 > (in-occur!)
 > (press! "r")
+! occur:rename-buffer: Buffer name ‘*Occur: src*’ is in use
 > (buffers:name (views:buffer (view)))
+"*Occur*"
 > (press! "C-u" "r")
 > (buffers:name (views:buffer (view)))
-"*Occur: src*"
-! occur:rename-buffer: Buffer name ‘*Occur: src*’ is in use
-"*Occur*"
 "*Occur: src*<2>"
 ; A printing key no map binds is undefined, and changes nothing.
 > (press! "a")
 ! a is undefined
 ; SPC and DEL scroll, as in any special buffer.
 > (bound "SPC")
-> (bound "DEL")
 views:scroll-up
+> (bound "DEL")
 views:scroll-down
 ; q puts back what the view showed before *Occur*, keeping *Occur*.
 > (press! "q")
@@ -33,8 +33,8 @@ views:scroll-down
 > (only!)
 > (occur! (search:make-query "foo" search:regexp) 0 #f)
 > (wins)
+(("src" 1 #t) ("*Occur*" 2 #f))
 > (in-occur!)
 > (press! "q")
 > (list (wins) (buffers:live? (occur-buffer)))
-(("src" 1 #t) ("*Occur*" 2 #f))
 ((("src" 1 #t)) #t)

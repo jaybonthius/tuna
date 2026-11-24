@@ -1,6 +1,6 @@
 ; The server starts once the configuration has run, on the port it set.
-> (http:wait-for-server)
 Tuna is at http://127.0.0.1:PORT/
+> (http:wait-for-server)
 > (define (status . headers) (http:status (http:get "/web/tuna.js" headers)))
 > (define (at text) (format "~a:~a" text (web:port)))
 ; A request whose Host is not one Tuna answers to, or whose Origin is

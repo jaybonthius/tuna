@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (haml) (web))
+(import (tuna) (testing) (tuna plugins) (document) (haml) (web))
 (use-plugin ui)
 (use-plugin editing)
 (use-plugin layout)
@@ -58,9 +58,4 @@
                       (if (message-condition? c) (condition-message c) c))])
     (thunk)))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 (import (console))

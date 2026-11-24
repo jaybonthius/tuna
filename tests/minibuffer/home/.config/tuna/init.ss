@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (haml) (web))
+(import (tuna) (testing) (tuna plugins) (document) (haml) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -31,22 +31,20 @@
 ;; A command's prompt pauses its task, so tests run it in a task of its
 ;; own and wait for the prompt.
 (define (start! thunk)
-  (let ([t (spawn-task (lambda () (in-client thunk)))])
-    (sleep-for 0.05)
+  (let* ([before (minibuffer:current-prompt)]
+         [t (spawn-task (lambda () (in-client thunk)))])
+    (testing:wait-until (lambda () (or (task-done? t) (not (eq? (minibuffer:current-prompt) before)))))
     t))
 
+;; A read that is still waiting has asked again: the prompt that took the
+;; key has ended and a new one waits.
 (define (result t)
-  (wait-until (lambda () (task-done? t)))
+  (testing:wait-until (lambda () (or (task-done? t) (minibuffer:current-prompt))))
   (if (task-done? t)
       (guard (c [#t (list 'raised (if (message-condition? c) (condition-message c) c))])
         (join-task t))
       'waiting))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 500))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define (view) (layout:selected-view))
 

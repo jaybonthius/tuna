@@ -31,7 +31,7 @@ failed
 > (write-file! "repo/.git/hooks/pre-commit" "#!/bin/sh\nsleep 30\n")
 > (sh "chmod +x repo/.git/hooks/pre-commit")
 > (define slow (git-mode:start repo '("commit" "-m" "slow") (lambda (c) (void))))
-> (wait-until (lambda () (git:running repo)))
+> (testing:wait-until (lambda () (git:running repo)))
 > (press! "M->")
 > (point-line)
 "    git … commit -m slow"
@@ -43,7 +43,7 @@ failed
 "git commit -m slow…"
 > (answer! #t)
 > (press! "k")
-> (wait-until (lambda () (git:command-exit slow)))
+> (testing:wait-until (lambda () (git:command-exit slow)))
 > (list (take-asked!) (git:command-exit slow) (point-line))
 (("Kill process?") -1 " -1 git … commit -m slow")
 > (settle!)

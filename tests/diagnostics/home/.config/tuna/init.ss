@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (web) (haml))
+(import (tuna) (testing) (tuna plugins) (document) (web) (haml))
 (define said '())
 (use-plugin ask
   (config
@@ -40,11 +40,6 @@
 
 (define (mode! b on?) (buffers:with-buffer b (set-option-local! diagnostics:mode on?)))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 500))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define (raised thunk)
   (guard (c [#t (list (if (who-condition? c) (condition-who c) 'none)

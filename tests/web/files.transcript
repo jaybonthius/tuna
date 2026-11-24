@@ -1,5 +1,5 @@
-> (http:wait-for-server)
 Tuna is at http://127.0.0.1:PORT/
+> (http:wait-for-server)
 > (define (file path) (let ([r (http:get path)]) (list (http:status r) (http:header r "content-type") (http:body r))))
 ; A module's entry names a file beside the module, which every page links.
 > (import (styler))

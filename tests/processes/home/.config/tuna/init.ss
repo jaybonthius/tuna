@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (tuna eval) (processes) (buffers) (document))
+(import (tuna) (testing) (tuna plugins) (tuna eval) (processes) (buffers) (document))
 
 (putenv "PATH" (string-append (getenv "HOME") "/bin:" (getenv "PATH")))
 
@@ -19,11 +19,6 @@
        (loop (cdr l) (cons (list (string-append (caar acc) (caar l)) (cadar l)) (cdr acc)))]
       [else (loop (cdr l) (cons (car l) acc))])))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define (noting-output bytes end)
   (note! (if (eof-object? bytes) (list 'eof end) (list (utf8->string bytes) end))))

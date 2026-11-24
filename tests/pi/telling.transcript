@@ -1,6 +1,6 @@
 > (define chat (pi:start (getenv "HOME")))
 > (define f (fake-of chat))
-> (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
+> (testing:wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
 ; Every message goes as a prompt that says what to do if Pi works: a
 ; steer, or a follow-up. Each pauses the task until Pi answers.
 > (answer! f "prompt" (lambda (f r) #f))
@@ -16,7 +16,7 @@
 ("get_state" "get_entries" "get_session_stats" "get_commands" "prompt")
 > (answer! f "prompt" (lambda (f r) '(("disposition" . "handled"))))
 > (result (start! (lambda () (pi:send! chat "/review"))))
-> (wait-until (lambda () (= 8 (length (fake-requests f)))))
+> (testing:wait-until (lambda () (= 8 (length (fake-requests f)))))
 > (asked f)
 ("prompt" "get_entries" "get_state")
 > (fake-answers-set! f '())
@@ -26,15 +26,14 @@
 > (list (ref r "message") (ref r "streamingBehavior"))
 ("Then test" "followUp")
 ; Pi refuses a prompt while you compact; the caller gets pi:&refused.
-> (refuse! f r "Cannot submit a prompt while compaction is in progress")
-> (result t)
+> (begin (refuse! f r "Cannot submit a prompt while compaction is in progress") (result t))
 ! pi:follow-up!: Cannot submit a prompt while compaction is in progress
 (refused "Cannot submit a prompt while compaction is in progress")
 > (fake-answers-set! f '())
 ; Pi's queue, as it reports it; taking it back returns its texts, steers
 ; first. Stopping takes back the queue, then stops Pi.
 > (say! f (event "queue_update" '("steering" . #("a")) '("followUp" . #("b" "c"))))
-> (wait-until (lambda () (call-with-values (lambda () (pi:chat-queue chat)) (lambda (s u) (pair? s)))))
+> (testing:wait-until (lambda () (call-with-values (lambda () (pi:chat-queue chat)) (lambda (s u) (pair? s)))))
 > (call-with-values (lambda () (pi:chat-queue chat)) list)
 (("a") ("b" "c"))
 > (answer! f "clear_queue" (lambda (f r) '(("steering" . #("a")) ("followUp" . #("b" "c")))))
@@ -130,8 +129,8 @@
 > (define t (start! (lambda () (pi:last-reply chat))))
 > (begin (wait-held f "get_last_assistant_text") (void))
 > (pi:stop! chat)
-> (result t)
 ! pi:last-reply: the chat was stopped
+> (result t)
 (refused "the chat was stopped")
 > (pi:chats)
 ()

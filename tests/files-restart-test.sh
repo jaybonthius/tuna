@@ -15,7 +15,7 @@ fail() {
 
 home=$dir/home
 mkdir -p "$home/.config/tuna/lib" "$dir/library" "$dir/work"
-sh boot/copy-library.sh "$(dirname "$tuna")/plugins" "$dir/library"
+sh tests/test-home.sh "$tuna" "$dir/library" "$home"
 cp -R tests/files/home/.config/tuna/lib/. "$home/.config/tuna/lib/"
 cat > "$home/.config/tuna/init.ss" <<'END'
 (import (tuna) (tuna plugins) (document))

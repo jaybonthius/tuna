@@ -201,6 +201,6 @@ inner
 ! commands:keep-last-command!: no command is running
 > (let ([result #f])
     (fork-thread (lambda () (set! result (guard (c [#t (condition-message c)]) (commands:keep-last-command!)))))
-    (wait-until (lambda () result))
+    (testing:wait-until (lambda () result))
     result)
 "not on the main thread"

@@ -67,7 +67,7 @@
 > (define t (start! "M-:"))
 > (type! "(buffers:ins")
 > (press! "TAB")
-> (wait-until (lambda () (and (session) (not (completion:session-busy? (session))))))
+> (testing:wait-until (lambda () (and (session) (not (completion:session-busy? (session))))))
 > (session-texts)
 ("buffers:insert!")
 > (press! "TAB")
@@ -78,7 +78,7 @@
 > (import (greet))
 > (type! "'greet:te")
 > (press! "TAB")
-> (wait-until (lambda () (and (session) (not (completion:session-busy? (session))))))
+> (testing:wait-until (lambda () (and (session) (not (completion:session-busy? (session))))))
 > (press! "TAB")
 > (input)
 "'greet:text"
@@ -89,7 +89,7 @@
 ; Another prompt gets no Scheme names: eval's entry of
 ; completion:find-region answers only in M-:'s prompt.
 > (define other (spawn-task (lambda () (in-client (lambda () (minibuffer:read "Other: "))))))
-> (wait-until (lambda () (prompt)))
+> (testing:wait-until (lambda () (prompt)))
 > (type! "buffers:ins")
 > (press! "M-TAB")
 > (list (input) (session))
@@ -121,7 +121,7 @@
 #t
 > (remove-hook! eval:expression-prompt-started add-own)
 > (define other (spawn-task (lambda () (in-client (lambda () (minibuffer:read "Other: "))))))
-> (wait-until (lambda () (prompt)))
+> (testing:wait-until (lambda () (prompt)))
 > (press! "C-c" "C-c")
 ! C-c C-c is undefined
 > (reverse calls)

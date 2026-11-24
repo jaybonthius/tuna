@@ -63,8 +63,8 @@
 > (list (keys:prefix-description one) (task-done? waiting))
 (#f #f)
 > (press-all! one "C-g")
-> (wait-until (lambda () (task-done? waiting)))
 ! &quit
+> (testing:wait-until (lambda () (task-done? waiting)))
 > (task-done? waiting)
 #t
 > (raised (lambda () (keys:wrap-next-command! (marking 'c) "C-c c")))

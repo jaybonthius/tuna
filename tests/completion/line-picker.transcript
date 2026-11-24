@@ -78,8 +78,8 @@ waiting
 > (define t (start! (lambda () (press! "M-g" "g"))))
 > (type! "2.5")
 > (press! "RET")
-> (result t)
 ! line-picker:goto-line: not an exact integer with irritant 2.5
+> (result t)
 ; A line past the last goes to the end; one before the first to the start.
 > (in-client (lambda () (line-picker:goto-line 99)))
 > (views:point (view))

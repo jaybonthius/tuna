@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins))
+(import (tuna) (testing) (tuna plugins))
 (define recent-commands '())
 
 (use-plugin commands
@@ -10,9 +10,4 @@
 
 (define (recent-names) (map commands:command-name recent-commands))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 (import (console))

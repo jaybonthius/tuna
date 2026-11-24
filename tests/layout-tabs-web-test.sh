@@ -24,12 +24,14 @@ cat > "$home/init.ss" <<'END'
 END
 
 cat > "$dir/layout-tabs-web/pages.transcript" <<'END'
-> (http:wait-for-server)
 Tuna is at http://127.0.0.1:PORT/
+> (http:wait-for-server)
 ; Every page links the tabs' rules, served as CSS.
 > (define path (find (lambda (f) (string=? (path-last f) "layout-tabs.css?v=1")) (http:head-files)))
 > (served? (substring path 0 (- (string-length path) 4)) "layout-tabs/layout-tabs.css")
 #t
 END
 
-sh tests/run-transcript.sh "$tuna" "$dir/layout-tabs-web/pages.transcript"
+# Under make's limit, so a hang stops here, where the runner shows how far
+# the transcript got.
+TEST_TIMEOUT=40 sh tests/run-transcript.sh "$tuna" "$dir/layout-tabs-web/pages.transcript"

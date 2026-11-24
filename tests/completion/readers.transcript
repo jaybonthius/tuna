@@ -38,17 +38,17 @@
 > (define t (start! (lambda () (call-with-values (lambda () (minibuffer:read-entry "Word: " h '("one" "two"))) list))))
 > (define nested (start! (lambda () (press! "M-r"))))
 > (texts (session))
+("one" "two" "beta" "gamma" "alpha")
 > (type! "tw")
 > (press! "RET")
 > (result nested)
 > (input)
+"two"
 > (press! "RET")
 > (result t)
+("two" 1)
 > (define t (start! (lambda () (minibuffer:read "Word: " #f))))
 > (press! "M-r")
-("one" "two" "beta" "gamma" "alpha")
-"two"
-("two" 1)
 ! completion:search-history: History is empty
 > (echo-area:current-message)
 "History is empty"

@@ -75,7 +75,7 @@
 > (wait-for a "ALTSCREEN")
 > (eval-file (string-append (getenv "TUNA_LIBRARY") "/terminal.sls"))
 > (terminal:send! a "\r")
-> (wait-until (lambda () (not (screen-has? a "ALTSCREEN"))))
+> (testing:wait-until (lambda () (not (screen-has? a "ALTSCREEN"))))
 > (sleep-for 0.3)
 > (let ([ls (lines (text a))]) (list (length ls) (length (filter (lambda (l) (string=? l "40")) ls)) (car ls)))
 (42 1 "$ seq 1 40; printf '\\e[?1049h\\e[HALT%sSCREEN' ''; read x; printf '\\e[?1049l'")

@@ -96,7 +96,7 @@
 > (sh "cd repo && echo l > local.txt && git add local.txt && git commit -qm local")
 > (sh "cd repo && git config pull.rebase false")
 > (press! "F" "u")
-> (wait-until (lambda () (equal? (shown-buffer) "MERGE_MSG")))
+> (testing:wait-until (lambda () (equal? (shown-buffer) "MERGE_MSG")))
 > (shown-buffer)
 "MERGE_MSG"
 > (press! "C-c" "C-c")

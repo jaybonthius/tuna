@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document))
+(import (tuna) (testing) (tuna plugins) (document))
 (use-plugin buffers
   (config
     (add-hook! buffers:kill-queries

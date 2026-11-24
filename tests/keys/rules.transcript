@@ -84,7 +84,7 @@ layout:other-view
 (repl)
 ; A posted thunk binds as the module that posted it.
 > (as-module '(file-picker) (post! (lambda () (keys:bind! keys:global "C-p" file-picker:find-file))))
-> (wait-until (lambda () (table-ref keys:global "C-p")))
+> (testing:wait-until (lambda () (table-ref keys:global "C-p")))
 > (table-owner keys:global "C-p")
 (file-picker)
 ; Active keymaps: temporary ones, newest first, then the entries of

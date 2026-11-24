@@ -122,8 +122,8 @@
 > (press! "C-c" "m")
 > (define t (start! (lambda () (press! "-" "s"))))
 > (unload-module! '(transient))
-> (result t)
 ! &quit
+> (result t)
 > (list (popups) (minibuffer:current-prompt))
 ((layout:popups-root ()) #f)
 > (press! "o" "RET")

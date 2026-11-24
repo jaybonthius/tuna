@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (haml) (web))
+(import (tuna) (testing) (tuna plugins) (document) (haml) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -29,28 +29,23 @@
   (parameterize ([web:current-client client])
     (views:call-with-view (layout:selected-view) thunk)))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 500))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 ;; A command's prompt pauses its task, so tests press its keys in a task
 ;; of their own and wait for the prompt.
 (define (start! . keys)
   (let ([t (spawn-task (lambda () (apply press! keys)))])
-    (wait-until (lambda () (or (task-done? t) (minibuffer:current-prompt))))
+    (testing:wait-until (lambda () (or (task-done? t) (minibuffer:current-prompt))))
     t))
 
 ;; An action's command reads its key in a task of its own, so a test
 ;; presses the key only once the read waits for it.
 (define (act! . keys)
   (let ([t (spawn-task (lambda () (apply press! keys)))])
-    (wait-until (lambda () (or (task-done? t) (keys:reading client))))
+    (testing:wait-until (lambda () (or (task-done? t) (keys:reading client))))
     t))
 
 (define (finish t)
-  (wait-until (lambda () (task-done? t)))
+  (testing:wait-until (lambda () (task-done? t)))
   (task-done? t))
 
 (define (eval! text . prefix)

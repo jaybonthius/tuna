@@ -347,8 +347,8 @@ python:mode
 > (define t (start! "M-x"))
 > (type! "modes:switch-major-mode")
 > (press! "RET")
-> (list (result t) (prompt) (echo) (modes:major-mode help-buffer))
 ! modes:switch-major-mode: help:mode is set only by its plugin
+> (list (result t) (prompt) (echo) (modes:major-mode help-buffer))
 (#<void> #f "help:mode is set only by its plugin" help:mode)
 ; From a waiting prompt, the command refuses as above, naming
 ; minibuffer:mode; the prompt still waits with its input.
@@ -359,8 +359,8 @@ python:mode
 > (define t (start! "M-x"))
 > (type! "modes:switch-major-mode")
 > (press! "RET")
-> (list (result t) (echo) (input) (result-now outer))
 ! modes:switch-major-mode: minibuffer:mode is set only by its plugin
+> (list (result t) (echo) (input) (result-now outer))
 (#<void> "minibuffer:mode is set only by its plugin" "abc" waiting)
 > (press! "C-g")
 ! &quit
@@ -390,7 +390,7 @@ python:mode
 > (press! "RET")
 > (result t)
 > (define occur-buffer (buffers:find "*Occur*"))
-> (wait-until (lambda () (> (string-length (text occur-buffer)) 0)))
+> (testing:wait-until (lambda () (> (string-length (text occur-buffer)) 0)))
 > (layout:select! (car (views:showing occur-buffer)))
 > (press! "e")
 > (modes:major-mode occur-buffer)

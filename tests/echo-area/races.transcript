@@ -33,7 +33,9 @@
            (equal? (filter (lambda (l) (and (>= (string-length l) 3) (string=? (substring l 0 3) prefix))) lines)
                    (map (lambda (k) (format "t~a-~a" i k)) (iota 250)))))
        '(0 1 2 3))
+(#t #t #t #t)
 > (list (car (last-pair lines)) (echo-area:current-message))
+("end" "end")
 ; Quits requested every millisecond land in messages, the flush of
 ; reports, clearing by keys and the log's trimming. Afterwards both
 ; buffers are well formed, and a message shows and is logged as before.
@@ -79,23 +81,21 @@
 > (begin
     (stress (+ (real-time) 2000))
     (list (> quits-caught 100) (> rounds 1000)))
+(#t #t)
 > (unload-module! '(quiet))
 > (define (shape b)
     (let ([d (car (document:datums (buffers:document b)))])
       (list (car d) (length (cddr d)))))
 > (list (shape echo-buffer) (shape (buffers:find "*Messages*")))
+((echo-area:area 1) (echo-area:%log 1))
 > (let ([log (messages)]) (char=? (string-ref log (- (string-length log) 1)) #\newline))
+#t
 > (echo-area:message! "Last")
 > (echo-area:message! "Last")
 > (length (filter (lambda (c) (char=? c #\newline)) (string->list (messages))))
+50
 > (list (echo-area:current-message) (let* ([log (messages)] [n (string-length log)]) (substring log (- n 16) n)))
+("Last" "\nLast [2 times]\n")
 > (press! "C-a")
 > (echo-area:current-message)
-(#t #t #t #t)
-("end" "end")
-(#t #t)
-((echo-area:area 1) (echo-area:%log 1))
-#t
-50
-("Last" "\nLast [2 times]\n")
 #f

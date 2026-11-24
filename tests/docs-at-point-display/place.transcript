@@ -1,7 +1,7 @@
 ; An ask is about the selected view after the command: C-x o asks about
 ; the view it selects.
 > (press! "C-f")
-> (wait-until (lambda () (echo-area:current-message)))
+> (testing:wait-until (lambda () (echo-area:current-message)))
 > (set! asked '())
 > (press! "C-x" "o")
 > (sleep-for 0.3)
@@ -54,7 +54,7 @@
 ; Docs show again after a command only in the view they are about: in a
 ; view whose buffer has the mode off they do not follow.
 > (press! "C-a")
-> (wait-until (lambda () (echo-area:current-message)))
+> (testing:wait-until (lambda () (echo-area:current-message)))
 > (echo-area:current-message)
 "alpha: (alpha x)"
 > (views:set-buffer! other-view other)

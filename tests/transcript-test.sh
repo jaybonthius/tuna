@@ -14,7 +14,7 @@ transcript() {
   mkdir -p "$dir/$1/home/.config/tuna"
   printf '(import (console))\n' > "$dir/$1/home/.config/tuna/init.ss"
   printf "$2" > "$dir/$1/t.transcript"
-  sh tests/run-transcript.sh "$tuna" "$dir/$1/t.transcript" 2>&1
+  TEST_TIMEOUT=5 ACTUAL_TRANSCRIPTS=$dir/actual sh tests/run-transcript.sh "$tuna" "$dir/$1/t.transcript" 2>&1
 }
 
 if output=$(transcript wrong '> (+ 1 2)\n4\n'); then
@@ -36,6 +36,23 @@ fi
 if ! output=$(transcript right '; comment\n> (list 1\n    2)\n(1 2)\n'); then
   fail "a right transcript failed: $output"
 fi
+
+if output=$(transcript misplaced '> (+ 1 2)\n> (+ 2 2)\n3\n4\n'); then
+  fail "a value under the wrong form passed"
+fi
+case $output in
+  *"-> (+ 2 2)"*"+> (+ 2 2)"*) ;;
+  *) fail "a misplaced value's failure did not show where it belongs: $output" ;;
+esac
+
+if output=$(transcript hang '> (+ 1 2)\n3\n> (let loop () (loop))\n> (+ 2 2)\n4\n'); then
+  fail "a transcript that hangs passed"
+fi
+case $output in
+  *"-3"*) fail "a hang lost the output before it: $output" ;;
+  *"-4"*"timed out"*) ;;
+  *) fail "a hang did not show where it stopped: $output" ;;
+esac
 
 echo "$0: $failures failures"
 [ "$failures" -eq 0 ]

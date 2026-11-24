@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (haml) (web) (disk) (layout-split) (syntax))
+(import (tuna) (testing) (tuna plugins) (document) (haml) (web) (disk) (layout-split) (syntax))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -56,11 +56,6 @@
   (parameterize ([web:current-client client])
     (views:call-with-view (layout:selected-view) thunk)))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 500))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 ;; A command's prompt pauses its task, so tests run it in a task of its
 ;; own and wait for the prompt.
@@ -70,7 +65,7 @@
     t))
 
 (define (result t)
-  (wait-until (lambda () (task-done? t)))
+  (testing:wait-until (lambda () (task-done? t)))
   (if (task-done? t)
       (guard (c [#t (list 'raised (if (message-condition? c) (condition-message c) c))])
         (join-task t))
@@ -92,7 +87,7 @@
 
 (define (question) (minibuffer:question (prompt)))
 
-(define (wait-matches s) (wait-until (lambda () (not (completion:session-busy? s)))))
+(define (wait-matches s) (testing:wait-until (lambda () (not (completion:session-busy? s)))))
 
 (define (match-list s)
   (wait-matches s)

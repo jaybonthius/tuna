@@ -59,8 +59,8 @@ Honks once.
 > (start! "C-h" "f")
 > (type! "ha")
 > (press! "C-g")
-> (settle)
 ! &quit
+> (settle)
 > (unload-module! '(harpo))
 > (layout:select! (help-view))
 > (press! "g")

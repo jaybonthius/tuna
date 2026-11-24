@@ -13,8 +13,7 @@ kill -9 $$
 Run ended by signal 9 at TIME
 > (map caddr (spans (buffers:find "*end*")))
 (((face . error)))
-> (define missing (runs:start-for-user "*end*" '("no-such-program-at-all" "it's") home))
-> (ended? missing)
+> (begin (define missing (runs:start-for-user "*end*" '("no-such-program-at-all" "it's") home)) (ended? missing))
 ! (processes) spawn-process: cannot run no-such-program-at-all: No such file or directory with irritants ("no-such-program-at-all" ("it's"))
 #<compound condition>
 > (condition? (runs:status missing))
@@ -30,7 +29,7 @@ Run could not start: cannot run no-such-program-at-all: No such file or director
 ; runs:stop, C-c C-k, ends a run at once: stopped, with its footer and
 ; entries, before anything else happens to the buffer.
 > (define long (runs:start-for-user "*long*" "echo going; sleep 30" home))
-> (wait-until (lambda () (string=? (output long) "going")))
+> (testing:wait-until (lambda () (string=? (output long) "going\n")))
 > (runs:status long)
 #f
 > (files:directory long)
@@ -53,7 +52,7 @@ Run stopped at TIME
 ; sees the buffer still holding it. Only the first end is kept, since the
 ; new run can end before the next form is read.
 > (define long (runs:start-for-user "*long*" "echo first; sleep 30" home))
-> (wait-until (lambda () (string=? (output long) "first")))
+> (testing:wait-until (lambda () (string=? (output long) "first\n")))
 > (define seen #f)
 > (define (look b end) (unless seen (set! seen (list end (runs:status b) (output b)))))
 > (add-hook! runs:ended look)

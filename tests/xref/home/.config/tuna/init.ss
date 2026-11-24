@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (haml) (web))
+(import (tuna) (testing) (tuna plugins) (document) (haml) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -43,14 +43,9 @@
     (sleep-for 0.05)
     t))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 500))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define (result t)
-  (wait-until (lambda () (task-done? t)))
+  (testing:wait-until (lambda () (task-done? t)))
   (if (task-done? t)
       (guard (c [#t (list 'raised (if (message-condition? c) (condition-message c) c))])
         (join-task t))
@@ -65,7 +60,7 @@
 
 (define (session) (in-client completion:current-session))
 
-(define (wait-matches s) (wait-until (lambda () (not (completion:session-busy? s)))))
+(define (wait-matches s) (testing:wait-until (lambda () (not (completion:session-busy? s)))))
 
 (define (match-list s)
   (let ([ms (completion:session-matches s)])

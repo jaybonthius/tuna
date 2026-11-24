@@ -20,8 +20,8 @@ cat > "$dir/layout-draw-web/home/.config/tuna/init.ss" <<'END'
 END
 
 cat > "$dir/layout-draw-web/screens.transcript" <<'END'
-> (http:wait-for-server)
 Tuna is at http://127.0.0.1:PORT/
+> (http:wait-for-server)
 > (define (title-of html)
     (let* ([start (http:search html "<title" 0)] [end (http:search html "</title>" start)])
       (substring html start (+ end 8))))
@@ -64,4 +64,6 @@ timeout
 (screen 3 0 "<p>Hello again</p>")
 END
 
-sh tests/run-transcript.sh "$tuna" "$dir/layout-draw-web/screens.transcript"
+# Under make's limit, so a hang stops here, where the runner shows how far
+# the transcript got.
+TEST_TIMEOUT=40 sh tests/run-transcript.sh "$tuna" "$dir/layout-draw-web/screens.transcript"

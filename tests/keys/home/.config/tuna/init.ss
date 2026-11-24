@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (commands) (groucho))
+(import (tuna) (testing) (tuna plugins) (commands) (groucho))
 (use-plugin keys
   (config
     (set-option! keys:right-option-meta? #f)
@@ -10,16 +10,11 @@
                       (if (message-condition? c) (condition-message c) c))])
     (thunk)))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define (on-thread thunk)
   (let ([result #f])
     (fork-thread (lambda () (set! result (raised thunk))))
-    (wait-until (lambda () result))
+    (testing:wait-until (lambda () result))
     result))
 
 (define (name-of v)

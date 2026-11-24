@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (web) (keys) (views) (buffers) (document) (modes) (json))
+(import (tuna) (testing) (tuna plugins) (web) (keys) (views) (buffers) (document) (modes) (json))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -45,14 +45,9 @@
     (sleep-for 0.05)
     t))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 500))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define (result t)
-  (wait-until (lambda () (task-done? t)))
+  (testing:wait-until (lambda () (task-done? t)))
   (if (task-done? t)
       (guard (c [#t (list 'raised (if (message-condition? c) (condition-message c) c))])
         (join-task t))
@@ -81,7 +76,7 @@
 
 (define (texts s) (map (lambda (m) (completion:text s m)) (match-list s)))
 
-(define (wait-matches s) (wait-until (lambda () (not (completion:session-busy? s)))))
+(define (wait-matches s) (testing:wait-until (lambda () (not (completion:session-busy? s)))))
 
 (define (text b) (document:text (buffers:document b)))
 
@@ -132,7 +127,7 @@
 
 (define (wait-for name method . count)
   (let ([n (if (null? count) 1 (car count))])
-    (wait-until (lambda () (>= (length (of-method name method)) n)))))
+    (testing:wait-until (lambda () (>= (length (of-method name method)) n)))))
 
 (define-table fake-keymap)
 (define-hook fake-mode-hook)

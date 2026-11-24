@@ -15,7 +15,7 @@ fail() {
 
 home=$dir/home
 mkdir -p "$home/.config/tuna/lib" "$dir/library" "$dir/work"
-sh boot/copy-library.sh "$(dirname "$tuna")/plugins" "$dir/library"
+sh tests/test-home.sh "$tuna" "$dir/library" "$home"
 cp tests/web/home/.config/tuna/lib/http.sls "$home/.config/tuna/lib/"
 # The web line comes first, so the server's start waiting for the
 # command line's settings does not rest on the order of the lines.

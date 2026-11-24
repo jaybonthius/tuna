@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (web))
+(import (tuna) (testing) (tuna plugins) (document) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -45,21 +45,16 @@
     (sleep-for 0.05)
     t))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 500))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 ;; An action's command reads its key in a task of its own, so a test
 ;; presses the key only once the read waits for it.
 (define (act! . keys)
   (let ([t (start! (lambda () (apply press! keys)))])
-    (wait-until (lambda () (or (task-done? t) (keys:reading client))))
+    (testing:wait-until (lambda () (or (task-done? t) (keys:reading client))))
     t))
 
 (define (result t)
-  (wait-until (lambda () (task-done? t)))
+  (testing:wait-until (lambda () (task-done? t)))
   (if (task-done? t)
       (guard (c [(quit-condition? c) 'quit]
                 [#t (list 'raised (if (message-condition? c) (condition-message c) c))])
@@ -74,7 +69,7 @@
 
 (define (input) (minibuffer:input (prompt)))
 
-(define (wait-matches s) (wait-until (lambda () (not (completion:session-busy? s)))))
+(define (wait-matches s) (testing:wait-until (lambda () (not (completion:session-busy? s)))))
 
 (define (match-list s)
   (let ([ms (completion:session-matches s)])
@@ -105,7 +100,7 @@
 ;; Highlighting finds a buffer's scope in a job, so a test waits until
 ;; the buffer's names have come.
 (define (settle-names b)
-  (wait-until (lambda () (not (eq? (chez-scheme:names b) (chez-scheme:repl-names)))))
+  (testing:wait-until (lambda () (not (eq? (chez-scheme:names b) (chez-scheme:repl-names)))))
   (sleep-for 0.05))
 
 (define (help-title)

@@ -4,7 +4,7 @@
 > (define p (processes:start "printf" '("one\ntwo\n") noting-output noting-exit))
 > p
 #<process 1 printf>
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (taken!)
 (("one\ntwo\n" 8) (eof 8) (exit 0))
 > (list (processes:process? p) (processes:process? 'p) (processes:status p) (processes:owner p))
@@ -17,25 +17,24 @@
     (unless (eof-object? bytes) (note! (list (current-owner) (task? (current-task))))))
 > (processes:start "printf" '("x") owner-and-task noting-exit)
 #<process 2 printf>
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (taken!)
 (((repl) #t) (exit 0))
 ; The exit status is the exit code, or -n when signal n ended the
 ; program.
 > (processes:start "sh" '("-c" "exit 3") noting-output noting-exit)
 #<process 3 sh>
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (taken!)
 ((eof 0) (exit 3))
 > (processes:start "sh" '("-c" "kill -TERM $$") noting-output noting-exit)
 #<process 4 sh>
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (taken!)
 ((eof 0) (exit -15))
 ; A program that cannot start: the condition goes to report, then to
 ; on-exit, after the end of output.
-> (define missing (processes:start "no-such-program" '() noting-output noting-exit))
-> (wait-until exited?)
+> (begin (define missing (processes:start "no-such-program" '() noting-output noting-exit)) (testing:wait-until exited?))
 ! spawn-process: cannot run no-such-program: No such file or directory with irritants ("no-such-program" ())
 > (let ([l (taken!)]) (list (car l) (condition? (cadr (cadr l)))))
 ((eof 0) #t)
@@ -47,31 +46,31 @@
 > (processes:start "sh" '("-c" "echo \"$GREETING-$HOME-$0\"") noting-output noting-exit
     (processes:options [environment '(("GREETING" . "hi") ("HOME" . #f))]))
 #<process 6 sh>
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (joined!)
 (("hi--sh\n" 7) (eof 7) (exit 0))
-> (processes:start "printf" '("x") noting-output noting-exit
-    (processes:options [environment '(("PATH" . "/nowhere"))]))
-#<process 7 printf>
-> (wait-until exited?)
+> (begin
+    (processes:start "printf" '("x") noting-output noting-exit
+      (processes:options [environment '(("PATH" . "/nowhere"))]))
+    (testing:wait-until exited?))
 ! spawn-process: cannot run printf: No such file or directory with irritants ("printf" ("x"))
 > (map (lambda (x) (if (condition? (cadr x)) 'condition x)) (taken!))
 ((eof 0) condition)
 > (processes:start "pwd" '() noting-output noting-exit (processes:options [directory "/"]))
 #<process 8 pwd>
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (taken!)
 (("/\n" 2) (eof 2) (exit 0))
 ; Standard error joins the output, unless separate-stderr keeps it apart
 ; for processes:error-output.
 > (define both "echo out; echo err >&2")
 > (define joined (processes:start "sh" (list "-c" both) noting-output noting-exit))
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (list (joined!) (processes:error-output joined))
 ((("out\nerr\n" 8) (eof 8) (exit 0)) #f)
 > (define apart (processes:start "sh" (list "-c" both) noting-output noting-exit
                   (processes:options [separate-stderr #t])))
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (list (joined!) (utf8->string (processes:error-output apart)))
 ((("out\n" 4) (eof 4) (exit 0)) "err\n")
 ; processes:report-error-output reports the first line of what
@@ -79,7 +78,7 @@
 ; nothing for a process with none.
 > (define complaining (processes:start "sh" (list "-c" "echo 'bad flag' >&2; echo more >&2; exit 2") noting-output noting-exit
                        (processes:options [separate-stderr #t])))
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (joined!)
 ((eof 0) (exit 2))
 > (processes:report-error-output complaining 'my-lister)
@@ -100,7 +99,7 @@
       (unless (eof-object? bytes) (set! pieces (cons (cons (bytevector-length bytes) end) pieces))))
     noting-exit)
 #<process 12 head>
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (taken!)
 ((exit 0))
 > (let ([pieces (reverse pieces)])
@@ -116,7 +115,7 @@
     (lambda (bytes end) (if (eof-object? bytes) (note! 'eof) (car bytes)))
     (lambda (status) (note! (list 'exit status))))
 #<process 13 printf>
-> (wait-until exited?)
+> (testing:wait-until exited?)
 ! car: #vu8(120) is not a pair
 > (taken!)
 (eof (exit 0))
@@ -190,7 +189,7 @@
 > (advice-add! processes:start logged)
 > (processes:start "true" '() noting-output noting-exit)
 #<process 14 true>
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (taken!)
 ((starting "true") (eof 0) (exit 0))
 > (advice-remove! processes:start logged)

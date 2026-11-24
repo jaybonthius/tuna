@@ -2,9 +2,9 @@
 > (define b (show "t" "ab-cd ef-gh\n"))
 > (replace! "C-M-%" "(\\w+)-(\\w+)" "\\2-\\1 [\\&] \\#")
 > (asked)
+(6 "Query replacing regexp (\\w+)-(\\w+) with cd-ab [ab-cd] 0: (? for help) " "ab-cd")
 > (press! "!")
 > (text)
-(6 "Query replacing regexp (\\w+)-(\\w+) with cd-ab [ab-cd] 0: (? for help) " "ab-cd")
 "cd-ab [ab-cd] 0 gh-ef [ef-gh] 1\n"
 ; The replacement takes the case of a match in capitals or capitalized,
 ; when neither the text nor the replacement has a capital.
@@ -12,13 +12,13 @@
 > (replace! "M-%" "foo" "bar baz")
 > (press! "!")
 > (text)
+"bar baz Bar Baz BAR BAZ bar baz\n"
 > (define c2 (show "c2" "foo Foo FOO\n"))
 > (replace! "M-%" "foo" "Bar")
 > (press! "!")
 > (text)
-> (list (replace:match-case "bar baz" "FOO") (replace:match-case "bar baz" "Foo Qux") (replace:match-case "bar" "F"))
-"bar baz Bar Baz BAR BAZ bar baz\n"
 "Bar Bar Bar\n"
+> (list (replace:match-case "bar baz" "FOO") (replace:match-case "bar baz" "Foo Qux") (replace:match-case "bar" "F"))
 ("BAR BAZ" "Bar Baz" "Bar")
 ; e reads a new replacement, with the session's keys off so y, n and !
 ; edit it; it replaces the current match and is used from then on. E
@@ -29,22 +29,22 @@
 > (press! "DEL" "y" "n" "!" "RET")
 > (sleep-for 0.05)
 > (list (text) (asked))
+("yn! Foo FOO foo\n" (8 "Query replacing foo with Yn!: (? for help) " "Foo"))
 > (start! "E")
 > (press! "DEL" "DEL" "DEL" "z" "RET")
 > (sleep-for 0.05)
 > (list (text) (asked))
+("yn! z FOO foo\n" (10 "Query replacing foo with z: (? for help) " "FOO"))
 > (press! "!")
 > (text)
-("yn! Foo FOO foo\n" (8 "Query replacing foo with Yn!: (? for help) " "Foo"))
-("yn! z FOO foo\n" (10 "Query replacing foo with z: (? for help) " "FOO"))
 "yn! z z z\n"
 ; A quit in that prompt ends the session.
 > (define e2 (show "e2" "foo foo\n"))
 > (replace! "M-%" "foo" "x")
 > (start! "e")
 > (press! "C-g")
-> (list (session) (text))
 ! &quit
+> (list (session) (text))
 (#f "foo foo\n")
 ; With C-u only whole words match; with -, the session runs backward.
 > (define w (show "w" "foo foobar foo\n"))
@@ -57,6 +57,7 @@
 > (sleep-for 0.05)
 > (press! "!")
 > (text)
+"x foobar x\n"
 > (define w2 (show "w2" "foo foo foo\n"))
 > (views:set-point! (view) 9)
 > (start! "M--" "M-%")
@@ -67,47 +68,46 @@
 > (press! "RET")
 > (sleep-for 0.05)
 > (asked)
+(5 "Query replacing foo with y: (? for help) " "foo")
 > (press! "y")
 > (list (text) (asked))
-> (press! "q")
-"x foobar x\n"
-(5 "Query replacing foo with y: (? for help) " "foo")
 ("foo y foo\n" (1 "Query replacing foo with y: (? for help) " "foo"))
+> (press! "q")
 ; The default is the last pair; M-p in the first prompt gives each past
 ; pair written from → to, and one chosen gives both; an arrow typed is
 ; text to replace, as in Emacs.
 > (define h (show "h" "aa foo x → y\n"))
 > (replace:history)
+(("foo" . "y") ("foo" . "x") ("foo" . "Bar") ("foo" . "bar baz") ("(\\w+)-(\\w+)" . "\\2-\\1 [\\&] \\#"))
 > (start! "M-%")
 > (text)
+"Query replace (default foo → y): \n"
 > (press! "C-g")
+! &quit
 > (start! "M-%")
 > (press! "M-p")
 > (minibuffer:input (minibuffer:current-prompt))
+"foo → y"
 > (press! "M-p")
 > (minibuffer:input (minibuffer:current-prompt))
+"foo → x"
 > (press! "C-g")
+! &quit
 > (replace:prompt-history)
+("y" "foo" "x" "Bar" "bar baz" "\\2-\\1 [\\&] \\#" "(\\w+)-(\\w+)")
 > (replace! "M-%" "x → y" "z")
 > (asked)
+(13 "Query replacing x → y with z: (? for help) " "x → y")
 > (press! "!")
 > (list (text) (car (replace:history)))
+("aa foo z\n" ("x → y" . "z"))
 > (views:set-point! (view) 1)
 > (start! "M-%")
 > (press! "M-p" "M-p" "RET")
 > (sleep-for 0.05)
 > (asked)
-> (press! "q")
-(("foo" . "y") ("foo" . "x") ("foo" . "Bar") ("foo" . "bar baz") ("(\\w+)-(\\w+)" . "\\2-\\1 [\\&] \\#"))
-"Query replace (default foo → y): \n"
-! &quit
-"foo → y"
-"foo → x"
-! &quit
-("y" "foo" "x" "Bar" "bar baz" "\\2-\\1 [\\&] \\#" "(\\w+)-(\\w+)")
-(13 "Query replacing x → y with z: (? for help) " "x → y")
-("aa foo z\n" ("x → y" . "z"))
 (7 "Query replacing foo with y: (? for help) " "foo")
+> (press! "q")
 ; While the text is typed, its matches are highlighted in the view.
 > (define l (show "l" "ab ab ab\n"))
 > (define v (view))
@@ -115,10 +115,10 @@
 > (type! "ab")
 > (sleep-for 0.2)
 > (faced (html->string (views:draw v client)))
-> (press! "C-g")
-> (faced (html->string (views:draw v client)))
 (("match.other" "ab") ("match.other" "ab") ("match.other" "ab"))
+> (press! "C-g")
 ! &quit
+> (faced (html->string (views:draw v client)))
 ()
 ; The pairs are never saved in replace:prompt-history, which keeps what
 ; was typed; replace:history keeps as many pairs as
@@ -134,9 +134,9 @@
 > (define eq (show "eq" "foo → baz\n"))
 > (replace! "M-%" "foo → baz" "Z")
 > (asked)
+(10 "Query replacing foo → baz with Z: (? for help) " "foo → baz")
 > (press! "!")
 > (text)
-(10 "Query replacing foo → baz with Z: (? for help) " "foo → baz")
 "Z\n"
 ; M-r in the first prompt lists the pairs too, and a pair chosen there
 ; gives both strings.
@@ -150,7 +150,7 @@
 > (press! "RET")
 > (sleep-for 0.05)
 > (asked)
+(6 "Query replacing bb with BB: (? for help) " "bb")
 > (press! "!")
 > (text)
-(6 "Query replacing bb with BB: (? for help) " "bb")
 "aa BB cc\n"

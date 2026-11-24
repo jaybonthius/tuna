@@ -210,8 +210,8 @@
 > (define said-text (fresh '(md:doc () (said () "ab\n"))))
 > (guard (c [(buffers:refused? c) (list (condition-message c) (condition-irritants c))])
     (buffers:replace! said-text 3 3 "x"))
-> (list (buffers:refuses-text? said-text 3 3) (buffers:version said-text))
 ("Said no" ())
+> (list (buffers:refuses-text? said-text 3 3) (buffers:version said-text))
 (#t 0)
 ; A consent is told the buffer the edit is made in, whichever buffer is
 ; current, and so is buffers:refuses-text?'s probe.
@@ -219,10 +219,10 @@
 > (buffers:define-kind told (consent (lambda (node edit) (set! consulted (cons (buffers:name (buffers:edit-buffer edit)) consulted)) #t)))
 > (define told-text (fresh '(md:doc () (told () "ab\n"))))
 > (buffers:with-buffer said-text (buffers:replace! told-text 3 3 "x"))
-> (buffers:refuses-text? told-text 3 3)
-> (list (buffers:name told-text) consulted)
 #<edit 1>
+> (buffers:refuses-text? told-text 3 3)
 #f
+> (list (buffers:name told-text) consulted)
 ("b9" ("b9" "b9"))
 ; Layers: made on first use, one per type and key, ordered by priority;
 ; spans move with edits by their stickiness, and evaporate.

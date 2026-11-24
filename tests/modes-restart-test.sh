@@ -15,9 +15,9 @@ fail() {
 
 home=$dir/home
 mkdir -p "$home" "$dir/library" "$dir/work"
-sh boot/copy-library.sh "$(dirname "$tuna")/plugins" "$dir/library"
+sh tests/test-home.sh "$tuna" "$dir/library" "$home"
 cp -R tests/modes/library/. "$dir/library/"
-cp -R tests/modes/home/. "$home/"
+cp -RL tests/modes/home/. "$home/"
 sed -i 's/^(import (console))$/(use-plugin command-line)\n&/' "$home/.config/tuna/init.ss"
 printf 'print(1)\n' > "$dir/work/a.py"
 printf 'Buy milk.\n' > "$dir/work/b.txt"

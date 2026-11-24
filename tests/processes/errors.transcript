@@ -6,7 +6,7 @@
 > (processes:start "sh" '("-c" "printf out; printf err >&2") noting-output noting-exit
     (processes:options) noting-errors)
 #<process 1 sh>
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (let ([taken (taken!)]) (list (filter (lambda (x) (memq (car x) '(error error-eof))) taken) (car (reverse taken))))
 (((error "err" 3) (error-eof 3)) (exit 0))
 ; Giving it keeps standard error apart, which a terminal cannot.
@@ -19,7 +19,7 @@
 ; processes:error-output still holds the latest standard error.
 > (define p (processes:start "sh" '("-c" "printf late >&2") noting-output noting-exit
               (processes:options) noting-errors))
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (let ([taken (taken!)]) (list (filter (lambda (x) (memq (car x) '(error error-eof))) taken) (car (reverse taken))))
 (((error "late" 4) (error-eof 4)) (exit 0))
 > (utf8->string (processes:error-output p))
@@ -41,7 +41,7 @@
                     (and (>= (string-length text) 14)
                          (string=? (substring text (- (string-length text) 14) (string-length text)) "error line 40\n"))))
         (loop))))
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (filter (lambda (x) (eq? (car x) 'error-line)) (taken!))
 ((error-line "error line 37" 509) (error-line "error line 38" 523) (error-line "error line 39" 537) (error-line "error line 40" 551) (error-line #!eof 551))
 > (remove-option! processes:log-size)

@@ -18,7 +18,7 @@
 > (terminal:send! t "yes flood\r")
 > (wait-for t "flood\nflood\nflood\n")
 > (press! "C-c" "C-c")
-> (wait-until (lambda () (equal? (car (reverse (screen-lines t))) "$ ")))
+> (testing:wait-until (lambda () (equal? (car (reverse (screen-lines t))) "$ ")))
 > (length (lines (text t)))
 10024
 ; Rows the program wrapped join into one line in the scrollback.

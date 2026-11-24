@@ -29,7 +29,7 @@
        (set! last-end end)]))
 > (define (advancing? p)
     (let ([before (processes:output-end p)])
-      (wait-until (lambda () (> (processes:output-end p) (+ before 100000))))
+      (testing:wait-until (lambda () (> (processes:output-end p) (+ before 100000))))
       (> (processes:output-end p) (+ before 100000))))
 ; An own process.
 > (define own (processes:start "cat" '("/dev/zero") follow noting-exit))
@@ -37,7 +37,7 @@
 > (list holes (advancing? own))
 (0 #t)
 > (processes:stop! own)
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (taken!)
 ((exit -1))
 ; A user process that pauses, with a small log, followed as a terminal
@@ -52,7 +52,7 @@
 > (list holes (advancing? user))
 (0 #t)
 > (processes:stop! user)
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (list (taken!) (memq user (processes:all)))
 (((exit -1)) #f)
 > (remove-option! processes:log-size)

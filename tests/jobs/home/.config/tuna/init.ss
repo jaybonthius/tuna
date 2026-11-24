@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (tuna eval) (jobs))
+(import (tuna) (testing) (tuna plugins) (tuna eval) (jobs))
 (use-plugin fuzzy (local "~/src/fuzzy"))
 
 (define log '())
@@ -18,9 +18,4 @@
           (lambda (v) (set! values (cons v values)))
           (lambda (ended) (resume (lambda () (list (reverse values) ended)))))))))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 (import (console))

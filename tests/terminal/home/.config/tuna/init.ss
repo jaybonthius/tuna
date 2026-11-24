@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (tuna eval) (document) (haml) (web))
+(import (tuna) (testing) (tuna plugins) (tuna eval) (document) (haml) (web))
 (use-plugin terminal)
 (use-plugin editing)
 (use-plugin layout)
@@ -18,12 +18,6 @@
 (define (view) (layout:selected-view))
 
 ;; A wait that runs out says so, so the transcript fails.
-(define (wait-until done?)
-  (let loop ([n 0])
-    (cond
-      [(done?) (void)]
-      [(= n 1000) (display "timed out\n")]
-      [else (sleep-for 0.01) (loop (+ n 1))])))
 
 (define (text b) (document:text (buffers:document b)))
 
@@ -42,7 +36,7 @@
 
 (define (screen-has? b part) (contains? (terminal:screen-text b) part))
 
-(define (wait-for b part) (wait-until (lambda () (screen-has? b part))))
+(define (wait-for b part) (testing:wait-until (lambda () (screen-has? b part))))
 
 ;; A shell whose prompt is the same on every machine.
 (define (shell!)

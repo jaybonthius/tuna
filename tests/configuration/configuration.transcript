@@ -48,8 +48,8 @@ shadowed
 ; says so.
 > (define magit/extra:y 'user)
 > (load-module! '(magit extra))
-> magit/extra:y
 ! import: (magit extra) replaces the top-level definition of magit/extra:y
+> magit/extra:y
 extra-y
 > (define-public (spell:check path) "mine")
 ! define-public: spell:check is (spell)'s definition; override it with (set! spell:check value)

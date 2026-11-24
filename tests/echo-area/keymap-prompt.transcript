@@ -44,8 +44,8 @@
 > (keys:prompt client)
 #f
 > (messages)
-> (end-search)
 "Wrapped\n"
+> (end-search)
 ; Adjacent strings are one prompt part. A control character shows as ^X
 ; in escape-glyph, outside the prompt look, in either part.
 > (define shown '("[3/17] " "Query replacing a with b: "))
@@ -70,8 +70,8 @@
 ; reported, and no prompt shows.
 > (define bad (lambda () (car '())))
 > (define end-bad (keys:push-keymap! client pick-keymap (lambda (found command) #t) void (lambda () (bad))))
-> (echo)
 ! car: () is not a pair
+> (echo)
 "() is not a pair"
 > (map (lambda (value) (set! bad (lambda () value)) (echo-area:message! "") (echo)) (list '((3 . "fo")) '(("fo" . #f)) '()))
 ! keys:push-keymap!: a prompt procedure returned what is not a prompt or #f with irritant ((3 . "fo"))

@@ -20,7 +20,7 @@
 ; The program's standard error is logged line by line as it arrives.
 > (jsonrpc:request c "stderr" '(("text" . "warning: one\nwarning: two\n")))
 "written"
-> (wait-until (lambda () (member "stderr: warning: two" (log-lines c))))
+> (testing:wait-until (lambda () (member "stderr: warning: two" (log-lines c))))
 > (filter (lambda (line) (not (or (string=? (substring line 0 4) "--> ") (string=? (substring line 0 4) "<-- ")))) (log-lines c))
 ("stray: starting up" "stray: half a line" "not JSON: unexpected #\\o at position 1" "stderr: warning: one" "stderr: warning: two")
 ; A frame error is logged, the first reported, and reading goes on. A

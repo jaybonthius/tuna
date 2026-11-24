@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (web) (keys) (commands) (document) (buffers) (views) (modes) (haml) (files attributes))
+(import (tuna) (testing) (tuna plugins) (web) (keys) (commands) (document) (buffers) (views) (modes) (haml) (files attributes))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -27,11 +27,6 @@
 
 (define (settle) (sleep-for 0.1))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 500))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define (view) (layout:selected-view))
 

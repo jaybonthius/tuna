@@ -66,7 +66,7 @@
 5
 > (sh "cd repo && git add r4.txt")
 > (files:save-buffer c)
-> (wait-until (lambda () (and (section '(file . "r4.txt") '(unstaged . #f)) #t)))
+> (testing:wait-until (lambda () (and (section '(file . "r4.txt") '(unstaged . #f)) #t)))
 > (and (section '(file . "r4.txt") '(unstaged . #f)) #t)
 #t
 > (remove-hook! files:after-save git-status:refresh-after-save)

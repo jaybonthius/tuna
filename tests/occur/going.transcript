@@ -17,15 +17,15 @@
 ; The line's matches are highlighted in the source until the next
 ; command.
 > (filter (lambda (f) (string=? (car f) "pulse.highlight")) (drawn client))
+(("pulse.highlight" "foo") ("pulse.highlight" "foo"))
 > (press! "C-f")
 > (filter (lambda (f) (string=? (car f) "pulse.highlight")) (drawn client))
-(("pulse.highlight" "foo") ("pulse.highlight" "foo"))
 ()
 ; The visited line is marked in *Occur*.
 > (count-of (occur-html) "=&gt;")
+1
 > (press! "M-,")
 > (wins)
-1
 (("src" 20 #t) ("*Occur*" 60 #f))
 ; With *Occur* the only view, a view is split for the source.
 > (in-occur!)
@@ -44,8 +44,8 @@
 > (views:set-point! (view) (find-text (occur-buffer) "foo three"))
 > (press! "o")
 > (list (wins) (car (jump-history:places)) (filter (lambda (f) (string=? (car f) "pulse.highlight")) (drawn client)))
-> (marked)
 ((("*Occur*" 60 #f) ("src" 13 #t)) (#<buffer src> . 5) ())
+> (marked)
 3
 ; C-o shows the match highlighted and keeps *Occur* selected; it
 ; records no jump.
@@ -55,8 +55,8 @@
 > (press! "C-o")
 > (define src-view (find (lambda (v) (eq? (views:buffer v) b)) (layout:views)))
 > (list (wins) (= places (length (jump-history:places))) (filter (lambda (f) (string=? (car f) "pulse.highlight")) (faced (html->string (views:draw src-view client)))))
-> (marked)
 ((("*Occur*" 50 #t) ("src" 5 #f)) #t (("pulse.highlight" "foo")))
+> (marked)
 1
 ; The highlight ends after half a second.
 > (sleep-for 0.7)
@@ -71,9 +71,9 @@
 > (press! "C-o")
 > (sleep-for 0.3)
 > (filter (lambda (f) (string=? (car f) "pulse.highlight")) (faced (html->string (views:draw src-view client))))
+(("pulse.highlight" "foo") ("pulse.highlight" "foo"))
 > (sleep-for 0.4)
 > (filter (lambda (f) (string=? (car f) "pulse.highlight")) (faced (html->string (views:draw src-view client))))
-(("pulse.highlight" "foo") ("pulse.highlight" "foo"))
 ()
 ; The source's active region stays active and grows to the match.
 > (layout:select! src-view)
@@ -84,35 +84,36 @@
 > (views:set-point! (view) (find-text (occur-buffer) "foo three"))
 > (press! "RET")
 > (list (views:point (view)) (views:mark (view)))
-> (views:set-mark! (view) #f)
 (13 1)
+> (views:set-mark! (view) #f)
 ; RET on the heading or a context line: no occurrence. The new listing
 ; has cleared the mark.
 > (occur! (search:make-query "foo" search:regexp) 1 #f)
 > (marked)
+#f
 > (in-occur!)
 > (views:set-point! (view) (find-text (occur-buffer) "two"))
 > (press! "RET")
+! occur:goto-occurrence: No occurrence on this line
 > (views:set-point! (view) 2)
 > (press! "RET")
+! occur:goto-occurrence: No occurrence on this line
 > (wins)
-#f
-! occur:goto-occurrence: No occurrence on this line
-! occur:goto-occurrence: No occurrence on this line
 (("*Occur*" 2 #t) ("src" 13 #f))
 ; A killed source.
 > (views:set-point! (view) (find-text (occur-buffer) "one foo"))
 > (buffers:kill! b)
-> (press! "RET")
-> (remove-hook! jump-history:after-jump note-jump)
 #t
+> (press! "RET")
 ! occur:goto-occurrence: Buffer for this occurrence was killed
+> (remove-hook! jump-history:after-jump note-jump)
 ; A separator and an unmatched current line hold no occurrence either.
 > (define s (src "foo\na\nb\nc\nfoo\n"))
 > (occur! (search:make-query "foo" search:regexp) 1 #f)
 > (in-occur!)
 > (views:set-point! (view) (separator-start))
 > (press! "RET")
+! occur:goto-occurrence: No occurrence on this line
 > (only!)
 > (define t (src "one foo\ntwo\n"))
 > (views:set-point! (view) 10)
@@ -121,9 +122,8 @@
 > (set-option! occur:jump-to-current-line #f)
 > (in-occur!)
 > (where)
-> (press! "RET")
-! occur:goto-occurrence: No occurrence on this line
 (2 "two")
+> (press! "RET")
 ! occur:goto-occurrence: No occurrence on this line
 ; RET marks only the line's matches in the source, through pulse, not the
 ; rest of the line, and not with *Occur*'s own match face.

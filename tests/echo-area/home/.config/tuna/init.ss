@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (haml) (web) (layout-split))
+(import (tuna) (testing) (tuna plugins) (document) (haml) (web) (layout-split))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -89,16 +89,11 @@
 
 (define (tree) (car (document:datums (buffers:document layout:buffer))))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define (on-thread thunk)
   (let ([result #f] [done #f])
     (fork-thread (lambda () (set! result (guard (c [#t (list (condition-who c) (condition-message c))]) (thunk))) (set! done #t)))
-    (wait-until (lambda () done))
+    (testing:wait-until (lambda () done))
     result))
 
 (define (raised thunk)

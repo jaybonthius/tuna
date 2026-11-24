@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (web))
+(import (tuna) (testing) (tuna plugins) (document) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -36,16 +36,11 @@
 
 (define (text b) (document:text (buffers:document b)))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 500))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 ;; Highlighting finds a buffer's scope in a job, so a test waits until
 ;; the buffer's names have come.
 (define (settle-names b)
-  (wait-until (lambda () (not (eq? (chez-scheme:names b) (chez-scheme:repl-names)))))
+  (testing:wait-until (lambda () (not (eq? (chez-scheme:names b) (chez-scheme:repl-names)))))
   (sleep-for 0.05))
 
 (define (show-file! path)
@@ -68,7 +63,7 @@
 (define (complete! . keys)
   (apply press! keys)
   (press! "C-M-i")
-  (wait-until (lambda () (let ([s (session)]) (and s (not (completion:session-busy? s)))))))
+  (testing:wait-until (lambda () (let ([s (session)]) (and s (not (completion:session-busy? s)))))))
 
 ;; A read pauses its task, so a test runs it in a task of its own.
 (define (start! . keys)

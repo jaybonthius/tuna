@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (tuna eval))
+(import (tuna) (testing) (tuna plugins) (tuna eval))
 
 ;; pi starts the chats it saved as it loads, so the fake must be on the
 ;; PATH first.
@@ -29,11 +29,6 @@
 (use-plugin chat-picker)
 (use-plugin pi-menu)
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 500))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define (ref obj key) (let ([a (and (pair? obj) (assoc key obj))]) (and a (cdr a))))
 
@@ -64,7 +59,7 @@
     f))
 
 (define (fake-of chat)
-  (wait-until (lambda () (let ([p (processes:pid (pi:chat-process chat))]) (and p (file-exists? (string-append (folder p) "/in"))))))
+  (testing:wait-until (lambda () (let ([p (processes:pid (pi:chat-process chat))]) (and p (file-exists? (string-append (folder p) "/in"))))))
   (let ([pid (processes:pid (pi:chat-process chat))])
     (or (hashtable-ref fakes pid #f) (new-fake pid))))
 
@@ -181,7 +176,7 @@
     r))
 
 (define (wait-held f type)
-  (wait-until (lambda () (find (lambda (r) (equal? (ref r "type") type)) (fake-held f))))
+  (testing:wait-until (lambda () (find (lambda (r) (equal? (ref r "type") type)) (fake-held f))))
   (held f type))
 
 (define (entry id parent message)
@@ -280,7 +275,7 @@
     t))
 
 (define (result t)
-  (wait-until (lambda () (task-done? t)))
+  (testing:wait-until (lambda () (task-done? t)))
   (if (task-done? t)
       (guard (c [(not (quit-condition? c))
                  (list (if (pi:refused? c) 'refused 'raised) (if (message-condition? c) (condition-message c) c))])

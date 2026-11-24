@@ -378,7 +378,7 @@
 > (use-plugin actions)
 > (define (act! . keys)
     (let ([t (start! (lambda () (apply press! keys)))])
-      (wait-until (lambda () (or (task-done? t) (keys:reading client))))
+      (testing:wait-until (lambda () (or (task-done? t) (keys:reading client))))
       t))
 > (set-option! grep:command-line (list (string-append (getenv "HOME") "/bin/grouped-rg")))
 > (views:set-buffer! (view) (files:visit "~/src/text.txt"))

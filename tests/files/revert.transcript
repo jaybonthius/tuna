@@ -4,7 +4,7 @@
 > (import (commands))
 > (define (in-task thunk)
     (let ([result #f])
-      (wait-until (let ([t (spawn-task (lambda () (set! result (guard (c [#t (list (condition-who c) (condition-message c))]) (thunk) 'done))))])
+      (testing:wait-until (let ([t (spawn-task (lambda () (set! result (guard (c [#t (list (condition-who c) (condition-message c))]) (thunk) 'done))))])
                     (lambda () result)))
       result))
 > (define (revert-in b) (in-task (lambda () (buffers:with-buffer b (commands:run buffers:revert-buffer)))))

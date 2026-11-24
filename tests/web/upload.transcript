@@ -1,5 +1,5 @@
-> (http:wait-for-server)
 Tuna is at http://127.0.0.1:PORT/
+> (http:wait-for-server)
 > (define p (http:page))
 > (define (upload name client body)
     (http:status (http:post (string-append "/upload/" name) (if client (list (cons "tuna-client" client)) '()) body)))

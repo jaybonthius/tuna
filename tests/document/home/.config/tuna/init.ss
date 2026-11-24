@@ -1,4 +1,4 @@
-(import (tuna) (jobs) (document) (document-checks) (buffers) (long-lines))
+(import (tuna) (testing) (jobs) (document) (document-checks) (buffers) (long-lines))
 
 (define (at doc text)
   (let* ([all (document:text doc)] [n (string-length text)])
@@ -7,9 +7,4 @@
           (- (document:position doc (+ i n 1) (document:unit characters)) 1)
           (loop (+ i 1))))))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 (import (console))

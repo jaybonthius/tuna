@@ -19,22 +19,22 @@
 #f
 ; A module follows it from an offset: first the output from there still
 ; in the log, then new output, the end, and the exit status.
-> (wait-until (lambda () (= (processes:output-end shell) 4)))
+> (testing:wait-until (lambda () (= (processes:output-end shell) 4)))
 > (processes:attach! shell 2 noting-output noting-exit)
 2
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (joined!)
 (("b\nc\n" 6) (eof 6) (exit 0))
 ; Once ended, it stays in the list until an attachment's on-exit has run.
 > (memq shell (processes:all))
 #f
 > (define later (processes:start-for-user "printf" '("done\n")))
-> (wait-until (lambda () (and (processes:status later) (= (processes:output-end later) 5))))
+> (testing:wait-until (lambda () (and (processes:status later) (= (processes:output-end later) 5))))
 > (list (processes:status later) (and (memq later (processes:all)) #t))
 (0 #t)
 > (processes:attach! later (processes:output-end later) noting-output noting-exit)
 5
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (list (taken!) (memq later (processes:all)))
 (((eof 5) (exit 0)) #f)
 ; Attaching again from the same module replaces its attachment.
@@ -44,13 +44,13 @@
 > (processes:attach! talker 0 noting-output noting-exit)
 0
 > (processes:send! talker "hello\n")
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (joined!)
 (("hello\n" 6) (eof 6) (exit 0))
 ; Stopping a user process that has ended and that nobody follows removes
 ; it from the list.
 > (define unfollowed (processes:start-for-user "true" '()))
-> (wait-until (lambda () (processes:status unfollowed)))
+> (testing:wait-until (lambda () (processes:status unfollowed)))
 > (processes:stop! unfollowed)
 > (memq unfollowed (processes:all))
 #f
@@ -59,7 +59,7 @@
 ; starts at the oldest offset kept.
 > (set-option! processes:log-size 1000)
 > (define flood (processes:start-for-user "head" '("-c" "200000" "/dev/zero")))
-> (wait-until (lambda () (= (processes:output-end flood) 200000)))
+> (testing:wait-until (lambda () (= (processes:output-end flood) 200000)))
 > (define pieces '())
 > (define (count-pieces bytes end)
     (if (eof-object? bytes)
@@ -67,7 +67,7 @@
         (set! pieces (cons (bytevector-length bytes) pieces))))
 > (processes:attach! flood 0 count-pieces noting-exit)
 199000
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (list (apply + pieces) (taken!))
 (1000 ((eof 200000) (exit 0)))
 ; With full-log pause it stops reading once the log is full, so the
@@ -75,13 +75,13 @@
 > (set! pieces '())
 > (define held (processes:start-for-user "head" '("-c" "200000" "/dev/zero")
                  (processes:options [full-log (processes:full-log pause)])))
-> (wait-until (lambda () (= (processes:output-end held) 1000)))
+> (testing:wait-until (lambda () (= (processes:output-end held) 1000)))
 > (sleep-for 0.2)
 > (list (processes:output-end held) (processes:status held))
 (1000 #f)
 > (processes:attach! held 0 count-pieces noting-exit)
 0
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (list (apply + pieces) (taken!))
 (200000 ((eof 200000) (exit 0)))
 > (remove-option! processes:log-size)

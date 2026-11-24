@@ -29,7 +29,7 @@
     (let ([ms (completion:session-matches s)])
       (map (lambda (k) (completion:text s (completion:matches-ref ms k))) (iota (completion:matches-count ms)))))
 > (define s (in-client completion:current-session))
-> (wait-until (lambda () (and (not (completion:session-busy? s)) (pair? (texts s)))))
+> (testing:wait-until (lambda () (and (not (completion:session-busy? s)) (pair? (texts s)))))
 > (texts s)
 ("src/notes.txt:1:a needle in proj")
 > (press! "C-g")
@@ -39,7 +39,7 @@
 > (result t)
 #<buffer *compilation*>
 > (define built (buffers:find "*compilation*"))
-> (wait-until (lambda () (runs:status built)))
+> (testing:wait-until (lambda () (runs:status built)))
 > (list (runs:status built) (files:directory built))
 (0 "$HOME/proj/")
 ; A chat started in a folder written with .. gives its buffer the folder

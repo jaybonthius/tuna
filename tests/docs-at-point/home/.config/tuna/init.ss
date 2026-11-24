@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (web))
+(import (tuna) (testing) (tuna plugins) (document) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -17,11 +17,6 @@
 
 (define (view) (layout:selected-view))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 300))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define (raised thunk)
   (guard (c [#t (list (if (who-condition? c) (condition-who c) 'none)

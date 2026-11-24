@@ -2,7 +2,7 @@
 ; its echo, with the doc's ranges in faces moved past the thing; it is
 ; not logged.
 > (press! "C-f")
-> (wait-until (lambda () (echo-area:current-message)))
+> (testing:wait-until (lambda () (echo-area:current-message)))
 > (list (echo-area:current-message) (echo-area:current-spans))
 ("alpha: (alpha x)" ((14 15 highlight)))
 > (messages)
@@ -11,7 +11,7 @@
 > (press! "M-f" "C-f")
 > (echo-area:current-message)
 "alpha: (alpha x)"
-> (wait-until (lambda () (equal? (echo-area:current-message) "beta: (beta x)")))
+> (testing:wait-until (lambda () (equal? (echo-area:current-message) "beta: (beta x)")))
 > (echo-area:current-message)
 "beta: (beta x)"
 ; Docs never cover a message.
@@ -29,13 +29,13 @@
 > (remove-hook! docs-at-point:sources signature)
 > (add-hook! docs-at-point:sources two)
 > (press! "C-a")
-> (wait-until (lambda () (equal? (echo-area:current-message) "one: short\nsecond")))
+> (testing:wait-until (lambda () (equal? (echo-area:current-message) "one: short\nsecond")))
 > (list (echo-area:current-message) (echo-area:current-spans))
 ("one: short\nsecond" ())
 ; echo-lines 1 cuts the rest with an ellipsis.
 > (set-option! docs-at-point-display:echo-lines 1)
 > (press! "C-e")
-> (wait-until (lambda () (equal? (echo-area:current-message) "one: short…")))
+> (testing:wait-until (lambda () (equal? (echo-area:current-message) "one: short…")))
 > (echo-area:current-message)
 "one: short…"
 ; When the sources answer with no docs, the echo area's docs go.

@@ -10,8 +10,8 @@ esac
 dir=$(mktemp -d "${TMPDIR:-/tmp}/tuna-layout-tabs-races-test.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
 mkdir -p "$dir/home" "$dir/work"
-cp -R tests/layout/home/. "$dir/home/"
-sh boot/copy-library.sh "$(dirname "$tuna")/plugins" "$dir/library"
+sh tests/test-home.sh "$tuna" "$dir/library" "$dir/home"
+cp -RL tests/layout/home/. "$dir/home/"
 cat > "$dir/input" <<'END'
 (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 (define notes (buffers:make "notes" "one\ntwo\nthree\n"))

@@ -37,7 +37,7 @@
 > (press! "C-a" "C-k")
 > (type! "sum")
 > (press! "RET")
-> (wait-until (lambda () (and (minibuffer:current-prompt) (not (equal? (minibuffer:input (minibuffer:current-prompt)) "sum")))))
+> (testing:wait-until (lambda () (and (minibuffer:current-prompt) (not (equal? (minibuffer:input (minibuffer:current-prompt)) "sum")))))
 > (type! "no")
 > (press! "RET")
 ! lsp: Changes not applied
@@ -80,7 +80,7 @@
 > (wait-for "types" "textDocument/onTypeFormatting")
 > (ref (last-of "types" "textDocument/onTypeFormatting") "params")
 (("textDocument" ("uri" . "file://$HOME/project/a.fk")) ("position" ("line" . 0) ("character" . 1)) ("ch" . ":") ("options" ("tabSize" . 8) ("insertSpaces" . #t)))
-> (wait-until (lambda () (equal? (substring (text a) 0 3) "  :")))
+> (testing:wait-until (lambda () (equal? (substring (text a) 0 3) "  :")))
 > (substring (text a) 0 4)
 "  :#"
 ; <mouse-2> on a server's diagnostic runs its code actions there; on a
@@ -89,10 +89,10 @@
 > (lsp:notify c "fake/send"
     `(("message" ("jsonrpc" . "2.0") ("method" . "textDocument/publishDiagnostics")
        ("params" ("uri" . ,(lsp:path->uri a-path)) ("diagnostics" . #((("range" ("start" ("line" . 2) ("character" . 6)) ("end" ("line" . 2) ("character" . 11))) ("severity" . 2) ("message" . "use sum"))))))))
-> (wait-until (lambda () (pair? (diagnostics:in a))))
+> (testing:wait-until (lambda () (pair? (diagnostics:in a))))
 > (define at (diagnostics:diagnostic-start (car (diagnostics:in a))))
 > (mouse! (view) '("action" . "click") '("button" . 2) `("at" . ,(+ at 1)) '("count" . 0))
-> (wait-until (lambda () (equal? (document:text (buffers:document a) at (+ at 3)) "sum")))
+> (testing:wait-until (lambda () (equal? (document:text (buffers:document a) at (+ at 3)) "sum")))
 > (list (document:text (buffers:document a) at (+ at 3)) (length (of-method "types" "textDocument/codeAction")))
 ("sum" 1)
 > (define checker-source (diagnostics:make-source))
@@ -107,15 +107,15 @@
 > (lsp:notify c "fake/send"
     `(("message" ("jsonrpc" . "2.0") ("method" . "textDocument/publishDiagnostics")
        ("params" ("uri" . ,(lsp:path->uri a-path)) ("diagnostics" . #((("range" ("start" ("line" . 0) ("character" . 2)) ("end" ("line" . 0) ("character" . 3))) ("severity" . 2) ("message" . "colon"))))))))
-> (wait-until (lambda () (exists (lambda (d) (equal? (diagnostics:diagnostic-message d) "colon")) (diagnostics:in a))))
+> (testing:wait-until (lambda () (exists (lambda (d) (equal? (diagnostics:diagnostic-message d) "colon")) (diagnostics:in a))))
 > (in-client (lambda () (views:set-point! (view) 3)))
 > (in-client (lambda () (docs-at-point:ask-sources (view))))
-> (wait-until (lambda () (equal? (echo-area:current-message) "Use sum (C-c a)\na checker's\ntypes: colon")))
+> (testing:wait-until (lambda () (equal? (echo-area:current-message) "Use sum (C-c a)\na checker's\ntypes: colon")))
 > (echo-area:current-message)
 "Use sum (C-c a)\na checker's\ntypes: colon"
 > (define asked (length (of-method "types" "textDocument/codeAction")))
 > (press! "C-c" "a")
-> (wait-until (lambda () (equal? (document:text (buffers:document a) at (+ at 3)) "sum")))
+> (testing:wait-until (lambda () (equal? (document:text (buffers:document a) at (+ at 3)) "sum")))
 > (- (length (of-method "types" "textDocument/codeAction")) asked)
 0
 ; The hint asks as a background request, triggerKind 2; a command asks
@@ -133,9 +133,9 @@
 > (lsp:notify c "fake/send"
     '(("message" ("jsonrpc" . "2.0") ("id" . "m1") ("method" . "window/showMessageRequest")
        ("params" ("type" . 3) ("message" . "Install stubs?") ("actions" . #((("title" . "Yes")) (("title" . "No"))))))))
-> (wait-until (lambda () (minibuffer:current-prompt)))
+> (testing:wait-until (lambda () (minibuffer:current-prompt)))
 > (press! "C-n" "RET")
-> (wait-until (lambda () (exists (lambda (m) (equal? (ref m "id") "m1")) (received "types"))))
+> (testing:wait-until (lambda () (exists (lambda (m) (equal? (ref m "id") "m1")) (received "types"))))
 > (ref (find (lambda (m) (equal? (ref m "id") "m1")) (received "types")) "result")
 (("title" . "No"))
 ; A server that answers prepareRename with nothing refuses before any

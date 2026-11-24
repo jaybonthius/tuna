@@ -2,7 +2,7 @@
 > (define (write-file! path text) (call-with-output-file path (lambda (p) (display text p)) '(replace)))
 > (define chat (pi:start (getenv "HOME")))
 > (define f (fake-of chat))
-> (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
+> (testing:wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
 > (define first-process (pi:chat-process chat))
 ; When Pi exits, the chat says so with the end of Pi's error output, and
 ; what waited for Pi is refused.
@@ -14,7 +14,7 @@
 > (result t)
 ! pi:last-reply: Pi has ended
 (refused "Pi has ended")
-> (wait-until (lambda () (eq? (pi:chat-activity chat) 'exited)))
+> (testing:wait-until (lambda () (eq? (pi:chat-activity chat) 'exited)))
 > (transcript chat)
 ((notice error "Pi exited with status 3.\nloading extensions\nFatal: out of memory\n"))
 > (result (start! (lambda () (pi:send! chat "Hi"))))
@@ -25,7 +25,7 @@
 > (define session (pi:chat-session-id chat))
 > (result (start! (lambda () (pi:restart! chat))))
 > (define g (fake-of chat))
-> (wait-until (lambda () (= 5 (length (fake-requests g)))))
+> (testing:wait-until (lambda () (= 5 (length (fake-requests g)))))
 > (sleep-for 0.1)
 > (list (eq? (pi:chat-process chat) first-process) (pi:chat-activity chat) (equal? (list-ref (fake-args g) 3) session))
 (#f idle #t)
@@ -34,16 +34,16 @@
 ; Pi refuses a restart while it works, since two Pis on one session would
 ; each write their own tree.
 > (say! g (event "agent_start"))
-> (wait-until (lambda () (eq? (pi:chat-activity chat) 'thinking)))
+> (testing:wait-until (lambda () (eq? (pi:chat-activity chat) 'thinking)))
 > (result (start! (lambda () (pi:restart! chat))))
 ! pi:restart!: Pi is working; two Pis on one session would each write their own tree
 (refused "Pi is working; two Pis on one session would each write their own tree")
 > (say! g (event "agent_settled" '("aborted" . #f)))
-> (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
+> (testing:wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
 ; A restart of an idle Pi stops the old one once the new one answers.
 > (define second-process (pi:chat-process chat))
 > (result (start! (lambda () (pi:restart! chat))))
-> (wait-until (lambda () (processes:status second-process)))
+> (testing:wait-until (lambda () (processes:status second-process)))
 > (list (eq? (pi:chat-process chat) second-process) (processes:status second-process) (pi:chat-activity chat))
 (#f -1 idle)
 ; What the new Pi says before it answers, as its extensions set statuses
@@ -57,7 +57,7 @@
       (plain-answer f request)))
 > (result (start! (lambda () (pi:restart! chat))))
 > (set! default-answer plain-answer)
-> (wait-until (lambda () (pair? (pi:chat-dialogs chat))))
+> (testing:wait-until (lambda () (pair? (pi:chat-dialogs chat))))
 > (list (pi:chat-statuses chat) (map pi:dialog-title (pi:chat-dialogs chat)))
 ((("pool" . "1 pool(s)")) ("Trust?"))
 ; A chat whose Pi is gone when pi loads, as after Tuna restarts, starts
@@ -65,21 +65,21 @@
 > (set-saved! pi:%chats (list (vector "gone" "s-42" (getenv "HOME") '() '() '() '() '() '())))
 > (eval-file (library-file "pi.sls"))
 > (define chat (car (pi:chats)))
-> (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
+> (testing:wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
 > (list (pi:chat-session-id chat) (list-tail (fake-args (fake-of chat)) 2))
 ("s-42" ("--session-id" "s-42"))
 ; Stopping ends Pi and the chat.
 > (define process (pi:chat-process chat))
 > (pi:stop! chat)
-> (wait-until (lambda () (processes:status process)))
+> (testing:wait-until (lambda () (processes:status process)))
 > (list (pi:chats) (processes:status process))
 (() -1)
 ; When Pi cannot start, the chat says so, naming pi:command.
-> (set-option! pi:command '("no-such-pi"))
-> (sleep-for 0.3)
+> (define reported '())
+> (advice-add! report (lambda (report c) (set! reported (cons c reported)) (report c)))
+> (begin (set-option! pi:command '("no-such-pi")) (testing:wait-until (lambda () (pair? reported))))
 ! (pi) Pi's version could not be read: cannot run no-such-pi: No such file or directory
-> (define lost (pi:start "/tmp" "lost-session"))
-> (wait-until (lambda () (eq? (pi:chat-activity lost) 'exited)))
-> (map describe (pi:chat-transcript lost))
+> (begin (define lost (pi:start "/tmp" "lost-session")) (testing:wait-until (lambda () (eq? (pi:chat-activity lost) 'exited))))
 ! (processes) spawn-process: cannot run no-such-pi: No such file or directory with irritants ("no-such-pi" ("--mode" "rpc" "--session-id" "lost-session"))
+> (map describe (pi:chat-transcript lost))
 ((notice error "Pi could not start: cannot run no-such-pi: No such file or directory. pi:command is (\"no-such-pi\")."))

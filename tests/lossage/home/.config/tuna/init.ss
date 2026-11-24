@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (web) (keys) (commands) (harpo))
+(import (tuna) (testing) (tuna plugins) (web) (keys) (commands) (harpo))
 (use-plugin layout)
 (use-plugin editing)
 (use-plugin echo-area)
@@ -40,14 +40,9 @@
     (sleep-for 0.05)
     t))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 500))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define (result t)
-  (wait-until (lambda () (task-done? t)))
+  (testing:wait-until (lambda () (task-done? t)))
   (if (task-done? t) (join-task t) 'waiting))
 
 (define (raised thunk)
@@ -58,7 +53,7 @@
 (define (on-thread thunk)
   (let ([done #f])
     (fork-thread (lambda () (set! done (list (thunk)))))
-    (wait-until (lambda () done))
+    (testing:wait-until (lambda () done))
     (car done)))
 
 (define mark 0)

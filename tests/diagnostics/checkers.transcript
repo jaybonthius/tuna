@@ -7,7 +7,7 @@
 > (define plain (files:visit path))
 > (buffers:with-buffer plain (add-local-hook! diagnostics:checkers check-beta))
 > (mode! plain #t)
-> (wait-until (lambda () (pair? runs)))
+> (testing:wait-until (lambda () (pair? runs)))
 > (list runs (all-seen plain) (marks plain))
 (("plain.txt") (("beta" warning "checked")) (("beta" (diagnostic.warning) "checked")))
 > (set! runs '())
@@ -15,7 +15,7 @@
 2
 > runs
 ()
-> (wait-until (lambda () (pair? runs)))
+> (testing:wait-until (lambda () (pair? runs)))
 > (list runs (all-seen plain))
 (("plain.txt") (("beta" warning "checked")))
 > (set-option! diagnostics:check-delay #f)
@@ -26,7 +26,7 @@
 > runs
 ()
 > (files:save-buffer plain)
-> (wait-until (lambda () (pair? runs)))
+> (testing:wait-until (lambda () (pair? runs)))
 > runs
 ("plain.txt")
 ; With the mode off its marks are hidden and no checker runs, on an
@@ -52,11 +52,11 @@
 > (define q (buffers:make "q" "alpha beta\n"))
 > (buffers:with-buffer q (add-local-hook! diagnostics:checkers slow))
 > (mode! q #t)
-> (wait-until (lambda () (pair? (processes:all))))
+> (testing:wait-until (lambda () (pair? (processes:all))))
 > (list (diagnostics:checking? q) (map processes:command-line (processes:all)))
 (#t (("sleep" "30")))
 > (buffers:with-buffer q (commands:run diagnostics:check))
-> (wait-until (lambda () (and (null? (processes:all)) (not (diagnostics:checking? q)))))
+> (testing:wait-until (lambda () (and (null? (processes:all)) (not (diagnostics:checking? q)))))
 > (list (processes:all) (diagnostics:checking? q) (all-seen q) calls)
 (() #f (("beta" warning "check 2")) 2)
 ; Two buffers checked at once each get their own findings, placed by the
@@ -76,7 +76,7 @@
 (#t #t)
 > (buffers:insert! one 1 "new ")
 5
-> (wait-until (lambda () (not (or (diagnostics:checking? one) (diagnostics:checking? two)))))
+> (testing:wait-until (lambda () (not (or (diagnostics:checking? one) (diagnostics:checking? two)))))
 > (list (all-seen one) (all-seen two))
 ((("beta" warning "one")) (("beta" warning "two")))
 ; A checker that raises is reported and not called again in that buffer
@@ -87,8 +87,8 @@
 > (define r (buffers:make "r" "alpha beta\n"))
 > (buffers:with-buffer r (add-local-hook! diagnostics:checkers broken))
 > (mode! r #t)
-> (wait-until (lambda () (diagnostics:check-failed? r)))
 ! broken: no linter installed
+> (testing:wait-until (lambda () (diagnostics:check-failed? r)))
 > (buffers:insert! r 1 "x")
 2
 > (sleep-for 0.2)
@@ -97,8 +97,8 @@
 > (list broken-calls (diagnostics:check-failed? r))
 (1 #t)
 > (parameterize ([commands:prefix-argument '(4)]) (buffers:with-buffer r (commands:run diagnostics:check)))
-> (wait-until (lambda () (= broken-calls 2)))
 ! broken: no linter installed
+> (testing:wait-until (lambda () (= broken-calls 2)))
 > (list broken-calls (diagnostics:check-failed? r))
 (2 #t)
 ; A checker a mode adds goes with the mode, and its findings with it.
@@ -111,7 +111,7 @@
       (add-local-hook! diagnostics:checkers check-beta)))
 > (define script (buffers:make "script" "alpha beta\n"))
 > (modes:set-major-mode sh-mode script)
-> (wait-until (lambda () (pair? (diagnostics:in script))))
+> (testing:wait-until (lambda () (pair? (diagnostics:in script))))
 > (all-seen script)
 (("beta" warning "checked"))
 > (modes:set-major-mode modes:fundamental script)
@@ -122,7 +122,7 @@
 > (mode! bad #t)
 > (import (linter))
 > (buffers:with-buffer bad (commands:run diagnostics:check))
-> (wait-until (lambda () (pair? (diagnostics:in bad))))
+> (testing:wait-until (lambda () (pair? (diagnostics:in bad))))
 > (all-seen bad)
 (("bad" error "bad word"))
 > (unload-module! '(linter))

@@ -1,5 +1,5 @@
-> (http:wait-for-server)
 Tuna is at http://127.0.0.1:PORT/
+> (http:wait-for-server)
 ; Four pages each send 300 items from three threads at once, out of
 ; order; each client's items run in the order it numbered them.
 > (define pages (list (http:page) (http:page) (http:page) (http:page)))
@@ -22,7 +22,7 @@ Tuna is at http://127.0.0.1:PORT/
 > (do ([i 1 (+ i 1)]) ((> i 2000))
     (web:send-screen! c (string->utf8 (number->string i)) "Tuna")
     (when (zero? (mod i 50)) (sleep-for 0)))
-> (wait-until (lambda () (let ([s (seen)]) (and (pair? s) (equal? (cdr (car (last-pair s))) "2000")))))
+> (testing:wait-until (lambda () (let ([s (seen)]) (and (pair? s) (equal? (cdr (car (last-pair s))) "2000")))))
 > (let ([s (seen)])
     (list (equal? (map car s) (map 1+ (iota (length s))))
           (let loop ([s (map (lambda (x) (string->number (cdr x))) s)])
@@ -71,7 +71,7 @@ Tuna is at http://127.0.0.1:PORT/
     (> quits 10))
 #t
 > (web:send-screen! c (haml (:p "after the quits")) "Tuna")
-> (wait-until (lambda () (equal? (cdr (car (last-pair (seen)))) "<p>after the quits</p>")))
+> (testing:wait-until (lambda () (equal? (cdr (car (last-pair (seen)))) "<p>after the quits</p>")))
 > (cdr (car (last-pair (seen))))
 "<p>after the quits</p>"
 > (http:status (http:get "/web/tuna.js"))

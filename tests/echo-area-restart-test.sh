@@ -15,8 +15,8 @@ fail() {
 
 home=$dir/home
 mkdir -p "$home" "$dir/library" "$dir/work"
-sh boot/copy-library.sh "$(dirname "$tuna")/plugins" "$dir/library"
-cp -R tests/echo-area/home/. "$home/"
+sh tests/test-home.sh "$tuna" "$dir/library" "$home"
+cp -RL tests/echo-area/home/. "$home/"
 
 run() {
   (cd "$dir/work" && printf '%s\n' "$1" | HOME="$home" TUNA_LIBRARY="$dir/library" "$tuna" 2>&1)

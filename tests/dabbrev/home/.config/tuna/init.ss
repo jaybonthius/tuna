@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (web))
+(import (tuna) (testing) (tuna plugins) (document) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -54,19 +54,19 @@
 
 (define (session) (in-client completion:current-session))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 500))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define (match-list s) (let ([ms (completion:session-matches s)]) (do ([k (- (completion:matches-count ms) 1) (- k 1)] [acc '() (cons (completion:matches-ref ms k) acc)]) ((< k 0) acc))))
 
 (define (texts s) (map (lambda (m) (completion:text s m)) (match-list s)))
 
+;; The key's command starts the session, so none after it means none.
 (define (settled-texts)
-  (wait-until (lambda () (let ([s (session)]) (and s (not (completion:session-busy? s))))))
-  (let ([s (session)]) (and s (texts s))))
+  (cond
+    [(session)
+     => (lambda (s)
+          (testing:wait-until (lambda () (not (completion:session-busy? s))))
+          (texts s))]
+    [else #f]))
 
 (define (raised thunk)
   (guard (c [#t (list (if (who-condition? c) (condition-who c) 'none)

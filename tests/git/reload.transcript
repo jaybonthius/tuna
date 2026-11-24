@@ -6,7 +6,7 @@
 > (define repo (git:find-repository (at "repo")))
 > (define old-ended #f)
 > (define sleeper (git:start repo '("-c" "alias.nap=!sleep 2" "nap") (lambda (c) (set! old-ended (real-time)))))
-> (wait-until (lambda () (git:running repo)))
+> (testing:wait-until (lambda () (git:running repo)))
 > (reload! "git")
 > (list (eq? (git:running repo) sleeper) (git:queued? repo))
 (#t #t)

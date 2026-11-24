@@ -24,7 +24,8 @@ trap cleanup EXIT
 server=$dir/server
 client=$dir/client
 mkdir -p "$server/.config/tuna/lib" "$client/.config/tuna/lib" "$dir/library" "$dir/work"
-sh boot/copy-library.sh "$(dirname "$tuna")/plugins" "$dir/library"
+sh tests/test-home.sh "$tuna" "$dir/library" "$server"
+cp -R "$server/.cache" "$client/"
 cp tests/web/home/.config/tuna/lib/http.sls "$server/.config/tuna/lib/"
 cp tests/web/home/.config/tuna/lib/http.sls "$client/.config/tuna/lib/"
 cat > "$server/.config/tuna/init.ss" <<'END'

@@ -1,5 +1,5 @@
-> (http:wait-for-server)
 Tuna is at http://127.0.0.1:PORT/
+> (http:wait-for-server)
 > (add-hook! web:client-added (lambda (client) (note! (list 'added client (web:client? client)))))
 > (add-hook! web:client-removed (lambda (client) (note! (list 'removed client))))
 ; Serving the page adds a client, whose id is 128 random bits.
@@ -16,7 +16,7 @@ Tuna is at http://127.0.0.1:PORT/
 ((added #<client 4> #t))
 ; A client whose stream does not open is removed an hour after its page
 ; was served.
-> (wait-until (lambda () (= 4 (length (timers)))))
+> (testing:wait-until (lambda () (= 4 (length (timers)))))
 > (length (timers))
 4
 ; web:clients gives the connected clients, in the order they were added.
@@ -25,7 +25,7 @@ Tuna is at http://127.0.0.1:PORT/
 > (web:clients)
 (#<client 1> #<client 3>)
 ; Opening its stream cancels a client's removal.
-> (wait-until (lambda () (= 2 (length (timers)))))
+> (testing:wait-until (lambda () (= 2 (length (timers)))))
 > (for-each (lambda (timer) (cancel-timer! timer) ((timer-procedure timer))) (timers))
 > (taken!)
 ((removed #<client 2>) (removed #<client 4>))
@@ -51,7 +51,7 @@ Tuna is at http://127.0.0.1:PORT/
 ; A page that unloads says goodbye, which removes its client.
 > (http:goodbye! c)
 204
-> (wait-until (lambda () (= 1 (length (web:clients)))))
+> (testing:wait-until (lambda () (= 1 (length (web:clients)))))
 > (list (web:clients) (taken!))
 ((#<client 1>) ((removed #<client 3>)))
 ; A removed client's open stream makes its page reload, and so does a
@@ -64,7 +64,7 @@ Tuna is at http://127.0.0.1:PORT/
 ; opens again first. Tuna learns that a stream has closed when it next
 ; writes to it.
 > (define (written-until done?)
-    (wait-until
+    (testing:wait-until
       (lambda ()
         (for-each (lambda (client) (web:call-page! client "ping" 0)) (web:clients))
         (done?))))
@@ -73,7 +73,7 @@ Tuna is at http://127.0.0.1:PORT/
 > (list (web:clients) (length (timers)))
 (() 1)
 > (http:connect! a)
-> (wait-until (lambda () (null? (timers))))
+> (testing:wait-until (lambda () (null? (timers))))
 > (list (web:clients) (timers))
 ((#<client 1>) ())
 > (http:close! a)
@@ -95,6 +95,6 @@ Tuna is at http://127.0.0.1:PORT/
 "a name"
 > (http:goodbye! d)
 204
-> (wait-until (lambda () (zero? (hashtable-size names))))
+> (testing:wait-until (lambda () (zero? (hashtable-size names))))
 > (hashtable-size names)
 0

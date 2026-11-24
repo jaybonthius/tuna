@@ -67,15 +67,15 @@ lax
 ; A query whose text's end is still being typed asks no boundary after
 ; its last word, so a word in progress finds the words it starts.
 > (all-in b (search:make-query "vec" search:symbol))
+()
 > (define typing (search:query-with-partial (search:make-query "vec" search:symbol)))
 > (list (search:query-partial? typing) (all-in b typing))
-> (all-in b (search:query-with-partial (search:make-query "vector re" search:word)))
-> (search:query-partial? (search:query-with-filter typing (lambda (b s e) #t)))
-> (map search:style-description (list search:literal search:regexp search:word search:symbol))
-()
 (#t ((1 4 "Vec") (8 11 "vec") (20 23 "vec")))
+> (all-in b (search:query-with-partial (search:make-query "vector re" search:word)))
 ((8 17 "vector-re") (20 29 "vector\tre"))
+> (search:query-partial? (search:query-with-filter typing (lambda (b s e) #t)))
 #t
+> (map search:style-description (list search:literal search:regexp search:word search:symbol))
 ("" "Regexp" "Word" "Symbol")
 ; A style of one's own receives the text, whether its end is being typed,
 ; and the buffer's classes.
@@ -99,9 +99,9 @@ lax
 > (search:expand b m "\\2-\\1 \\& \\# \\\\" 7)
 "ref-vector vector-ref 7 \\"
 > (search:match-group m 2)
-> (search:expand b m "\\3" 0)
 15
 18
+> (search:expand b m "\\3" 0)
 ! search:expand: not a group of the match's pattern with irritant 3
 > (search:expand b m "\\q" 0)
 ! search:expand: a backslash before neither &, #, \ nor a digit with irritant "\\q"

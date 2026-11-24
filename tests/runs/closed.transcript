@@ -2,7 +2,7 @@
 ; again, silent and in runs:mode. A going run's output comes back from
 ; the process's log and goes on.
 > (define going (runs:start-for-user "*going*" "echo a; until [ -e go ]; do sleep 0.05; done; echo b" home))
-> (wait-until (lambda () (string=? (output going) "a")))
+> (testing:wait-until (lambda () (string=? (output going) "a\n")))
 > (reload! "buffers")
 > (define again (buffers:find "*going*"))
 > (list (buffers:live? going) (runs:status again) (buffers:silent? again) (modes:major-mode again))

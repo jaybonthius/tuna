@@ -1,6 +1,6 @@
 ; A job started while a module's body runs belongs to the module.
 > (import (client))
-> (wait-until (lambda () (pair? client:from-the-body)))
+> (testing:wait-until (lambda () (pair? client:from-the-body)))
 > client:from-the-body
 (started-in-the-body)
 ; A job belongs to the current owner, whichever module's code starts it.
@@ -8,7 +8,7 @@
 > (define from-repl (client:start-waiting (lambda (ended) (note! (list 'from-repl ended)))))
 > (unload-module! '(client))
 > (jobs:stop! from-repl)
-> (wait-until (lambda () (pair? log)))
+> (testing:wait-until (lambda () (pair? log)))
 > (taken!)
 ((from-repl stopped))
 ; A raise is reported as the module that started the job.
@@ -29,7 +29,7 @@
 > (define seen #f)
 > (begin (unload-module! '(searcher)) (set! seen (length log)) (> seen 0))
 #t
-> (wait-until (lambda () (file-exists? "unloaded")))
+> (testing:wait-until (lambda () (file-exists? "unloaded")))
 > (sleep-for 0.05)
 > (list (= seen (length log)) (exists pair? log))
 (#t #f)
@@ -45,7 +45,7 @@
     (set! seen (length log))
     (> seen 0))
 #t
-> (wait-until (lambda () (file-exists? "reloaded")))
+> (testing:wait-until (lambda () (file-exists? "reloaded")))
 > (sleep-for 0.05)
 > (list (= seen (length log)) (exists pair? log))
 (#t #f)
@@ -72,6 +72,6 @@
     (chez:sleep (make-time 'time-duration 200000000 0))
     (counted))
 64
-> (wait-until (lambda () (= (length flood) 1000)))
+> (testing:wait-until (lambda () (= (length flood) 1000)))
 > (equal? (reverse flood) (iota 1000))
 #t

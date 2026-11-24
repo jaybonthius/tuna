@@ -1,6 +1,6 @@
+Tuna is at http://127.0.0.1:PORT/
 > (import (tuna eval))
 > (http:wait-for-server)
-Tuna is at http://127.0.0.1:PORT/
 > (define port (web:port))
 > (define p (http:page))
 > (http:connect! p)

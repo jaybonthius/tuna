@@ -194,15 +194,15 @@ Override by (repl)
 > (press! "RET")
 > (settle)
 > (press! "C-g")
-> (settle)
 ! &quit
+> (settle)
 > (start! "C-h" "x")
 > (type! "help:%fol")
 > (settle)
 > (press! "RET")
 > (settle)
 > (press! "C-g")
-> (settle)
 ! &quit
+> (settle)
 > (title)
 "help:%read-name"

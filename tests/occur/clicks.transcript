@@ -38,9 +38,9 @@
 > (only!)
 > (click! ov 1 (find-text (occur-buffer) "two"))
 > (list (wins) (views:point ov))
+((("*Occur*" 60 #t)) 60)
 > (click! ov 1 3)
 > (wins)
-((("*Occur*" 60 #t)) 60)
 (("*Occur*" 3 #t))
 ; A drag over a listed line selects; it follows nothing.
 > (mouse! ov 1 "down" at)

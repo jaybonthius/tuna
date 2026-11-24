@@ -15,8 +15,8 @@ fail() {
 
 home=$dir/home
 mkdir -p "$home" "$dir/library" "$dir/work"
-cp -R tests/pi/home/. "$home/"
-sh boot/copy-library.sh "$(dirname "$tuna")/plugins" "$dir/library"
+sh tests/test-home.sh "$tuna" "$dir/library" "$home"
+cp -RL tests/pi/home/. "$home/"
 
 run() {
   (cd "$dir/work" && printf '%s\n' "$1" | HOME="$home" TUNA_LIBRARY="$dir/library" TRANSCRIPT=restart "$tuna" 2>&1)
@@ -28,7 +28,7 @@ expect() {
 
 # A quit ends Pi, as processes ends user processes at a quit.
 output=$(run '(define chat (pi:start (getenv "HOME") "kept-session"))
-(wait-until (lambda () (eq? (pi:chat-activity chat) (quote idle))))
+(testing:wait-until (lambda () (eq? (pi:chat-activity chat) (quote idle))))
 (in-client (lambda () (chat:show! chat)))
 (type! "unsent words")
 (sleep-for 0.2)
@@ -39,7 +39,7 @@ expect "first run" "$output" '"kept-session"'
 # as the configuration sets it, and the unsent prompt comes back from
 # saved data.
 output=$(run '(define chat (car (pi:chats)))
-(wait-until (lambda () (eq? (pi:chat-activity chat) (quote idle))))
+(testing:wait-until (lambda () (eq? (pi:chat-activity chat) (quote idle))))
 (list (length (pi:chats)) (pi:chat-session-id chat) (fake-args (fake-of chat)))
 (shown chat)')
 expect "after a restart" "$output" '(1 "kept-session" ("--from-init" "--mode" "rpc" "--session-id" "kept-session"))

@@ -112,11 +112,11 @@
 ; With no expansion C-M-/ says so, once its job has looked.
 > (type! "qq")
 > (press! "C-M-/")
-> (wait-until (lambda () (echo-area:current-message)))
+> (testing:wait-until (lambda () (echo-area:current-message)))
 > (list (session) (echo-area:current-message))
 (#f "No dynamic expansion for ‘qq’ found in this-buffer")
 > (press! "C-u" "C-M-/")
-> (wait-until (lambda () (echo-area:current-message)))
+> (testing:wait-until (lambda () (echo-area:current-message)))
 > (echo-area:current-message)
 "No dynamic expansion for ‘qq’ found"
 > (press! "DEL" "DEL")
@@ -145,7 +145,7 @@
 > (press! "C-g" "SPC")
 > (type! "ze")
 > (press! "C-M-i")
-> (wait-until (lambda () (let ([s (session)]) (and s (pair? (texts s))))))
+> (testing:wait-until (lambda () (let ([s (session)]) (and s (pair? (texts s))))))
 > (texts (session))
 ("zero" "zeta")
 > (press! "C-g")
@@ -231,7 +231,7 @@
 > (define tasks
     (list (spawn-task (lambda () (press! "M-/")))
           (spawn-task (lambda () (sleep-for 0.02) (press! "x")))))
-> (wait-until (lambda () (for-all task-done? tasks)))
+> (testing:wait-until (lambda () (for-all task-done? tasks)))
 > (list (text (views:buffer (view))) (point))
 ("zyzx" 5)
 > (press! "DEL" "M-/")

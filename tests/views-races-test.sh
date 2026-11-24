@@ -15,7 +15,7 @@ esac
 dir=$(mktemp -d "${TMPDIR:-/tmp}/tuna-views-races-test.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
 mkdir -p "$dir/home" "$dir/library" "$dir/work"
-cp -R tests/views/home/. "$dir/home/"
+cp -RL tests/views/home/. "$dir/home/"
 cp -R plugins/. "$dir/library/"
 cat > "$dir/input" <<'END'
 (import (md) (rename (only (chezscheme) sleep) (sleep chez:sleep)))

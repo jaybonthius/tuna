@@ -1,7 +1,7 @@
 ; Docs cleared while the user is away from their place show again on the
 ; way back, though nothing asks again there.
 > (press! "C-f")
-> (wait-until (lambda () (echo-area:current-message)))
+> (testing:wait-until (lambda () (echo-area:current-message)))
 > (echo-area:current-message)
 "alpha: (alpha x)"
 > (define plain (buffers:make "plain" "x\n"))

@@ -5,7 +5,7 @@
 > (define idle-runs 0)
 > (define idle-timer (run-with-idle-timer 0.1 (lambda () (set! idle-runs (+ idle-runs 1)))))
 > (set-idle! #t)
-> (wait-until (lambda () (= idle-runs 1)))
+> (testing:wait-until (lambda () (= idle-runs 1)))
 > (sleep-for 0.2)
 > idle-runs
 1
@@ -13,14 +13,14 @@
 > (commands:define-command (type-one) "Counts a character typed." (set! typed (+ typed 1)))
 > (run-with-timer 0 (lambda () (for-each (lambda (i) (keys:run-as-input one type-one)) (iota 40))))
 #<timer>
-> (wait-until (lambda () (= idle-runs 2)))
+> (testing:wait-until (lambda () (= idle-runs 2)))
 > (sleep-for 0.2)
 > (list typed idle-runs)
 (40 2)
 > (keys:bind! keys:global "C-c 2" type-one)
 > (run-with-timer 0 (lambda () (keys:press! one "C-c") (keys:press! one "2")))
 #<timer>
-> (wait-until (lambda () (= idle-runs 3)))
+> (testing:wait-until (lambda () (= idle-runs 3)))
 > (sleep-for 0.2)
 > (list typed idle-runs)
 (41 3)
@@ -35,7 +35,7 @@
 > (sleep-for 0.1)
 > (real? (idle-seconds))
 #t
-> (wait-until (lambda () (task-done? t)))
+> (testing:wait-until (lambda () (task-done? t)))
 > (list seen (real? (idle-seconds)))
 ((#f #f) #t)
 ; Input inside an item, where Tuna is busy, leaves idleness alone.

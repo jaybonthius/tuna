@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (web) (keys) (commands) (document) (buffers) (views) (modes) (processes))
+(import (tuna) (testing) (tuna plugins) (web) (keys) (commands) (document) (buffers) (views) (modes) (processes))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -29,11 +29,6 @@
 
 (define (settle) (sleep-for 0.1))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 ;; A command that reads or waits pauses its task, so tests start it in a
 ;; task of its own.
@@ -52,9 +47,9 @@
         (guard (c [#t (set! done #t) (raise c)])
           (in-client (lambda () (apply commands:run command arguments)))
           (set! done #t))))
-    (wait-until (lambda () done))))
+    (testing:wait-until (lambda () done))))
 
-(define (ended? b) (wait-until (lambda () (runs:status b))) (runs:status b))
+(define (ended? b) (testing:wait-until (lambda () (runs:status b))) (runs:status b))
 
 (define (text b) (document:text (buffers:document b)))
 

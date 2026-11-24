@@ -13,7 +13,9 @@ dir=$(mktemp -d "${TMPDIR:-/tmp}/tuna-lsp-live-test.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
 cp -R tests/lsp/home "$dir/home"
 cp tests/lsp/live/live.transcript "$dir/live.transcript"
-if sh tests/run-transcript.sh "$tuna" "$dir/live.transcript"; then
+# Under make's limit, so a hang stops here, where the runner shows how far
+# the transcript got.
+if TEST_TIMEOUT=40 sh tests/run-transcript.sh "$tuna" "$dir/live.transcript"; then
   echo "$0: 0 failures"
 else
   echo "$0: 1 failures"

@@ -1,7 +1,7 @@
 ; Examples of using web, against a browser stand-in that fetches the page,
 ; reads its screen stream and posts items.
-> (http:wait-for-server)
 Tuna is at http://127.0.0.1:PORT/
+> (http:wait-for-server)
 > (set-option! web:port (http:free-port)
                web:hosts '("tuna.example.ts.net"))
 Tuna is at http://127.0.0.1:PORT/

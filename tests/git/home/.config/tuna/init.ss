@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (tuna eval))
+(import (tuna) (testing) (tuna plugins) (tuna eval))
 (use-plugin git)
 (import (diff) (processes))
 
@@ -21,11 +21,6 @@
 
 (define (at path) (string-append home "/" path))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define (entries s)
   (map (lambda (e) (list (git:entry-path e) (git:entry-original-path e) (git:entry-index e) (git:entry-worktree e)))

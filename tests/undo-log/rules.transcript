@@ -3,7 +3,7 @@
 > (define (reload! name) (eval-file (string-append (getenv "TUNA_LIBRARY") "/" name ".sls")))
 > (define (kinds path) (map car (checks:log-records path)))
 > (define (logged path n)
-    (wait-until (lambda () (= (length (checks:log-records path)) n)))
+    (testing:wait-until (lambda () (= (length (checks:log-records path)) n)))
     (kinds path))
 > (checks:write-text! "~/r.txt" "rules\n")
 > (define r (files:visit "~/r.txt"))
@@ -18,7 +18,7 @@
 ; Reloading this plugin alone keeps undo's history, and writes the log
 ; again whole, with the saves it held, once it has read them.
 > (reload! "undo-log")
-> (wait-until (lambda () (equal? (kinds "~/r.txt") '(undo-history group group saved saved at))))
+> (testing:wait-until (lambda () (equal? (kinds "~/r.txt") '(undo-history group group saved saved at))))
 > (kinds "~/r.txt")
 (undo-history group group saved saved at)
 > (in-r checks:insert 1 "3 ")
@@ -58,7 +58,7 @@
 (#t #f ("Buffer n.txt has unsaved text; kill anyway? "))
 ; undo:forget! drops a buffer's history and so its log.
 > (undo:forget! r)
-> (wait-until (lambda () (not (checks:exists? (checks:log-of "~/r.txt")))))
+> (testing:wait-until (lambda () (not (checks:exists? (checks:log-of "~/r.txt")))))
 > (checks:exists? (checks:log-of "~/r.txt"))
 #f
 > (in-r checks:insert 1 "4 ")

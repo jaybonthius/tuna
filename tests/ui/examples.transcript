@@ -10,7 +10,7 @@
 > (views:point (view))
 11
 > (mouse-in! (view) "click" '(("at" . 4) ("count" . 0)))
-> (wait-until (lambda () (buffers:find "notes.org")))
+> (testing:wait-until (lambda () (buffers:find "notes.org")))
 > (buffers:name (views:buffer (view)))
 "notes.org"
 ; RET with point in the entry runs the same command.

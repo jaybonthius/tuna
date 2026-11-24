@@ -2,14 +2,14 @@
 ; footer and entries.
 > (import (starter))
 > (define own (starter:own!))
-> (wait-until (lambda () (string=? (output own) "own")))
+> (testing:wait-until (lambda () (string=? (output own) "own\n")))
 > (unload-module! '(starter))
 > (list (runs:status own) (taken-ends))
 (stopped (("*own*" stopped stopped)))
 ; The owner's next instance gets an unload action of its own.
 > (load-module! '(starter))
 > (define own-again (starter:own!))
-> (wait-until (lambda () (string=? (output own-again) "own")))
+> (testing:wait-until (lambda () (string=? (output own-again) "own\n")))
 > (unload-module! '(starter))
 > (list (runs:status own-again) (taken-ends))
 (stopped (("*own*" stopped stopped)))
@@ -17,7 +17,7 @@
 ; and of runs, and its output still arrives.
 > (load-module! '(starter))
 > (define users (starter:users!))
-> (wait-until (lambda () (string=? (output users) "users")))
+> (testing:wait-until (lambda () (string=? (output users) "users\n")))
 > (eval-file (string-append (getenv "HOME") "/.config/tuna/lib/starter.sls"))
 > (reload! "runs")
 > (runs:status users)
@@ -29,7 +29,7 @@
 "users\nlater"
 ; A renamed going run keeps its buffer across a reload of runs.
 > (define going (runs:start-for-user "*going*" "echo a; until [ -e went ]; do sleep 0.05; done; echo b" home))
-> (wait-until (lambda () (string=? (output going) "a")))
+> (testing:wait-until (lambda () (string=? (output going) "a\n")))
 > (buffers:rename! going "renamed going")
 > (reload! "runs")
 > (runs:status going)

@@ -1,8 +1,8 @@
 ; A request from a peer other than 127.0.0.1 or ::1 needs the proxy's
 ; secret; one from 127.0.0.1 does not. The test client binds 127.0.0.2
 ; to be such a peer.
-> (http:wait-for-server)
 Tuna is at http://127.0.0.1:PORT/
+> (http:wait-for-server)
 > (define (status . headers) (http:status (http:get "/web/tuna.js" headers)))
 > (define (from-proxy thunk) (http:from-address "127.0.0.2" thunk))
 > (list (status) (status '("tuna-proxy-secret" . "wrong")) (from-proxy status))

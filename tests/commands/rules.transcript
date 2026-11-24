@@ -116,6 +116,6 @@ later
 ; One expression may give several parameters, as its values.
 > (commands:define-command (pair-of [(a b) (values 1 2)] [c 3]) "Several names from one reader." (list a b c))
 > (commands:run pair-of)
-> (pair-of 4 5 6)
 (1 2 3)
+> (pair-of 4 5 6)
 (4 5 6)

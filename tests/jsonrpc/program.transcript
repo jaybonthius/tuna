@@ -41,7 +41,7 @@
 > (sleep-for 0.1)
 > (jsonrpc:request-async ending "exit" '(("status" . 3)) (lambda (v) (void)) (lambda (e) (void)))
 #<jsonrpc-pending ending exit>
-> (wait-until (lambda () (task-done? waiting)))
+> (testing:wait-until (lambda () (task-done? waiting)))
 > (join-task waiting)
 (ended 3)
 > errors
@@ -59,7 +59,7 @@
 > (define stopped (spawn-task (lambda () (raised (lambda () (jsonrpc:request plain "wait" '()))))))
 > (sleep-for 0.1)
 > (jsonrpc:stop! plain)
-> (wait-until (lambda () (task-done? stopped)))
+> (testing:wait-until (lambda () (task-done? stopped)))
 > (car (join-task stopped))
 ended
 > (jsonrpc:stop! c)

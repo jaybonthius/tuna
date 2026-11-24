@@ -10,7 +10,7 @@
 > (define chunk (make-string 1000 #\k))
 > (do ([i 0 (+ i 1)]) ((= i 1500)) (buffers:replace! big 1 1 chunk) (sleep-for 0))
 > (define before (states big))
-> (wait-until (lambda () (> (checks:log-size "~/big.txt") 1500000)))
+> (testing:wait-until (lambda () (> (checks:log-size "~/big.txt") 1500000)))
 > (reload! "undo")
 > (buffers:replace! big 1 1 "during")
 #<edit 1501>
@@ -45,7 +45,7 @@
 > (define burst (files:visit "~/burst.txt"))
 > (do ([i 0 (+ i 1)]) ((= i 300)) (buffers:replace! burst 1 1 "b") (sleep-for 0))
 > (begin (unload-module! '(undo)) (load-module! '(undo)) (load-module! '(undo-log)) (load-module! '(checks)))
-> (wait-until (lambda () (guard (c [#t #f]) (= (length (states burst)) 301))))
+> (testing:wait-until (lambda () (guard (c [#t #f]) (= (length (states burst)) 301))))
 > (length (states burst))
 301
 > (buffers:with-buffer burst (commands:run undo:undo 300))
@@ -119,7 +119,7 @@
 > (equal? (list (text storm) (states storm) (car (undo:history storm))) final)
 #t
 > (reload! "buffers")
-> (wait-until (lambda () (= (length (files:buffers)) 4)))
+> (testing:wait-until (lambda () (= (length (files:buffers)) 4)))
 > (define storm (files:visit "~/storm.txt"))
 > (equal? (list (text storm) (states storm) (car (undo:history storm))) final)
 #t

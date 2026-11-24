@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins))
+(import (tuna) (testing) (tuna plugins))
 (use-plugin kill-ring
   (config
     (set-option! kill-ring:skip-duplicates #t)))
@@ -21,11 +21,6 @@
   (guard (c [#t (list (condition-who c) (condition-message c))])
     (thunk)))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define saved-file
   (string-append (getenv "HOME") "/.local/share/tuna/saved/tuna/kill-ring/texts.ss"))

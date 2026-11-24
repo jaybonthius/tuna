@@ -6,14 +6,14 @@
 > (replace! "M-%" "x" "y")
 > (press! "y" "y")
 > (list (session) (text) (last-message))
+(#f "y1 x2 x3\n" "a read-only span refuses the edit")
 > (views:set-point! (view) 1)
 > (set-option! replace:skip-read-only #t)
 > (replace! "M-%" "x" "y")
 > (press! "!")
 > (list (session) (text) (last-message))
-> (set-option! replace:skip-read-only #f)
-(#f "y1 x2 x3\n" "a read-only span refuses the edit")
 (#f "y1 x2 y3\n" "Replaced 1 occurrence (skipped 1)")
+> (set-option! replace:skip-read-only #f)
 ; A match touching an atom's text is passed over and counted.
 > (buffers:define-kind chip (content atom) (text (lambda (n) "foo")))
 > (define a (buffers:make "atoms" '(buffers:text () "foo " #(chip ()) " foo\n")))
@@ -29,21 +29,21 @@
 > (replace! "M-%" "x" "y")
 > (press! "C-r")
 > (keys:prompt client)
+"Editing; C-M-c goes on with the replace"
 > (press! "C-e" "Z")
 > (text)
+"x1 x2 x3Z\n"
 > (press! "C-M-c")
 > (asked)
+(2 "Query replacing x with y: (? for help) " "x")
 > (press! "C-w")
 > (text)
+"1 x2 x3Z\n"
 > (press! "Q" "C-M-c")
 > (asked)
+(5 "Query replacing x with y: (? for help) " "x")
 > (press! "!")
 > (list (text) (session))
-"Editing; C-M-c goes on with the replace"
-"x1 x2 x3Z\n"
-(2 "Query replacing x with y: (? for help) " "x")
-"1 x2 x3Z\n"
-(5 "Query replacing x with y: (? for help) " "x")
 ("Q1 y2 y3Z\n" #f)
 ; A session is a record with hooks; advice on replace:prompt shows a
 ; count.
@@ -62,49 +62,49 @@
 > (sleep-for 0.2)
 > (press! "n")
 > (prompt)
+"[2/3] Query replacing o with 0: (? for help) "
 > (let ([s (session)]) (list (eq? (replace:session-view s) (view)) (eq? (replace:session-client s) client) (replace:session-replacement s) (search:query-text (replace:session-query s))))
+(#t #t "0" "o")
 > (press! "y" "q")
 > (reverse events)
-> (advice-remove! replace:prompt with-count)
-"[2/3] Query replacing o with 0: (? for help) "
-(#t #t "0" "o")
 ((started 0) (ended 1 #f))
+> (advice-remove! replace:prompt with-count)
 ; replace:query-replace! answers from the given client's keys, pauses the
 ; calling task until the session ends, and returns the count. A
 ; procedure replacement gets each match and the count so far.
 > (define q (show "code" "k k k\n"))
 > (define result #f)
 > (spawn-task (lambda () (set! result (replace:query-replace! (view) other (search:make-query "k") (lambda (m n) (number->string n)) 1 6 'forward))))
+#<task>
 > (sleep-for 0.05)
 > (list (replace:current client) (replace:session? (replace:current other)))
+(#f #t)
 > (press-in! other "y" "y" "q")
 > (sleep-for 0.05)
 > (list result (text))
+(2 "0 1 k\n")
 > (spawn-task (lambda () (replace:query-replace! (view) other (search:make-query "k") "z" 1 6 'forward)))
+#<task>
 > (sleep-for 0.05)
 > (replace:query-replace! (view) other (search:make-query "k") "z" 1 6 'forward)
+! replace:query-replace!: a replace session is already running for this client
 > (spawn-task (lambda () (guard (c [#t (set! result (condition-message c))]) (replace:query-replace! (view) other (search:make-query "k") "z" 1 6 'forward))))
+#<task>
 > (sleep-for 0.05)
 > result
-> (press-in! other "q")
-#<task>
-(#f #t)
-(2 "0 1 k\n")
-#<task>
-! replace:query-replace!: a replace session is already running for this client
-#<task>
 "a replace session is already running for this client"
+> (press-in! other "q")
 ; ! is one command, so its replacements are one undo group.
 > (define g (show "g" "a a a a\n"))
 > (replace! "M-%" "a" "b")
 > (press! "y" "!")
 > (text)
-> (press! "C-/")
-> (text)
-> (press! "C-/")
-> (text)
 "b b b b\n"
+> (press! "C-/")
+> (text)
 "b a a a\n"
+> (press! "C-/")
+> (text)
 "a a a a\n"
 ; A session that ends away from where it started records that place, and
 ; M-, returns there. A quit leaves point at the current match, as in
@@ -114,19 +114,19 @@
 > (define before (length (jump-history:places)))
 > (replace! "M-%" "q" "v")
 > (= before (length (jump-history:places)))
+#t
 > (replace! "M-%" "w" "v")
 > (press! "C-g")
+! &quit
 > (list (point) (= (+ before 1) (length (jump-history:places))))
+(2 #t)
 > (views:set-point! (view) 1)
 > (replace! "M-%" "w" "v")
 > (press! "n" "y" "q")
 > (list (point) (car (jump-history:places)))
+(8 (#<buffer j> . 1))
 > (press! "M-,")
 > (point)
-#t
-! &quit
-(2 #t)
-(8 (#<buffer j> . 1))
 1
 ; M-% during a search replaces with the search's query from the start of
 ; its current match; C-M-% takes its text as a regexp.
@@ -137,8 +137,10 @@
 > (press! "RET")
 > (sleep-for 0.05)
 > (list (isearch:current client) (asked))
+(#f (6 "Query replacing ab with X: (? for help) " "ab"))
 > (press! "!")
 > (text)
+"Ab X X a.b\n"
 > (define is2 (show "is2" "a.b axb\n"))
 > (press! "C-s" "a" "." "b")
 > (start! "C-M-%")
@@ -147,8 +149,6 @@
 > (sleep-for 0.05)
 > (press! "!")
 > (text)
-(#f (6 "Query replacing ab with X: (? for help) " "ab"))
-"Ab X X a.b\n"
 "Y Y\n"
 ; replace:replace-string replaces without asking.
 > (define rs (show "rs" "one one\n"))
@@ -159,10 +159,10 @@
 ; draws their control characters as ^X.
 > (define tabbed (show "tabbed" "a\tb\n"))
 > (spawn-task (lambda () (replace:query-replace! (view) client (search:make-query "a\tb") "c\td" 1 5 'forward)))
+#<task>
 > (sleep-for 0.05)
 > (keys:prompt client)
-> (prompt)
-> (press! "q")
-#<task>
 ("Query replacing a\tb with c\td: (? for help) ")
+> (prompt)
 "Query replacing a^Ib with c^Id: (? for help) "
+> (press! "q")

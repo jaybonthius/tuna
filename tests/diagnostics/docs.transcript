@@ -14,7 +14,7 @@
 > (define (signature view) (docs-at-point:make-doc "signature of alpha" (docs-at-point:doc-options [thing "alpha"])))
 > (buffers:with-buffer notes (add-local-hook! docs-at-point:sources signature))
 > (press! "C-h" ".")
-> (wait-until (lambda () (let ([d (buffers:find "*Docs*")]) (and d (> (string-length (text d)) 0)))))
+> (testing:wait-until (lambda () (let ([d (buffers:find "*Docs*")]) (and d (> (string-length (text d)) 0)))))
 > (define docs-text (text (buffers:find "*Docs*")))
 > (commands:define-command (to-plain) "Shows plain." (layout:switch-to-buffer plain))
 > (keys:bind! keys:global "C-c p" to-plain)
@@ -33,6 +33,6 @@
 #t
 > (views:set-point! (view) 1)
 > (press! "M-f" "C-f")
-> (wait-until (lambda () (equal? (echo-area:current-message) "bad beta")))
+> (testing:wait-until (lambda () (equal? (echo-area:current-message) "bad beta")))
 > (list (views:point (view)) (echo-area:current-message) (echo-area:current-spans))
 (7 "bad beta" ((0 8 error)))

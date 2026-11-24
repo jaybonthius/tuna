@@ -9,7 +9,7 @@
 0
 > (write-file! (string-append code "/f.ss") "(define (f x)\n")
 > (define f (visit! (string-append code "/f.ss")))
-> (wait-until (lambda () (let ([cs (lsp:buffer-connections f)]) (and (pair? cs) (lsp:connection-capability (car cs) "documentFormattingProvider")))))
+> (testing:wait-until (lambda () (let ([cs (lsp:buffer-connections f)]) (and (pair? cs) (lsp:connection-capability (car cs) "documentFormattingProvider")))))
 > (define (around) (let ([doc (buffers:document f)] [p (views:point (view))]) (list (document:text doc 0 p) (document:text doc p (document:length doc)))))
 > (in-client (lambda () (views:set-point! (view) (+ 1 (string-length "(define (f x)")))))
 > (press! "RET")
@@ -22,7 +22,7 @@
 ("(define (f x)\n  (+ x\n     " "1))\n")
 > (begin (buffers:replace! f 1 (- (document:length (buffers:document f)) 1) "(define (g y)\n(+ y 2))\n") (void))
 > (in-client (lambda () (lsp:format-buffer f)))
-> (wait-until (lambda () (string=? (document:text (buffers:document f)) "(define (g y)\n  (+ y 2))\n")))
+> (testing:wait-until (lambda () (string=? (document:text (buffers:document f)) "(define (g y)\n  (+ y 2))\n")))
 > (document:text (buffers:document f))
 "(define (g y)\n  (+ y 2))\n"
 ; Turned on, on-type formatting asks nothing for a RET whose command went

@@ -2,7 +2,7 @@
 > (sh "cd repo && git config user.name Tuna && git config user.email tuna@example.org")
 > (define (log) (git-out "repo" "log" "--format=%s"))
 > (define (editing?) (equal? (shown-buffer) "COMMIT_EDITMSG"))
-> (define (message!) (wait-until editing?) (take-said!) (views:buffer (view)))
+> (define (message!) (testing:wait-until editing?) (take-said!) (views:buffer (view)))
 > (define (message-lines m) (let loop ([t (document:text (buffers:document m))] [i 0] [start 0] [acc '()]) (cond [(= i (string-length t)) (reverse acc)] [(char=? (string-ref t i) #\newline) (if (and (< start i) (char=? (string-ref t start) #\#)) (reverse acc) (loop t (+ i 1) (+ i 1) (cons (substring t start i) acc)))] [else (loop t (+ i 1) start acc)])))
 ; git-commit:mode-hook runs in each message buffer as it opens.
 > (define (set-message! m text)

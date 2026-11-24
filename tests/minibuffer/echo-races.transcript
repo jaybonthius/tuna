@@ -77,10 +77,10 @@
             (echo-area:message! "Quitting")
             (sleep-for 0.001)
             (loop (+ n 1)))))))
-> (wait-until (lambda () (task-done? quitter)))
+> (testing:wait-until (lambda () (task-done? quitter)))
 > (set! stop #t)
 > (for-each (lambda (t) (signal-task t (make-message-condition "q"))) askers)
-> (wait-until (lambda () (for-all task-done? askers)))
+> (testing:wait-until (lambda () (for-all task-done? askers)))
 > (for-all task-done? askers)
 #t
 > (list (prompt) (echo-area:hidden?) (echo-drawn?))

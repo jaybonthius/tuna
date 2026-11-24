@@ -104,20 +104,20 @@ Honks once.
 ; A quit key cancels C-h k, describing nothing.
 > (start! "C-h" "k")
 > (press! "C-g")
-> (settle)
 ! &quit
+> (settle)
 > (title)
 "<mouse-1> at that spot runs the command harpo:honk, bound by (repl)"
 > (start! "C-h" "k")
 > (press! "C-x" "C-g")
-> (settle)
 ! &quit
+> (settle)
 > (title)
 "<mouse-1> at that spot runs the command harpo:honk, bound by (repl)"
 > (start! "C-h" "k")
 > (press! "ESC")
-> (settle)
 ! &quit
+> (settle)
 > (title)
 "<mouse-1> at that spot runs the command harpo:honk, bound by (repl)"
 ; C-h k and C-h c ask in the echo area, and the keys read so far show
@@ -129,8 +129,8 @@ Honks once.
 > (echo)
 "Describe the following key or mouse click: C-x-"
 > (press! "C-g")
-> (settle)
 ! &quit
+> (settle)
 > (echo)
 "Quit"
 ; C-h c shows the first line in the echo area, without the binder.

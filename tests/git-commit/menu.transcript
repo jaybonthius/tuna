@@ -3,7 +3,7 @@
 > (define (log) (git-out "repo" "log" "--format=%s"))
 > (define (first-line s) (let loop ([i 0]) (if (or (= i (string-length s)) (char=? (string-ref s i) #\newline)) (substring s 0 i) (loop (+ i 1)))))
 > (define (editing?) (equal? (shown-buffer) "COMMIT_EDITMSG"))
-> (define (message!) (wait-until editing?) (views:buffer (view)))
+> (define (message!) (testing:wait-until editing?) (views:buffer (view)))
 ; c shows the commit menu, with Magit's groups and keys.
 > (press! "c")
 > (menu)

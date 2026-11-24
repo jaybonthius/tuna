@@ -2,18 +2,18 @@
 ; on-output is not called again, and on-exit runs when the program ends.
 > (define ticker (processes:start "sh" '("-c" "while :; do echo tick; sleep 0.05; done")
                    noting-output noting-exit))
-> (wait-until (lambda () (pair? log)))
+> (testing:wait-until (lambda () (pair? log)))
 > (processes:stop! ticker)
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (let ([l (taken!)]) (list (for-all (lambda (x) (string? (car x))) (list-head l (- (length l) 1))) (car (reverse l))))
 (#t (exit -1))
 > (processes:stop! ticker)
 ; A program that ignores SIGHUP gets SIGKILL a second later.
 > (define stubborn (processes:start "sh" '("-c" "trap '' HUP; echo ready; sleep 5") noting-output noting-exit))
-> (wait-until (lambda () (pair? log)))
+> (testing:wait-until (lambda () (pair? log)))
 > (define stopped-at (current-time))
 > (processes:stop! stubborn)
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (car (reverse (taken!)))
 (exit -9)
 > (>= (time-second (time-difference (current-time) stopped-at)) 1)
@@ -22,20 +22,20 @@
 ; job in the foreground, which a signal to the shell's group misses.
 > (define job-shell (processes:start "sh" '("-c" "set -m; sleep 30") noting-output noting-exit
                       (processes:options [terminal '(24 . 80)])))
-> (wait-until (lambda () (let ([group (processes:foreground-group job-shell)])
+> (testing:wait-until (lambda () (let ([group (processes:foreground-group job-shell)])
                            (and group (not (= group (processes:pid job-shell)))))))
 > (define job (processes:foreground-group job-shell))
 > (processes:stop! job-shell)
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (taken!)
 ((exit -1))
-> (wait-until (lambda () (not (file-exists? (format "/proc/~a" job)))))
+> (testing:wait-until (lambda () (not (file-exists? (format "/proc/~a" job)))))
 > (file-exists? (format "/proc/~a" job))
 #f
 ; processes:signal! sends a signal by its name to the program's group.
 > (define sleeper (processes:start "sleep" '("5") noting-output noting-exit))
 > (processes:signal! sleeper (processes:signal int))
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (taken!)
 ((eof 0) (exit -2))
 > (processes:signal! sleeper (processes:signal term))
@@ -50,7 +50,7 @@ hup
 ; A process still starting gets the signal once started.
 > (let ([p (processes:start "sleep" '("5") noting-output noting-exit)])
     (processes:signal! p (processes:signal term)))
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (taken!)
 ((eof 0) (exit -15))
 ; Killing a process's buffer stops it, without asking.
@@ -63,7 +63,7 @@ hup
 #t
 > (buffers:kill! shell-buffer)
 #t
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (taken!)
 ((exit -1))
 > (processes:buffer linked)
@@ -74,7 +74,7 @@ hup
 > (processes:set-buffer! unlinked #f)
 > (buffers:kill! other-buffer)
 #t
-> (wait-until exited?)
+> (testing:wait-until exited?)
 > (taken!)
 ((eof 0) (exit 0))
 > (processes:set-buffer! unlinked "*other*")

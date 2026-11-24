@@ -23,7 +23,7 @@
 ; Reloading buffers closes every buffer, so files visits each file again.
 ; Without undo the unsaved edit is lost.
 > (reload! "buffers")
-> (wait-until (lambda () (= (length (files:buffers)) 2)))
+> (testing:wait-until (lambda () (= (length (files:buffers)) 2)))
 > (define a2 (car (files:buffers)))
 > (list (buffers:live? a) (buffers:name a2) (text a2) (buffers:modified? a2) (map buffers:name (files:buffers)))
 (#f "a.txt" "unsaved alpha\n" #f ("a.txt" "b.txt"))

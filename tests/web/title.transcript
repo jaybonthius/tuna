@@ -1,5 +1,5 @@
-> (http:wait-for-server)
 Tuna is at http://127.0.0.1:PORT/
+> (http:wait-for-server)
 > (define (title-of html)
     (let* ([start (http:search html "<title" 0)] [end (http:search html "</title>" start)])
       (substring html start (+ end 8))))

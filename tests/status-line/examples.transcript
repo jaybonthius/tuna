@@ -4,31 +4,31 @@
 > (views:set-buffer! (view) notes)
 > (views:set-point! (view) 14)
 > (status (view))
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("status-line:percent-position" . "65%") ("status-line:region-size" . "") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "L2"))
 ; The segment that shows how many cursors a view has, and keeps only the
 ; primary one when clicked.
 > (import (cursors))
 > (views:add-cursor! (view) 3)
+#<cursor>
 > (status (view))
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("status-line:percent-position" . "65%") ("status-line:region-size" . "") ("cursors:cursor-count" . "2 cursors") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "L2"))
 > (define html (html->string (status-line:draw (view) client)))
 > (let ([start (search html "<button class=\"status-line-segment\"" 0)])
     (string=? (substring html start (+ (search html "</span></button>" start) 16))
               (format "<button class=\"status-line-segment\" type=\"button\" tabindex=\"-1\" data-segment=\"cursors:cursor-count\" data-keymap=\"~a\"><span title=\"Click to keep only the primary cursor\">2 cursors</span></button>"
                       (views:keymap-mark cursors:cursor-count-keys))))
+#t
 > (click-status! (view) 1 cursors:cursor-count-keys)
 > (length (views:cursors (view)))
+1
 > (status (view))
+(("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("status-line:percent-position" . "65%") ("status-line:region-size" . "") ("cursors:cursor-count" . "") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "L2"))
 ; status-line:segments
 > (table-set! status-line:segments status-line:position (status-line:right 90))
 > (table-remove! status-line:segments status-line:modified)
 > (status (view))
+(("status-line:buffer-name" . "notes") ("status-line:percent-position" . "65%") ("status-line:region-size" . "") ("cursors:cursor-count" . "") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "L2"))
 ; status-line:visible
 > (in-client (lambda () (views:set-option! (views:current) status-line:visible #f)))
 > (screen-status-lines client)
-(("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("status-line:percent-position" . "65%") ("status-line:region-size" . "") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "L2"))
-#<cursor>
-(("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("status-line:percent-position" . "65%") ("status-line:region-size" . "") ("cursors:cursor-count" . "2 cursors") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "L2"))
-#t
-1
-(("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("status-line:percent-position" . "65%") ("status-line:region-size" . "") ("cursors:cursor-count" . "") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "L2"))
-(("status-line:buffer-name" . "notes") ("status-line:percent-position" . "65%") ("status-line:region-size" . "") ("cursors:cursor-count" . "") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "L2"))
 ()

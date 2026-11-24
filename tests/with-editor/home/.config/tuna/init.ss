@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (web) (keys) (commands) (document) (buffers) (views))
+(import (tuna) (testing) (tuna plugins) (web) (keys) (commands) (document) (buffers) (views))
 (define said '())
 (use-plugin ask
   (config
@@ -19,11 +19,6 @@
         (views:call-with-view (layout:selected-view) (lambda () (keys:press! client key)))))
     keys))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
 (define home (getenv "HOME"))
 

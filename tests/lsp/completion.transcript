@@ -51,7 +51,7 @@
 > (type! "t")
 > (wait-matches (session))
 > (press! "M-n" "RET")
-> (wait-until (lambda () (pair? ran)))
+> (testing:wait-until (lambda () (pair? ran)))
 > (list (text a) ran)
 ("import datetime\nx\ndatetime.now\n" ((1 2)))
 ; Without a local procedure a command goes to the server.
@@ -75,7 +75,7 @@
 > (session)
 #f
 > (type! ".")
-> (wait-until (lambda () (session)))
+> (testing:wait-until (lambda () (session)))
 > (wait-matches (session))
 > (texts (session))
 ("now" "today")

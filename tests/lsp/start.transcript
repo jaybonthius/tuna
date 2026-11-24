@@ -42,7 +42,7 @@
 > (set-option! lsp:extend-to-xref? #t)
 > (in-client (lambda () (views:set-point! (view) 5)))
 > (press! "M-.")
-> (wait-until (lambda () (equal? (buffers:name (views:buffer (view))) "x.fk")))
+> (testing:wait-until (lambda () (equal? (buffers:name (views:buffer (view))) "x.fk")))
 > (wait-for "alpha" "textDocument/didOpen" 3)
 > (define (short root) (substring root (string-length home) (string-length root)))
 > (define (roots) (map (lambda (c) (short (lsp:connection-root c))) (lsp:connections)))
@@ -53,7 +53,7 @@
 #t
 > (set-option! lsp:extend-to-xref? #f)
 > (press! "M-.")
-> (wait-until (lambda () (= 2 (length (lsp:connections)))))
+> (testing:wait-until (lambda () (= 2 (length (lsp:connections)))))
 > (list (roots) (map (lambda (c) (short (lsp:connection-root c))) (lsp:buffer-connections (views:buffer (view)))))
 (("/project/one/" "/project/") ("/project/"))
 > (lsp:shutdown-all)

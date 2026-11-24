@@ -35,20 +35,20 @@
 ("ab" ((2 #f)))
 > (quote! "C-q")
 > (press! "<f5>")
-> (settle)
 ! editing:quoted-insert: <f5> is not a character
+> (settle)
 > (quote! "C-q")
 > (press! "M-a")
-> (settle)
 ! editing:quoted-insert: M-a is not a character
+> (settle)
 > (quote! "C-q")
 > (press! "C-ı")
-> (settle)
 ! editing:quoted-insert: C-ı is not a character
+> (settle)
 > (quote! "C-q")
 > (press! '("<mouse-1>" #(1 1)))
-> (settle)
 ! editing:quoted-insert: <mouse-1> is not a character
+> (settle)
 > (state)
 ("ab" ((2 #f)))
 ; The prefix argument is a count, at each cursor; an active region is

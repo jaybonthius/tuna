@@ -9,7 +9,7 @@
       (lambda (message) (if message (begin (processes:send! process message) process) status))))
 > (define piped
     (committing (processes:options [directory (at "repo")] [environment (with-editor:environment "GIT_EDITOR")])))
-> (wait-until (lambda () (equal? (shown) "COMMIT_EDITMSG")))
+> (testing:wait-until (lambda () (equal? (shown) "COMMIT_EDITMSG")))
 > (piped "\n")
 #<process 2 git>
 > (sleep-for 0.3)
@@ -18,14 +18,14 @@
 > (buffers:replace! (views:buffer (layout:selected-view)) 1 1 "Through a pipe\n")
 #<edit 1>
 > (press! "C-c" "C-c")
-> (wait-until (lambda () (piped #f)))
+> (testing:wait-until (lambda () (piped #f)))
 > (list (piped #f) (subjects repo))
 (0 "Through a pipe\n")
 > (sh "cd repo && echo b > b.txt && git add b.txt")
 > (define on-terminal
     (committing (processes:options [directory (at "repo")] [environment (with-editor:environment "GIT_EDITOR")]
                                    [terminal '(24 . 80)])))
-> (wait-until (lambda () (equal? (shown) "COMMIT_EDITMSG")))
+> (testing:wait-until (lambda () (equal? (shown) "COMMIT_EDITMSG")))
 > (on-terminal "\r")
 #<process 4 git>
 > (sleep-for 0.3)
@@ -34,7 +34,7 @@
 > (buffers:replace! (views:buffer (layout:selected-view)) 1 1 "On a terminal\n")
 #<edit 1>
 > (press! "C-c" "C-c")
-> (wait-until (lambda () (on-terminal #f)))
+> (testing:wait-until (lambda () (on-terminal #f)))
 > (list (on-terminal #f) (subjects repo))
 (0 "On a terminal\nThrough a pipe\n")
 ; A request split across pieces of output is put together; one with
@@ -54,7 +54,7 @@
 > (filter-output (eof-object) 40)
 > (map (lambda (r) (if (string? r) (string->list r) r)) (reverse received))
 ((#\b #\e #\f #\o #\r #\e #\space) (#\a #\f #\t #\e #\r #\newline) (#\esc #\] #\7 #\5 #\6 #\3 #\; #\t #\u #\n #\a #\- #\e #\d #\i #\t #\; #\o #\t #\h #\e #\r #\- #\t #\o #\k #\e #\n #\; #\/ #\t #\m #\p #\/ #\x #\alarm #\newline) (#\esc #\[ #\1 #\m #\space #\b #\o #\l #\d #\newline) eof)
-> (wait-until (lambda () (equal? (shown) "notes.txt")))
+> (testing:wait-until (lambda () (equal? (shown) "notes.txt")))
 > (equal? (files:path (views:buffer (layout:selected-view))) (at "sub/notes.txt"))
 #t
 > (press! "C-c" "C-c")
@@ -64,7 +64,7 @@
 ; for the same file reads it again, so the stale text goes.
 > (sh "rm -f tmp/request/answer && echo fresh > sub/notes.txt")
 > (filter-output (string->utf8 request) 50)
-> (wait-until (lambda () (equal? (shown) "notes.txt")))
+> (testing:wait-until (lambda () (equal? (shown) "notes.txt")))
 > (define notes (views:buffer (layout:selected-view)))
 > (buffers:replace! notes 1 1 "stale ")
 #<edit 1>
@@ -75,7 +75,7 @@
 (("Wrote ~/sub/notes.txt" "The program that asked for this file has ended") #t "stale fresh\n")
 > (sh "mkdir -p tmp/request && printf '%s\\n%s\\n' \"$HOME/sub\" notes.txt > tmp/request/request && echo rewritten > sub/notes.txt")
 > (filter-output (string->utf8 request) 60)
-> (wait-until (lambda () (equal? (text notes) "rewritten\n")))
+> (testing:wait-until (lambda () (equal? (text notes) "rewritten\n")))
 > (text notes)
 "rewritten\n"
 > (press! "C-c" "C-k")

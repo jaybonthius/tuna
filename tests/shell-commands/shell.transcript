@@ -58,8 +58,8 @@
 > (press! "RET")
 > (settle)
 > (press! "C-g")
-> (settle)
 ! &quit
+> (settle)
 > (message)
 "Quit"
 > (filter (lambda (p) (member "sleep 30; echo never" (processes:command-line p))) (processes:all))

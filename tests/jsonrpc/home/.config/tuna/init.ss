@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (web) (keys) (views) (buffers) (document) (modes) (processes) (json-rpc))
+(import (tuna) (testing) (tuna plugins) (web) (keys) (views) (buffers) (document) (modes) (processes) (json-rpc))
 (use-plugin layout)
 (use-plugin editing)
 (use-plugin jsonrpc)
@@ -42,13 +42,8 @@
               (if (eof-object? line) (reverse lines) (loop (cons line lines)))))))
       '()))
 
-(define (wait-until done?)
-  (let loop ([n 0])
-    (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
-      (loop (+ n 1)))))
 
-(define (recorded path) (wait-until (lambda () (pair? (record-of path)))) (record-of path))
+(define (recorded path) (testing:wait-until (lambda () (pair? (record-of path)))) (record-of path))
 
 (define (log-text c) (document:text (buffers:document (jsonrpc:events-buffer c))))
 

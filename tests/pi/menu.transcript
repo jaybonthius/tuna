@@ -1,6 +1,6 @@
 > (define (run! command) (in-client (lambda () (commands:run command))))
 > (define (session) (in-client completion:current-session))
-> (define (wait-matches s) (wait-until (lambda () (and s (not (completion:session-busy? s))))))
+> (define (wait-matches s) (testing:wait-until (lambda () (and s (not (completion:session-busy? s))))))
 > (define (match-list s) (let ([ms (completion:session-matches s)]) (do ([k (- (completion:matches-count ms) 1) (- k 1)] [acc '() (cons (completion:matches-ref ms k) acc)]) ((< k 0) acc))))
 > (define (texts s) (map (lambda (m) (completion:text s m)) (match-list s)))
 > (define (asking question)
@@ -29,7 +29,7 @@
 ! pi-menu:show: not in a Pi chat
 > (define chat (pi:start project))
 > (define f (fake-of chat))
-> (wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
+> (testing:wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
 > (in-client (lambda () (chat:show! chat)))
 ; C-c C-p shows it: Session, Context, Model and Display, the current
 ; model, thinking level and settings in the descriptions, and Pi's
@@ -46,7 +46,7 @@
                                     (("name" . "skill:tdd") ("description" . "Test first") ("source" . "skill"))
                                     (("name" . "audit") ("description" . "Audit") ("source" . "extension")))))))
 > (say! f (event "agent_settled" '("aborted" . #f)))
-> (wait-until (lambda () (= 3 (length (pi:chat-commands chat)))))
+> (testing:wait-until (lambda () (= 3 (length (pi:chat-commands chat)))))
 > (result (start! (lambda () (pi:set-session-name! chat "Parser"))))
 > (press! "C-c" "C-p")
 > (menu)
@@ -68,7 +68,7 @@
 > (answer! f "get_available_models"
     (lambda (f r) '(("models" . #((("id" . "m1") ("name" . "One") ("provider" . "p") ("contextWindow" . 1000) ("reasoning" . #f)))))))
 > (define t (start! (lambda () (press! "C-c" "C-p" "m"))))
-> (wait-until session)
+> (testing:wait-until session)
 > (menu)
 ()
 > (define s (session))
@@ -93,7 +93,7 @@
 ("Pi's skills" (("a" "/skill:tdd")))
 > (press! "C-g" "C-g")
 > (define t (start! (lambda () (press! "C-c" "C-p" "x" "a"))))
-> (wait-until (asking "Arguments for /audit"))
+> (testing:wait-until (asking "Arguments for /audit"))
 > (menu)
 ()
 > (type! "now")

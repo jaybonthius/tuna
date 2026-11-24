@@ -93,10 +93,10 @@
             (when (= (mod n 3) 0) (for-each (lambda (t) (signal-task t (make-message-condition "q"))) askers))
             (sleep-for 0.002)
             (loop (+ n 1)))))))
-> (wait-until (lambda () (task-done? typer)))
+> (testing:wait-until (lambda () (task-done? typer)))
 > (set! stop #t)
 > (for-each (lambda (t) (signal-task t (make-message-condition "q"))) askers)
-> (wait-until (lambda () (for-all task-done? askers)))
+> (testing:wait-until (lambda () (for-all task-done? askers)))
 > (for-all task-done? askers)
 #t
 > (session)

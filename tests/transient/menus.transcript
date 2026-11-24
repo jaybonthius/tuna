@@ -82,7 +82,7 @@
 (transient:arguments "not a table")
 > (let ([result #f])
     (fork-thread (lambda () (set! result (raised (lambda () (transient:show! magit:merge-menu))))))
-    (wait-until (lambda () result))
+    (testing:wait-until (lambda () result))
     result)
 (transient:show! "not on the main thread")
 ; When the module that defined a menu unloads, its menu closes.

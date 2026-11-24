@@ -303,12 +303,12 @@
 > (define t (start! (lambda () (call-with-values (lambda () (minibuffer:read-entry "Pick: " minibuffer:history '("one" "two"))) list))))
 > (press! "M-p" "M-p")
 > (input)
+"two"
 > (press! "M-p")
 > (input)
+"hi"
 > (press! "M-n" "RET")
 > (list (result t) (minibuffer:history))
-"two"
-"hi"
 (("two" 1) ("hi" "abc" "in" "d" "b"))
 ; Typed, the same text is no entry, and goes into the history.
 > (define t (start! (lambda () (call-with-values (lambda () (minibuffer:read-entry "Pick: " minibuffer:history '("one" "two"))) list))))

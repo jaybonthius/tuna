@@ -66,7 +66,7 @@
 > (disk-checks:write-text! "~/other.txt" "changed elsewhere\n")
 > (set-option! ask:yes-or-no-reader (lambda (question) #f))
 > (set-idle! #t)
-> (sleep-for 5.5)
+> (testing:wait-until (lambda () (not (or (buffers:modified? notes) (buffers:modified? later)))))
 > (map buffers:modified? (list notes other locked later))
 (#f #t #t #f)
 > (files:not-modified locked)

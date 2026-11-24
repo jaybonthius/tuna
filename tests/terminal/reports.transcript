@@ -93,7 +93,7 @@
 > (define t (shell!))
 > (set! reports '())
 > (terminal:send! t "printf '\\a\\e]9;Done\\a\\e]777;notify;Build;It passed\\a\\e]9;4;1;40\\a\\e]7501;state=blocked:kind=permission:app=claude\\a'\r")
-> (wait-until (lambda () (assq 'status reports)))
+> (testing:wait-until (lambda () (assq 'status reports)))
 > (sleep-for 0.2)
 > (reverse reports)
 ((screen-changed "*terminal*") (bell) (notification "" "Done") (notification "Build" "It passed") (progress set 40) (status ((state . blocked) (kind . permission) (app . "claude"))) (screen-changed "*terminal*"))

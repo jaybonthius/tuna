@@ -29,7 +29,7 @@
 ! stop
 ! stop
 ! stop
-> (wait-until (lambda () (for-all task-done? tasks)))
+> (testing:wait-until (lambda () (for-all task-done? tasks)))
 > (map (lambda (t) (result t)) (list-head tasks 3))
 ((raised "stop") (raised "stop") (raised "stop"))
 > (datums minibuf)
@@ -93,10 +93,10 @@ early
             (for-each (lambda (t) (signal-task t (make-message-condition "q"))) askers)
             (sleep-for 0.001)
             (loop (+ n 1)))))))
-> (wait-until (lambda () (task-done? quitter)))
+> (testing:wait-until (lambda () (task-done? quitter)))
 > (set! stop #t)
 > (for-each (lambda (t) (signal-task t (make-message-condition "q"))) askers)
-> (wait-until (lambda () (for-all task-done? askers)))
+> (testing:wait-until (lambda () (for-all task-done? askers)))
 > (for-all task-done? askers)
 #t
 > (datums minibuf)

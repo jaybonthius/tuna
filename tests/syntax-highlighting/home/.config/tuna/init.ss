@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (document) (disk))
+(import (tuna) (testing) (tuna plugins) (document) (disk))
 (use-plugin modes)
 (use-plugin views)
 (use-plugin files)

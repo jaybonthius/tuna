@@ -14,11 +14,11 @@
 (("defs.txt" "1: def total") ("sub/twice.txt" "2: def total"))
 ; The selected item's place is shown in the view the search started
 ; from; a quit puts it back and kills the buffers the preview opened.
-> (wait-until (lambda () (equal? (shown) '("defs.txt" 1))))
+> (testing:wait-until (lambda () (equal? (shown) '("defs.txt" 1))))
 > (shown)
 ("defs.txt" 1)
 > (press! "C-n")
-> (wait-until (lambda () (equal? (shown) '("twice.txt" 2))))
+> (testing:wait-until (lambda () (equal? (shown) '("twice.txt" 2))))
 > (list (shown) (open?))
 (("twice.txt" 2) (#t #t))
 > (press! "C-g")
@@ -54,7 +54,7 @@
 > (sleep-for 0.08)
 > (press! "DEL" "DEL")
 > (type! "av")
-> (wait-until (lambda () (equal? (texts s) '("def average"))))
+> (testing:wait-until (lambda () (equal? (texts s) '("def average"))))
 > (list (reverse asked) answered (texts s))
 (("to" "av") ("av") ("def average"))
 > (press! "RET")
