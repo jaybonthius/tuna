@@ -1,5 +1,7 @@
 SCHEME ?= /usr/lib/csv10.4.1/ta6le/scheme
-CHEZ_DIR := $(patsubst %/,%,$(dir $(SCHEME)))
+# make install puts scheme in PREFIX/bin, away from the archives Tuna
+# links, which go in PREFIX/lib/csv10.4.1/MACHINE.
+CHEZ_DIR := $(patsubst %/,%,$(dir $(firstword $(wildcard $(dir $(SCHEME))scheme.h $(dir $(SCHEME))../lib/csv10.4.1/*/scheme.h))))
 OBJ := build/obj
 LIBDIRS := src::$(OBJ)/src:lib/chez-lang/src::$(OBJ)/lib/chez-lang/src
 
