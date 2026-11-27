@@ -270,16 +270,22 @@
              (set! attaching (cons (cons b snapshot) attaching))
              (lambda () (finish-attach! b snapshot))))]
         [else
-         (lambda ()
-           (when (and (buffers:live? b) (equal? (logged-path b) path))
-             (let ([entry (make-entry b path (log-file path) '() #t #t #f #f '())])
-               (eq-hashtable-set! logs b entry)
-               (read-saves! entry))))])))
+         (let ([begun (and (not (buffers:modified? b))
+                           (let-values ([(length hash) (files:fingerprint b)])
+                             (list (cadr (undo:history b)) length hash)))])
+           (lambda ()
+             (when (and (buffers:live? b) (equal? (logged-path b) path))
+               (let ([entry (make-entry b path (log-file path) '() #t #t #f #f '())])
+                 (eq-hashtable-set! logs b entry)
+                 (read-saves! entry begun)))))])))
 
   ;; A buffer with no log yet gets one as a visit does: once its history
   ;; holds a group, and with the saved text's fingerprint, without which
-  ;; the next visit could not rebuild its edits.
-  (define (read-saves! entry)
+  ;; the next visit could not rebuild its edits. An edit made while the
+  ;; log is read leaves no unmodified moment to take the fingerprint in,
+  ;; so the one taken as the attach began serves while the saved state is
+  ;; still the one it was taken for.
+  (define (read-saves! entry begun)
     (let ([b (entry-buffer entry)])
       (let-values ([(records torn?) (read-records (entry-file entry))])
         (cond
@@ -290,7 +296,9 @@
            (when (and (null? records) (equal? (files:path b) (entry-path entry)))
              (entry-written?-set! entry #f)
              (entry-whole?-set! entry #f)
-             (note-pending-save! entry b))
+             (if (and begun (eqv? (car begun) (cadr (undo:history b))))
+                 (entry-save-set! entry (cdr begun))
+                 (note-pending-save! entry b)))
            (entry-ready?-set! entry #t)]))))
 
   (define (end-attach! b)
@@ -584,4 +592,5 @@
     (ended)
     (call-as-owner %self (lambda () (guard (c [(not (cancelled? c)) (report c)]) (flush-logs!))))))
 (on-unload stop!)
-(spawn-task (lambda (restore) ((attach-open-buffers))))
+(let ([finish-attaching (attach-open-buffers)])
+  (spawn-task (lambda (restore) (finish-attaching))))

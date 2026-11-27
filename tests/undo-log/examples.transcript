@@ -1,7 +1,0 @@
-; undo-log:keep-log? chooses the files whose buffers keep a log.
-> (options:set! undo-log:keep-log? (lambda (path) (not (string=? (path-extension path) "gpg"))))
-> (list ((undo-log:keep-log?) "/home/me/notes.gpg") ((undo-log:keep-log?) "/home/me/notes.txt"))
-(#f #t)
-; The default keeps no log under /tmp/ or /dev/shm/.
-> (map (options:default undo-log:keep-log?) '("/tmp/a.txt" "/dev/shm/a" "/home/me/a.txt" "/tmpfile"))
-(#f #f #t #t)

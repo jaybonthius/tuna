@@ -742,7 +742,9 @@
         (if (null? irritants) (condition-message c) (format "~a ~s" (condition-message c) irritants)))
       (format "~s" c)))
 
-;; Each path is tried alone, so one failure leaves the others done.
+;; Each path is tried alone, so one failure leaves the others done. The
+;; summary is returned, for the caller to say once the listings are read
+;; again, as Dired removes the lines before it says it is done.
 (define (%for-each-path! verb paths act!)
   (let ([done 0] [declined '()] [failures '()])
     (for-each
@@ -753,15 +755,14 @@
               (set! declined (cons path declined)))))
       paths)
     (let ([failures (reverse failures)] [declined (reverse declined)])
-      (ask:message
-        (string-append
-          (if (null? failures)
-              (format "~a ~a" verb (%count-text done))
-              (format "~a of ~a failed: ~{~a~^; ~}" (length failures) (%count-text (length paths))
-                      (map (lambda (f) (format "~a: ~a" (%name (car f)) (%failure-text (cdr f)))) failures)))
-          (if (null? declined)
-              ""
-              (format "; declined ~{~a~^, ~}" (map %name declined))))))))
+      (string-append
+        (if (null? failures)
+            (format "~a ~a" verb (%count-text done))
+            (format "~a of ~a failed: ~{~a~^; ~}" (length failures) (%count-text (length paths))
+                    (map (lambda (f) (format "~a: ~a" (%name (car f)) (%failure-text (cdr f)))) failures)))
+        (if (null? declined)
+            ""
+            (format "; declined ~{~a~^, ~}" (map %name declined)))))))
 
 (define (%show-names-while names thunk)
   (if (null? (cdr names))
@@ -798,13 +799,14 @@
           (lambda () ((deletion-confirmer) (format "~a ~a? " verb (%files-text paths)))))
         (let ([allowed? (%recursion-allowed? (recursive-deletes)
                           (if trash? "Recursively trash ~a? " "Recursively delete ~a? ") paths)])
-          (%for-each-path! (if trash? "Trashed" "Deleted") paths
-            (lambda (path)
-              (and (allowed? path)
-                   (begin
-                     (if trash? (files:move-to-trash path) (files:delete-file path))
-                     #t))))
-          (%refresh-folders! (map %parent-folder paths) (%no-carried-marks)))
+          (let ([summary (%for-each-path! (if trash? "Trashed" "Deleted") paths
+                           (lambda (path)
+                             (and (allowed? path)
+                                  (begin
+                                    (if trash? (files:move-to-trash path) (files:delete-file path))
+                                    #t))))])
+            (%refresh-folders! (map %parent-folder paths) (%no-carried-marks))
+            (ask:message summary)))
         (ask:message "(No deletions performed)"))))
 
 (commands:define-command (delete [paths (%current-paths 'dired:delete)])
@@ -878,20 +880,21 @@
   (%check-paths who paths)
   (unless (string? target)
     (assertion-violation who "not a string" target))
-  (let ([pairs (%targets who paths target)] [landed '()] [carried (%no-carried-marks)])
-    (%for-each-path! verb paths
-      (lambda (path)
-        (let ([to (cdr (assoc path pairs))] [mark (or mark (%mark-of path))])
-          (and (allowed? path) (%act-replacing! act! path to)
-               (let ([at (string-append (%resolved-folder to) (%name to))])
-                 (when mark (hashtable-set! carried at mark))
-                 (set! landed (cons at landed))
-                 #t)))))
+  (let* ([pairs (%targets who paths target)] [landed '()] [carried (%no-carried-marks)]
+         [summary (%for-each-path! verb paths
+                    (lambda (path)
+                      (let ([to (cdr (assoc path pairs))] [mark (or mark (%mark-of path))])
+                        (and (allowed? path) (%act-replacing! act! path to)
+                             (let ([at (string-append (%resolved-folder to) (%name to))])
+                               (when mark (hashtable-set! carried at mark))
+                               (set! landed (cons at landed))
+                               #t)))))])
     (%refresh-folders! (append (map %parent-folder paths) (map %parent-folder landed)) carried)
     (let ([view (views:current)])
       (when (and view (pair? landed) (views:buffer view)
                  (equal? (folder (views:buffer view)) (%parent-folder (car landed))))
-        (%point-on! view (car landed))))))
+        (%point-on! view (car landed))))
+    (ask:message summary)))
 
 (commands:define-command (rename [paths (%current-paths 'dired:rename)] [target (%read-target 'dired:rename "Rename")])
   "Renames the one path of PATHS to TARGET, or moves each into the folder TARGET; buffers visiting them follow."
