@@ -35,6 +35,7 @@
 
 (test "a module whose body raises is not loaded, and the configuration goes on as (init)"
   (check-equal? 'boom (condition-who (car first-reports)))
+  ;; The failed body's unload ends between tasks, after the raise.
   (test-runner:wait-until (lambda () (not (module-owner '(boom)))))
   (check-equal? loaded-by after-boom))
 

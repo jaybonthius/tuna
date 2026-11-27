@@ -411,6 +411,48 @@
     (check (owner-live? (owner-of '(flaky))))
     (check (not (eq? first (owner-of '(flaky)))))))
 
+(test "a module whose import raised on its first load loads with the import's file once that file is fixed"
+  (write-module! "fuse" "#!tuna\n(define (x) 1)\n(car '())\n")
+  (write-module! "lit" "#!tuna\n(import (fuse))\n(define (y) (fuse:x))\n")
+  (check-raises serious-condition? (load-named '(lit)))
+  (check-raises serious-condition? (load-named '(lit)))
+  (next-file-tick)
+  (write-module! "fuse" "#!tuna\n(define (x) 2)\n")
+  (load-named '(lit))
+  (check-equal? 2 ((eval 'lit:y (environment '(lit)))))
+  (check-equal? 2 ((eval 'fuse:x (environment '(fuse))))))
+
+(test "a module that loaded before loads with its import's fixed file after a load that failed in that import"
+  (write-module! "spark" "#!tuna\n(define (x) 1)\n")
+  (write-module! "flare" "#!tuna\n(import (spark))\n(define (y) (spark:x))\n")
+  (load-named '(flare))
+  (unload-owner! (owner-of '(spark)))
+  (next-file-tick)
+  (write-module! "spark" "#!tuna\n(define (x) 2)\n(car '())\n")
+  (check-raises serious-condition? (load-named '(flare)))
+  (next-file-tick)
+  (write-module! "spark" "#!tuna\n(define (x) 3)\n")
+  (load-named '(flare))
+  (check-equal? 3 ((eval 'flare:y (environment '(flare))))))
+
+(test "a module whose import's import raised on its first load loads with that file once it is fixed"
+  (write-module! "ember" "#!tuna\n(define (x) 1)\n(car '())\n")
+  (write-module! "coal" "#!tuna\n(import (ember))\n(define (y) (ember:x))\n")
+  (write-module! "hearth" "#!tuna\n(import (coal))\n(define (z) (coal:y))\n")
+  (check-raises serious-condition? (load-named '(hearth)))
+  (next-file-tick)
+  (write-module! "ember" "#!tuna\n(define (x) 2)\n")
+  (load-named '(hearth))
+  (check-equal? 2 ((eval 'hearth:z (environment '(hearth))))))
+
+(test "a module whose first load failed to compile loads once its file is fixed"
+  (write-module! "typo" "#!tuna\n(define (x) 1)\n(define)\n")
+  (check-raises syntax-violation? (load-named '(typo)))
+  (next-file-tick)
+  (write-module! "typo" "#!tuna\n(define (x) 2)\n")
+  (load-named '(typo))
+  (check-equal? 2 ((eval 'typo:x (environment '(typo))))))
+
 (test "exit-anyway? and owner-unloading can be advised"
   (let ([unloading '()] [o (make-owner '(advised))])
     (define (no next c) #f)
@@ -559,6 +601,7 @@
   (write-module! "catcher" "#!tuna\n(define caught (guard (c [#t 'caught]) (invoke-library '(kaboom))))\n")
   (reload-modules! '((catcher)))
   (check-equal? 'caught (eval 'catcher:caught (environment '(catcher))))
+  ;; The failed body's unload ends between tasks, after the raise.
   (test-runner:wait-until (lambda () (not (owner-of '(kaboom)))))
   (check (owner-live? (owner-of '(catcher))))
   (write-module! "after-catcher" "#!tuna\n(define (f) 1)\n")
@@ -567,9 +610,11 @@
 (test "a body that raises when Chez invokes it, outside a load, is dropped"
   (write-module! "evalboom" "#!tuna\n(define (x) 1)\n(car '())\n")
   (check-raises serious-condition? (eval '(evalboom:x) (environment '(evalboom))))
+  ;; The failed body's unload ends between tasks, after the raise.
   (test-runner:wait-until (lambda () (not (owner-of '(evalboom)))))
   (write-module! "localboom" "#!tuna\n(define (x) 1)\n(car '())\n")
   (check-raises serious-condition? (eval '(let () (import (localboom)) (localboom:x)) (interaction-environment)))
+  ;; The failed body's unload ends between tasks, after the raise.
   (test-runner:wait-until (lambda () (not (owner-of '(localboom))))))
 
 (test "a jump back into an owner's code runs as the owner, and raises &unloaded once its unload has begun"
@@ -684,6 +729,20 @@
   (check (not (memq 'hidden:%helper (library-exports '(hidden)))))
   (check-raises syntax-violation? (load-named '(peeker)))
   (check-equal? 'helped (eval '(hidden:%helper) (interaction-environment))))
+
+(test "the top level's names of an unloaded module, or one its reload no longer defines, raise &unloaded from code compiled before or after"
+  (define (raised-owner thunk) (guard (c [(unloaded? c) (unloaded-owner c)]) (thunk) 'returned))
+  (define (top form) (eval form (interaction-environment)))
+  (write-module! "faded" "#!tuna\n(define (f) 1)\n(define (g) 2)\n")
+  (load-named '(faded))
+  (let ([first (owner-of '(faded))] [g-before (top '(lambda () (faded:g)))])
+    (next-file-tick)
+    (write-module! "faded" "#!tuna\n(define (f) 1)\n")
+    (reload-modules! '((faded)))
+    (check-equal? (list first first) (map raised-owner (list g-before (lambda () (top '(faded:g)))))))
+  (let ([second (owner-of '(faded))] [f-before (top '(lambda () (faded:f)))])
+    (unload-owner! second)
+    (check-equal? (list second second) (map raised-owner (list f-before (lambda () (top '(faded:f))))))))
 
 (test "a first stop that lands in with-mutex's winders still releases the mutex"
   (write-module! "locker"

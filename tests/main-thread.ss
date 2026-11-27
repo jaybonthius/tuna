@@ -107,6 +107,7 @@
 
 (test "a cancel ends a module's body, and the module is unloaded"
   (check-raises cancelled? (load-module! '(main-thread runaway)))
+  ;; The failed body's unload ends between tasks, after the raise.
   (test-runner:wait-until (lambda () (not (module-owner '(main-thread runaway))))))
 
 (test "after a warning, the code that raised it goes on"

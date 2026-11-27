@@ -215,6 +215,7 @@
       (on-unload (lambda () (fixtures:note! 'boom-unloaded)))
       (car '())))
   (check-equal? 'car (condition-who (raised '(import (boom)))))
+  ;; The failed body's unload ends between tasks, after the raise.
   (test-runner:wait-until (lambda () (not (module-owner '(boom)))))
   (check-equal? '(boom-unloaded) (fixtures:take-notes!))
   (check-equal? '("a" (announce)) (save "a"))
@@ -225,6 +226,7 @@
   (for-each
     (lambda (form)
       (check-equal? 'car (condition-who (raised form)))
+      ;; The failed body's unload ends between tasks, after the raise.
       (test-runner:wait-until (lambda () (not (or (module-owner '(outer)) (module-owner '(boom)))))))
     '((import (outer)) (load-module! '(outer))))
   (check-equal? '(boom-unloaded boom-unloaded) (fixtures:take-notes!))
@@ -233,6 +235,7 @@
 (test "a module whose first load failed reads its saved file when it is imported again"
   (fixtures:write-lib-module! '(fizzle) '((import (saver)) (define (x) 1) (car '())))
   (check-equal? 'car (condition-who (raised '(import (fizzle)))))
+  ;; The failed body's unload ends between tasks, after the raise.
   (test-runner:wait-until (lambda () (not (module-owner '(fizzle)))))
   (fixtures:write-lib-module! '(fizzle) '((import (saver)) (define (x) 2)))
   (check-equal? 2 (fixtures:at-repl '(begin (import (fizzle)) (fizzle:x)))))

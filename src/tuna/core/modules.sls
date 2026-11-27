@@ -267,15 +267,26 @@
     (for-each run-module! (filter (lambda (name) (hashtable-contains? found-libraries name)) names)))
 
   ;; Chez runs the bodies of the imports a library refers to before its
-  ;; own, so a raise there leaves a module whose body never started; it is
-  ;; marked stale all the same, so the next load starts from a new
-  ;; instance.
+  ;; own, so a raise there leaves the modules on the way to it with bodies
+  ;; that never started. Each is marked stale all the same, with the
+  ;; imports Chez records for it, so the next load starts from new
+  ;; instances and reaches the stale import that raised. A library that
+  ;; failed to compile is gone from Chez, so the next load compiles it
+  ;; anew; a plain library is left to Chez, which runs its body again.
   (define (drop-failed-bodies! outer name)
     (for-each (lambda (b) (unless (memq b outer) (drop-body! b))) (running-body-records))
     (forget-raised-in-body!)
-    (let ([m (module-of name)])
-      (unless (or (module-state-loaded? m) (module-state-instance m))
-        (module-state-stale?-set! m #t))))
+    (let mark ([name name])
+      (let ([source (hashtable-ref found-libraries name #f)])
+        (when (and source (not (module-loaded? name)) (not (module-stale? name)) (tuna-file? source)
+                   (call-with-library-lock (lambda () (member name (library-list)))))
+          (let ([m (module-of name)]
+                [imports (filter (lambda (import) (hashtable-contains? found-libraries import))
+                                 (call-with-library-lock
+                                   (lambda () (library-requirements name (library-requirements-options import)))))])
+            (module-state-imports-set! m imports)
+            (module-state-stale?-set! m #t)
+            (for-each mark imports))))))
 
   (meta define (import-specs forms)
     (let loop ([forms forms] [specs '()])
@@ -1017,15 +1028,17 @@
   ;; Every loaded module's names are the top level's, as a REPL expects.
   ;; Chez cannot remove a binding from an environment, so the names of an
   ;; unloaded module, and those a reloaded one no longer exports, become
-  ;; keywords that raise when used; a module loaded again is imported
-  ;; again.
-  (define (raising-keyword symbol message name)
+  ;; keywords that raise when used, with the &unloaded that code compiled
+  ;; before raises, so one handler sees both; a module loaded again is
+  ;; imported again.
+  (define (raising-keyword symbol message instance)
     (lambda (x)
-      (errorf symbol message name)))
+      (raise (condition (make-unloaded instance) (make-who-condition symbol)
+               (make-message-condition (format message (owner-name instance)))))))
 
-  (define (shadow! symbol message name)
+  (define (shadow! symbol message instance)
     (hashtable-delete! exporters symbol)
-    (define-top-level-syntax symbol (raising-keyword symbol message name) top-level))
+    (define-top-level-syntax symbol (raising-keyword symbol message instance) top-level))
 
   ;; The modules loaded or unloaded since the top level last caught up,
   ;; newest first: a start that loads many modules would otherwise look
@@ -1048,15 +1061,18 @@
     (let ([current (module-owner name)])
       (cond
         [(and current (owner-live? current))
-         (unless (eq? current (hashtable-ref imported-instances name #f))
-           (let* ([old (hashtable-ref imported-exports name '())]
-                  [privates (private-definitions name current)]
-                  [exports (append (call-with-library-lock (lambda () (library-exports name)))
-                                   (map change-detail privates))])
-             (for-each (lambda (symbol) (unless (memq symbol exports) (shadow! symbol "module ~s no longer defines it" name))) old)
-             (call-with-library-lock (lambda () (interpret `(import ,name) top-level)))
-             (note-imported! name current exports privates)))]
+         (let ([previous (hashtable-ref imported-instances name #f)])
+           (unless (eq? current previous)
+             (let* ([old (hashtable-ref imported-exports name '())]
+                    [privates (private-definitions name current)]
+                    [exports (append (call-with-library-lock (lambda () (library-exports name)))
+                                     (map change-detail privates))])
+               (for-each (lambda (symbol) (unless (memq symbol exports) (shadow! symbol "module ~s no longer defines it" previous))) old)
+               (call-with-library-lock (lambda () (interpret `(import ,name) top-level)))
+               (note-imported! name current exports privates))))]
         [(and (not current) (hashtable-contains? imported-instances name))
-         (for-each (lambda (symbol) (shadow! symbol "module ~s is unloaded" name)) (hashtable-ref imported-exports name '()))
+         (let ([previous (hashtable-ref imported-instances name #f)])
+           (for-each (lambda (symbol) (shadow! symbol "module ~s is unloaded" previous))
+                     (hashtable-ref imported-exports name '())))
          (hashtable-delete! imported-instances name)
          (hashtable-delete! imported-exports name)]))))

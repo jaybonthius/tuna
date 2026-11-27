@@ -64,6 +64,7 @@
       (lambda ()
         (check-raises assertion-violation? (load-module! '(report dict)))
         (check-raises assertion-violation? (load-module! '(report uses-dict))))))
+  ;; The failed body's unload ends between tasks, after the raise.
   (test-runner:wait-until (lambda () (not (module-owner '(report dict))))))
 
 (test "after a reload whose body raises, the previous version loads again"
