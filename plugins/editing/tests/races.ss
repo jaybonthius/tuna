@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (test-runner) (options) (hooks) (commands) (web) (keys) (views) (buffers) (kill-ring) (undo)
+(import (tuna) (test) (test-user) (test-runner) (options) (web) (keys) (views) (buffers) (kill-ring) (undo)
         (editing) (editing-test scene)
         (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 
@@ -9,12 +9,15 @@
     "the mark is not set, so there is no region"))
 
 ;; A user's C-g reaches Tuna on the server's thread while keys run, so a
-;; quit lands inside whatever key's command is running then.
-(define (storm! quit! thunk)
-  (let* ([quitting #t] [stopped #f] [others '()]
-         [note-report (lambda (next c) (unless (cancelled? c) (set! others (cons (editing-test/scene:condition-text c) others))))]
-         [until (+ (real-time) 1500)]
-         [rounds 0])
+;; quit lands inside whatever key's command is running then, which reports
+;; it. How many land in a given time depends on the machine's load, so the
+;; storm goes on until enough? of the number reported says enough have.
+(define (storm! quit! enough? thunk)
+  (let* ([quitting #t] [stopped #f] [quits 0] [others '()]
+         [note-report (lambda (next c)
+                        (cond
+                          [(not (cancelled? c)) (set! others (cons (editing-test/scene:condition-text c) others))]
+                          [(eq? 'quit (cancelled-reason c)) (set! quits (+ quits 1))]))])
     (advice-add! report note-report)
     (fork-task
       (lambda (restore)
@@ -25,29 +28,15 @@
                 (chez:sleep (make-time 'time-duration 500000 0))
                 (loop))
               (set! stopped #t)))))
-    (let loop ()
-      (when (< (real-time) until)
+    (let loop ([rounds 0])
+      (unless (and (> rounds 10) (enough? quits))
         (thunk)
-        (set! rounds (+ rounds 1))
-        (loop)))
+        (loop (+ rounds 1))))
     (set! quitting #f)
     (test-runner:wait-until (lambda () stopped))
     (test-user:settle)
     (advice-remove! report note-report)
-    (values rounds others)))
-
-;; A command a quit stops never gets to after-command.
-(define (stopped-during thunk)
-  (let* ([begun 0] [ended 0]
-         [note-begun (lambda (command) (set! begun (+ begun 1)))]
-         [note-ended (lambda (command) (set! ended (+ ended 1)))])
-    (hooks:add! commands:before-command note-begun)
-    (hooks:add! commands:after-command note-ended)
-    (call-with-values thunk
-      (lambda results
-        (hooks:remove! commands:after-command note-ended)
-        (hooks:remove! commands:before-command note-begun)
-        (apply values (- begun ended) results)))))
+    others))
 
 (define (press-quit!) (web:post-input! (test-user:client) '(("type" . "key") ("name" . "C-g") ("quit" . #t))))
 
@@ -74,16 +63,12 @@
         ;; depends on the machine, so the history is unbounded to keep the
         ;; first state.
         (buffers:with-buffer storm (options:set-local! undo:limit (greatest-fixnum)))
-        (let-values ([(stopped rounds others)
-                      (stopped-during
-                        (lambda ()
-                          (storm! press-quit!
-                            (lambda ()
-                              (for-each test-user:press!
-                                '("a" "S-<left>" "b" "C-SPC" "M-b" "M-w" "C-y" "M-y" "C-k" "C-y" "DEL" "M-f" "C-t" "M-u" "C-n" "C-a"))))))])
-          (check (> rounds 10))
-          (check (> stopped 10))
-          (check-equal? '() (remp (lambda (m) (member m refusals)) others)))
+        (check-equal? '()
+          (remp (lambda (m) (member m refusals))
+                (storm! press-quit! (lambda (quits) (> quits 10))
+                  (lambda ()
+                    (for-each test-user:press!
+                      '("a" "S-<left>" "b" "C-SPC" "M-b" "M-w" "C-y" "M-y" "C-k" "C-y" "DEL" "M-f" "C-t" "M-u" "C-n" "C-a"))))))
         (check (on-stops? storm))
         (let ([other (views:make storm)])
           (views:set-mark! other 2)
@@ -113,18 +98,17 @@
       (options:set-local! undo:limit (greatest-fixnum))
       (options:set-local! editing:delete-active-region #f))
     (let ([requests 0])
-      (let-values ([(rounds others)
-                    (storm! (let ([test-task (current-task)]) (lambda () (when (request-quit! test-task) (set! requests (+ requests 1)))))
-                            (lambda ()
-                              (editing-test/scene:mouse! "down" 3) (editing-test/scene:mouse! "move" 9) (editing-test/scene:mouse! "drag" 12)
-                              (editing-test/scene:mouse! "down" 4 '("clicks" . 2)) (editing-test/scene:mouse! "click" 4 '("clicks" . 2))
-                              (editing-test/scene:mouse! "down" 20 '("clicks" . 3)) (editing-test/scene:mouse! "move" 2) (editing-test/scene:mouse! "drag" #f '("clicks" . 3))
-                              (editing-test/scene:mouse! "down" 6 '("modifiers" . #("shift"))) (editing-test/scene:mouse! "click" 6 '("modifiers" . #("shift")))
-                              (test-user:press! "x DEL")
-                              (editing-test/scene:mouse! "down" 2) (test-user:press! "C-g") (editing-test/scene:mouse! "move" 8) (editing-test/scene:mouse! "click" 8)))])
-        (check (> rounds 10))
-        (check (> requests 30))
-        (check-equal? '() (remp (lambda (m) (equal? m "Stale click: what was clicked is gone")) others))))
+      (check-equal? '()
+        (remp (lambda (m) (equal? m "Stale click: what was clicked is gone"))
+              (storm! (let ([test-task (current-task)]) (lambda () (when (request-quit! test-task) (set! requests (+ requests 1)))))
+                      (lambda (quits) (> requests 30))
+                      (lambda ()
+                        (editing-test/scene:mouse! "down" 3) (editing-test/scene:mouse! "move" 9) (editing-test/scene:mouse! "drag" 12)
+                        (editing-test/scene:mouse! "down" 4 '("clicks" . 2)) (editing-test/scene:mouse! "click" 4 '("clicks" . 2))
+                        (editing-test/scene:mouse! "down" 20 '("clicks" . 3)) (editing-test/scene:mouse! "move" 2) (editing-test/scene:mouse! "drag" #f '("clicks" . 3))
+                        (editing-test/scene:mouse! "down" 6 '("modifiers" . #("shift"))) (editing-test/scene:mouse! "click" 6 '("modifiers" . #("shift")))
+                        (test-user:press! "x DEL")
+                        (editing-test/scene:mouse! "down" 2) (test-user:press! "C-g") (editing-test/scene:mouse! "move" 8) (editing-test/scene:mouse! "click" 8))))))
     (check-equal? 1 (length (views:cursors (editing-test/scene:view))))
     (check (on-stops? b))
     (check (<= (length (keys:active-keymaps (test-user:client))) 3))

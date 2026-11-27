@@ -1,5 +1,5 @@
 (import (tuna) (test) (eval-test caught-reports) (test-user) (options) (buffers) (views) (layout) (layout-split) (editing) (echo-area) (undo)
-        (minibuffer) (completion) (files) (chez-scheme) (chez-scheme-completion) (eval) (eval-test))
+        (minibuffer) (completion) (files) (chez-scheme) (chez-scheme-completion) (eval) (eval-test) (web))
 
 (define (message) (echo-area:current-message))
 
@@ -95,6 +95,20 @@
   (eval-test:eval! "(define x 2)" "C-u")
   (check-equal? '("alphax|\n" 2) (list (test-user:text) x))
   (test-user:press! "C-/"))
+
+(define evaluating #f)
+
+(test "a quit key stops a running evaluation, which raises &cancelled; the echo area shows Quit, and with C-u nothing is inserted"
+  (set! evaluating #f)
+  ;; test-user:press! would wait behind the evaluation, so the C-g comes
+  ;; from a thread of its own, as a browser's does.
+  (fork-task
+    (lambda (restore)
+      (let wait () (unless evaluating (sleep (make-time 'time-duration 1000000 0)) (wait)))
+      (web:post-input! (test-user:client) '(("type" . "key") ("name" . "C-g") ("quit" . #t)))))
+  (check-equal? '(cancelled)
+    (eval-test:reports-during (lambda () (eval-test:eval! "(begin (set! evaluating #t) (let loop () (loop)))" "C-u"))))
+  (check-equal? '("Quit" "alpha|\n") (list (message) (test-user:text))))
 
 (test "the current input port is empty while it runs, so a read sees the end of file at once"
   (check-equal? "#!eof" (shown-value "(read)")))

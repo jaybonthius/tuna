@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (web) (keys) (commands) (editing) (layout) (options) (views) (buffers))
+(import (tuna) (test) (test-user) (web) (keys) (commands) (editing) (layout) (options) (views) (buffers) (hooks))
 
 (define (raised-by who)
   (lambda (e) (and (who-condition? e) (eq? who (condition-who e)))))
@@ -31,7 +31,15 @@
   (let ([key (keys:read-key)])
     (buffers:insert! (views:buffer (layout:selected-view)) 1 key)))
 
+(define spinning #f)
+
+(commands:define-command (spin)
+  "Runs until cancelled."
+  (set! spinning #t)
+  (let loop () (loop)))
+
 (keys:bind! keys:global "C-c r" insert-read-key)
+(keys:bind! keys:global "C-c s" spin)
 (keys:bind! keys:global "C-c w" wait-for-ever)
 (keys:bind! keys:global "C-c n" note-client)
 (keys:bind! keys:global "C-c a" ask-the-page)
@@ -61,6 +69,24 @@
   (check-equal? 'paused waiting)
   (test-user:press! "C-g")
   (check-equal? '(cancelled quit) waiting))
+
+(test "a quit key stops a command that runs without pausing at the first quit, which the command reports before after-command runs"
+  (let* ([events '()]
+         [note-end (lambda (command) (set! events (cons command events)))]
+         [keep (lambda (next c) (set! events (cons (if (cancelled? c) (list 'cancelled (cancelled-reason c)) c) events)))])
+    (set! spinning #f)
+    (hooks:add! commands:after-command note-end)
+    (advice-add! report keep)
+    ;; test-user:press! would wait behind the running command, so the C-g
+    ;; comes from a thread of its own, as a browser's does.
+    (fork-task
+      (lambda (restore)
+        (let wait () (unless spinning (sleep (make-time 'time-duration 1000000 0)) (wait)))
+        (web:post-input! (test-user:client) '(("type" . "key") ("name" . "C-g") ("quit" . #t)))))
+    (test-user:press! "C-c s")
+    (advice-remove! report keep)
+    (hooks:remove! commands:after-command note-end)
+    (check-equal? (list '(cancelled quit) spin keys:keyboard-quit) (reverse events))))
 
 (test "a quit key typed to a command that reads a key is the key it reads, as in a browser"
   (test-user:show! "|")

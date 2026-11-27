@@ -31,17 +31,20 @@
     (list tuna "--script" (string-append (path-parent tuna) "/plugins/lsp/tests/lib/fake-server.ss")
           (string-append (path-parent tuna) "/libraries") (%config-of name) (%record-of name))))
 
-;; The server may be writing a long message as the record is read, so
-;; text after the last line break is not yet a message.
+;; Each process of a server writes a record of its own, numbered in the
+;; order they started. The server may be writing a long message as the
+;; record is read, so text after the last line break is not yet a message.
 (define (received name)
-  (if (file-exists? (%record-of name))
-      (let ([all (call-with-input-file (%record-of name) get-string-all)])
-        (let loop ([start 0] [i 0] [acc '()])
-          (cond
-            [(or (eof-object? all) (= i (string-length all))) (reverse acc)]
-            [(char=? (string-ref all i) #\newline) (loop (+ i 1) (+ i 1) (cons (string->json (substring all start i)) acc))]
-            [else (loop start (+ i 1) acc)])))
-      '()))
+  (let next ([n 1] [acc '()])
+    (let ([path (format "~a.~a" (%record-of name) n)])
+      (if (file-exists? path)
+          (let ([all (call-with-input-file path get-string-all)])
+            (let loop ([start 0] [i 0] [acc acc])
+              (cond
+                [(or (eof-object? all) (= i (string-length all))) (next (+ n 1) acc)]
+                [(char=? (string-ref all i) #\newline) (loop (+ i 1) (+ i 1) (cons (string->json (substring all start i)) acc))]
+                [else (loop start (+ i 1) acc)])))
+          (reverse acc)))))
 
 (define (ref v . keys)
   (let loop ([v v] [keys keys])

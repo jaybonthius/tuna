@@ -206,6 +206,79 @@
     (tables:remove! web:input-handlers "other")
     (web:close-client! c)))
 
+;; The spinning item holds the main thread, so the quit comes from a
+;; thread of its own, as a page's would; a second quit, should the first
+;; not end the item within 5 s, lets the test end and fail.
+(define (spin-and-quit! c post-spin!)
+  (let ([spun #f] [reported '()])
+    (define (ended?) (and spun (eq? 'done (task-state spun))))
+    (define (keep next e) (set! reported (cons e reported)))
+    (define (pause-thread ms) (sleep (make-time 'time-duration (* ms 1000000) 0)))
+    (tables:set! web:input-handlers "spin" (lambda (client item) (set! spun (current-task)) (let loop () (loop))))
+    (tables:set! web:input-handlers "other" (lambda (client item) (note! 'other)))
+    (advice-add! report keep)
+    (fork-task
+      (lambda (restore)
+        (let wait () (unless spun (pause-thread 1) (wait)))
+        (web:post-input! c '(("type" . "other") ("quit" . #t)))
+        (let wait ([ms 0])
+          (cond
+            [(ended?) (void)]
+            [(< ms 5000) (pause-thread 10) (wait (+ ms 10))]
+            [else (web:post-input! c '(("type" . "other") ("quit" . #t)))]))))
+    (post-spin!)
+    (let wait () (unless (ended?) (settle) (wait)))
+    (settle)
+    (advice-remove! report keep)
+    (tables:remove! web:input-handlers "spin")
+    (tables:remove! web:input-handlers "other")
+    (let-values ([(how detail) (join-task spun)])
+      (list how detail (map cancelled? reported)))))
+
+(test "a quit item cancels the code page's item that is running, not only one that pauses, at the first quit"
+  (let ([c (open-noting 'a)])
+    (check-equal? '(cancelled quit (#t))
+      (spin-and-quit! c (lambda () (web:post-input! c '(("type" . "spin"))))))
+    (check-equal? '(other) (taken!))
+    (web:close-client! c)))
+
+(test "items that wait behind a question run after the answer in order, each in its turn: one that raises is reported and the rest run"
+  (let ([c (open-noting 'a)])
+    (tables:set! web:input-handlers "ask" (lambda (client item) (note! (web:ask-page client "size" 1))))
+    (tables:set! web:input-handlers "fail" (lambda (client item) (note! 'fail) (car '())))
+    (tables:set! web:input-handlers "note" (lambda (client item) (note! (cdr (assoc "n" item)))))
+    (web:post-input! c '(("type" . "ask")))
+    (settle)
+    (for-each (lambda (item) (web:post-input! c item)) '((("type" . "note") ("n" . 1)) (("type" . "fail")) (("type" . "note") ("n" . 2))))
+    (settle)
+    (check-equal? '() (taken!))
+    (check-equal? '("~s is not a pair")
+      (reports-during
+        (lambda ()
+          (web:send-screen! c (haml (:p "one")) "One")
+          (settle))))
+    (check-equal? '((a screen "One") (a ask "size" 1) #("answer" 1) 1 fail 2) (taken!))
+    (web:post-input! c '(("type" . "note") ("n" . 3)))
+    (settle)
+    (check-equal? '(3) (taken!))
+    (for-each (lambda (type) (tables:remove! web:input-handlers type)) '("ask" "fail" "note"))
+    (web:close-client! c)))
+
+(test "a quit item cancels a running item that waited behind a question, at the first quit"
+  (let ([c (open-noting 'a)])
+    (tables:set! web:input-handlers "ask" (lambda (client item) (web:ask-page client "size" 1)))
+    (web:post-input! c '(("type" . "ask")))
+    (settle)
+    (check-equal? '(cancelled quit (#t))
+      (spin-and-quit! c
+        (lambda ()
+          (web:post-input! c '(("type" . "spin")))
+          (settle)
+          (web:send-screen! c (haml (:p "one")) "One"))))
+    (check-equal? '((a screen "One") (a ask "size" 1) other) (taken!))
+    (tables:remove! web:input-handlers "ask")
+    (web:close-client! c)))
+
 (test "web:post-input! takes only an item for an open client web:open-client opened"
   (let ([c (open-noting 'a)] [raised-by (lambda (who) (lambda (e) (and (who-condition? e) (eq? who (condition-who e)))))])
     (check-raises (raised-by 'web:post-input!) (web:post-input! c '(("type" . "x") 1)))

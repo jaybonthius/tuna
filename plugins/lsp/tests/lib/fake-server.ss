@@ -14,8 +14,18 @@
   (put-bytevector out (body->frame (json-rpc-message->bytevector message)))
   (flush-output-port out))
 
+;; Two servers of one name run at once, as one per module root, and one's
+;; long line can be split by the other's writes, so each process claims a
+;; record of its own, numbered in the order they start.
+(define own-record
+  (let claim ([n 1])
+    (let ([path (format "~a.~a" record n)])
+      (guard (c [(i/o-file-already-exists-error? c) (claim (+ n 1))])
+        (close-port (open-file-output-port path))
+        path))))
+
 (define (note! text)
-  (call-with-port (open-file-output-port record (file-options no-fail no-truncate append)
+  (call-with-port (open-file-output-port own-record (file-options no-fail no-truncate append)
                     (buffer-mode block) (native-transcoder))
     (lambda (p) (put-string p text) (newline p))))
 

@@ -110,9 +110,12 @@
   ;; From the first step of web's unload a request thread can no longer
   ;; act as web; what it would have handed over is dropped, as the page
   ;; is going away.
-  (define (post-as-web thunk)
+  (define (spawn-as-web procedure)
     (guard (c [(and (unloaded? c) (eq? (unloaded-owner c) %self)) #f])
-      (call-as-owner %self (lambda () (spawn-task (lambda (restore) (thunk)))))))
+      (call-as-owner %self (lambda () (spawn-task procedure)))))
+
+  (define (post-as-web thunk)
+    (spawn-as-web (lambda (restore) (thunk))))
 
   ;; A quit names the newest of its client's item tasks that has started:
   ;; the items queued behind a busy command, the quit's own among them, are
@@ -134,8 +137,8 @@
                 (client-quit-cancelled-set! c t)
                 (cancel-task t 'quit)))))))
 
-  (define (post-item c thunk)
-    (let ([t (post-as-web thunk)])
+  (define (post-item c procedure)
+    (let ([t (spawn-as-web procedure)])
       (when t
         (client-item-tasks-set! c (cons t (live-item-tasks c))))))
 
@@ -240,7 +243,7 @@
                (hashtable-delete! pending n)
                (client-next-set! c (fx+ n 1))
                (set! queued (fx+ queued 1))
-               (post-item c (lambda () (run-item c n next)))
+               (post-item c (lambda (restore) (run-item c n next restore)))
                (loop))))
          (and (fx>= (hashtable-size pending) max-held-items)
               (begin (remove-client! c) #t))])))
@@ -256,40 +259,47 @@
   ;; a quit does not wait, so it can stop the command. An item that
   ;; arrives while earlier ones still wait joins them, since it may run
   ;; before the task that releases them continues.
-  (define (run-item c seq item)
+  (define (run-item c seq item restore)
     (with-lock (set! queued (fx- queued 1)))
     (if (and (or (fx> (client-held c) 0) (pair? (client-deferred c))) (not (eq? (field item "quit") #t)))
         (client-deferred-set! c (append (client-deferred c) (list (cons seq item))))
-        (handle-in-order c seq item)))
+        (handle-in-order c seq item restore)))
 
-  (define (handle-in-order c seq item)
+  ;; An item task spawned under the lock by a task starts masked, as the
+  ;; lock's holder is, so the handler runs through the task's restore, or
+  ;; a quit would wait for the command it is meant to stop.
+  (define (handle-in-order c seq item restore)
     (dynamic-wind
       (lambda () (timers:set-idle! #f))
       (lambda ()
         (unless (client-removed? c)
           (client-through-set! c seq)
           (parameterize ([current-client c])
-            (handle-item c item))))
+            (restore (lambda () (handle-item c item))))))
       (lambda ()
         (when (with-lock (fx= queued 0))
           (timers:set-idle! #t)))))
 
-  ;; One task runs the waiting items in order, and stops where one of
-  ;; them asks its page in turn.
   (define (release-deferred! c)
     (client-held-set! c (fx- (client-held c) 1))
     (when (and (fx= (client-held c) 0) (pair? (client-deferred c)))
-      (with-lock
-        (set! queued (fx+ queued 1))
-        (post-item c
-          (lambda ()
-            (with-lock (set! queued (fx- queued 1)))
-            (let loop ()
-              (let ([items (client-deferred c)])
-                (when (and (fx= (client-held c) 0) (pair? items))
-                  (client-deferred-set! c (cdr items))
-                  (handle-in-order c (caar items) (cdar items))
-                  (loop)))))))))
+      (with-lock (post-deferred! c))))
+
+  ;; Caller holds the lock. Each waiting item runs in a task of its own,
+  ;; posted before the one ahead of it runs, so a raise, a quit or a pause
+  ;; in one leaves the rest to run, as for items that never waited; one
+  ;; that asks its page in turn holds the rest again.
+  (define (post-deferred! c)
+    (set! queued (fx+ queued 1))
+    (post-item c
+      (lambda (restore)
+        (with-lock (set! queued (fx- queued 1)))
+        (let ([items (client-deferred c)])
+          (when (and (fx= (client-held c) 0) (pair? items))
+            (client-deferred-set! c (cdr items))
+            (when (pair? (cdr items))
+              (with-lock (post-deferred! c)))
+            (handle-in-order c (caar items) (cdar items) restore))))))
 
   ;; The question goes after the screen the batch draws, so the page
   ;; answers about what the asking command has done so far.
