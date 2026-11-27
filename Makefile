@@ -11,7 +11,7 @@ SCRIPT_TESTS := $(filter-out $(BROWSER_TESTS),$(sort $(wildcard tests/*-test.sh)
 TRANSCRIPTS := $(sort $(wildcard tests/*/*.transcript))
 RUNS := $(TESTS:%=run/%) $(SCRIPT_TESTS:%=run/%) $(BROWSER_TESTS:%=run/%) $(TRANSCRIPTS:%=run/%)
 
-.PHONY: build test bench repl exe clean $(RUNS)
+.PHONY: build test repl exe clean $(RUNS)
 
 # Phony so that Chez, which tracks what each object was built against,
 # decides what is stale.
@@ -43,51 +43,6 @@ $(PYTHON_GRAMMAR):
 	  293fdc02038ee2bf0e2e206711b69c90ac0d413f $@
 
 $(filter run/tests/treesit-highlight/% run/tests/treesit/%,$(TRANSCRIPTS:%=run/%)) run/tests/faces-browser-test.sh: $(PYTHON_GRAMMAR)
-
-# Every benchmark runs, so that one failure hides none of the others. Tuna
-# reports an error in init.ss and goes on, so a benchmark shows a crash by
-# a result missing from its output.
-bench: exe
-	@status=0; \
-	sh bench/hot-paths.sh build/bin/tuna || status=1; \
-	sh bench/tick.sh build/bin/tuna || status=1; \
-	sh bench/startup.sh build/bin/tuna $(SCHEME) || status=1; \
-	sh bench/libraries.sh build/bin/tuna || status=1; \
-	sh bench/reload.sh build/bin/tuna || status=1; \
-	sh bench/document.sh build/bin/tuna || status=1; \
-	sh bench/buffers.sh build/bin/tuna || status=1; \
-	sh bench/commands.sh build/bin/tuna || status=1; \
-	sh bench/web.sh build/bin/tuna || status=1; \
-	sh bench/views.sh build/bin/tuna || status=1; \
-	sh bench/kill-ring.sh build/bin/tuna || status=1; \
-	sh bench/keys.sh build/bin/tuna || status=1; \
-	sh bench/repeat.sh build/bin/tuna || status=1; \
-	sh bench/layout.sh build/bin/tuna || status=1; \
-	sh bench/layout-tabs.sh build/bin/tuna || status=1; \
-	sh bench/layout-scroll-float.sh build/bin/tuna || status=1; \
-	sh bench/part-mode.sh build/bin/tuna || status=1; \
-	sh bench/saved.sh build/bin/tuna || status=1; \
-	sh bench/files.sh build/bin/tuna || status=1; \
-	sh bench/display.sh build/bin/tuna || status=1; \
-	sh bench/undo.sh build/bin/tuna || status=1; \
-	sh bench/undo-log.sh build/bin/tuna || status=1; \
-	sh bench/editing.sh build/bin/tuna || status=1; \
-	sh bench/mouse.sh build/bin/tuna || status=1; \
-	sh bench/ui.sh build/bin/tuna || status=1; \
-	sh bench/dired.sh build/bin/tuna || status=1; \
-	sh bench/modes.sh build/bin/tuna || status=1; \
-	sh bench/echo-status.sh build/bin/tuna || status=1; \
-	sh bench/completion.sh build/bin/tuna || status=1; \
-	sh bench/runs.sh build/bin/tuna || status=1; \
-	sh bench/jsonrpc.sh build/bin/tuna || status=1; \
-	sh bench/diagnostics.sh build/bin/tuna || status=1; \
-	sh bench/lsp.sh build/bin/tuna || status=1; \
-	sh bench/terminal.sh build/bin/tuna || status=1; \
-	sh bench/search.sh build/bin/tuna || status=1; \
-	sh bench/isearch.sh build/bin/tuna || status=1; \
-	sh bench/replace.sh build/bin/tuna || status=1; \
-	sh bench/occur.sh build/bin/tuna || status=1; \
-	exit $$status
 
 repl: build
 	$(SCHEME) --libdirs $(LIBDIRS) --compile-imported-libraries
