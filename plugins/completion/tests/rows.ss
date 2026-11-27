@@ -147,8 +147,6 @@
                (filter (lambda (node) (equal? "node whole" (test-user:element-attribute node "class")))
                        (test-user:elements (view-element (rows-view)) "node")))))
 
-(define (row-tokens) (map car (drawn-row-tokens)))
-
 ;; The stream's items are numbered by their place in the list, so any
 ;; drawn row gives where the list starts.
 (define (list-start)
@@ -172,17 +170,10 @@
 
 (define (row-at-top) (- (views:top (rows-view) (test-user:client)) (list-start) 1))
 
-(define (click-row! token version)
-  (let ([v (rows-view)])
-    (for-each
-      (lambda (action)
-        (set! %reports (+ %reports 1))
-        (web:post-input! (test-user:client)
-          `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
-            ("view" . ,(views:id v)) ("version" . ,version) ("showing" . ,(views:shown-count v)) ("report" . ,%reports)
-            ("token" . ,token))))
-      '("down" "click"))
-    (test-user:settle)))
+(define (drawn-row text)
+  (find (lambda (row) (string=? text (row-text row))) (test-user:elements (view-element (rows-view)) "ui-list-row")))
+
+(define (row-token text) (car (find (lambda (drawn) (string=? text (cdr drawn))) (drawn-row-tokens))))
 
 (define feed #f)
 
@@ -200,20 +191,20 @@
 
 (define (place) (list (placement) (views:point (rows-view)) (row-at-top) (completion:session-matches (completion-test/sessions:session))))
 
-(test "a stream's rounds and its end add rows without moving a list scrolled by hand, and a click on a row drawn before chooses it"
+(test "a stream's rounds and its end add rows without moving a list scrolled by hand or writing a drawn row afresh, and a click on a row chooses it"
   (let ([r (completion-test/sessions:start! stream-read)])
     (for-each (lambda (k) (fed! (* k 1000) (* (+ k 1) 1000))) (iota 5))
     (scroll-by-hand! 2000)
     (check-equal? (list 2000 "item-0") (list (row-at-top) (completion-test/sessions:selected-text (completion-test/sessions:session))))
-    (let ([before (place)] [version (buffers:version (views:buffer (rows-view)))]
-          [token (car (find (lambda (drawn) (string=? "item-2005" (cdr drawn))) (drawn-row-tokens)))])
+    (let ([before (place)] [token (row-token "item-2005")])
       (fed! 5000 5100)
       (feed 'done)
       (completion-test/sessions:wait-matches (completion-test/sessions:session))
       (test-user:settle)
       (check-equal? before (place))
       (check-equal? 5100 (rows-count))
-      (click-row! token version)
+      (check-equal? token (row-token "item-2005"))
+      (test-user:click-element! (drawn-row "item-2005"))
       (check-equal? "item-2005" (completion-test/sessions:result r)))))
 
 (test "with nothing selected a stream's rounds leave the view where it is, and a command shows the selection again"
@@ -251,5 +242,5 @@
 
 (test "a click on a row of a read's list chooses it"
   (let ([r (completion-test/sessions:start! (lambda () (completion:read "Word: " (list (completion:source (candidates (vector "alpha" "almond" "apple" "banana")))) #f)))])
-    (click-row! (list-ref (row-tokens) 2) (buffers:version (views:buffer (rows-view))))
+    (test-user:click-element! (drawn-row "almond"))
     (check-equal? "almond" (completion-test/sessions:result r))))

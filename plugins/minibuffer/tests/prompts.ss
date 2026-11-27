@@ -11,19 +11,6 @@
 
 (define name #f)
 
-(define %reports 0)
-
-(define (click! v at)
-  (for-each
-    (lambda (action)
-      (set! %reports (+ %reports 1))
-      (web:post-input! (test-user:client)
-        `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
-          ("view" . ,(views:id v)) ("version" . ,(buffers:version (views:buffer v)))
-          ("showing" . ,(views:shown-count v)) ("report" . ,%reports) ("at" . ,at) ("count" . 0))))
-    '("down" "click"))
-  (test-user:settle))
-
 (test "with no prompt waiting the prompts' part draws nothing"
   (test-user:settle)
   (check-equal? '() (prompt-elements))
@@ -129,12 +116,12 @@
   (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:read "Name: ")))])
     (test-user:type! "xyz")
     (let ([start (minibuffer:input-start (minibuffer-test/reading:prompt))] [v (prompt-view)])
-      (click! v (+ start 1))
+      (test-user:click! v (+ start 1))
       (check-equal? (+ start 1) (views:point v))
-      (click! v 3)
+      (test-user:click! v 3)
       (check-equal? start (views:point v))
       (test-user:press! "C-x o")
-      (click! v (+ start 2))
+      (test-user:click! v (+ start 2))
       (check (prompt-selected?))
       (check-equal? (+ start 2) (views:point v)))
     (minibuffer-test/reading:quit! r)))

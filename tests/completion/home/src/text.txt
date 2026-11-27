@@ -1,3 +1,0 @@
-needle one
-hay
-needle two

@@ -1,4 +1,0 @@
-#!/bin/sh
-printf './a.txt\000%s\n' '1:first'
-sleep 60
-printf './a.txt\000%s\n' '2:second'

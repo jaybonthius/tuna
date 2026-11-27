@@ -1,3 +1,0 @@
-alpha line
-beta define-record x
-gamma

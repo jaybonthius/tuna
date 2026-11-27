@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (test-runner) (saved) (minibuffer) (completion) (completion-list) (editing) (completion-test sessions))
+(import (tuna) (test) (test-user) (test-runner) (saved) (buffers) (layout) (minibuffer) (completion) (completion-list) (editing) (completion-test sessions))
 
 (saved:define-saved h '() list?)
 
@@ -62,3 +62,10 @@
     (test-user:press! "C-g")
     (check-raises cancelled? (completion-test/sessions:result r))
     (check-equal? '(1 (end #f)) (reverse seen))))
+
+(test "completion:preview-place checks what it is given"
+  (let* ([v (layout:selected-view)] [b (buffers:make "placed" "one\n")])
+    (check-raises (lambda (c) (equal? "not a position in the buffer" (condition-message c))) (completion:preview-place v b -1 '()))
+    (check-raises (lambda (c) (equal? "not a list of ranges in the buffer" (condition-message c))) (completion:preview-place v b 1 '((1 1000))))
+    (check-raises (lambda (c) (equal? "not a view" (condition-message c))) (completion:preview-place 'v b 1 '()))
+    (buffers:kill! b)))

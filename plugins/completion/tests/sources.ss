@@ -319,3 +319,30 @@
 (test "a search that asks as you type waits for 3 characters and 0.2 seconds without typing by default"
   (check-equal? 3 (completion:async-min-input))
   (check-equal? 0.2 (completion:async-delay)))
+
+(test "a faces procedure that raises is reported once, and its rows draw without it"
+  (let* ([calls 0]
+         [reported '()]
+         [keep (lambda (next c) (set! reported (cons (condition-message c) reported)))])
+    (advice-add! report keep)
+    (let ([r (completion-test/sessions:start!
+               (lambda ()
+                 (completion:read "? "
+                   (list (completion:source (candidates (vector "a" "b"))
+                           (faces (lambda (text value) (set! calls (+ calls 1)) (error 'shade "no shade")))))
+                   #f)))])
+      (test-user:settle)
+      (advice-remove! report keep)
+      (let ([s (completion-test/sessions:session)])
+        (check-equal? (list 1 '("no shade") '(() ()))
+                      (list calls reported (map (lambda (m) (completion:row-faces s m)) (completion-test/sessions:matches s)))))
+      (check-equal? '("a" "b") (map test-user:element-text (test-user:elements (test-user:screen) "completion-text")))
+      (quit! r))))
+
+(test "a source's lookup gives what the read answers, from the chosen candidate's value and spans"
+  (let ([r (completion-test/sessions:start!
+             (lambda ()
+               (completion:read "? " (list (completion:source (candidates (vector (cons "a" 1))) (lookup (lambda (value spans) (list value spans))))) #f)))])
+    (test-user:type! "a")
+    (test-user:press! "RET")
+    (check-equal? '(1 ((0 1 #f))) (completion-test/sessions:result r))))
