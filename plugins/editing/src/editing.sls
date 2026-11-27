@@ -488,13 +488,28 @@
           cursors
           (map (lambda (c rs) (map (lambda (r) (anchor-range b c (car r) (cdr r))) rs)) cursors per-cursor)))))
 
+  ;; A kill the buffer refuses has still copied its text, so each cursor
+  ;; goes to the far end of what it copied, as Emacs's kill-line and
+  ;; kill-word move point before they kill: the next kill then copies on
+  ;; from there instead of joining the same text again.
   (define (kill-ends! view ends-of delete?)
-    (let ([b (views:buffer view)] [ends (map (lambda (c) (call-with-values (lambda () (ends-of c)) cons)) (views:cursors view))])
-      (kill-ranges! view
-        (map (lambda (e) (list (cons (fxmin (car e) (cdr e)) (fxmax (car e) (cdr e))))) ends)
-        (lambda (c rs) (ranges-kill b (buffers:fitted-ranges b (caar rs) (cdar rs))))
-        (fx< (cdar ends) (caar ends))
-        delete?)))
+    (let* ([b (views:buffer view)]
+           [cursors (views:cursors view)]
+           [ends (map (lambda (c) (call-with-values (lambda () (ends-of c)) cons)) cursors)]
+           [far (map (lambda (e) (buffers:anchor b (cdr e))) ends)])
+      (guard (e [(and delete? (buffers:refused? e))
+                 (for-each
+                   (lambda (c a)
+                     (forget-temporary! c)
+                     (place-kept! view c (buffers:anchor-position a) #f))
+                   cursors far)
+                 (merge-met! view)
+                 (raise e)])
+        (kill-ranges! view
+          (map (lambda (e) (list (cons (fxmin (car e) (cdr e)) (fxmax (car e) (cdr e))))) ends)
+          (lambda (c rs) (ranges-kill b (buffers:fitted-ranges b (caar rs) (cdar rs))))
+          (fx< (cdar ends) (caar ends))
+          delete?))))
 
   (define last-yank '())
   (define yank-view #f)
@@ -957,30 +972,48 @@
     (lambda (c doc lo hi)
       (values (end-of-line doc (document:line doc (views:cursor-point c)) hi) #f))))
 
+;; C-u alone is no count, as in Emacs, where it only keeps the mark
+;; from being pushed.
+(define (%edge-count)
+  (let ([prefix (commands:prefix-argument)])
+    (and (not (pair? prefix)) prefix (commands:prefix-number))))
+
+(define (%tenths-target b doc lo hi n end?)
+  (let* ([size (* (fx- hi lo) n)]
+         [at (max lo (min hi (if end? (- hi (quotient size 10)) (+ lo (quotient size 10)))))]
+         [line (document:line doc at)])
+    (if (fx< line (document:line doc hi))
+        (fxmax lo (first-stop b (document:line-start doc (fx+ line 1))))
+        hi)))
+
 ;; No mark is set where point was, as Emacs pushes one: a mark here is
 ;; an active region, which typing would replace under delete-selection.
-(define (%to-edge who end?)
+(define (%to-edge who n end?)
+  (unless (or (not n) (and (integer? n) (exact? n)))
+    (assertion-violation who "not an exact integer or #f" n))
   (let* ([view (command-view who)] [left (views:point view)])
     (for-each (lambda (c) (views:remove-cursor! view c)) (cdr (views:cursors view)))
-    (move-cursors! who view 0 (lambda (c doc lo hi) (values (if end? hi lo) #f)))
+    (move-cursors! who view 0
+      (lambda (c doc lo hi)
+        (values (if n (%tenths-target (views:buffer view) doc lo hi n end?) (if end? hi lo)) #f)))
     (unless (fx= (views:point view) left)
       (jump-history:push! (views:buffer view) left view))))
 
-(commands:define-command (beginning-of-buffer)
-  "Moves the primary cursor to the start of the buffer and removes the other cursors, recording the place point left in jump-history."
-  (%to-edge 'editing:beginning-of-buffer #f))
+(commands:define-command (beginning-of-buffer [n (%edge-count)])
+  "Moves the primary cursor to the start of the buffer, or with N to the line after N tenths of it, and removes the other cursors, recording the place point left in jump-history."
+  (%to-edge 'editing:beginning-of-buffer n #f))
 
-(commands:define-command (end-of-buffer)
-  "Moves the primary cursor to the end of the buffer and removes the other cursors, recording the place point left in jump-history."
-  (%to-edge 'editing:end-of-buffer #t))
+(commands:define-command (end-of-buffer [n (%edge-count)])
+  "Moves the primary cursor to the end of the buffer, or with N to the line after N tenths of it from the end, and removes the other cursors, recording the place point left in jump-history."
+  (%to-edge 'editing:end-of-buffer n #t))
 
-(commands:define-command (beginning-of-buffer-other-view)
+(commands:define-command (beginning-of-buffer-other-view [n (%edge-count)])
   "Runs editing:beginning-of-buffer in layout:other-view-for-scrolling."
-  (views:call-with-view (layout:other-view-for-scrolling) (lambda () (commands:run beginning-of-buffer))))
+  (views:call-with-view (layout:other-view-for-scrolling) (lambda () (commands:run beginning-of-buffer n))))
 
-(commands:define-command (end-of-buffer-other-view)
+(commands:define-command (end-of-buffer-other-view [n (%edge-count)])
   "Runs editing:end-of-buffer in layout:other-view-for-scrolling."
-  (views:call-with-view (layout:other-view-for-scrolling) (lambda () (commands:run end-of-buffer))))
+  (views:call-with-view (layout:other-view-for-scrolling) (lambda () (commands:run end-of-buffer n))))
 
 ;; At an isolating node's edge the buffer has not ended, so the primary
 ;; cursor stopping there is no end of buffer.
@@ -1001,16 +1034,27 @@
   (check-count 'editing:backward-word n)
   (%move-words 'editing:backward-word (- n)))
 
-(commands:define-command (set-mark-command)
-  "Sets each cursor's mark at its point; run again at once, clears the marks."
+(commands:define-command (set-mark-command [prefix (commands:prefix-argument)])
+  "Sets each cursor's mark at its point; run again at once, clears the marks. With a prefix argument, moves each cursor to its mark and clears it."
   (let ([view (command-view 'editing:set-mark-command)])
-    (if (and (eq? (commands:last-command) set-mark-command) (views:mark view))
-        (begin
-          (clear-marks! view)
-          (say-mark! view "Mark deactivated"))
-        (begin
-          (set-marks! view views:cursor-point)
-          (say-mark! view "Mark set")))))
+    (cond
+      [prefix
+       (unless (views:mark view)
+         (error 'editing:set-mark-command "the mark is not set"))
+       (for-each
+         (lambda (c)
+           (let ([m (views:cursor-mark c)])
+             (when m
+               (forget-temporary! c)
+               (views:set-cursor! c m #f))))
+         (views:cursors view))
+       (merge-met! view)]
+      [(and (eq? (commands:last-command) set-mark-command) (views:mark view))
+       (clear-marks! view)
+       (say-mark! view "Mark deactivated")]
+      [else
+       (set-marks! view views:cursor-point)
+       (say-mark! view "Mark set")])))
 
 (commands:define-command (exchange-point-and-mark)
   "Swaps each cursor's point and mark."
@@ -1171,12 +1215,18 @@
   (buffers:insert! (views:buffer view) position
     (fold-left (lambda (text line) (string-append text "\n" line)) (car lines) (cdr lines))))
 
-(commands:define-command (yank)
-  "Inserts the kill ring's current entry at each cursor, with the mark before it and point after it."
-  (let ([view (command-view 'editing:yank)] [entry (kill-ring:current)])
-    (unless entry
+(commands:define-command (yank [prefix (commands:prefix-argument)])
+  "Inserts the kill ring's current entry at each cursor, with the mark before it and point after it; with C-u, point before it and the mark after it; with a count N, the entry N - 1 older, as the current one."
+  (let ([view (command-view 'editing:yank)])
+    (unless (kill-ring:current)
       (error 'editing:yank "the kill ring is empty"))
-    (yank-kills! view entry (delete-selection))))
+    (let ([older (cond
+                   [(or (not prefix) (pair? prefix)) 0]
+                   [(eq? prefix '-) -2]
+                   [else (- prefix 1)])])
+      (yank-kills! view (if (eqv? older 0) (kill-ring:current) (kill-ring:rotate! older)) (delete-selection)))
+    (when (pair? prefix)
+      (exchange-marks! view))))
 
 (commands:define-command (yank-pop [n (commands:prefix-number)])
   "Replaces the text the previous command yanked with the entry N older in the kill ring."
@@ -1377,23 +1427,37 @@
          (not (eq? (char-general-category before) 'Ps))
          (not (eq? (char-general-category after) 'Pe)))))
 
-(commands:define-command (delete-indentation)
-  "Joins each cursor's line to the line before it, replacing the line break and the spaces and tabs around it with one space, or none after an opening bracket, before a closing one, or beside an empty line."
+(define (%join-to-previous! view c line)
+  (let* ([b (views:buffer view)] [doc (buffers:document b)])
+    (let-values ([(lo hi) (content-bounds view doc)])
+      (when (fx> line (document:line doc lo))
+        (let-values ([(s e) (%line-text-range b doc line hi)])
+          (let* ([start (%blanks-start doc (fx- (document:line-start doc line) 1) lo)]
+                 [end (indentation:blanks-end doc s e)]
+                 [space? (%space-between? doc start end lo hi)]
+                 [at (delete-fitted! b start end)])
+            (when at
+              (when space? (buffers:replace! b at at " "))
+              (move-kept! view c at))))))))
+
+;; Joining from the last line up leaves the line numbers of those still
+;; to join as they were.
+(commands:define-command (delete-indentation [prefix (commands:prefix-argument)])
+  "Joins each cursor's line to the line before it, replacing the line break and the spaces and tabs around it with one space, or none after an opening bracket, before a closing one, or beside an empty line. With a prefix argument, joins the next line to it; with a region, joins the region's lines."
   (let* ([view (command-view 'editing:delete-indentation)] [b (views:buffer view)])
     (each-cursor view
       (lambda (c p m)
         (let ([doc (buffers:document b)])
-          (let-values ([(lo hi) (content-bounds view doc)])
-            (let ([line (document:line doc p)])
-              (when (fx> line (document:line doc lo))
-                (let-values ([(s e) (%line-text-range b doc line hi)])
-                  (let* ([start (%blanks-start doc (fx- (document:line-start doc line) 1) lo)]
-                         [end (indentation:blanks-end doc s e)]
-                         [space? (%space-between? doc start end lo hi)]
-                         [at (delete-fitted! b start end)])
-                    (when at
-                      (when space? (buffers:replace! b at at " "))
-                      (move-kept! view c at))))))))))))
+          (let-values ([(first last)
+                        (cond
+                          [prefix (let ([line (document:line doc p)]) (values line (fx+ line 1)))]
+                          [m (values (document:line doc (fxmin p m)) (document:line doc (fxmax p m)))]
+                          [else (let ([line (document:line doc p)]) (values (fx- line 1) line))])])
+            (let-values ([(lo hi) (content-bounds view doc)])
+              (let loop ([line (fxmin last (document:line doc hi))])
+                (when (fx> line first)
+                  (%join-to-previous! view c line)
+                  (loop (fx- line 1)))))))))))
 
 (commands:define-command (duplicate-dwim [n (commands:prefix-number)])
   "Inserts N copies of each cursor's region after it, or, at a cursor with no region, N copies of its line after the line, leaving the cursor and its region where they were."
