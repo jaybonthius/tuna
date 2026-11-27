@@ -1,5 +1,5 @@
 (library (plugins process)
-  (export run-program)
+  (export run-program shell-quote)
   (import (chezscheme) (plugins files))
 
   ;; Chez's system keeps the exit status, which open-process-ports loses to

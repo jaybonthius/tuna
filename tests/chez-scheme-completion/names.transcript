@@ -29,7 +29,7 @@
 ((sleep (tuna core replaced) procedure) (dynamic-wind (tuna core replaced) procedure) (car (chezscheme) procedure) (zeppo:%tune (zeppo) procedure) (help:keymap (help) variable) (help:%read-name (help) procedure) #f)
 > (let ([libraries (chez-scheme:tuna-libraries)])
     (list (list-head libraries 6) (and (member '(zeppo) libraries) #t)))
-(((tuna core replaced) (chezscheme) (tuna) (plugins) (start) (owned)) #t)
+(((tuna core replaced) (chezscheme) (tuna) (plugins) (test-runner) (start)) #t)
 > (let ([spellings (map chez-scheme:name-spelling (vector->list (chez-scheme:repl-names)))])
     (length (filter (lambda (s) (eq? s 'dynamic-wind)) spellings)))
 1

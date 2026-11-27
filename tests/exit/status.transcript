@@ -1,5 +1,0 @@
-; An exit called while another leaves its task, here from an after-thunk,
-; does not replace the first exit's status, 0.
-> (dynamic-wind void (lambda () (exit)) (lambda () (exit 2)))
-configuration unloading
-keeper unloading

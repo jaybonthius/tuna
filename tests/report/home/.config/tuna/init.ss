@@ -1,2 +1,0 @@
-(import (tuna))
-(import (console))

@@ -1,0 +1,2 @@
+#!tuna
+(define (hello) "hello")

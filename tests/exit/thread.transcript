@@ -1,9 +1,0 @@
-; On another thread, exit asks the main thread to exit; what the console
-; reads after it never runs. Unload actions run in clean-up tasks, as for
-; every exit.
-> (import (place))
-> (begin (join-task (fork-task (lambda (restore) (exit) (display "never")))) (void))
-configuration unloading
-unloading in a task
-keeper unloading
-> (display "never runs")

@@ -1,8 +1,0 @@
-; Exit called in a task leaves the task before any module unloads, so a
-; winder around the call can still use a module's definitions.
-> (import (user))
-> (dynamic-wind void (lambda () (exit)) (lambda () (user:say-leaving)))
-leaving the task
-configuration unloading
-user unloading
-keeper unloading

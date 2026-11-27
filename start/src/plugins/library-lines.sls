@@ -85,7 +85,7 @@
       [(eq? requester 'configuration) "the configuration"]
       [(eq? requester 'repl) "a line at the REPL"]
       [(eq? (car requester) 'tuna) (format "Tuna's own plugin ~a" (cdr requester))]
-      [(eq? (car requester) 'tuna-tests) (format "the tests of Tuna's own plugin ~a" (cdr requester))]
+      [(eq? (car requester) 'test-files) (format "the test files of ~a" (cdr requester))]
       [else (format "~a ~a" (car requester) (cdr requester))]))
 
   (define (unique-values key values)

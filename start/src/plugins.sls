@@ -689,7 +689,7 @@
   (define installing-own? #f)
 
   (define (own-requester? requester)
-    (or (and (pair? requester) (memq (car requester) '(tuna tuna-tests)) #t)
+    (or (and (pair? requester) (memq (car requester) '(tuna test-files)) #t)
         (and (pair? requester) (eq? (car requester) 'library)
              (let ([location (hashtable-ref library-locations (cdr requester) #f)])
                (and location (under? own-libraries-root (location-folder location)))))))
@@ -828,8 +828,9 @@
       (apply append
         (map (lambda (id)
                (append (requests-of (cons 'tuna id) (own-plugin-folder id))
-                       (requests-of (cons 'tuna-tests id) (string-append (own-plugin-folder id) "/tests"))))
+                       (requests-of (cons 'test-files id) (string-append (own-plugin-folder id) "/tests"))))
              (own-plugin-ids)))
+      (requests-of '(test-files . start) (string-append (path-parent tuna-program) "/start"))
       (apply append
         (map (lambda (id) (requests-of (cons 'plugin id) (install-folder id (installed-source id))))
              (lined-plugins)))))
@@ -975,7 +976,7 @@
   (define (test-library-names)
     (apply append
       (map (lambda (id)
-             (if (exists (lambda (r) (and (pair? r) (eq? (car r) 'tuna-tests)))
+             (if (exists (lambda (r) (and (pair? r) (eq? (car r) 'test-files)))
                          (hashtable-ref library-requesters id '()))
                  (apply append
                    (map (lambda (root) (map car (library-files (car root))))
@@ -1359,7 +1360,7 @@
           (for-each
             (lambda (name)
               (let ([form `(import ,name)])
-                (unless (eq? (%call-reporting-form form (lambda () (%evaluate form) #t)) #t)
+                (unless (eq? (call-reporting form (lambda () (%evaluate form) #t) void) #t)
                   (set! loaded? #f))))
             (append (map list kept) (test-library-names)))))
       loaded?)))
@@ -1458,7 +1459,7 @@
          (%evaluate `(import (,(line-id datum)))))
        (let ([config (assq 'config (cddr datum))])
          (when config
-           (for-each (lambda (f) (%call-reporting-form f (lambda () (%eval-config-form f))))
+           (for-each (lambda (f) (call-reporting f (lambda () (%eval-config-form f)) void))
                      (cdr (%parts (car (last-pair (%parts form))))))))]
       [else (%evaluate form)])))
 
@@ -1472,8 +1473,11 @@
       [else (eval-form form)])))
 
 ;; A raise at run time carries no form, so the report of one from a form
-;; read from a file names the form and its position.
-(define (%call-reporting-form form thunk)
+;; read from a file names the form and its position. A cancel is the
+;; task's, so it goes on.
+(define (call-reporting form thunk after-report)
+  (unless (procedure? thunk) (assertion-violation 'plugins:call-reporting "not a procedure" thunk))
+  (unless (procedure? after-report) (assertion-violation 'plugins:call-reporting "not a procedure" after-report))
   (call/cc
     (lambda (k)
       (with-exception-handler
@@ -1483,11 +1487,11 @@
             [(and (warning? c) (not (serious-condition? c))) (report c)]
             [else
              (report
-               (if (or (not (condition? c)) (source-condition? c) (syntax-violation? c)
+               (if (or (not form) (not (condition? c)) (source-condition? c) (syntax-violation? c)
                        (not (syntax->annotation form)))
                    c
                    (condition c (make-source-condition form))))
-             (k (void))]))
+             (k (after-report))]))
         thunk))))
 
 (define (%read-annotated-forms path consume)
@@ -1499,6 +1503,12 @@
             (unless (eof-object? form)
               (consume form)
               (loop end))))))))
+
+(define (file-forms path)
+  (unless (string? path) (assertion-violation 'plugins:file-forms "not a string" path))
+  (let ([forms '()])
+    (%read-annotated-forms path (lambda (form) (set! forms (cons form forms))))
+    (reverse forms)))
 
 (define-public (configuration-loaded)
   "Called once the configuration has been evaluated."
@@ -1514,13 +1524,14 @@
     (set-box! %imported '())
     (call-as-owner o
       (lambda ()
-        (%call-reporting-form #f
+        (call-reporting #f
           (lambda ()
             (read-configuration-lines!)
             (let ([file (%configuration-file)])
               (when (file-exists? file)
                 (%read-annotated-forms file
-                  (lambda (form) (%call-reporting-form form (lambda () (eval-form form)))))))))))
+                  (lambda (form) (call-reporting form (lambda () (eval-form form)) void))))))
+          void)))
     (configuration-loaded)))
 
 ;;; The turn

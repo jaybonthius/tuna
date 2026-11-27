@@ -84,6 +84,13 @@
 (define (%remove-live! t)
   (with-mutex %mutex (set-box! %live (remq t (unbox %live)))))
 
+;; A timer cancelled before its task first runs finds no task waiting, so
+;; the task reads dead? before it waits, rather than waiting until due.
+(define (%waiting! t)
+  (with-mutex (%timer-mutex t)
+    (and (not (%timer-dead? t))
+         (begin (%timer-waiting?-set! t #t) #t))))
+
 ;; The timer's task stops waiting and reads dead? in one section under the
 ;; timer's mutex: cancel! either finds it waiting, and then the task sees
 ;; dead? and skips the procedure, or finds it past that section, and then
@@ -112,16 +119,16 @@
   (guard (c [(and (cancelled? c) (eq? (cancelled-reason c) %cancelled-timer)) (%remove-live! t)]
             [#t (%remove-live! t) (raise c)])
     (let loop ([last #f])
-      (with-mutex (%timer-mutex t) (%timer-waiting?-set! t #t))
-      (if (%timer-idle t) (%wait-idle! (%timer-idle t) last) (%wait-until! (%timer-due t)))
-      (when (%due? t)
-        (let ([period (unbox %idle-since)])
-          (%run-once t)
-          (cond
-            [(%timer-repeat t)
-             (%timer-due-set! t (%next-due (%timer-due t) (%timer-repeat t) (%monotonic-ns)))
-             (loop #f)]
-            [(%timer-idle t) (loop period)]))))
+      (when (%waiting! t)
+        (if (%timer-idle t) (%wait-idle! (%timer-idle t) last) (%wait-until! (%timer-due t)))
+        (when (%due? t)
+          (let ([period (unbox %idle-since)])
+            (%run-once t)
+            (cond
+              [(%timer-repeat t)
+               (%timer-due-set! t (%next-due (%timer-due t) (%timer-repeat t) (%monotonic-ns)))
+               (loop #f)]
+              [(%timer-idle t) (loop period)])))))
     (%remove-live! t)))
 
 (define (%start! t)

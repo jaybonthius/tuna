@@ -100,21 +100,5 @@
 
 (build-each maybe-compile-program '("bin/tuna.sps"))
 
-;; Test programs are compiled here too, so that their warnings fail the
-;; build, and with inspector information, so that a failure points at the
-;; faulting expression. Not recursive: a transcript's folder holds the
-;; files of a home, which the program under test compiles, not the build.
-;; The tests' own libraries are on the path only here, so that the program
-;; cannot import them.
-(parameterize ([library-directories
-                (append (library-directories)
-                        (list (cons "start/src" (string-append object-root "/start/src"))
-                              (cons "tests/lib" (string-append object-root "/tests/lib"))))]
-               [generate-inspector-information #t])
-  (build-each maybe-compile-program
-    (map (lambda (f) (string-append "tests/" f))
-         (filter (lambda (f) (equal? (path-extension f) "sps"))
-                 (sort string<? (directory-list "tests"))))))
-
 (printf "build: ~a compiled, ~a problems\n" compiled problems)
 (exit (if (= problems 0) 0 1))

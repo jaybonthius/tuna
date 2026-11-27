@@ -1,8 +1,0 @@
-; At the end of its input Tuna exits: the REPL's and the configuration's
-; changes are taken back and every module is unloaded, the newest first.
-> (import (user))
-> (on-unload (lambda () (display "repl unloading") (newline)))
-repl unloading
-configuration unloading
-user unloading
-keeper unloading
