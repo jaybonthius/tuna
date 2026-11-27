@@ -1,7 +1,7 @@
 #!tuna
-(import (commands) (keys) (layout-split) (web))
+(import (commands) (keys) (layout-split) (web) (tables))
 
-(define-table keymap "Keys while resizing; RET or ESC leaves.")
+(tables:define-table keymap "Keys while resizing; RET or ESC leaves.")
 
 (define %ends (make-weak-eq-hashtable))
 

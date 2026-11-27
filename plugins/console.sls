@@ -1,5 +1,5 @@
 #!tuna
-(import (tuna eval) (console input))
+(import (console input) (plugins))
 
 ;; The console offers no names, and a form that unloads the console still
 ;; prints its values, so nothing here is a changeable definition.
@@ -16,25 +16,27 @@
       (fresh-line out)
       (flush-output-port out)))
 
-  ;; Unloading the console quits the task waiting for input, which has
-  ;; nothing to report; any other quit is reported as in any task.
+  (define (evaluate text)
+    (let ([p (open-input-string text)])
+      (let loop ([results (list (void))])
+        (let ([form (read p)])
+          (if (eof-object? form)
+              (apply values results)
+              (loop (call-with-values (lambda () (plugins:eval-form form)) list)))))))
+
   (define (evaluate-next)
-    (as-module '(repl)
-      (let ([text (guard (c [(and (quit-condition? c) (not on?)) #f]) (read-form-text))])
-        (cond
-          [(eof-object? text) (exit)]
-          [text (call-with-values (lambda () (eval-text text)) show)]))))
-
-  (define on? #t)
-
-  (on-unload (lambda () (set! on? #f)))
+    (call-as-owner (plugins:repl-owner)
+      (lambda ()
+        (let ([text (read-form-text)])
+          (if (eof-object? text)
+              (exit)
+              (call-with-values (lambda () (evaluate text)) show))))))
 
   ;; A task per form reports a raise as any task does and ends only that
   ;; form; joining it makes the next read wait for the form's end, pauses
-  ;; included. What join-task raises again was reported already.
+  ;; included.
   (spawn-task
-    (lambda ()
+    (lambda (restore)
       (let loop ()
-        (guard (c [#t #f])
-          (join-task (spawn-task evaluate-next)))
-        (when on? (loop))))))
+        (join-task (spawn-task (lambda (restore) (evaluate-next))))
+        (loop)))))

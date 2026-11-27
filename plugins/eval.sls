@@ -1,25 +1,115 @@
 #!tuna
+(import (hooks) (options) (tables) (saved))
 ;; The plugin's options take the names of Chez's printer parameters, so
 ;; Chez's go by others.
-(import (tuna eval) (chez-scheme) (chez-scheme-completion) (buffers) (document) (views) (files) (commands) (keys)
+(import (plugins) (chez-scheme) (chez-scheme-completion) (buffers) (document) (views) (files) (commands) (keys)
         (editing) (echo-area) (minibuffer) (completion) (ask)
         (rename (only (chezscheme) print-length print-level)
                 (print-length chez-print-length) (print-level chez-print-level)))
 
 (define (%limit? v) (or (not v) (and (fixnum? v) (fx>= v 0))))
 
-(define-option print-length 12 %limit?
+(options:define-option print-length 12 %limit?
   "The most elements of a list or vector eval:show-result writes; #f writes them all.")
 
-(define-option print-level 4 %limit?
+(options:define-option print-level 4 %limit?
   "The deepest nesting of lists and vectors eval:show-result writes; #f writes every level.")
 
-(define-saved expression-history '() (lambda (v) (and (list? v) (for-all string? v))))
+(saved:define-saved expression-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
-(define-table expression-keymap "Added to the prompt of eval:expression.")
+(tables:define-table expression-keymap "Added to the prompt of eval:expression.")
 
-(define-hook expression-prompt-started
+(hooks:define-hook expression-prompt-started
   "Called with the prompt of eval:expression in its setup, before minibuffer:prompt-started.")
+
+(define (%read-all text)
+  (let ([p (open-input-string text)])
+    (let loop ([forms '()])
+      (let ([form (read p)])
+        (if (eof-object? form) (reverse forms) (loop (cons form forms)))))))
+
+(define (%starts-with? prefix s)
+  (let ([n (string-length prefix)])
+    (and (fx<= n (string-length s)) (string=? prefix (substring s 0 n)))))
+
+(define (%split-path s)
+  (let loop ([chars (string->list s)] [part '()] [parts '()])
+    (cond
+      [(null? chars) (reverse (cons (list->string (reverse part)) parts))]
+      [(char=? (car chars) #\/) (loop (cdr chars) '() (cons (list->string (reverse part)) parts))]
+      [else (loop (cdr chars) (cons (car chars) part) parts)])))
+
+;; Paths are compared as strings with the library roots, which are
+;; absolute and have no "." or ".." parts and no repeated "/".
+(define (%normal-path path)
+  (let* ([home (getenv "HOME")]
+         [path (if (and home (%starts-with? "~/" path))
+                   (string-append home (substring path 1 (string-length path)))
+                   path)])
+    (let loop ([parts (%split-path (if (path-absolute? path) path (string-append (current-directory) "/" path)))]
+               [kept '()])
+      (cond
+        [(null? parts)
+         (if (null? kept)
+             "/"
+             (call-with-string-output-port
+               (lambda (p) (for-each (lambda (part) (put-char p #\/) (put-string p part)) (reverse kept)))))]
+        [(member (car parts) '("" ".")) (loop (cdr parts) kept)]
+        [(string=? (car parts) "..") (loop (cdr parts) (if (null? kept) kept (cdr kept)))]
+        [else (loop (cdr parts) (cons (car parts) kept))]))))
+
+(define (%tuna-file? path)
+  (and (file-exists? path)
+       (call-with-input-file path (lambda (p) (equal? (get-string-n p 6) "#!tuna")))))
+
+;; A file under a library root is the module its path names only if the
+;; lookup finds that file for the name; an earlier root may hold another.
+(define (%path-module who path)
+  (exists
+    (lambda (root)
+      (let ([prefix (string-append (car root) "/")])
+        (and (%starts-with? prefix path)
+             (let ([name (map string->symbol
+                              (%split-path (path-root (substring path (string-length prefix) (string-length path)))))])
+               (let-values ([(source object found?)
+                             (default-library-search-handler who name (library-directories) (library-extensions))])
+                 (cond
+                   [(not source) #f]
+                   [(string=? (%normal-path source) path) name]
+                   [(%tuna-file? path) (errorf who "~a is not a module: module ~s is ~a" path name source)]
+                   [else #f]))))))
+    (filter (lambda (root) (string? (car root))) (library-directories))))
+
+(define (%evaluator path)
+  (let* ([path (and path (%normal-path path))]
+         [module (and path (%path-module 'eval:eval-text path))])
+    (cond
+      [module (lambda (form) (eval-in-module form module))]
+      [(and path (string=? path (plugins:configuration-file)))
+       (lambda (form) (call-as-owner (plugins:configuration-owner) (lambda () (plugins:eval-form form))))]
+      [else (lambda (form) (call-as-owner (plugins:repl-owner) (lambda () (plugins:eval-form form))))])))
+
+(define eval-text
+  (case-lambda
+    [(text) (eval-text text #f)]
+    [(text path)
+     (unless (string? text) (assertion-violation 'eval:eval-text "not a string" text))
+     (unless (or (not path) (string? path)) (assertion-violation 'eval:eval-text "not a path" path))
+     (let ([evaluate (%evaluator path)])
+       (let loop ([forms (%read-all text)] [results (list (void))])
+         (if (null? forms)
+             (apply values results)
+             (loop (cdr forms) (call-with-values (lambda () (evaluate (car forms))) list)))))]))
+
+(define (eval-file path)
+  (unless (string? path) (assertion-violation 'eval:eval-file "not a path" path))
+  (let* ([path (%normal-path path)] [module (%path-module 'eval:eval-file path)])
+    (cond
+      [module (if (module-owner module) (reload-modules! (list module)) (load-module! module)) (void)]
+      [(string=? path (plugins:configuration-file)) (plugins:load-configuration!)]
+      [else
+       (for-each (lambda (form) (call-as-owner (plugins:repl-owner) (lambda () (plugins:eval-form form))))
+                 (%read-all (call-with-input-file path get-string-all)))])))
 
 (define (%write-values port vs)
   (unless (null? vs)
@@ -120,7 +210,7 @@
     (cond
       [(and (equal? message "~? at char ~a of ~s") (fx= (length irritants) 4))
        (apply format (car irritants) (cadr irritants))]
-      [else (guard (e [(not (quit-condition? e)) message]) (apply format message irritants))])))
+      [else (guard (e [(not (cancelled? e)) message]) (apply format message irritants))])))
 
 (define (%after-space text from)
   (let loop ([i from])
@@ -181,30 +271,29 @@
       (assertion-violation 'eval:region "not a range of the buffer" (list start end)))
     (%show-or-insert 'eval:region (document:text doc start end) (files:path buffer) #f)))
 
-(define %reported (make-thread-parameter #f))
-
 ;; A failure eval-file handles itself, such as a module's reload that
-;; raised, reaches the user only through report; a warning counts too,
-;; since the confirmation would replace it on the echo area's one line.
+;; raised, reaches the user only through report, made by the task that ran
+;; the operation; a warning counts too, since the confirmation would
+;; replace it on the echo area's one line.
+(define %reports 0)
+
 (define (%note-report report c)
-  (let ([b (%reported)])
-    (when b (set-box! b #t)))
+  (set! %reports (+ %reports 1))
   (report c))
 
 (commands:define-command (buffer [buffer (buffers:current)])
   "Evaluates BUFFER whole, as its file when it visits one, asking to save it first, then says so when nothing was reported meanwhile."
   (unless (buffers:buffer? buffer)
     (assertion-violation 'eval:buffer "not a buffer" buffer))
-  (let* ([path (files:path buffer)] [file? (and path (file-exists? path))] [reported (box #f)])
+  (let* ([path (files:path buffer)] [file? (and path (file-exists? path))] [reports %reports])
     (when (and file? (buffers:modified? buffer) (ask:y-or-n? (format "Save ~a first? " (buffers:name buffer))))
       (files:save-buffer buffer))
-    (parameterize ([%reported reported])
-      (%evaluate
-        (lambda ()
-          (if file?
-              (eval-file path)
-              (eval-text (document:text (buffers:document buffer)) path)))))
-    (unless (unbox reported)
+    (%evaluate
+      (lambda ()
+        (if file?
+            (eval-file path)
+            (eval-text (document:text (buffers:document buffer)) path))))
+    (when (= reports %reports)
       (echo-area:message! "Evaluated the ~a buffer" (buffers:name buffer)))))
 
 (keys:bind! keys:global "M-:" expression)
@@ -217,6 +306,6 @@
 (keys:bind! completion:expression-action-keymap "e" region)
 (keys:bind! completion:expression-action-keymap "RET" region)
 (keys:bind! completion:name-action-keymap "e" region)
-(table-set! commands:region-commands region #t)
-(add-hook! completion:find-region %expression-name-region)
+(tables:set! commands:region-commands region #t)
+(hooks:add! completion:find-region %expression-name-region)
 (advice-add! report %note-report)

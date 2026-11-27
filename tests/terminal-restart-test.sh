@@ -19,11 +19,11 @@ sh "$(dirname "$0")/test-home.sh" "$tuna" "$dir/library" "$home"
 # No server starts: the web plugin is the transcripts' stand-in.
 cp "$(dirname "$0")/terminal/home/.config/tuna/lib/web.sls" "$home/.config/tuna/lib/web.sls"
 cat > "$home/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins) (document))
+(import (tuna) (document))
 (use-plugin terminal
   (config
-    (set-option! terminal:shell '("bash" "--norc" "--noprofile"))
-    (set-option! terminal:environment '(("PS1" . "$ ") ("HISTFILE" . #f)))))
+    (options:set! terminal:shell '("bash" "--norc" "--noprofile"))
+    (options:set! terminal:environment '(("PS1" . "$ ") ("HISTFILE" . #f)))))
 (define (contains? s part)
   (let ([n (string-length part)])
     (let loop ([i 0])
@@ -32,14 +32,14 @@ cat > "$home/.config/tuna/init.ss" <<'END'
 (define (wait-for b part)
   (let loop ([n 0])
     (unless (or (contains? (terminal:screen-text b) part) (= n 1000))
-      (sleep-for 0.01)
+      (timers:sleep 0.01)
       (loop (+ n 1)))))
 (define (write-out name value)
   (with-output-to-file (string-append (getenv "HOME") "/" name) (lambda () (write value)) 'replace))
 (cond
   [(file-exists? (string-append (getenv "HOME") "/first"))
    (let ([t (let find ([n 0])
-              (or (buffers:find "*terminal*") (= n 1000) (begin (sleep-for 0.01) (find (+ n 1)))))])
+              (or (buffers:find "*terminal*") (= n 1000) (begin (timers:sleep 0.01) (find (+ n 1)))))])
      (wait-for t "\n$ ")
      (terminal:send! t "pwd\r")
      (wait-for t "\n/tmp\n$ ")

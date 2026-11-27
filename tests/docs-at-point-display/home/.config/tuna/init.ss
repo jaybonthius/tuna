@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (document) (haml) (web))
+(import (hooks) (options) (timers))
+(import (tuna) (testing) (document) (haml) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -7,7 +8,7 @@
 (use-plugin minibuffer)
 (use-plugin docs-at-point
   (config
-    (set-option! docs-at-point:delay 0.05)))
+    (options:set! docs-at-point:delay 0.05)))
 (use-plugin docs-at-point-display)
 
 (define client (web:add-client! 1))
@@ -44,9 +45,9 @@
   (let ([word (word-at view)])
     (docs-at-point:make-doc (string-append "(" word " x)")
       (docs-at-point:doc-options [thing word] [spans (list (list (+ 2 (string-length word)) (+ 3 (string-length word)) faces:highlight))]))))
-(add-hook! docs-at-point:sources signature)
+(hooks:add! docs-at-point:sources signature)
 
-(define notes (buffers:make "notes" "alpha beta\ngamma\n"))
+(define notes (or (buffers:find "notes") (buffers:make "notes" "alpha beta\ngamma\n")))
 (layout:switch-to-buffer notes)
 ;; A second view, where *Docs* shows when the user asks for it.
 (define notes-view (layout:selected-view))
@@ -56,8 +57,8 @@
   (parameterize ([web:current-client client])
     (views:call-with-view (layout:selected-view) thunk)))
 (define (start! thunk)
-  (let ([t (spawn-task (lambda () (in-client thunk)))])
-    (sleep-for 0.05)
+  (let ([t (spawn-task (lambda (restore) (in-client thunk)))])
+    (timers:sleep 0.05)
     t))
 (define (type! s)
   (for-each (lambda (c) (press! (if (char=? c #\space) "SPC" (string c)))) (string->list s)))
@@ -74,5 +75,5 @@
     (and i (substring s i (+ (search close i) (string-length close))))))
 (define (bracket)
   (between (html->string (views:draw (minibuffer:prompt-view (prompt)) client)) "<span class=\"minibuffer-message\"" "</span>"))
-(set-idle! #t)
+(timers:set-idle! #t)
 (import (console))

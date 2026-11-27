@@ -1,5 +1,5 @@
 #!tuna
-(import (status-line) (layout) (views) (keys) (commands) (haml))
+(import (status-line) (layout) (views) (keys) (commands) (haml) (tables))
 
 (define (show-cursor-count view)
   (let ([n (length (views:cursors view))])
@@ -11,7 +11,7 @@
   (let ([view (layout:part-view (views:posn-node (keys:event-end event)))])
     (for-each (lambda (cursor) (views:remove-cursor! view cursor)) (cdr (views:cursors view)))))
 
-(define-table cursor-count-keys "Clicks on the cursor count.")
+(tables:define-table cursor-count-keys "Clicks on the cursor count.")
 
 (status-line:define-segment cursor-count
   (show show-cursor-count)
@@ -19,4 +19,4 @@
 
 (keys:bind! cursor-count-keys "<mouse-1>" keep-primary-cursor)
 
-(table-set! status-line:segments cursor-count (status-line:right 10))
+(tables:set! status-line:segments cursor-count (status-line:right 10))

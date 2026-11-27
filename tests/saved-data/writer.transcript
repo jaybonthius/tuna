@@ -1,0 +1,132 @@
+; The writer works on its own thread, so a test knows its earlier
+; requests are done once a later one has landed: it takes one request at
+; a time, in the order they were last queued.
+> (import (testing))
+> (define (file name) (string-append (getenv "HOME") "/.local/share/tuna/saved/user/repl/" name ".ss"))
+> (define (stored name)
+    (and (file-exists? (file name)) (guard (c [#t 'unreadable]) (call-with-input-file (file name) read))))
+> (saved:define-saved written 0 fixnum?)
+> (define (wait-for-writes!)
+    (let ([n (+ (written) 1)])
+      (saved:set! written n)
+      (testing:wait-until (lambda () (eqv? (stored "written") n)))))
+; A stored value is read with immutable strings and bytevectors.
+> (saved:define-saved loaded '() list?)
+> (loaded)
+("text" #vu8(1 2) #("inner"))
+> (list (immutable-string? (car (loaded))) (immutable-bytevector? (cadr (loaded)))
+        (immutable-string? (vector-ref (caddr (loaded)) 0)))
+(#t #t #t)
+; #f is written as a value, not taken for a removal.
+> (saved:define-saved flag #t boolean?)
+> (saved:set! flag #f)
+> (wait-for-writes!)
+> (list (file-exists? (file "flag")) (stored "flag"))
+(#t #f)
+; A cycle is not plain data.
+> (saved:define-saved cyclic '() list?)
+> (let ([v (list 1 2)])
+    (set-cdr! (cdr v) v)
+    (guard (c [#t (list (condition-who c) (condition-message c))]) (saved:set! cyclic v)))
+(saved:set! "not plain data")
+; A removal racing with sets never leaves the removed value's file
+; behind: once the writes land, the file holds the value, or there is no
+; file and the datum has its initial value.
+> (saved:define-saved raced '() list?)
+> (define mismatches 0)
+> (do ([round 0 (+ round 1)]) ((= round 20))
+    (for-each (lambda (t) (join-task t) (void))
+      (map (lambda (i)
+             (fork-task
+               (lambda (restore)
+                 (do ([n 0 (+ n 1)]) ((= n 200))
+                   (if (= (random 3) 0)
+                       (saved:remove! raced)
+                       (saved:set! raced (list i n)))))))
+           (iota 4)))
+    (when (odd? round) (saved:remove! raced))
+    (wait-for-writes!)
+    (unless (if (null? (raced)) (not (stored "raced")) (equal? (raced) (stored "raced")))
+      (set! mismatches (+ mismatches 1))))
+> mismatches
+0
+; A value set on another thread while the writer prints an earlier one,
+; which that thread then changes in place: a reader sees the first value
+; whole or the second.
+> (saved:define-saved printing '() list?)
+> (define first-value (map (lambda (i) (make-string 200 #\a)) (iota 5000)))
+> (define reading #t)
+> (define partial 0)
+> (define reader
+    (fork-task
+      (lambda (restore)
+        (let loop ()
+          (when reading
+            (let ([v (stored "printing")])
+              (unless (or (not v) (equal? v '("second"))
+                          (and (list? v) (= (length v) 5000)
+                               (for-all (lambda (s) (equal? s (make-string 200 #\a))) v)))
+                (set! partial (+ partial 1))))
+            (loop))))))
+> (begin
+    (saved:set! printing first-value)
+    (timers:sleep 0)
+    (join-task
+      (fork-task
+        (lambda (restore)
+          (do ([n 0 (+ n 1)]) ((= n 20))
+            (for-each (lambda (s) (string-fill! s (if (even? n) #\b #\c))) first-value))
+          (set-car! first-value "changed")
+          (saved:set! printing '("second")))))
+    (void))
+> (wait-for-writes!)
+> (begin (set! reading #f) (join-task reader) (list partial (stored "printing")))
+(0 ("second"))
+; A datum set in batch-ended's advice makes no batch of its own: a
+; display redraws after every batch, so such a batch would draw
+; everything again for nothing, and an idle Tuna would never rest.
+> (saved:define-saved counted 0 fixnum?)
+> (define (batches-while-idle set?)
+    (let ([batches 0])
+      (define (counting ended)
+        (set! batches (+ batches 1))
+        (when set? (saved:set! counted batches))
+        (ended))
+      (advice-add! batch-ended counting)
+      (timers:sleep 0.05)
+      (advice-remove! batch-ended counting)
+      batches))
+> (let* ([without (batches-while-idle #f)] [with (batches-while-idle #t)])
+    (wait-for-writes!)
+    (list (= without with) (= (stored "counted") with)))
+(#t #t)
+; The main thread goes on while the writer waits for the disk, and a
+; failed write is reported on the main thread. A FIFO at the temporary
+; file's name makes the writer wait in open, as it would for a slow disk;
+; fsync then fails on it, since a FIFO cannot be synchronized.
+> (saved:define-saved blocked 0 fixnum?)
+> (saved:set! blocked 0)
+> (wait-for-writes!)
+> (define temporary (format "~a.~a.new" (file "blocked") (get-process-id)))
+> (system (format "mkfifo '~a'" temporary))
+0
+> (define reported '())
+> (define (capture report c) (set! reported (cons (get-thread-id) reported)))
+> (advice-add! report capture)
+> (saved:set! blocked 1)
+> (timers:sleep 0.05)
+> (collect-rendezvous)
+> (testing:join (spawn-task (lambda (restore) 'went-on)))
+went-on
+> (stored "blocked")
+0
+> (let ([drain (fork-task (lambda (restore) (call-with-port (open-file-input-port temporary) get-bytevector-all)))])
+    (testing:wait-until (lambda () (pair? reported)))
+    (join-task drain)
+    (advice-remove! report capture)
+    (list (equal? reported (list (get-thread-id))) (file-exists? temporary) (stored "blocked")))
+(#t #f 0)
+> (saved:set! blocked 2)
+> (wait-for-writes!)
+> (stored "blocked")
+2

@@ -286,9 +286,9 @@
 ; with a region, RET leaves it
 > (after "(define (f x) ‸(g x))" "C-SPC" "C-e" "RET")
 "(define (f x) (g x))\n‸"
-; eol after (define-option name #f boolean?
-> (after "(define-option on-type-formatting? #f boolean?‸" "RET")
-"(define-option on-type-formatting? #f boolean?\n  ‸"
+; eol after (options:define-option name #f boolean?
+> (after "(options:define-option on-type-formatting? #f boolean?‸" "RET")
+"(options:define-option on-type-formatting? #f boolean?\n  ‸"
 ; eol after (define-condition-type &c &error
 > (after "(define-condition-type &c &error‸" "RET")
 "(define-condition-type &c &error\n  ‸"

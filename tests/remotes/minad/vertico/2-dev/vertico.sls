@@ -1,2 +1,3 @@
 #!tuna
-(define-option count 20 fixnum?)
+(import (options))
+(options:define-option count 20 fixnum?)

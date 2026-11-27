@@ -1,0 +1,27 @@
+; A datum's file is named by the source of its module's plugin, then by
+; the module and the datum: the user's own modules and the REPL's are the
+; user's, Tuna's own plugins are Tuna's, and a plugin installed from a
+; folder or a repository is that source's. Each part is made safe as a
+; file name.
+> (import (testing) (made) (placed) (mine util))
+> (saved:define-saved |a/b%c| 0 fixnum?)
+> (saved:define-saved |..| 0 fixnum?)
+> (for-each (lambda (s) (saved:set! s 1)) (list made:hits placed:hits mine/util:hits |a/b%c| |..|))
+> (define (files-under dir)
+    (apply append
+      (map (lambda (f)
+             (let ([p (string-append dir "/" f)])
+               (if (file-directory? p)
+                   (map (lambda (g) (string-append f "/" g)) (files-under p))
+                   (list f))))
+           (directory-list dir))))
+> (define root (string-append (getenv "HOME") "/.local/share/tuna/saved"))
+> (define home (apply string-append (map (lambda (c) (if (char=? c #\/) "%2F" (string c))) (string->list (getenv "HOME")))))
+> (define named
+    (list (string-append home "%2Fsrc%2Fmade/made/hits.ss") "tuna/placed/hits.ss" "user/mine/util/hits.ss"
+          "user/repl/%2E..ss" "user/repl/a%2Fb%25c.ss"))
+> (testing:wait-until (lambda () (for-all (lambda (f) (file-exists? (string-append root "/" f))) named)))
+> (equal? (sort string<? (files-under root)) (sort string<? named))
+#t
+> (cdr named)
+("tuna/placed/hits.ss" "user/mine/util/hits.ss" "user/repl/%2E..ss" "user/repl/a%2Fb%25c.ss")

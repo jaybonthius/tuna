@@ -9,7 +9,7 @@
 > (testing:wait-until (lambda () (checks:exists? (checks:log-of "~/b.txt"))))
 > (list (buffers:name a) (files:path a) (checks:exists? (checks:log-of "~/a.txt")) (checks:exists? (checks:log-of "~/b.txt")))
 ("b.txt" "$HOME/b.txt" #f #t)
-> (exists (lambda (entry) (entry a)) (hook-entries files:unsaved-kept))
+> (exists (lambda (entry) (entry a)) (hooks:entries files:unsaved-kept))
 #t
 > (buffers:replace! a 1 1 "2 ")
 #<edit 2>

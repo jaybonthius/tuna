@@ -1,5 +1,5 @@
 #!tuna
-(import (isearch) (search) (search-bench) (buffers) (views) (layout) (keys) (web))
+(import (isearch) (search) (search-bench) (buffers) (views) (layout) (keys) (web) (timers))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -19,14 +19,14 @@
     (apply press! client "C-M-s" keys)
     (let ([times (map (lambda (k)
                         (press! client "DEL")
-                        (sleep-for pause)
+                        (timers:sleep pause)
                         (collect-rendezvous)
                         (let ([start (now-ns)])
                           (press! client last-key)
                           (views:draw view client)
                           (/ (- (now-ns) start) 1e6)))
                       (iota runs))])
-      (guard (c [(quit-condition? c) #f]) (press! client "ESC"))
+      (guard (c [(cancelled? c) #f]) (press! client "ESC"))
       (median times))))
 
 (define (repeat-far-ms client runs)
@@ -37,7 +37,7 @@
       (map (lambda (k)
              (views:set-point! view 1)
              (press! client "C-s" "n" "e" "e" "d" "l" "e")
-             (let wait () (unless (search:scan-done? (isearch:search-scan (isearch:current client))) (sleep-for 0.01) (wait)))
+             (let wait () (unless (search:scan-done? (isearch:search-scan (isearch:current client))) (timers:sleep 0.01) (wait)))
              (collect-rendezvous)
              (let ([start (now-ns)])
                (press! client "C-s")

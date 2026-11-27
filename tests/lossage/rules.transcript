@@ -39,18 +39,19 @@
 > (since-mark)
 (harpo:honk)
 ; A command is named once its module has unloaded.
-> (unload-module! '(harpo))
+> (unload-owner! (module-owner '(harpo)))
 > (commands:command-named 'harpo:honk)
 #f
 > (list-tail (lossage:recent-keys) (- (length (lossage:recent-keys)) 3))
 ("RET" completion:exit harpo:honk)
 > (load-module! '(harpo))
+#<owner (harpo) 2>
 ; The record keeps the newest lossage:size keys and commands. Lowering
 ; the size drops the rest at once, so raising it brings none back.
-> (set-option! lossage:size 3)
+> (options:set! lossage:size 3)
 > (lossage:recent-keys)
 ("RET" completion:exit harpo:honk)
-> (set-option! lossage:size 6)
+> (options:set! lossage:size 6)
 > (lossage:recent-keys)
 ("RET" completion:exit harpo:honk)
 > (press! "<f5>" "<f5>")
@@ -58,41 +59,41 @@
 (completion:exit harpo:honk "<f5>" harpo:honk "<f5>" harpo:honk)
 ; Only the setting bounds the record, not a binding or a buffer's local
 ; value.
-> (with-options ([lossage:size 1]) (press! "<f5>"))
+> (options:with ([lossage:size 1]) (press! "<f5>"))
 > (lossage:recent-keys)
 ("<f5>" harpo:honk "<f5>" harpo:honk "<f5>" harpo:honk)
-> (in-client (lambda () (set-option-local! lossage:size 2)))
+> (in-client (lambda () (options:set-local! lossage:size 2)))
 > (press! "C-c" "h")
 > (lossage:recent-keys)
 (harpo:honk "<f5>" harpo:honk "C-c" "h" harpo:honk-twice)
-> (in-client (lambda () (remove-option-local! lossage:size)))
-> (raised (lambda () (set-option! lossage:size 0)))
-(set-option! "0 is not a valid value for lossage:size")
+> (in-client (lambda () (options:unset-local! lossage:size)))
+> (raised (lambda () (options:set! lossage:size 0)))
+(options:set! "0 is not a valid value for lossage:size")
 > (lossage:size)
 6
 ; The record can be read on another thread.
 > (equal? (on-thread lossage:recent-keys) (lossage:recent-keys))
 #t
 ; Reloading keys or commands reloads lossage, whose record starts empty.
-> (import (tuna eval))
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/keys.sls"))
+> (reload-modules! '((keys)))
 > (lossage:recent-keys)
 ()
 > (press! "<f5>")
 > (lossage:recent-keys)
 ("<f5>" harpo:honk)
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/commands.sls"))
+> (reload-modules! '((commands)))
 > (lossage:recent-keys)
 ()
 > (press! "<f5>")
 > (lossage:recent-keys)
 ("<f5>" harpo:honk)
-; Unloading it takes back its advice and its hook entry.
-> (map car (definition-changes keys:press!))
+; Unloading it takes back its advice and its hook entry; the
+; configuration, which imports it, loads a new instance that adds its own.
+> (map (lambda (c) (owner-name (car c))) (definition-changes keys:press!))
 ((lossage) (minibuffer) (echo-area) (echo-area) (keys))
-> (define entries (length (hook-entries commands:before-command)))
-> (unload-module! '(lossage))
-> (map car (definition-changes keys:press!))
-((minibuffer) (echo-area) (echo-area) (keys))
-> (- entries (length (hook-entries commands:before-command)))
-1
+> (define entries (length (hooks:entries commands:before-command)))
+> (define old (module-owner '(lossage)))
+> (unload-owner! old)
+> (list (owner-live? old) (exists (lambda (c) (eq? (car c) old)) (definition-changes keys:press!))
+        (- entries (length (hooks:entries commands:before-command))))
+(#f #f 0)

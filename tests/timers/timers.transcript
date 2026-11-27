@@ -4,105 +4,99 @@
 > (define (ring) (note! (list 'ring (current-owner) (task? (current-task)))))
 > (define once #f)
 > (begin
-    (set! once (run-with-timer 0.05 ring))
-    (list (timer? once) (equal? (timers) (list once)) (eq? (timer-procedure once) ring)
-          (module-changes '(repl))))
-(#t #t #t ((timer #<timer> #f)))
-> (sleep-for 0.15)
+    (set! once (timers:run-after 0.05 ring))
+    (list (timers:timer? once) (equal? (timers:live) (list once)) (eq? (timers:procedure once) ring)
+          (owner-changes (plugins:repl-owner))))
+(#t #t #t ())
+> (timers:sleep 0.15)
 > log
-((ring (repl) #t))
-> (list (timers) (module-changes '(repl)))
+((ring #<owner (repl) 1> #t))
+> (list (timers:live) (owner-changes (plugins:repl-owner)))
 (() ())
-> (as-module '(init) (run-with-timer 0 ring))
+> (call-as-owner (plugins:configuration-owner) (lambda () (timers:run-after 0 ring)))
 #<timer>
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (car log)
-(ring (init) #t)
+(ring #<owner (init) 1> #t)
 ; A repeating timer runs every repeat seconds until it is cancelled.
 > (define runs 0)
 > (define repeating #f)
 > (begin
-    (set! repeating (run-with-timer 0.2 (lambda () (set! runs (+ runs 1))) 0.2))
-    (sleep-for 0.5)
+    (set! repeating (timers:run-after 0.2 (lambda () (set! runs (+ runs 1))) 0.2))
+    (timers:sleep 0.5)
     runs)
 2
-> (cancel-timer! repeating)
-> (sleep-for 0.3)
-> (list runs (timers) (module-changes '(repl)))
+> (timers:cancel! repeating)
+> (timers:sleep 0.3)
+> (list runs (timers:live) (owner-changes (plugins:repl-owner)))
 (2 () ())
 ; A repeat that falls behind runs once, then keeps its rhythm.
 > (define behind-runs 0)
 > (define behind #f)
 > (begin
-    (set! behind (run-with-timer 0.3 (lambda () (set! behind-runs (+ behind-runs 1))) 0.3))
+    (set! behind (timers:run-after 0.3 (lambda () (set! behind-runs (+ behind-runs 1))) 0.3))
     (chez:sleep (make-time 'time-duration 0 1)))
 > behind-runs
 1
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > behind-runs
 2
-> (cancel-timer! behind)
+> (timers:cancel! behind)
 ; A timer cancelled before it runs never runs, even once its run is
 ; waiting on the main thread.
 > (set! log '())
-> (cancel-timer! (run-with-timer 0.05 (lambda () (note! 'cancelled))))
-> (let ([t (run-with-timer 0 (lambda () (note! 'cancelled-while-waiting)))])
+> (timers:cancel! (timers:run-after 0.05 (lambda () (note! 'cancelled))))
+> (let ([t (timers:run-after 0 (lambda () (note! 'cancelled-while-waiting)))])
     (chez:sleep (make-time 'time-duration 100000000 0))
-    (cancel-timer! t))
-> (sleep-for 0.15)
+    (timers:cancel! t))
+> (timers:sleep 0.15)
 > log
 ()
 ; A timer task that raises is reported, and the next runs.
 > (define ticks 0)
 > (begin
-    (run-with-timer 0.05 (lambda () (error 'timer "failed")))
-    (run-with-timer 0.1 (lambda () (set! ticks 1)))
-    (sleep-for 0.2))
+    (timers:run-after 0.05 (lambda () (error 'timer "failed")))
+    (timers:run-after 0.1 (lambda () (set! ticks 1)))
+    (timers:sleep 0.2))
 ! timer: failed
 > ticks
 1
 ; Unloading a module stops its timers, and reloading starts them afresh.
 > (import (ticker))
-> (sleep-for 0.2)
-> (> ticker:count 1)
+> (timers:sleep 0.2)
+> (> (ticker:count) 1)
 #t
-> (map car (module-changes '(ticker)))
-(define timer define)
-> (define first-timer (car (timers)))
-> (eval-file "~/.config/tuna/lib/ticker.sls")
-> (list (length (timers)) (eq? (car (timers)) first-timer))
+> (map car (owner-changes (module-owner '(ticker))))
+(define)
+> (define first-timer (car (timers:live)))
+> (reload-modules! '((ticker)))
+> (list (length (timers:live)) (eq? (car (timers:live)) first-timer))
 (1 #f)
-> (unload-module! '(ticker))
-> (timers)
+> (unload-owner! (module-owner '(ticker)))
+> (timers:live)
 ()
-; Unloading a module quits its paused timer tasks.
+; Unloading a module stops its paused timer tasks, past their handlers.
 > (load-module! '(ticker))
+#<owner (ticker) 3>
 > (begin
-    (as-module '(ticker)
-      (run-with-timer 0
+    (call-as-owner (module-owner '(ticker)) (lambda () (timers:run-after 0
         (lambda ()
-          (guard (c [(quit-condition? c) (display "ticker's timer quit") (newline)])
-            (sleep-for 3600)))))
+          (guard (c [(cancelled? c) (display "ticker's timer quit") (newline)])
+            (timers:sleep 3600))))))
     (void))
-> (sleep-for 0.1)
-> (unload-module! '(ticker))
-ticker's timer quit
-> (timers)
+> (timers:sleep 0.1)
+> (unload-owner! (module-owner '(ticker)))
+> (timers:live)
 ()
-; Arguments are checked, and a timer is a change, which only the main
-; thread makes.
-> (run-with-timer -1 ring)
-! run-with-timer: not a number of seconds with irritant -1
-> (run-with-timer 1 ring 0)
-! run-with-timer: not a number of seconds to repeat after with irritant 0
-> (run-with-timer 1 'ring)
-! run-with-timer: not a procedure with irritant ring
-> (cancel-timer! ring)
-! cancel-timer!: not a timer with irritant #<procedure ring>
-> (on-thread (lambda () (run-with-timer 1 ring)))
-"only the main thread makes changes"
-> (on-thread (lambda () (cancel-timer! once)))
-"only the main thread makes changes"
-; #!tuna/base is without the standard library.
-> (import (base-timer))
-! attempt to reference unbound identifier run-with-timer at line 2, char 16 of $HOME/.config/tuna/lib/base-timer.sls
+; Arguments are checked; a timer can be made on any thread.
+> (timers:run-after -1 ring)
+! timers:run-after: not a number of seconds with irritant -1
+> (timers:run-after 1 ring 0)
+! timers:run-after: not a number of seconds to repeat after with irritant 0
+> (timers:run-after 1 'ring)
+! timers:run-after: not a procedure with irritant ring
+> (timers:cancel! ring)
+! timers:cancel!: not a timer with irritant #<procedure ring>
+> (on-thread (lambda () (timers:run-after 1 ring)))
+#<timer>
+> (on-thread (lambda () (timers:cancel! once)))

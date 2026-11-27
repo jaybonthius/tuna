@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (document) (haml) (web))
+(import (hooks) (options) (tables) (timers))
+(import (tuna) (testing) (document) (haml) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin layout-float)
@@ -31,16 +32,16 @@
 ;; A command's prompt pauses its task, so tests run it in a task of its
 ;; own and wait for the prompt.
 (define (start! thunk)
-  (let ([t (spawn-task (lambda () (in-client thunk)))])
-    (sleep-for 0.05)
+  (let ([t (spawn-task (lambda (restore) (in-client thunk)))])
+    (timers:sleep 0.05)
     t))
 
 
 (define (result t)
-  (testing:wait-until (lambda () (task-done? t)))
-  (if (task-done? t)
+  (testing:wait-until (lambda () (eq? (task-state t) 'done)))
+  (if (eq? (task-state t) 'done)
       (guard (c [#t (list 'raised (if (message-condition? c) (condition-message c) c))])
-        (join-task t))
+        (testing:join t))
       'waiting))
 
 (define (view) (layout:selected-view))
@@ -98,7 +99,7 @@
 
 (define (mouse-in! c v action place)
   (parameterize ([web:current-client c])
-    ((table-ref web:input-handlers "mouse") c
+    ((tables:ref web:input-handlers "mouse") c
      (append place
              `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
                ("view" . ,(views:id v)) ("version" . ,(buffers:version (views:buffer v)))

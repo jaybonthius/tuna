@@ -65,10 +65,12 @@
 ; Chat's diff lines take their backgrounds from the diff faces alone.
 > (filter (lambda (r) (member (cadr r) '(".chat-added" ".chat-removed"))) (css-rules (library-file "chat/chat.css")))
 ()
-; Turning the plugin off takes its stylesheet, and with it every face
-; rule of its own.
-> (table-ref web:stylesheets 'faces #f)
+; An unload takes the plugin's stylesheet entry back, and with it every
+; face rule of its own; the configuration, which imports the plugin,
+; loads a new instance that registers its own.
+> (tables:ref web:stylesheets 'faces #f)
 "faces/faces.css"
-> (unload-module! '(faces))
-> (table-ref web:stylesheets 'faces #f)
-#f
+> (define old (module-owner '(faces)))
+> (unload-owner! old)
+> (list (owner-live? old) (eq? (tables:owner web:stylesheets 'faces) (module-owner '(faces))))
+(#f #t)

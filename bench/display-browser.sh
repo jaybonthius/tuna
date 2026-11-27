@@ -16,8 +16,8 @@ cp bench/display-browser.sls "$lib/display-browser.sls"
 cp bench/display-browser.js "$lib/display-browser.js"
 cp tests/web/home/.config/tuna/lib/http.sls "$lib/http.sls"
 cat > "$dir/home/.config/tuna/init.ss" <<END
-(import (tuna) (tuna plugins) (http))
-(use-plugin web (config (set-option! web:port $port)))
+(import (tuna) (plugins) (options) (http))
+(use-plugin web (config (options:set! web:port $port)))
 (use-plugin layout)
 (use-plugin layout-split)
 (import (display-browser) (console))

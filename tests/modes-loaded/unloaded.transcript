@@ -1,0 +1,27 @@
+; A buffer renamed while modes is unloaded is not found by its name when
+; modes loads again; one not renamed keeps its mode.
+> (disk:write-text! "~/a.txt" "a\n")
+> (disk:write-text! "~/notes.txt" "Buy milk.\n")
+> (define a (files:visit "~/a.txt"))
+> (define notes (files:visit "~/notes.txt"))
+> (for-each (lambda (b) (modes:set-major-mode text:mode b)) (list a notes))
+> (unload-owner! (module-owner '(modes)))
+> (buffers:rename! notes "notes renamed")
+> (load-module! '(modes))
+#<owner (modes) 2>
+> (list (modes:major-mode a) (modes:major-mode notes))
+(text:mode modes:fundamental)
+; Buffers open before auto-mode loads keep their mode; normal-mode
+; chooses again on request.
+> (load-module! '(python))
+#<owner (python) 2>
+> (unload-owner! (module-owner '(auto-mode)))
+> (disk:write-text! "~/three.py" "3\n")
+> (define three (files:visit "~/three.py"))
+> (load-module! '(python))
+#<owner (python) 3>
+> (modes:major-mode three)
+modes:fundamental
+> (auto-mode:normal-mode three)
+> (modes:major-mode three)
+python:mode

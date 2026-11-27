@@ -1,2 +1,3 @@
 #!tuna
-(define-table file-names)
+(import (tables))
+(tables:define-table file-names)

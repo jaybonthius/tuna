@@ -86,7 +86,7 @@
 ; A prompt in a palette leaves the echo area at the bottom, where
 ; messages show; only the prompt's own message shows in the palette.
 > (use-plugin layout-float)
-> (table-set! layout:display-rules minibuffer:buffer? layout-float:display-palette)
+> (tables:set! layout:display-rules minibuffer:buffer? layout-float:display-palette)
 > (define t (start! (lambda () (minibuffer:read "Name: "))))
 > (echo-area:message! "Saved")
 > (list (echo-area:hidden?) (echo-drawn?) (bracket))
@@ -95,10 +95,10 @@
 > (list (echo-area:current-message) (bracket))
 (#f "<span class=\"minibuffer-message\" role=\"status\"> [No match]</span>")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
-(raised #<condition &quit>)
-> (table-remove! layout:display-rules minibuffer:buffer?)
+(raised #<condition &cancelled>)
+> (tables:remove! layout:display-rules minibuffer:buffer?)
 ; Advice that keeps the echo area shown keeps messages there, and the
 ; prompt draws no copy of them.
 > (define (keep-echo-area hidden?) #f)
@@ -108,7 +108,7 @@
 > (list (echo-area:hidden?) (echo-drawn?) (bracket))
 (#f #t #f)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (advice-remove! echo-area:hidden? keep-echo-area)
 ; A prompt whose part is removed while it waits gives the echo area back.
 > (define t (start! (lambda () (minibuffer:read "Name: "))))
@@ -118,29 +118,29 @@
 > (echo-area:hidden?)
 #f
 > (in-client (lambda () (commands:run minibuffer:abort)))
-! &quit
+! &cancelled
 > (result t)
-(raised #<condition &quit>)
+(raised #<condition &cancelled>)
 ; The keys that ran a command that prompts are not echoed again once the
 ; prompt is answered.
-> (set-option! echo-area:echo-keystrokes 0.2)
+> (options:set! echo-area:echo-keystrokes 0.2)
 > (commands:define-command (ask-name) "Reads a name." (minibuffer:read "Name: "))
 > (keys:bind! keys:global "C-x r" ask-name)
 > (press! "C-x")
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (echo-area:keys-text client)
 "C-x-"
 > (define t (start! (lambda () (press! "r"))))
 > (type! "abc")
 > (press! "RET")
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (list (prompt) (echo-area:keys-text client))
 (#f #f)
 ; Unloading the minibuffer takes its advice back.
 > (define t (start! (lambda () (minibuffer:read "Name: "))))
 > (echo-area:hidden?)
 #t
-> (unload-module! '(minibuffer))
-! &quit
+> (unload-owner! (module-owner '(minibuffer)))
+! &cancelled
 > (echo-area:hidden?)
 #f

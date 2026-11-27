@@ -1,7 +1,9 @@
 #!tuna
-(import (buffers) (document) (views) (commands) (web))
+(import (buffers) (document) (views) (commands) (web) (hooks) (options) (tables) (timers))
 
-(define-option duration 0.5 (lambda (v) (and (real? v) (>= v 0)))
+(define %self (current-owner))
+
+(options:define-option duration 0.5 (lambda (v) (and (real? v) (>= v 0)))
   "Seconds a mark stays, unless the next command ends it first.")
 
 (define highlight 'pulse.highlight)
@@ -18,7 +20,7 @@
   (let ([c %current])
     (set! %current #f)
     (when c
-      (cancel-timer! (caddr c))
+      (timers:cancel! (caddr c))
       (when (buffers:live? (car c))
         (buffers:set-spans! (cadr c) 0 (document:length (buffers:document (car c))) '())))))
 
@@ -39,7 +41,7 @@
       (unless (null? ranges)
         (let ([layer (buffers:layer b %marks view)] [value `((face . ,highlight) (pulse . ,(duration)))])
           (for-each (lambda (r) (buffers:add-span! layer (car r) (cadr r) value)) ranges)
-          (letrec ([entry (list b layer (as-module (this-module) (run-with-timer (duration) (lambda () (when (eq? %current entry) (%end!))))))])
+          (letrec ([entry (list b layer (call-as-owner %self (lambda () (timers:run-after (duration) (lambda () (when (eq? %current entry) (%end!)))))))])
             (set! %current entry)))))))
 
 ;; A line with nothing past its indentation has no text to mark, so it is
@@ -69,6 +71,6 @@
 (define (%attributes seconds)
   (list (cons "style" (format "--pulse-duration: ~as" (exact->inexact seconds)))))
 
-(table-set! views:span-properties 'pulse %attributes)
-(add-hook! commands:before-command (lambda (command) (%end!)))
-(table-set! web:stylesheets 'pulse "pulse/pulse.css")
+(tables:set! views:span-properties 'pulse %attributes)
+(hooks:add! commands:before-command (lambda (command) (%end!)))
+(tables:set! web:stylesheets 'pulse "pulse/pulse.css")

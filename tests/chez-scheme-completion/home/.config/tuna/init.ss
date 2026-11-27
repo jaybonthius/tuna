@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (document) (web))
+(import (hooks) (timers))
+(import (tuna) (testing) (document) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -14,7 +15,8 @@
 (use-plugin chez-scheme)
 (use-plugin chez-scheme-completion)
 (use-plugin help)
-(import (zeppo))
+;; Loaded, not imported, so its unload in a test stays an unload.
+(load-module! '(zeppo))
 
 (define client (web:add-client! 1))
 
@@ -41,7 +43,7 @@
 ;; the buffer's names have come.
 (define (settle-names b)
   (testing:wait-until (lambda () (not (eq? (chez-scheme:names b) (chez-scheme:repl-names)))))
-  (sleep-for 0.05))
+  (timers:sleep 0.05))
 
 (define (show-file! path)
   (let ([b (files:visit path)])
@@ -67,8 +69,8 @@
 
 ;; A read pauses its task, so a test runs it in a task of its own.
 (define (start! . keys)
-  (spawn-task (lambda () (apply press! keys)))
-  (sleep-for 0.05))
+  (spawn-task (lambda (restore) (apply press! keys)))
+  (timers:sleep 0.05))
 
 (define (prompt-input) (minibuffer:input (minibuffer:current-prompt)))
 

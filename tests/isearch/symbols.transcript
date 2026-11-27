@@ -60,10 +60,10 @@
 (12 "I-search: (foo-bar x)" "(foo-bar x)")
 > (press! "RET")
 ; A mode's own symbol characters decide each of them.
-> (define-table odd-keymap)
-> (define-hook odd-hook)
+> (tables:define-table odd-keymap)
+> (hooks:define-hook odd-hook)
 > (modes:define-major-mode odd-mode (keymap odd-keymap) (hook odd-hook))
-> (table-set! syntax:symbol-characters odd-mode "!")
+> (tables:set! syntax:symbol-characters odd-mode "!")
 > (define o (show "odd" "foo!bar foo-bar foo!bar\n"))
 > (views:set-point! (view) 2)
 > (press! "M-s" ".")

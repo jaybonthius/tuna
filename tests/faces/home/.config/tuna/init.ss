@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins) (haml))
+(import (tables))
+(import (tuna) (haml))
 (use-plugin faces)
 (use-plugin views)
 

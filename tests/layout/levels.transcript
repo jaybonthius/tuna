@@ -219,7 +219,7 @@
 #t
 ; A display rule sends a part elsewhere: here the explorer to the right.
 > (define (explorer? b) (string=? (buffers:name b) "*explorer*"))
-> (table-set! layout:display-rules explorer? (layout-split:display-at-side (layout:direction right) 50 '(columns 30)))
+> (tables:set! layout:display-rules explorer? (layout-split:display-at-side (layout:direction right) 50 '(columns 30)))
 > (define x3 (layout:display-buffer (buffers:find "*explorer*") (layout-split:display-at-side (layout:direction left) 50 '(columns 30))))
 > (tree)
 (layout:level () (layout-split:container ((direction . row)) (layout:level () (layout-split:container ((direction . row)) #(views:view ((view . 12) (buffer . "one"))) #(views:view ((view . 13) (buffer . "two"))))) #(views:view ((view . 16) (buffer . "*explorer*") (depth . 50) (size columns 30)))))

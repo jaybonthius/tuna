@@ -1,5 +1,5 @@
 #!tuna
-(import (embark) (consult))
+(import (embark) (consult) (options))
 (define (version) "newest")
 (define (export-action) (embark:act))
-(set-option! embark:integrated #t)
+(options:set! embark:integrated #t)

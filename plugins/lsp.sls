@@ -1,7 +1,9 @@
 #!tuna
 (import (jsonrpc) (projects) (files) (buffers) (document) (views) (layout) (modes) (commands) (keys) (ask) (faces)
         (completion) (xref) (diagnostics) (docs-at-point) (status-line) (syntax) (jobs) (processes) (haml)
-        (json-rpc) (rename (only (chezscheme) format) (format %fmt)))
+        (json-rpc) (rename (only (chezscheme) format) (format %fmt)) (hooks) (options) (tables) (timers))
+
+(define %self (current-owner))
 
 
 (define-record-type (%server %make-server server?)
@@ -64,14 +66,14 @@
                              [else (invalid c)])
                            given)))))])))
 
-(define-table servers
+(tables:define-table servers
   "Maps a server's name to its description, made with lsp:server.")
 
-(define-table language-servers
+(tables:define-table language-servers
   "Maps a language, as modes:language names it, to the servers its buffers get: a list whose elements are each a server's name or a list of names, of which the first whose program is found serves.")
 
 (define (%exported-name id)
-  (let ([owner (current-owner)])
+  (let ([owner (owner-name (current-owner))])
     (if (member owner '((init) (repl)))
         id
         (string->symbol
@@ -87,7 +89,7 @@
 
 (define (%define-server! id description)
   (let ([name (%exported-name id)])
-    (table-set! servers name description)
+    (tables:set! servers name description)
     name))
 
 (define-syntax define-server
@@ -98,34 +100,34 @@
        #'(define-public id (%define-server! 'id (server command clause ...)))]
       [_ (syntax-violation 'lsp:define-server "expected (lsp:define-server id command-expr clause ...)" x)])))
 
-(define-option autoshutdown? #f boolean? "Whether a connection shuts down when its last buffer is killed.")
+(options:define-option autoshutdown? #f boolean? "Whether a connection shuts down when its last buffer is killed.")
 
-(define-option autoreconnect 3 (lambda (v) (or (boolean? v) (and (real? v) (>= v 0))))
+(options:define-option autoreconnect 3 (lambda (v) (or (boolean? v) (and (real? v) (>= v 0))))
   "Whether a connection whose server ends without being asked starts again: #t always, #f never, or a number: when it had run that many seconds.")
 
-(define-option connect-timeout 30 (lambda (v) (and (real? v) (> v 0)))
+(options:define-option connect-timeout 30 (lambda (v) (and (real? v) (> v 0)))
   "Seconds a server has to answer initialize before it is stopped.")
 
-(define-option send-process-id? #t boolean? "Whether initialize carries Tuna's process id.")
+(options:define-option send-process-id? #t boolean? "Whether initialize carries Tuna's process id.")
 
-(define-option send-changes-delay 0.5 (lambda (v) (and (real? v) (>= v 0)))
+(options:define-option send-changes-delay 0.5 (lambda (v) (and (real? v) (>= v 0)))
   "Seconds without an edit before the edits so far are sent.")
 
-(define-option extend-to-xref? #f boolean?
+(options:define-option extend-to-xref? #f boolean?
   "Whether a file outside the connection's root that xref reaches from a managed buffer is managed by the same connection.")
 
-(define-option ignored-capabilities %no-capabilities
+(options:define-option ignored-capabilities %no-capabilities
   (lambda (v) (and (enum-set? v) (enum-set-subset? v (enum-set-universe %no-capabilities))))
   "The features no connection gives, even when its server offers them.")
 
-(define-option highlight-delay 0.5 (lambda (v) (and (real? v) (>= v 0)))
+(options:define-option highlight-delay 0.5 (lambda (v) (and (real? v) (>= v 0)))
   "Seconds of idleness after a command before lsp:highlight runs.")
 
-(define-option code-action-hint? #t boolean? "Whether lsp:code-action-hint asks the servers.")
+(options:define-option code-action-hint? #t boolean? "Whether lsp:code-action-hint asks the servers.")
 
-(define-option report-progress? #t boolean? "Whether the status line shows servers' work in progress.")
+(options:define-option report-progress? #t boolean? "Whether the status line shows servers' work in progress.")
 
-(define-option on-type-formatting? #f boolean?
+(options:define-option on-type-formatting? #f boolean?
   "Whether typing a character a server names for on-type formatting asks it for edits, which apply only if the buffer has not changed since.")
 
 (define-syntax confirmation
@@ -134,25 +136,25 @@
       [(_ name) (and (identifier? #'name) (memq (syntax->datum #'name) '(never unvisited always))) #''name]
       [_ (syntax-violation 'lsp:confirmation "not a confirmation" x)])))
 
-(define-option confirm-edits 'unvisited (lambda (v) (memq v '(never unvisited always)))
+(options:define-option confirm-edits 'unvisited (lambda (v) (memq v '(never unvisited always)))
   "When an edit from a server asks first: never, unvisited or always.")
 
-(define-hook connected "Called with a connection once its server has answered initialize.")
+(hooks:define-hook connected "Called with a connection once its server has answered initialize.")
 
-(define-hook managed "Called with a buffer when a connection starts or stops managing it, with the buffer current.")
+(hooks:define-hook managed "Called with a buffer when a connection starts or stops managing it, with the buffer current.")
 
-(define-table request-handlers
+(tables:define-table request-handlers
   "Maps a method's name to the procedure of a connection and the params that answers a server's request of it.")
 
-(define-table notification-handlers
+(tables:define-table notification-handlers
   "Maps a method's name to the procedure of a connection and the params called with a notification of it.")
 
-(define-table commands
+(tables:define-table commands
   "Maps a command's name to a procedure of the connection and the command's arguments that runs it in place of asking the server.")
 
-(define-table keymap "Keys in buffers a connection manages.")
+(tables:define-table keymap "Keys in buffers a connection manages.")
 
-(define-table diagnostic-keymap "Keys active where a server's diagnostic is drawn.")
+(tables:define-table diagnostic-keymap "Keys active where a server's diagnostic is drawn.")
 
 
 (define (%ref v . keys)
@@ -295,7 +297,7 @@
        (let* ([ls (%clamp doc (document:line-start doc (fx+ line 1)))] [le (%line-end doc (fx+ line 1))]
               [target (fxmin (fx+ (document:offset doc ls unit) (fxmax 0 character)) (document:offset doc le unit))])
          (let loop ([t target])
-           (let ([p (guard (c [(not (quit-condition? c)) #f]) (document:position doc t unit))])
+           (let ([p (guard (c [(not (cancelled? c)) #f]) (document:position doc t unit))])
              (if p (%clamp doc p) (loop (fx- t 1))))))]
       [else (%position-by-walk doc line character encoding)])))
 
@@ -375,7 +377,7 @@
 
 (define (%wanted-order b)
   (let* ([mode (modes:major-mode b)] [language (modes:language mode)]
-         [spec (and language (table-ref language-servers language #f))])
+         [spec (and language (tables:ref language-servers language #f))])
     (if (list? spec) (apply append (map (lambda (e) (if (list? e) e (list e))) spec)) '())))
 
 (define (connection-server c) (%conn-name (%conn-of 'lsp:connection-server c)))
@@ -498,20 +500,21 @@
 
 (define (%start! name description root)
   (let* ([command (%command-of description root)]
-         [source (as-module (this-module) (diagnostics:make-source))]
-         [rpc (as-module (this-module)
-                (jsonrpc:start (symbol->string name) command
-                  (jsonrpc:handlers
-                    [request %on-request]
-                    [notification %on-notification]
-                    [cancel (lambda (rpc id) (jsonrpc:notify rpc "$/cancelRequest" (list (cons "id" id))))]
-                    [exit %on-exit])
-                  (processes:options [directory root])))]
+         [source (call-as-owner %self (lambda () (diagnostics:make-source)))]
+         [rpc (call-as-owner %self
+                (lambda ()
+                  (jsonrpc:start (symbol->string name) command
+                    (jsonrpc:handlers
+                      [request %on-request]
+                      [notification %on-notification]
+                      [cancel (lambda (rpc id) (jsonrpc:notify rpc "$/cancelRequest" (list (cons "id" id))))]
+                      [exit %on-exit])
+                    (processes:options [directory root]))))]
          [conn (make-%conn rpc name root command (%program-name command) '() #f '() "utf-16" source (real-time) #f #f #f #f
                            description)])
     (eq-hashtable-set! %by-rpc rpc conn)
     (set! %connections (append %connections (list conn)))
-    (as-module (this-module) (spawn-task (lambda () (%initialize! conn))))
+    (call-as-owner %self (lambda () (spawn-task (lambda (restore) (%initialize! conn)))))
     conn))
 
 (define (%program-name command)
@@ -522,7 +525,7 @@
 (define (%initialize! conn)
   (let* ([description (%conn-description conn)] [root (%conn-root conn)]
          [options (let ([o (%server-initialization-options description)]) (if (procedure? o) (o root) o))])
-    (guard (c [(not (quit-condition? c))
+    (guard (c [(not (cancelled? c))
                (%conn-error-set! conn (%condition-text c))
                (report c)
                (when (jsonrpc:running? (%conn-rpc conn)) (jsonrpc:stop! (%conn-rpc conn)))])
@@ -552,7 +555,7 @@
 
 (define (%send-configuration! conn)
   (jsonrpc:notify (%conn-rpc conn) "workspace/didChangeConfiguration"
-    (list (cons "settings" (or (%configuration-of (table-ref servers (%conn-name conn) (%conn-description conn)) (%conn-root conn)) '())))))
+    (list (cons "settings" (or (%configuration-of (tables:ref servers (%conn-name conn) (%conn-description conn)) (%conn-root conn)) '())))))
 
 
 (define (%language-id b) (modes:language (modes:major-mode b)))
@@ -605,23 +608,25 @@
 ;; own changes, so they go when the buffer is managed no longer.
 (define (%set-up-buffer! b first?)
   (when first?
-    (as-module (this-module)
-      (buffers:with-buffer b
-        (set-option-local! diagnostics:mode #t docs-at-point:strategy docs-at-point:all xref:prompt-for-identifier #f)
-        (add-local-hook! buffers:after-edit %after-edit)
-        (add-local-hook! completion:find-region completion-region)
-        (add-local-hook! xref:backends xref-backend)
-        (add-local-hook! docs-at-point:sources code-action-hint 80)))))
+    (call-as-owner %self
+      (lambda ()
+        (buffers:with-buffer b
+          (options:set-local! diagnostics:mode #t docs-at-point:strategy docs-at-point:all xref:prompt-for-identifier #f)
+          (hooks:add-local! buffers:after-edit %after-edit)
+          (hooks:add-local! completion:find-region completion-region)
+          (hooks:add-local! xref:backends xref-backend)
+          (hooks:add-local! docs-at-point:sources code-action-hint 80))))))
 
 (define (%tear-down-buffer! b)
   (when (buffers:live? b)
-    (as-module (this-module)
-      (buffers:with-buffer b
-        (remove-option-local! diagnostics:mode docs-at-point:strategy xref:prompt-for-identifier)
-        (remove-local-hook! buffers:after-edit %after-edit)
-        (remove-local-hook! completion:find-region completion-region)
-        (remove-local-hook! xref:backends xref-backend)
-        (remove-local-hook! docs-at-point:sources code-action-hint)))))
+    (call-as-owner %self
+      (lambda ()
+        (buffers:with-buffer b
+          (options:unset-local! diagnostics:mode docs-at-point:strategy xref:prompt-for-identifier)
+          (hooks:remove-local! buffers:after-edit %after-edit)
+          (hooks:remove-local! completion:find-region completion-region)
+          (hooks:remove-local! xref:backends xref-backend)
+          (hooks:remove-local! docs-at-point:sources code-action-hint))))))
 
 (define (%find-conn name root)
   (find (lambda (c) (and (eq? (%conn-name c) name) (equal? (%conn-root c) root) (not (%conn-shutting-down? c)))) %connections))
@@ -634,7 +639,7 @@
          (%fmt "lsp: no server of ~a is installed" (if (list? element) element (list element))))
        #f]
       [else
-       (let* ([name (car names)] [description (table-ref servers name #f)])
+       (let* ([name (car names)] [description (tables:ref servers name #f)])
          (cond
            [(not description)
             (%report-once! b (cons 'no-server name) (%fmt "lsp: no server is defined as ~a" name))
@@ -652,7 +657,7 @@
 
 (define (%ensure! b)
   (let* ([path (files:path b)] [mode (modes:major-mode b)] [language (modes:language mode)]
-         [spec (and language (table-ref language-servers language #f))])
+         [spec (and language (tables:ref language-servers language #f))])
     (cond
       [(not language)
        (%report-once! b 'no-language (%fmt "lsp: ~a has no language" mode))
@@ -672,7 +677,7 @@
            (%conns-of b))
          (for-each
            (lambda (name)
-             (let* ([description (table-ref servers name #f)]
+             (let* ([description (tables:ref servers name #f)]
                     [reached (and (extend-to-xref?) (hashtable-ref %xref-reached path #f))]
                     [root (%with-slash (%root-of description path))]
                     [conn (or (and reached (%conn-name reached) (eq? (%conn-name reached) name)
@@ -719,13 +724,15 @@
     (eqv? (if (pair? sync) (%ref sync "change") sync) 1)))
 
 (define (%schedule-flush! conn)
-  (when (%conn-timer conn) (cancel-timer! (%conn-timer conn)))
+  (when (%conn-timer conn) (timers:cancel! (%conn-timer conn)))
   (%conn-timer-set! conn
-    (as-module (this-module) (run-with-timer (send-changes-delay) (lambda () (%conn-timer-set! conn #f) (%flush! conn))))))
+    (call-as-owner %self
+      (lambda ()
+        (timers:run-after (send-changes-delay) (lambda () (%conn-timer-set! conn #f) (%flush! conn)))))))
 
 (define (%flush! conn)
   (when (%conn-timer conn)
-    (cancel-timer! (%conn-timer conn))
+    (timers:cancel! (%conn-timer conn))
     (%conn-timer-set! conn #f))
   (when (and (%conn-ready? conn) (jsonrpc:running? (%conn-rpc conn)))
     (let ([changed (filter values (map (lambda (d) (and (%send-changes! conn d) d)) (%conn-docs conn)))])
@@ -813,10 +820,11 @@
       (suspend
         (lambda (resume)
           (let ([got '()])
-            (as-module (this-module)
-              (jobs:start %read-lines wanted
-                (lambda (v) (set! got v))
-                (lambda (ended) (resume (lambda () got))))))))))
+            (call-as-owner %self
+              (lambda ()
+                (jobs:start %read-lines wanted
+                  (lambda (v) (set! got v))
+                  (lambda (ended) (resume (lambda () got)))))))))))
 
 (define (%character-column text character encoding)
   (let loop ([i 0] [n 0])
@@ -860,7 +868,7 @@
              v)))]
       [else
        (spawn-task
-         (lambda ()
+         (lambda (restore)
            (let* ([lines (apply append (map (lambda (item) (list (or (%ref item "range" "start" "line") 0) (or (%ref item "range" "end" "line") 0))) items))]
                   [read (%file-lines (list (cons path lines)))]
                   [texts (if (pair? read) (cdar read) '())])
@@ -891,22 +899,22 @@
 
 
 (define (%on-request rpc method params)
-  (let ([conn (eq-hashtable-ref %by-rpc rpc #f)] [handler (table-ref request-handlers method #f)])
+  (let ([conn (eq-hashtable-ref %by-rpc rpc #f)] [handler (tables:ref request-handlers method #f)])
     (if (and conn handler)
         (handler rpc params)
         (raise (make-json-rpc-error json-rpc-method-not-found-code (string-append "method not found: " method))))))
 
 (define (%on-notification rpc method params)
-  (let ([conn (eq-hashtable-ref %by-rpc rpc #f)] [handler (table-ref notification-handlers method #f)])
+  (let ([conn (eq-hashtable-ref %by-rpc rpc #f)] [handler (tables:ref notification-handlers method #f)])
     (when (and conn handler) (handler rpc params))))
 
 (define (%configuration-request rpc params)
   (let* ([conn (eq-hashtable-ref %by-rpc rpc #f)]
-         [description (table-ref servers (%conn-name conn) (%conn-description conn))])
+         [description (tables:ref servers (%conn-name conn) (%conn-description conn))])
     (list->vector
       (map (lambda (item)
              (let* ([scope (%ref item "scopeUri")]
-                    [folder (if (string? scope) (guard (c [(not (quit-condition? c)) (%conn-root conn)]) (uri->path scope)) (%conn-root conn))]
+                    [folder (if (string? scope) (guard (c [(not (cancelled? c)) (%conn-root conn)]) (uri->path scope)) (%conn-root conn))]
                     [settings (or (%configuration-of description folder) '())]
                     [section (%ref item "section")])
                (if (string? section)
@@ -931,7 +939,7 @@
 
 (define (%apply-edit-request rpc params)
   (let ([conn (eq-hashtable-ref %by-rpc rpc #f)])
-    (guard (c [(not (quit-condition? c))
+    (guard (c [(not (cancelled? c))
                `(("applied" . #f) ("failureReason" . ,(%condition-text c)))])
       (%apply-workspace-edit! conn (%ref params "edit") #f)
       '(("applied" . #t)))))
@@ -964,7 +972,7 @@
             (cond
               [(or (eq? again #t) (and (real? again) (>= ran again)))
                (ask:message "Reconnecting after unexpected server exit.")
-               (let ([new (%start! (%conn-name conn) (table-ref servers (%conn-name conn) (%conn-description conn)) (%conn-root conn))])
+               (let ([new (%start! (%conn-name conn) (tables:ref servers (%conn-name conn) (%conn-description conn)) (%conn-root conn))])
                  (for-each (lambda (d) (let ([b (%doc-buffer d)]) (when (buffers:live? b) (%manage! new b (%doc-path d))))) docs))
                (ask:message "Reconnected!")]
               [again (ask:message "Not auto-reconnecting, last one didn't last long.")])))))))
@@ -976,13 +984,13 @@
     (when (jsonrpc:running? rpc)
       (ask:message (%fmt "Asking ~a politely to terminate" (%conn-title conn)))
       (for-each (lambda (d) (%close! conn d)) (%conn-docs conn))
-      (guard (c [(not (quit-condition? c)) (void)])
+      (guard (c [(not (cancelled? c)) (void)])
         (when (%conn-ready? conn)
           (jsonrpc:request rpc "shutdown" 'null 1.5)
           (jsonrpc:notify rpc "exit" 'null)))
       (let wait ([n 0])
         (when (and (jsonrpc:running? rpc) (< n 15))
-          (sleep-for 0.1)
+          (timers:sleep 0.1)
           (wait (+ n 1))))
       (when (jsonrpc:running? rpc) (jsonrpc:stop! rpc)))))
 
@@ -1005,7 +1013,7 @@
   "Shuts down connection C and starts its server again for the same root and buffers, with its description now."
   (let* ([conn (%conn-of 'lsp:reconnect c)] [docs (%conn-docs conn)])
     (%shutdown! conn)
-    (let ([new (%start! (%conn-name conn) (table-ref servers (%conn-name conn) (%conn-description conn)) (%conn-root conn))])
+    (let ([new (%start! (%conn-name conn) (tables:ref servers (%conn-name conn) (%conn-description conn)) (%conn-root conn))])
       (for-each (lambda (d) (let ([b (%doc-buffer d)]) (when (buffers:live? b) (%manage! new b (%doc-path d))))) docs)
       (ask:message "Reconnected!"))))
 
@@ -1026,14 +1034,14 @@
       (when (and (pair? running) (ask:yes-or-no? "Shut down the buffer's servers first? "))
         (for-each %shutdown! running)))
     (when (commands:prefix-argument)
-      (let* ([language (%language-id b)] [spec (or (and language (table-ref language-servers language #f)) '())])
+      (let* ([language (%language-id b)] [spec (or (and language (tables:ref language-servers language #f)) '())])
         (for-each
           (lambda (element)
-            (let* ([name (%resolve b element)] [description (and name (table-ref servers name #f))])
+            (let* ([name (%resolve b element)] [description (and name (tables:ref servers name #f))])
               (when description
                 (let ([line (ask:line (%fmt "Command for ~a: " name)
                               (let ([c (%server-command description)]) (if (procedure? c) "" (%join c))))])
-                  (table-set! servers name
+                  (tables:set! servers name
                     (%make-server (%split-on line #\space) (%server-initialization-options description)
                                   (%server-configuration description) (%server-root description)
                                   (%server-ignored description) (%server-capabilities description)))))))
@@ -1047,7 +1055,7 @@
     (lambda (conn)
       (%release! conn b)
       (when (and (autoshutdown?) (null? (%conn-docs conn)))
-        (spawn-task (lambda () (%shutdown! conn)))))
+        (spawn-task (lambda (restore) (%shutdown! conn)))))
     (%conns-of b)))
 
 ;; A mode change drops the buffer's scope with the local entries; the
@@ -1088,7 +1096,7 @@
               (jsonrpc:notify (%conn-rpc conn) "textDocument/willSave" `(("textDocument" . ,(%doc-identifier conn b)) ("reason" . 1))))
             (when (and (pair? sync) (eq? (%ref sync "willSaveWaitUntil") #t))
               (let ([version (buffers:version b)])
-                (guard (c [(not (quit-condition? c)) (void)])
+                (guard (c [(not (cancelled? c)) (void)])
                   (let ([edits (jsonrpc:request (%conn-rpc conn) "textDocument/willSaveWaitUntil"
                                  `(("textDocument" . ,(%doc-identifier conn b)) ("reason" . 1)) 0.5)])
                     (%apply-text-edits! conn b (%list edits) version)))))))))
@@ -1423,7 +1431,7 @@
 
 (define (execute-command c command)
   (let* ([conn (%conn-of 'lsp:execute-command c)] [name (%ref command "command")]
-         [arguments (or (%ref command "arguments") (vector))] [local (and (string? name) (table-ref commands name #f))])
+         [arguments (or (%ref command "arguments") (vector))] [local (and (string? name) (tables:ref commands name #f))])
     (if local
         (local c (if (vector? arguments) arguments (list->vector (%list arguments))))
         (request c "workspace/executeCommand" `(("command" . ,name) ("arguments" . ,arguments))))
@@ -1443,7 +1451,7 @@
          [conns (if b (%give (%ordered-conns b) 'completion b) '())])
     (and (pair? conns)
          (let ([p (views:point view)])
-           (let-values ([(s e) (guard (c [(not (quit-condition? c)) (values #f #f)]) (syntax:symbol-bounds b p))])
+           (let-values ([(s e) (guard (c [(not (cancelled? c)) (values #f #f)]) (syntax:symbol-bounds b p))])
              (let ([s (or s p)] [e (if e (fxmax e p) p)])
                (completion:region s e (map (lambda (conn) (%completion-source conn b view s)) conns)
                                   (%trigger-characters conns))))))))
@@ -1518,7 +1526,7 @@
               (%apply-text-edits! conn b extra (buffers:version b))))
           (let ([command (%ref item "command")])
             (when (pair? command)
-              (as-module (this-module) (spawn-task (lambda () (execute-command (%conn-rpc conn) command)))))))))))
+              (call-as-owner %self (lambda () (spawn-task (lambda (restore) (execute-command (%conn-rpc conn) command))))))))))))
 
 
 (define (%location-parts location)
@@ -1570,7 +1578,7 @@
 
 (define (%identifier-at view)
   (let* ([b (views:buffer view)] [p (views:point view)])
-    (let-values ([(s e) (guard (c [(not (quit-condition? c)) (values #f #f)]) (syntax:symbol-bounds b p))])
+    (let-values ([(s e) (guard (c [(not (cancelled? c)) (values #f #f)]) (syntax:symbol-bounds b p))])
       (and s (fx< s e)
            (let ([name (buffers:text-between (buffers:document b) s e)])
              (eq-hashtable-set! %identifier-places name (cons b p))
@@ -1699,12 +1707,13 @@
 ;; Each connection's hover and signature are entries of their own, so a
 ;; slow server holds back no other's docs.
 (define (%add-doc-entries! conn b)
-  (as-module (this-module)
-    (buffers:with-buffer b
-      (let ([d (%doc-of conn b)])
-        (when d
-          (add-local-hook! docs-at-point:sources (%entry-for conn 'signature-help signature) -20)
-          (add-local-hook! docs-at-point:sources (%entry-for conn 'hover hover) -10))))))
+  (call-as-owner %self
+    (lambda ()
+      (buffers:with-buffer b
+        (let ([d (%doc-of conn b)])
+          (when d
+            (hooks:add-local! docs-at-point:sources (%entry-for conn 'signature-help signature) -20)
+            (hooks:add-local! docs-at-point:sources (%entry-for conn 'hover hover) -10)))))))
 
 (define %entries (make-weak-eq-hashtable))
 
@@ -1714,14 +1723,15 @@
         (let ([entry (lambda (view)
                        (let ([b (views:buffer view)])
                          (and (%offers? conn feature b)
-                              (guard (c [(not (quit-condition? c)) #f]) (ask (%conn-rpc conn) view)))))])
+                              (guard (c [(not (cancelled? c)) #f]) (ask (%conn-rpc conn) view)))))])
           (eq-hashtable-set! %entries conn (cons (cons key entry) (eq-hashtable-ref %entries conn '())))
           entry))))
 
 (define (%remove-doc-entries! conn b)
-  (as-module (this-module)
-    (buffers:with-buffer b
-      (for-each (lambda (e) (remove-local-hook! docs-at-point:sources (cdr e))) (eq-hashtable-ref %entries conn '())))))
+  (call-as-owner %self
+    (lambda ()
+      (buffers:with-buffer b
+        (for-each (lambda (e) (hooks:remove-local! docs-at-point:sources (cdr e))) (eq-hashtable-ref %entries conn '()))))))
 
 
 (buffers:define-layer %highlights (priority 5))
@@ -1759,16 +1769,16 @@
   (set! %highlight-pending? #t)
   (let ([delay (highlight-delay)])
     (unless (eqv? delay %highlight-timer-delay)
-      (when %highlight-timer (cancel-timer! %highlight-timer))
+      (when %highlight-timer (timers:cancel! %highlight-timer))
       (set! %highlight-timer-delay delay)
-      (set! %highlight-timer (as-module (this-module) (run-with-idle-timer delay %on-idle))))))
+      (set! %highlight-timer (call-as-owner %self (lambda () (timers:run-when-idle delay %on-idle)))))))
 
 (define (%on-idle)
   (when %highlight-pending?
     (set! %highlight-pending? #f)
     (let ([view (layout:selected-view)])
       (when (and view (views:buffer view) (pair? (%conns-of (views:buffer view))))
-        (spawn-task (lambda () (guard (c [(not (quit-condition? c)) (void)]) (highlight view))))))))
+        (spawn-task (lambda (restore) (guard (c [(not (cancelled? c)) (void)]) (highlight view))))))))
 
 
 (define (%diagnostic-data b start end source)
@@ -1839,7 +1849,7 @@
        (let ([ds (diagnostics:in b p)])
          (values b (apply min (map diagnostics:diagnostic-start ds)) (apply max (map diagnostics:diagnostic-end ds))))]
       [else
-       (let-values ([(s e) (guard (c [(not (quit-condition? c)) (values #f #f)]) (syntax:symbol-bounds b p))])
+       (let-values ([(s e) (guard (c [(not (cancelled? c)) (values #f #f)]) (syntax:symbol-bounds b p))])
          (if s (values b s e) (values b p p)))])))
 
 (commands:define-command (code-actions [start #f] [end #f] [kind (and (commands:prefix-argument) (ask:line-with-candidates "Action kind: " %action-kinds))])
@@ -1873,7 +1883,7 @@
 
 (define (code-action-hint view)
   (and (code-action-hint?)
-       (guard (c [(and (not (quit-condition? c)) (or (jsonrpc:ended? c) (jsonrpc:timeout? c))) #f])
+       (guard (c [(and (not (cancelled? c)) (or (jsonrpc:ended? c) (jsonrpc:timeout? c))) #f])
          (%code-action-hint view))))
 
 (define (%code-action-hint view)
@@ -1951,18 +1961,19 @@
                  [triggers (and (pair? provider) (cons (%ref provider "firstTriggerCharacter") (%list (%ref provider "moreTriggerCharacter"))))])
             (when (and triggers (member (string c) triggers))
               (let ([p (fx+ (buffers:edit-start edit) 1)] [version (buffers:version b)])
-                (as-module (this-module)
-                  (spawn-task
-                    (lambda ()
-                      (guard (e [(not (quit-condition? e)) (void)])
-                        (%flush! conn)
-                        ;; Edits made after the typed character, such as the
-                        ;; same command's indentation, move the position the
-                        ;; request would name, and any answer would be dropped.
-                        (when (eqv? version (buffers:version b))
-                          (let ([edits (jsonrpc:request (%conn-rpc conn) "textDocument/onTypeFormatting"
-                                         (append (%point-params conn b p) `(("ch" . ,(string c)) ("options" . ,(%formatting-options)))))])
-                            (%apply-text-edits! conn b (%list edits) version)))))))))))
+                (call-as-owner %self
+                  (lambda ()
+                    (spawn-task
+                      (lambda (restore)
+                        (guard (e [(not (cancelled? e)) (void)])
+                          (%flush! conn)
+                          ;; Edits made after the typed character, such as the
+                          ;; same command's indentation, move the position the
+                          ;; request would name, and any answer would be dropped.
+                          (when (eqv? version (buffers:version b))
+                            (let ([edits (jsonrpc:request (%conn-rpc conn) "textDocument/onTypeFormatting"
+                                           (append (%point-params conn b p) `(("ch" . ,(string c)) ("options" . ,(%formatting-options)))))])
+                              (%apply-text-edits! conn b (%list edits) version))))))))))))
         (let ([first (%give (%ordered-conns b) 'on-type-formatting b)]) (if (pair? first) (list (car first)) '()))))))
 
 
@@ -1983,7 +1994,7 @@
                                    " ")))
                              conns))))))))
 
-(define-table %status-keymap "Clicks on the language servers' status.")
+(tables:define-table %status-keymap "Clicks on the language servers' status.")
 
 (commands:define-command (%show-clicked-events [event (keys:command-event)])
   "Shows the events log of the first connection of the clicked window's buffer."
@@ -2081,7 +2092,7 @@
 (define-server ols '("ols"))
 
 (for-each
-  (lambda (entry) (table-set! language-servers (car entry) (cdr entry)))
+  (lambda (entry) (tables:set! language-servers (car entry) (cdr entry)))
   `(("rust" ,rust-analyzer)
     ("cmake" (,neocmakelsp ,cmake-language-server))
     ("vim" ,vim-language-server)
@@ -2152,36 +2163,36 @@
     ("odin" ,ols)))
 
 
-(table-set! request-handlers "workspace/configuration" %configuration-request)
-(table-set! request-handlers "workspace/applyEdit" %apply-edit-request)
-(table-set! request-handlers "workspace/workspaceFolders"
+(tables:set! request-handlers "workspace/configuration" %configuration-request)
+(tables:set! request-handlers "workspace/applyEdit" %apply-edit-request)
+(tables:set! request-handlers "workspace/workspaceFolders"
   (lambda (rpc params)
     (let ([root (%conn-root (eq-hashtable-ref %by-rpc rpc #f))])
       (vector (list (cons "uri" (path->uri root)) (cons "name" root))))))
-(table-set! request-handlers "window/showMessageRequest" %show-message-request)
-(table-set! request-handlers "window/showDocument" %show-document)
-(table-set! request-handlers "window/workDoneProgress/create" %nothing)
-(table-set! request-handlers "client/registerCapability" %nothing)
-(table-set! request-handlers "client/unregisterCapability" %nothing)
-(for-each (lambda (method) (table-set! request-handlers method %nothing))
+(tables:set! request-handlers "window/showMessageRequest" %show-message-request)
+(tables:set! request-handlers "window/showDocument" %show-document)
+(tables:set! request-handlers "window/workDoneProgress/create" %nothing)
+(tables:set! request-handlers "client/registerCapability" %nothing)
+(tables:set! request-handlers "client/unregisterCapability" %nothing)
+(for-each (lambda (method) (tables:set! request-handlers method %nothing))
           '("workspace/diagnostic/refresh" "workspace/semanticTokens/refresh" "workspace/inlayHint/refresh"
             "workspace/codeLens/refresh" "workspace/inlineValue/refresh" "workspace/foldingRange/refresh"))
 
-(table-set! notification-handlers "textDocument/publishDiagnostics"
+(tables:set! notification-handlers "textDocument/publishDiagnostics"
   (lambda (rpc params) (%on-publish (eq-hashtable-ref %by-rpc rpc #f) params)))
-(table-set! notification-handlers "window/showMessage"
+(tables:set! notification-handlers "window/showMessage"
   (lambda (rpc params) (ask:message (or (%ref params "message") ""))))
-(table-set! notification-handlers "window/logMessage" (lambda (rpc params) (void)))
-(table-set! notification-handlers "$/progress" %progress)
+(tables:set! notification-handlers "window/logMessage" (lambda (rpc params) (void)))
+(tables:set! notification-handlers "$/progress" %progress)
 
 (keys:bind! diagnostic-keymap "<mouse-2>" code-actions)
 (keys:bind! %status-keymap "<mouse-1>" %show-clicked-events)
-(table-set! status-line:segments status (status-line:right 30))
-(add-hook! buffers:killed %killed)
-(add-hook! modes:major-mode-changed %mode-changed)
-(add-hook! files:after-rename %renamed)
-(add-hook! files:before-save %will-save)
-(add-hook! files:after-save %did-save)
-(add-hook! commands:before-command %clear-highlights!)
-(add-hook! commands:after-command %after-command)
+(tables:set! status-line:segments status (status-line:right 30))
+(hooks:add! buffers:killed %killed)
+(hooks:add! modes:major-mode-changed %mode-changed)
+(hooks:add! files:after-rename %renamed)
+(hooks:add! files:before-save %will-save)
+(hooks:add! files:after-save %did-save)
+(hooks:add! commands:before-command %clear-highlights!)
+(hooks:add! commands:after-command %after-command)
 (on-unload (lambda () (for-each (lambda (conn) (%conn-shutting-down?-set! conn #t)) %connections)))

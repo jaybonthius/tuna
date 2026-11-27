@@ -1,7 +1,7 @@
 #!tuna
-(import (buffers) (document) (modes) (views))
+(import (buffers) (document) (modes) (views) (tables))
 
-(define-table indenters
+(tables:define-table indenters
   "Maps a major mode to its indenter, a procedure of a buffer and the start of a line's text that returns the column for that text, or #f to leave the line as it is.")
 
 (define-condition-type &indenter-error &assertion %make-indenter-error indenter-error?)
@@ -38,7 +38,7 @@
     (let loop ([modes (modes:ancestry mode)])
       (cond
         [(null? modes) #f]
-        [(table-ref indenters (car modes) #f)]
+        [(tables:ref indenters (car modes) #f)]
         [else (loop (cdr modes))])))
 
   ;; A line starts before the openings of nodes that begin on it, as a
@@ -104,12 +104,12 @@
 (define (%column-of buffer start)
   (let* ([mode (modes:major-mode buffer)] [found (indenter-of mode)])
     (if found
-        (let ([column (guard (c [(and (condition? c) (not (quit-condition? c)))
+        (let ([column (guard (c [(and (condition? c) (not (cancelled? c)))
                                  (%raise-indenter-error
                                    (format "the indenter of ~s raised: ~a" mode
                                      (call-with-string-output-port (lambda (p) (display-condition c p))))
                                    (list found) c)]
-                                [(not (quit-condition? c))
+                                [(not (cancelled? c))
                                  (%raise-indenter-error (format "the indenter of ~s raised: ~s" mode c) (list found))])
                         (found buffer start))])
           (unless (or (not column) (and (fixnum? column) (fx>= column 0)))

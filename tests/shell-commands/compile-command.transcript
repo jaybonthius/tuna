@@ -1,40 +1,38 @@
 ; compile sets compile-command where its value came from: in a buffer
 ; that holds its own value, that value, even one equal to the setting;
-; else the setting; and under with-options, nothing, since the binding
+; else the setting; and under options:with, nothing, since the binding
 ; would drop it.
 > (define (compile-in b line)
     (layout:switch-to-buffer b)
     (run! shell-commands:compile line)
     (ended? (buffers:find "*compilation*")))
 > (define own (buffers:make "own" "text\n"))
-> (buffers:with-buffer own (set-option-local! shell-commands:compile-command (option-setting shell-commands:compile-command)))
+> (buffers:with-buffer own (options:set-local! shell-commands:compile-command (options:setting shell-commands:compile-command)))
 > (compile-in own "echo first")
 0
-> (list (option-setting shell-commands:compile-command)
-        (buffers:with-buffer own (list (option-local? shell-commands:compile-command) (shell-commands:compile-command))))
+> (list (options:setting shell-commands:compile-command)
+        (buffers:with-buffer own (list (options:local? shell-commands:compile-command) (shell-commands:compile-command))))
 ("make -k " (#t "echo first"))
 > (define plain (buffers:make "plain" "text\n"))
 > (layout:switch-to-buffer plain)
 > (define task
-    (spawn-task
-      (lambda ()
-        (in-client
+    (spawn-task (lambda (restore) (in-client
           (lambda ()
-            (with-options ([shell-commands:compile-command "echo bound"])
+            (options:with ([shell-commands:compile-command "echo bound"])
               (commands:run shell-commands:compile "echo second")))))))
-> (testing:wait-until (lambda () (task-done? task)))
+> (testing:wait-until (lambda () (eq? (task-state task) 'done)))
 > (ended? (buffers:find "*compilation*"))
 0
 > (output (buffers:find "*compilation*"))
 "second"
-> (list (option-setting shell-commands:compile-command)
-        (buffers:with-buffer plain (list (option-local? shell-commands:compile-command) (shell-commands:compile-command))))
+> (list (options:setting shell-commands:compile-command)
+        (buffers:with-buffer plain (list (options:local? shell-commands:compile-command) (shell-commands:compile-command))))
 ("make -k " (#f "make -k "))
-> (map (lambda (b) (buffers:with-buffer b (option-local? shell-commands:compile-command))) (list plain (buffers:find "*compilation*")))
+> (map (lambda (b) (buffers:with-buffer b (options:local? shell-commands:compile-command))) (list plain (buffers:find "*compilation*")))
 (#f #f)
 > (compile-in plain "echo third")
 0
-> (list (option-setting shell-commands:compile-command)
-        (buffers:with-buffer plain (option-local? shell-commands:compile-command))
+> (list (options:setting shell-commands:compile-command)
+        (buffers:with-buffer plain (options:local? shell-commands:compile-command))
         (buffers:with-buffer own (shell-commands:compile-command)))
 ("echo third" #f "echo first")

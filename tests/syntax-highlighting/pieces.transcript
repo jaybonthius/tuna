@@ -34,7 +34,7 @@
 (("#a" comment))
 > (do ([i 0 (+ i 1)]) ((= i 1001)) (buffers:insert! q 1 "\n"))
 ; Logs are trimmed to their last thousand edits after a second idle.
-> (begin (set-idle! #t) (sleep-for 1.5) (set-idle! #f))
+> (begin (timers:set-idle! #t) (timers:sleep 1.5) (timers:set-idle! #f))
 > (buffers:edits-since q 0)
 #f
 > (open-gate! q 2)
@@ -44,11 +44,11 @@
 ; A ranged answer is cut to its range: of spans reaching outside it, only
 ; their part inside is set.
 > (define r (marked "r" "#abcd #ef\n" marks:ranged))
-> (buffers:with-buffer r (set-option-local! marks:range '(0 3)))
+> (buffers:with-buffer r (options:set-local! marks:range '(0 3)))
 > (syntax-highlighting:update! r)
 > (faces r)
 (("#ab" comment))
-> (buffers:with-buffer r (set-option-local! marks:range '(4 8)))
+> (buffers:with-buffer r (options:set-local! marks:range '(4 8)))
 > (syntax-highlighting:update! r)
 > (faces r)
 (("#ab" comment) ("d" comment) ("#e" comment))

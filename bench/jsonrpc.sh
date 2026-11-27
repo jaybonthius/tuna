@@ -13,7 +13,7 @@ lib=$dir/home/.config/tuna/lib
 mkdir -p "$lib"
 cp bench/jsonrpc.sls "$lib/jsonrpc-bench.sls"
 cp tests/jsonrpc/home/fake-server.ss "$dir/home/"
-printf '(import (tuna) (tuna plugins))\n(use-plugin jsonrpc)\n(import (jsonrpc-bench))\n(spawn-task (lambda () (jsonrpc-bench:run) (exit)))\n' > "$dir/home/.config/tuna/init.ss"
+printf '(import (tuna) (plugins))\n(use-plugin jsonrpc)\n(import (jsonrpc-bench))\n(spawn-task (lambda (restore) (jsonrpc-bench:run) (exit)))\n' > "$dir/home/.config/tuna/init.ss"
 
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
 echo "$output" | awk '

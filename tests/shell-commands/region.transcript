@@ -51,7 +51,7 @@
 > (define typed (buffers:make "typed" "xx aaa bbb\n"))
 > (regions! typed '(4 7) '(8 11))
 ((4 7) (8 11))
-> (define task (spawn-task (lambda () (in-client (lambda () (commands:run shell-commands:shell-command-on-region "until [ -e go ]; do sleep 0.05; done; tr a-z A-Z" '(4)))))))
+> (define task (spawn-task (lambda (restore) (in-client (lambda () (commands:run shell-commands:shell-command-on-region "until [ -e go ]; do sleep 0.05; done; tr a-z A-Z" '(4)))))))
 > (settle)
 > (buffers:insert! typed 1 "zz")
 3
@@ -69,7 +69,7 @@
 > (testing:wait-until (lambda () (file-exists? (at "seen"))))
 > (settle)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (settle)
 > (list (text three) (filter (lambda (p) (exists (lambda (a) (search a "sleep 30" 0)) (processes:command-line p))) (processes:all)))
 ("aa bb cc\n" ())

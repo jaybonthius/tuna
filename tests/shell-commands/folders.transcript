@@ -30,18 +30,18 @@
 > (texts (session))
 ("notes.txt:1:a needle here")
 > (press! "C-g")
-! &quit
+! &cancelled
 ; The shell-commands page's project-compile runs compile in the
 ; project's root from a run's buffer inside it, and in the run's folder
 ; outside a project.
-> (set-option! projects:extra-root-markers '(".project"))
+> (options:set! projects:extra-root-markers '(".project"))
 > (with-output-to-file (at "proj/.project") void)
 > (commands:define-command (project-compile)
     "Runs compile in the current project's root, or in the buffer's folder outside a project, in a buffer of that folder's own."
     (let* ([folder (files:directory (buffers:current))]
            [project (projects:find folder)]
            [root (if project (projects:root project) folder)])
-      (with-options ([files:directory-override (cons (buffers:current) root)]
+      (options:with ([files:directory-override (cons (buffers:current) root)]
                      [shell-commands:compile-buffer-name
                       (lambda () (string-append "*compilation " root "*"))])
         (commands:run shell-commands:compile))))
@@ -50,7 +50,7 @@
 0
 > (define (compile-from b)
     (layout:switch-to-buffer b)
-    (spawn-task (lambda () (in-client (lambda () (commands:run project-compile)))))
+    (spawn-task (lambda (restore) (in-client (lambda () (commands:run project-compile)))))
     (settle)
     (press! "C-a" "C-k")
     (type! "pwd")
@@ -85,7 +85,7 @@
 > (texts (session))
 ("notes.txt:1:a needle here")
 > (press! "C-g")
-! &quit
+! &cancelled
 ; An absolute folder with .. is made canonical too, so project-compile
 ; builds in the project's root.
 > (buffers:kill! (buffers:find (string-append "*compilation " (at "proj/") "*")))

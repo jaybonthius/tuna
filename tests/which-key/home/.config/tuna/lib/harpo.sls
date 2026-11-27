@@ -1,7 +1,7 @@
 #!tuna
-(import (commands) (keys))
+(import (commands) (keys) (tables))
 
-(define-table keymap "Harpo's horn.")
+(tables:define-table keymap "Harpo's horn.")
 
 (commands:define-command (honk)
   "Does nothing."

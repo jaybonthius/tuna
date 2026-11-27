@@ -1,14 +1,14 @@
 ; The configuration loads as a task, which may pause.
-> (list (task? configuration-task) (task-done? configuration-task) answer)
+> (list (task? configuration-task) (eq? (task-state configuration-task) 'done) answer)
 (#t #t 42)
 > (define (yes-or-no? question)
     (suspend (lambda (resume) (prompts:ask question resume))))
 ; A paused task lets the REPL go on, and another thread may resume it.
-> (define asking (spawn-task (lambda () (yes-or-no? "Quit?"))))
-> (task-done? asking)
+> (define asking (spawn-task (lambda (restore) (yes-or-no? "Quit?"))))
+> (eq? (task-state asking) 'done)
 #f
-> (define helper (fork-thread (lambda () (prompts:answer! 'yes))))
-> (let ([v (join-task asking)]) (list (task-done? asking) v))
+> (define helper (fork-task (lambda (restore) (prompts:answer! 'yes))))
+> (let ([v (testing:join asking)]) (list (eq? (task-state asking) 'done) v))
 (#t yes)
 ; REPL input runs as a task.
 > (task? (current-task))
@@ -16,30 +16,28 @@
 > (list (task? 'asking) (eq? (current-task) asking))
 (#f #f)
 ; A task that raises is reported, and join-task raises the same condition.
-> (define failing (spawn-task (lambda () (error 'nap "woke badly"))))
+> (define failing (spawn-task (lambda (restore) (error 'nap "woke badly"))))
 ! nap: woke badly
-> (join-task failing)
+> (testing:join failing)
 ! nap: woke badly
-> (join-task (current-task))
+> (testing:join (current-task))
 ! join-task: a task cannot wait for itself with irritant #<task>
-; signal-task raises in a paused task at once, and in another when it
-; next pauses.
-> (define waiting (spawn-task (lambda () (suspend (lambda (resume) (void))))))
-> (signal-task waiting 'stop)
-! non-condition value stop
-> (guard (c [#t c]) (join-task waiting))
-stop
-> (let ([t (spawn-task
-             (lambda ()
-               (guard (c [#t (list 'caught c)])
+; cancel-task raises in a paused task at once, in a running one where it
+; next lands, and ends a queued one at its start.
+> (define waiting (spawn-task (lambda (restore) (suspend (lambda (resume) (void))))))
+> (cancel-task waiting 'stop)
+! &cancelled
+> (guard (c [#t c]) (testing:join waiting))
+#<condition &cancelled>
+> (let ([t (spawn-task (lambda (restore) (guard (c [#t (list 'caught c)])
                  (suspend (lambda (resume) (resume void))))))])
-    (signal-task t 'early)
-    (join-task t))
-(caught early)
+    (cancel-task t 'early)
+    (testing:join t))
+! &cancelled
 ; A task starts after the code already waiting on the main thread.
 > (begin
-    (post! (lambda () (display "posted ")))
-    (spawn-task (lambda () (display "spawned") (newline)))
+    (spawn-task (lambda (restore) (display "posted ")))
+    (spawn-task (lambda (restore) (display "spawned") (newline)))
     (void))
 posted spawned
 ; A task is resumed once, from any thread; suspend returns the value of
@@ -48,85 +46,82 @@ posted spawned
 > (define log '())
 > (define saved #f)
 > (define kept
-    (spawn-task
-      (lambda ()
-        (parameterize ([p 'inside])
+    (spawn-task (lambda (restore) (parameterize ([p 'inside])
           (dynamic-wind
             (lambda () (set! log (cons 'in log)))
             (lambda () (suspend (lambda (resume) (set! saved resume))))
             (lambda () (set! log (cons 'out log))))))))
 > log
 (out in)
-> (thread-join (fork-thread (lambda () (saved p))))
-> (join-task kept)
+> (join-task (fork-task (lambda (restore) (saved p))))
+returned
+(#<void>)
+> (testing:join kept)
 inside
 > log
 (out in out in)
 > (saved (lambda () 2))
 ! resume: the task was resumed already
-; Only tasks pause, and not while a module's body runs.
+; A thread's task pauses too; a module's body cannot.
 > (define (on-thread thunk)
     (let ([result #f])
-      (thread-join (fork-thread (lambda () (set! result (guard (c [#t (condition-message c)]) (thunk))))))
+      (join-task (fork-task (lambda (restore) (set! result (guard (c [#t (condition-message c)]) (thunk))))))
       result))
 > (on-thread (lambda () (suspend (lambda (resume) (resume void)))))
-"not in a task"
 > (import (pauser))
 ! (pauser) suspend: the body of module (pauser) is running
-; spawn-task is a change, which only the main thread makes.
-> (on-thread (lambda () (spawn-task void)))
-"only the main thread makes changes"
-; Another thread's signal is delivered on the main thread.
-> (define signalled (spawn-task (lambda () (suspend (lambda (resume) (void))))))
-> (thread-join (fork-thread (lambda () (signal-task signalled 'from-thread))))
-! non-condition value from-thread
-> (guard (c [#t c]) (join-task signalled))
-from-thread
-; #!tuna/base lacks the task names.
-> (import (base-tasks))
-! attempt to reference unbound identifier spawn-task at line 2, char 18 of $HOME/.config/tuna/lib/base-tasks.sls
-; Unloading a module resumes its paused tasks with &quit raised; a task
-; that has not started never runs.
+; A thread's task may spawn a task, which runs on the main thread.
+> (on-thread (lambda () (spawn-task (lambda (restore) (void)))))
+#<task>
+; Another thread's cancel is delivered on the main thread.
+> (define signalled (spawn-task (lambda (restore) (suspend (lambda (resume) (void))))))
+> (join-task (fork-task (lambda (restore) (cancel-task signalled 'from-thread))))
+! &cancelled
+returned
+(#<void>)
+> (guard (c [#t c]) (testing:join signalled))
+#<condition &cancelled>
+; Unloading a module stops its paused tasks, past their handlers; a task
+; it spawned before the unload was asked for runs before it begins.
 > (import (waiter))
 > (begin
-    (as-module '(waiter) (waiter:wait-forever))
+    (call-as-owner (module-owner '(waiter)) (lambda () (waiter:wait-forever)))
     (void))
-> (map car (module-changes '(waiter)))
-(task define define define)
+> (map car (owner-changes (module-owner '(waiter))))
+(define define define)
 > (begin
-    (as-module '(waiter)
-      (post! (lambda ()
-               (guard (c [(quit-condition? c) (display "waiter's posted task quit") (newline)])
-                 (suspend (lambda (resume) (void)))))))
+    (call-as-owner (module-owner '(waiter)) (lambda () (spawn-task (lambda (restore) (guard (c [(cancelled? c) (display "waiter's posted task quit") (newline)])
+                 (suspend (lambda (resume) (void))))))))
     (void))
 > (begin
-    (as-module '(waiter) (waiter:later))
-    (unload-module! '(waiter)))
-waiter's task quit
-waiter's posted task quit
-; A thunk posted by a module unloaded before it runs never runs, and a
-; task that goes on after its module is unloaded makes no change.
+    (call-as-owner (module-owner '(waiter)) (lambda () (waiter:later)))
+    (unload-owner! (module-owner '(waiter))))
+never runs
+; The same holds for a task spawned just before an unload is asked for.
 > (load-module! '(waiter))
-> (begin (as-module '(waiter) (waiter:stubborn)) (void))
+#<owner (waiter) 2>
+> (begin (call-as-owner (module-owner '(waiter)) (lambda () (waiter:stubborn))) (void))
 > (begin
-    (as-module '(waiter) (post! (lambda () (display "never runs"))))
-    (unload-module! '(waiter)))
-! (waiter) on-unload: not a loaded module with irritant (waiter)
-> (module-changes '(waiter))
-()
+    (call-as-owner (module-owner '(waiter)) (lambda () (spawn-task (lambda (restore) (display "never runs")))))
+    (unload-owner! (module-owner '(waiter))))
+never runs
+> (module-owner '(waiter))
+#f
 ; A finished task is no longer a change of its module.
-> (module-changes '(repl))
+> (owner-changes (plugins:repl-owner))
 ()
-; Posted work belongs to the instance that posted it: a thunk posted
-; before its module is unloaded and loaded again never runs, while one
-; posted before a reload runs.
+; Work an instance spawned before an unload or a reload was asked for
+; runs before the operation begins.
 > (load-module! '(waiter))
+#<owner (waiter) 3>
 > (begin
-    (as-module '(waiter) (post! (lambda () (display "stale instance"))))
-    (unload-module! '(waiter))
+    (call-as-owner (module-owner '(waiter)) (lambda () (spawn-task (lambda (restore) (display "stale instance")))))
+    (unload-owner! (module-owner '(waiter)))
     (load-module! '(waiter)))
-> (import (tuna eval))
+stale instance
+#<owner (waiter) 4>
+> (import (plugins))
 > (begin
-    (as-module '(waiter) (post! (lambda () (display "reloaded instance") (newline))))
-    (eval-file "~/.config/tuna/lib/waiter.sls"))
+    (call-as-owner (module-owner '(waiter)) (lambda () (spawn-task (lambda (restore) (display "reloaded instance") (newline)))))
+    (reload-modules! '((waiter))))
 reloaded instance

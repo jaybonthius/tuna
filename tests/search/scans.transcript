@@ -13,7 +13,7 @@
                  (set! first-update (list (search:scan-index s middle) (search:scan-index s (end-of b))
                                           (> (search:match-start (car (search:scan-matches s middle (end-of b)))) middle))))
                (when (search:scan-done? s) (set! done #t)))))
-> (let wait () (unless done (sleep-for 0.01) (wait)))
+> (let wait () (unless done (timers:sleep 0.01) (wait)))
 > first-update
 (#f #f #t)
 > (list (search:scan-count s) (search:scan-index s middle) (search:scan-done? s) (search:scan-query s))
@@ -31,14 +31,14 @@
 ; arrived yet.
 > (map (lambda (m) (span e m)) (filter (lambda (m) (> (search:match-start m) 1)) (search:scan-matches es 0 (end-of e))))
 ((11 17 "needle") (21 27 "needle"))
-> (let wait ([n 0]) (unless (or (= n 300) (search:scan-done? es)) (sleep-for 0.01) (wait (+ n 1))))
+> (let wait ([n 0]) (unless (or (= n 300) (search:scan-done? es)) (timers:sleep 0.01) (wait (+ n 1))))
 > (map (lambda (m) (span e m)) (search:scan-matches es 0 (end-of e)))
 ((1 7 "needle") (11 17 "needle") (21 27 "needle"))
 ; A stopped scan keeps its matches and follows no more edits.
 > (search:stop-scan! es)
 > (buffers:replace! e 1 1 "needle ")
 #<edit 2>
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (search:scan-count es)
 3
 ; A scan of a region in a buffer of many atoms gathers the texts of the

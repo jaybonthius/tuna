@@ -1,5 +1,7 @@
-(import (tuna) (testing) (tuna plugins) (tuna eval) (document) (haml) (web))
-(use-plugin terminal)
+(import (hooks) (options) (tables) (timers) (plugins))
+(import (tuna) (testing) (document) (haml) (web))
+;; Loaded, not imported, so its unload in a test stays an unload.
+(load-module! '(terminal))
 (use-plugin editing)
 (use-plugin layout)
 (use-plugin undo)
@@ -40,8 +42,8 @@
 
 ;; A shell whose prompt is the same on every machine.
 (define (shell!)
-  (set-option! terminal:shell '("bash" "--norc" "--noprofile"))
-  (set-option! terminal:environment '(("PS1" . "$ ") ("PS2" . "> ") ("HISTFILE" . #f)))
+  (options:set! terminal:shell '("bash" "--norc" "--noprofile"))
+  (options:set! terminal:environment '(("PS1" . "$ ") ("PS2" . "> ") ("HISTFILE" . #f)))
   (let ([t (terminal:start #f)])
     (wait-for t "$ ")
     t))
@@ -74,7 +76,7 @@
 
 (define (colors! background)
   (parameterize ([web:current-client client])
-    ((table-ref web:input-handlers "terminal-colors") client
+    ((tables:ref web:input-handlers "terminal-colors") client
      `(("type" . "terminal-colors") ("foreground" . "#101010") ("background" . ,background) ("cursor" . "#ff0000")
        ("palette" . #("#000000" "#aa0000" "#00aa00" "#aaaa00" "#0000aa" "#aa00aa" "#00aaaa" "#aaaaaa"
                       "#555555" "#ff5555" "#55ff55" "#ffff55" "#5555ff" "#ff55ff" "#55ffff" "#ffffff"))))))
@@ -100,7 +102,7 @@
 
 (define (paste! text)
   (parameterize ([web:current-client client])
-    ((table-ref web:input-handlers "paste") client `(("type" . "paste") ("text" . ,text)))))
+    ((tables:ref web:input-handlers "paste") client `(("type" . "paste") ("text" . ,text)))))
 
 ;; The HTML views draws for the line of buffer b's text that starts with
 ;; prefix, in the selected view.
@@ -128,7 +130,7 @@
                                        (string->number (substring html (+ i n) j))))
                                  (loop (+ i 1))))))])
     (parameterize ([web:current-client client])
-      ((table-ref web:input-handlers "scroll") client
+      ((tables:ref web:input-handlers "scroll") client
        `(("type" . "scroll") ("view" . ,(views:id v)) ("placement" . ,(number-after "data-placement=\""))
          ("report" . 1) ("version" . ,(number-after "data-version=\"")) ("top" . null) ("fraction" . 0)
          ("spacer" . #f) ("left" . null) ("past" . 0) ("sides" . #()) ("start" . null) ("end" . null) ("atStart" . #f) ("atEnd" . #t)

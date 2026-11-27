@@ -43,10 +43,10 @@
 "invalid range in character class"
 ; A mode's own word characters, written \x{hex}, each matching only
 ; itself: s, d, ] , - and \.
-> (define-table odd-keymap)
-> (define-hook odd-hook)
+> (tables:define-table odd-keymap)
+> (hooks:define-hook odd-hook)
 > (modes:define-major-mode odd-mode (keymap odd-keymap) (hook odd-hook))
-> (table-set! syntax:word-characters odd-mode "sd]-\\")
+> (tables:set! syntax:word-characters odd-mode "sd]-\\")
 > (define o (text-buffer "odd" "a]b-c\\d e+f\n"))
 > (modes:set-major-mode odd-mode o)
 > (all-in o (search:make-query "\\w+" search:regexp))

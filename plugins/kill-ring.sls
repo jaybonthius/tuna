@@ -1,17 +1,17 @@
 #!tuna
-(import (document) (buffers))
+(import (document) (buffers) (hooks) (options) (tables) (saved))
 
-(define-option max 120
+(options:define-option max 120
   (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
   "How many entries the ring keeps; pushing one more drops the oldest.")
 
-(define-option skip-duplicates #f boolean?
+(options:define-option skip-duplicates #f boolean?
   "When true, pushing an entry whose text equals the newest entry's only moves the yank pointer to the newest.")
 
-(define-hook after-push
+(hooks:define-hook after-push
   "Called with the newest entry after each push!, append! and prepend!.")
 
-(define-table yankers
+(tables:define-table yankers
   "Maps a node kind's name to a procedure of a buffer, a position and a buffers:piece that yanks a piece whose top node has that kind, returning the position after what it inserted.")
 
 (module %internals
@@ -118,7 +118,7 @@
   (define (yanks-itself? kill) (and (kill-record? kill) (kill-record-yank kill) #t))
 
   ;; Large kills are left out, so writing the ring after a kill stays
-  ;; cheap whatever was killed before. set-saved! copies every mutable
+  ;; cheap whatever was killed before. saved:set! copies every mutable
   ;; string it is given, so each text is made immutable once, at its kill.
   (define stored-kill-limit 4096)
 
@@ -130,7 +130,7 @@
     (and (list? v)
          (for-all (lambda (e) (and (pair? e) (list? e) (for-all string? e))) v)))
 
-  (define-saved texts '() stored-entries?)
+  (saved:define-saved texts '() stored-entries?)
 
   ;; One value, replaced whole, so another thread reading the ring sees
   ;; its entries and yank pointer from the same moment.
@@ -146,13 +146,13 @@
     (let ([entries (texts)])
       (make-ring (map (lambda (e) (make-slot e e)) entries) (length entries) 0)))
 
-  ;; Set before the ring changes, so a quit landing between the two
+  ;; Set before the ring changes, so a cancel landing between the two
   ;; leaves at worst one needless save.
   (define changed? #f)
 
   (define (save!)
     (when changed?
-      (set-saved! texts
+      (saved:set! texts
         (fold-right (lambda (s acc) (if (slot-stored s) (cons (slot-stored s) acc) acc))
                     '() (ring-slots state)))
       (set! changed? #f)))
@@ -220,7 +220,7 @@
                   (document:node-kind t))))))
 
   (define (insert-piece! buffer position piece)
-    (let ([yank (let ([kind (top-kind piece)]) (and kind (table-ref yankers kind #f)))])
+    (let ([yank (let ([kind (top-kind piece)]) (and kind (tables:ref yankers kind #f)))])
       (if yank
           (yank buffer position piece)
           (buffers:insert! buffer position piece))))

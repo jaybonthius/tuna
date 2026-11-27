@@ -1,51 +1,51 @@
 > (definition-changes spell:dictionary-path)
-(((init) override #f) ((spell) define #f))
-> (set! spell:dictionary-path (lambda () "/usr/share/dict/words"))
+((#<owner (init) 1> override #f) (#<owner (spell) 1> define #f))
+> (define spell:dictionary-path (lambda () "/usr/share/dict/words"))
 > (advice-add! files:save! announce)
-> (module-changes '(repl))
-((advice files:save! #<procedure announce>) (override spell:dictionary-path #f))
+> (owner-changes (plugins:repl-owner))
+((advice #<procedure> #<procedure announce>) (override #<procedure> #f))
 ; The last override in the order of owners is in effect: (repl) after
 ; (init).
 > (spell:dictionary-path)
 "/usr/share/dict/words"
 ; An owner's second override replaces its first.
-> (set! spell:dictionary-path (lambda () "/tmp/words"))
+> (define spell:dictionary-path (lambda () "/tmp/words"))
 > (definition-changes spell:dictionary-path)
-(((repl) override #f) ((init) override #f) ((spell) define #f))
+((#<owner (repl) 1> override #f) (#<owner (init) 1> override #f) (#<owner (spell) 1> define #f))
 ; A module's change belongs to it; modules under lib/ come after the others.
 > (import (groucho words))
 > (import (prog))
 > (spell:language)
-"groucho"
+"prog"
 > (definition-changes spell:language)
-(((prog) override #f) ((groucho words) override #f) ((spell) define #f))
-> (module-changes '(prog))
-((override spell:language #f))
+((#<owner (prog) 1> override #f) (#<owner (groucho words) 1> override #f) (#<owner (spell) 1> define #f))
+> (owner-changes (module-owner '(prog)))
+((override #<procedure> #f))
 ; Advice wraps the definition in effect, the last outermost; (init) and
 ; (repl) each added announce.
 > (define (bracket save! path) (string-append "[" (save! path) "]"))
-> (as-module '(spell) (advice-add! files:save! bracket))
+> (call-as-owner (module-owner '(spell)) (lambda () (advice-add! files:save! bracket)))
 > (files:save! "a")
 saving asaving a
 "[a]"
 > (map (lambda (c) (list (car c) (cadr c))) (definition-changes files:save!))
-(((spell) advice) ((repl) advice) ((init) advice) ((files) define))
+((#<owner (spell) 1> advice) (#<owner (repl) 1> advice) (#<owner (init) 1> advice) (#<owner (files) 1> define))
 ; In code run on its behalf, a module's set! of its own name assigns it.
-> (as-module '(spell) (set! spell:language (lambda () "assigned")))
+> (call-as-owner (module-owner '(spell)) (lambda () (define spell:language (lambda () "assigned"))))
 > (map car (definition-changes spell:language))
-((prog) (groucho words) (spell))
-> (as-module '(nothere) 1)
-! as-module: not a loaded module with irritant (nothere)
+(#<owner (spell) 1> #<owner (prog) 1> #<owner (groucho words) 1> #<owner (spell) 1>)
+> (call-as-owner (module-owner '(nothere)) (lambda () 1))
+! call-as-owner: not an owner with irritant #f
 ; Only the main thread makes changes.
 > (define (on-thread thunk)
     (let ([result #f])
-      (thread-join (fork-thread (lambda () (set! result (guard (c [#t (condition-message c)]) (thunk))))))
+      (join-task (fork-task (lambda (restore) (set! result (guard (c [#t (condition-message c)]) (thunk))))))
       result))
-> (on-thread (lambda () (set! spell:language (lambda () "thread"))))
-"only the main thread makes changes"
+> (on-thread (lambda () (define spell:language (lambda () "thread"))))
+"only the main thread changes owners and modules"
 > (on-thread (lambda () (advice-add! files:save! bracket)))
-"only the main thread makes changes"
+"only the main thread changes owners and modules"
 > (on-thread (lambda () (advice-remove! files:save! announce)))
-"only the main thread makes changes"
+"only the main thread changes owners and modules"
 > (spell:language)
-"groucho"
+"prog"

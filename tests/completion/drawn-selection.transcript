@@ -60,7 +60,7 @@
 #f
 ; A read whose input is preferred over its first match draws no row
 ; selected until a move selects one.
-> (set-option! completion:read-preselect 'none)
+> (options:set! completion:read-preselect 'none)
 > (define t (start! (lambda () (completion:read "Word: " (list (completion:source (candidates (vector "alpha" "almond" "apple" "banana")))) #f))))
 > (define lv (list-view))
 > (state lv)
@@ -72,4 +72,4 @@
 > (press! "RET")
 > (result t)
 "alpha"
-> (remove-option! completion:read-preselect)
+> (options:unset! completion:read-preselect)

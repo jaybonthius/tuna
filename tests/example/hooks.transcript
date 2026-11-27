@@ -1,10 +1,10 @@
 ; Each form's basic use.
-> (define-hook after-save "Called with the path of each file saved.")
+> (hooks:define-hook after-save "Called with the path of each file saved.")
 > (after-save "notes.txt")
 > (define (make-backup path) path)
-> (add-hook! files:after-save make-backup)
+> (hooks:add! files:after-save make-backup)
 > (import (text))
-> (eq? (exists (lambda (entry) (entry "notes.txt")) (hook-entries files:find-handlers))
+> (eq? (exists (lambda (entry) (entry "notes.txt")) (hooks:entries files:find-handlers))
        text:mode)
 #t
 ; Entries run by depth, then in the order added; the configuration removed
@@ -12,131 +12,122 @@
 > (define (b path) (display "[b]") #f)
 > (define (a path) (display "[a]") #f)
 > (define (boom path) (error 'entry "boom"))
-> (add-hook! files:after-save b 10)
-> (add-hook! files:after-save a -10)
-> (add-hook! files:after-save boom)
+> (hooks:add! files:after-save b 10)
+> (hooks:add! files:after-save a -10)
+> (hooks:add! files:after-save boom)
 > (files:after-save "x")
 [a]
 ! entry: boom
 [b]
-> (add-hook! files:after-save b 10)
-> (length (hook-entries files:after-save))
+> (hooks:add! files:after-save b 10)
+> (length (hooks:entries files:after-save))
 4
-; hook-entries gives them in order, and an entry that raises raises to the
+; hooks:entries gives them in order, and an entry that raises raises to the
 ; caller; the procedures stay the same while the entries do.
-> (exists (lambda (entry) (entry "x")) (hook-entries files:after-save))
+> (exists (lambda (entry) (entry "x")) (hooks:entries files:after-save))
 [a]
 "x"
-> ((caddr (hook-entries files:after-save)) "x")
+> ((caddr (hooks:entries files:after-save)) "x")
 ! entry: boom
-> (equal? (hook-entries files:after-save) (hook-entries files:after-save))
+> (equal? (hooks:entries files:after-save) (hooks:entries files:after-save))
 #t
 ; Each entry runs on behalf of the module that added it.
 > (define owners '())
-> (add-hook! files:after-save (lambda (path) (set! owners (cons (current-owner) owners))))
-> (as-module '(spell) (add-hook! files:after-save (lambda (path) (set! owners (cons (current-owner) owners))) 20))
-> (remove-hook! files:after-save a)
-> (remove-hook! files:after-save b)
-> (remove-hook! files:after-save boom)
-> (as-module '(prog) (files:after-save "y"))
-> owners
+> (hooks:add! files:after-save (lambda (path) (set! owners (cons (current-owner) owners))))
+> (call-as-owner (module-owner '(spell)) (lambda () (hooks:add! files:after-save (lambda (path) (set! owners (cons (current-owner) owners))) 20)))
+> (hooks:remove! files:after-save a)
+> (hooks:remove! files:after-save b)
+> (hooks:remove! files:after-save boom)
+> (call-as-owner (module-owner '(prog)) (lambda () (files:after-save "y")))
+> (map owner-name owners)
 ((spell) (repl))
 ; Local entries run only in their scope, by depth with the others.
-> (define s1 (make-scope))
-> (define s2 (make-scope))
-> (current-scope s1)
+> (define s1 (scopes:make))
+> (define s2 (scopes:make))
+> (scopes:current s1)
 > (prog:mode)
 > (files:save! "x")
 saving x[indenting]
 "x"
-> (current-scope s2)
+> (scopes:current s2)
 > (files:save! "x")
 saving x
 "x"
-> (current-scope #f)
-> (add-local-hook! files:before-save a)
-! add-local-hook!: the current scope is #f
-> (remove-local-hook! files:before-save a)
-! remove-local-hook!: the current scope is #f
-; The mode hook's entry belongs to the configuration, so its local entry
-; does too.
-> (map (lambda (change) (list-head change 2)) (module-changes '(init)))
-((hook-entry files:before-save) (local-value fill:column) (hook-entry prog:mode-hook) (removal files:after-save) (advice files:save!) (override spell:dictionary-path) (setting files:autosave-seconds) (setting fill:column) (setting spell:language))
+> (scopes:current #f)
+> (hooks:add-local! files:before-save a)
+! hooks:add-local!: the current scope is #f
+> (hooks:remove-local! files:before-save a)
+! hooks:remove-local!: the current scope is #f
 ; Removing another module's local entry is the remover's change, and
 ; taking it back restores the entry.
-> (current-scope s1)
-> (remove-local-hook! files:before-save prog:indent-buffer)
+> (scopes:current s1)
+> (hooks:remove-local! files:before-save prog:indent-buffer)
 > (files:save! "x")
 saving x
 "x"
-> (let ([change (car (module-changes '(repl)))])
-    (list (car change) (cadr change) (eq? (caddr change) prog:indent-buffer)))
-(removal files:before-save #t)
-> (as-module '(repl) (remove-local-hook! files:before-save prog:indent-buffer))
-> (current-scope #f)
+> (call-as-owner (plugins:repl-owner) (lambda () (hooks:remove-local! files:before-save prog:indent-buffer)))
+> (scopes:current #f)
 ; Adding a procedure that the same module already added does nothing.
 > (define (c path) (display "[c]"))
-> (add-hook! files:before-save c)
-> (add-hook! files:before-save c 5)
+> (hooks:add! files:before-save c)
+> (hooks:add! files:before-save c 5)
 > (files:before-save "x")
 [c]
-> (as-module '(spell) (add-hook! files:before-save c))
+> (call-as-owner (module-owner '(spell)) (lambda () (hooks:add! files:before-save c)))
 > (files:before-save "x")
 [c][c]
-; remove-hook! removes the entry whichever module added it.
-> (remove-hook! files:before-save c)
+; hooks:remove! removes the entry whichever module added it.
+> (hooks:remove! files:before-save c)
 > (files:before-save "x")
-> (map (lambda (change) (list-head change 2)) (list-head (module-changes '(repl)) 1))
-((removal files:before-save))
 ; Hooks check their arguments.
-> (add-hook! c c)
-! add-hook!: not a hook with irritant #<procedure c>
-> (add-hook! files:before-save 'c)
-! add-hook!: not a procedure with irritant c
-> (add-hook! files:before-save c 'deep)
-! add-hook!: not a real number with irritant deep
-> (define-hook)
-! invalid syntax (define-hook)
-> (list (hook? files:after-save) (hook? files:save!) (hook? 1))
+> (hooks:add! c c)
+! hooks:add!: not a hook with irritant #<procedure c>
+> (hooks:add! files:before-save 'c)
+! hooks:add!: not a procedure with irritant c
+> (hooks:add! files:before-save c 'deep)
+! hooks:add!: not a real number with irritant deep
+> (hooks:define-hook)
+! invalid syntax (hooks:define-hook)
+> (list (hooks:hook? files:after-save) (hooks:hook? files:save!) (hooks:hook? 1))
 (#t #f #f)
-; Evaluating define-hook again keeps the entries.
-> (add-hook! after-save c)
-> (define-hook after-save "Called after saving.")
+; Evaluating hooks:define-hook again keeps the entries.
+> (hooks:add! after-save c)
+> (hooks:define-hook after-save "Called after saving.")
 > (after-save "z")
 [c]
-; Either the configuration or the REPL evaluating the other's define-hook
+; Either the configuration or the REPL evaluating the other's hooks:define-hook
 ; keeps the entries.
-> (import (tuna eval))
-> (eval-text "(define-hook shared)" "~/.config/tuna/init.ss")
-> (add-hook! shared c)
-> (define-hook shared)
+> (import (plugins))
+> (call-as-owner (plugins:configuration-owner) (lambda () (plugins:eval-form '(hooks:define-hook shared))))
+> (hooks:add! shared c)
+> (hooks:define-hook shared)
 > (shared "x")
 [c]
-> (eval-text "(define-hook shared)" "~/.config/tuna/init.ss")
+> (call-as-owner (plugins:configuration-owner) (lambda () (plugins:eval-form '(hooks:define-hook shared))))
 > (shared "x")
 [c]
-; An entry that raises on another thread is reported on the main thread.
+; An entry that raises is reported on the thread that ran the hook.
 > (define main-thread-id (get-thread-id))
 > (define reported-on-main '())
 > (define (note-thread report c)
     (set! reported-on-main (cons (= (get-thread-id) main-thread-id) reported-on-main))
     (report c))
 > (advice-add! report note-thread)
-> (define-hook raising)
-> (add-hook! raising (lambda () (error 'entry "boom")))
+> (hooks:define-hook raising)
+> (hooks:add! raising (lambda () (error 'entry "boom")))
 > (raising)
 ! entry: boom
-> (thread-join (fork-thread raising))
+> (begin (join-task (fork-task (lambda (restore) (raising)))) (void))
 ! entry: boom
 > reported-on-main
-(#t #t)
+(#f #t)
 > (advice-remove! report note-thread)
 ; A module whose body raises on its first load is unloaded, and the hook
 ; entry it added goes with its other changes.
 > (call-with-output-file "~/.config/tuna/lib/bad.sls"
     (lambda (p)
-      (put-string p "#!tuna\n(import (files))\n(define x (begin (add-hook! files:after-save (lambda (path) (display \"bad entry\"))) (car '())))\n")))
+      (put-string p "#!tuna\n(import (files) (hooks))\n(define x (begin (hooks:add! files:after-save (lambda (path) (display \"bad entry\"))) (car '())))\n")))
 > (import (bad))
 ! (bad) car: () is not a pair
-> (list (module-changes '(bad)) (files:after-save "p"))
-(() #<void>)
+> (list (module-owner '(bad)) (files:after-save "p"))
+(#f #<void>)

@@ -1,8 +1,8 @@
 #!tuna
 ;; Stands in for a completion plugin with a prefix keymap.
-(import (commands) (keys))
+(import (commands) (keys) (tables))
 
-(define-table prefix-map "Completion commands under one prefix.")
+(tables:define-table prefix-map "Completion commands under one prefix.")
 
 (commands:define-command (file) "Completes a file name." 'cape-file)
 

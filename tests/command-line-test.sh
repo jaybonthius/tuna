@@ -20,18 +20,18 @@ cp tests/web/home/.config/tuna/lib/http.sls "$home/.config/tuna/lib/"
 # The web line comes first, so the server's start waiting for the
 # command line's settings does not rest on the order of the lines.
 cat > "$home/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins) (http))
+(import (tuna) (http))
 (use-plugin web
   (config
     (let ([port (http:free-port)])
       (printf "configured ~a\n" port)
-      (set-option! web:port port))))
+      (options:set! web:port port))))
 (use-plugin command-line)
 (import (layout) (views) (buffers) (document) (files))
 (define (wait-until done?)
   (let loop ([n 0])
     (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
+      (timers:sleep 0.01)
       (loop (+ n 1)))))
 (define (shown)
   (let* ([view (layout:selected-view)] [b (views:buffer view)])
@@ -61,16 +61,17 @@ expect() {
 # Each --eval runs in order, at the REPL, so its setting wins over the
 # configuration's, and the server starts once, on its port. A failing
 # --eval is reported and the rest run; any other flag is reported. A
-# reload of the plugin in the same process evaluates nothing again. Each
+# reload of the plugin in the same process evaluates no flag again; the
+# configuration, which imports it, is read again. Each
 # port is one the system chose, so the configuration and the flag print
 # theirs.
 output=$(run '(web:port)
-(import (tuna eval))
-(eval-file "~/.config/tuna/init.ss")
+(import (plugins))
+(plugins:load-configuration!)
 (web:port)
-(eval-file (string-append (getenv "TUNA_LIBRARY") "/command-line.sls"))
-(display "reloaded\n")' --eval='(let ([port (http:free-port)]) (printf "flag ~a\n" port) (set-option! web:port port))' \
-  --eval='(set-option! web:prot 1)' --evl=1 --eval='(display "third\n")')
+(reload-modules! (quote ((command-line))))
+(display "reloaded\n")' --eval='(let ([port (http:free-port)]) (printf "flag ~a\n" port) (options:set! web:port port))' \
+  --eval='(options:set! web:prot 1)' --evl=1 --eval='(display "third\n")')
 port=$(printf '%s\n' "$output" | sed -n 's/^flag \([0-9]*\)$/\1/p')
 expect "flags" "$(printf '%s\n' "$output" | sed 's/^configured [0-9]*$/configured/')" "configured
 flag $port
@@ -81,6 +82,7 @@ Tuna is at http://127.0.0.1:$port/
 $port
 configured
 $port
+configured
 reloaded"
 
 # Without --eval the configuration's setting is in effect.
@@ -97,10 +99,9 @@ $port"
 output=$(run '(wait-until (lambda () (showing? "b.txt")))
 (shown)
 (buffers:kill! (files:buffer-visiting "a.txt"))
-(import (tuna eval))
-(eval-file (string-append (getenv "TUNA_LIBRARY") "/files.sls"))
-(eval-file (string-append (getenv "TUNA_LIBRARY") "/command-line.sls"))
-(sleep-for 0.5)
+(reload-modules! (quote ((files))))
+(reload-modules! (quote ((command-line))))
+(timers:sleep 0.5)
 (map buffers:name (files:buffers))
 (shown)' +3 a.txt --eval='(write (map buffers:name (files:buffers)))' +2 b.txt)
 expect "files" "$(printf '%s\n' "$output" | grep -v '^configured \|^Tuna is at ')" '("a.txt")

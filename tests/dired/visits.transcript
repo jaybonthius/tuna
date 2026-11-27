@@ -3,7 +3,7 @@
 > (touch! "v/sub/deep.txt" "deep\n")
 > (touch! "v/f.txt" "f\n")
 > (define started #f)
-> (set-option! ask:file-name-reader (lambda (q folder) (set! started (list q folder)) "~/v"))
+> (options:set! ask:file-name-reader (lambda (q folder) (set! started (list q folder)) "~/v"))
 > (press! "C-x" "d")
 > (settle)
 > (list started (shown) (point-name))
@@ -74,13 +74,13 @@
 ; Visiting a listing whose folder changed says so, or reads it again
 ; with dired:refresh-when-revisited?.
 > (define v (dired:visit (at "v")))
-> (sleep-for 1.1)
+> (timers:sleep 1.1)
 > (touch! "v/g.txt" "g\n")
 > (eq? v (dired:visit (at "v")))
 #t
 > (list (message) (listing-lines v))
 ("Folder changed on disk; type g to refresh" ("  ." "  .." "  f.txt" "  sub"))
-> (set-option! dired:refresh-when-revisited? #t)
+> (options:set! dired:refresh-when-revisited? #t)
 > (eq? v (dired:visit (at "v")))
 #t
 > (listing-lines v)
@@ -121,7 +121,7 @@
     (let ([last (car (reverse (entries (views:buffer view))))])
       (views:set-point! view (+ 1 (document:node-start last)))))
 > (advice-add! dired:place-point! on-last-entry)
-> (set-option! ask:file-name-reader (lambda (q folder) "~/w"))
+> (options:set! ask:file-name-reader (lambda (q folder) "~/w"))
 > (press! "C-x" "d")
 > (settle)
 > (list (buffers:name (views:buffer (view))) (point-name))

@@ -1,6 +1,8 @@
 #!tuna
 (import (jobs) (prefix (diff parse) parsed:))
 
+(define %self (current-owner))
+
 (jobs:define-worker (%parser output emit)
   (import (diff parse))
   (emit (guard (c [(error? c)
@@ -30,20 +32,21 @@
         (suspend
           (lambda (resume)
             (let ([w resume])
-              (as-module (this-module)
-                (set! job
-                  (jobs:start %parser output
-                    (lambda (v) (set! result v))
-                    (lambda (ended)
-                      (when (take-waiter! w)
-                        (resume
-                          (lambda ()
-                            (cond
-                              [(condition? ended) (raise ended)]
-                              [ended (assertion-violation 'diff:parse "the job was stopped")]
-                              [(failure? result)
-                               (apply error 'diff:parse (vector-ref result 1) (vector-ref result 2))])
-                            result)))))))
+              (call-as-owner %self
+                (lambda ()
+                  (set! job
+                    (jobs:start %parser output
+                      (lambda (v) (set! result v))
+                      (lambda (ended)
+                        (when (take-waiter! w)
+                          (resume
+                            (lambda ()
+                              (cond
+                                [(condition? ended) (raise ended)]
+                                [ended (assertion-violation 'diff:parse "the job was stopped")]
+                                [(failure? result)
+                                 (apply error 'diff:parse (vector-ref result 1) (vector-ref result 2))])
+                              result))))))))
               (set! waiting (cons w waiting))))))))
 
   (define (stop-waiting!)

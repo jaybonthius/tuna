@@ -12,7 +12,7 @@
     (let loop ([n (* seconds 4)] [peak 0])
       (cond
         [(= n 0) peak]
-        [else (sleep-for 0.25) (loop (- n 1) (max peak (resident-mib)))])))
+        [else (timers:sleep 0.25) (loop (- n 1) (max peak (resident-mib)))])))
 > (define followed
     (processes:start-for-user "cat" '("/dev/zero") (processes:options [full-log (processes:full-log pause)])))
 > (processes:attach! followed 0 (lambda (bytes end) #f))

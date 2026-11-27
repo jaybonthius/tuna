@@ -4,8 +4,8 @@
 > (define (event! . e) (set! events (cons e events)))
 > (define (take-events!) (let ([e (reverse events)]) (set! events '()) e))
 > (define (name-of c) (and c (commands:command-name c)))
-> (add-hook! commands:before-command (lambda (c) (event! 'before (name-of c) (name-of (commands:this-command)) (name-of (commands:last-command)))))
-> (add-hook! commands:after-command (lambda (c) (event! 'after (name-of c) (name-of (commands:this-command)) (name-of (commands:last-command)))))
+> (hooks:add! commands:before-command (lambda (c) (event! 'before (name-of c) (name-of (commands:this-command)) (name-of (commands:last-command)))))
+> (hooks:add! commands:after-command (lambda (c) (event! 'after (name-of c) (name-of (commands:this-command)) (name-of (commands:last-command)))))
 > (commands:define-command (inner [x (begin (event! 'reading-inner) 1)])
     "Notes what it sees."
     (event! 'inner (name-of (commands:this-command)) (name-of (commands:last-command)))
@@ -92,12 +92,10 @@
 > (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 > (commands:define-command (spin) "Runs until quit." (let loop () (loop)))
 > (begin
-    (fork-thread
-      (lambda ()
-        (chez:sleep (make-time 'time-duration 100000000 0))
-        (request-quit!)))
+    (fork-task (lambda (restore) (chez:sleep (make-time 'time-duration 100000000 0))
+        (testing:request-quit!)))
     (commands:run spin))
-! &quit
+! &cancelled
 > (take-events!)
 ((before spin spin broken) (after spin spin broken))
 ; A warning is reported and the command goes on.
@@ -112,12 +110,12 @@ done
 > (commands:define-command (noted) "Notes what it sees."
     (event! 'noted (name-of (commands:this-command)) (name-of (commands:last-command))))
 > (define (run-noted c) (commands:run noted))
-> (add-hook! commands:before-command run-noted)
-> (add-hook! commands:after-command run-noted)
+> (hooks:add! commands:before-command run-noted)
+> (hooks:add! commands:after-command run-noted)
 > (commands:run inner 4)
 4
-> (remove-hook! commands:before-command run-noted)
-> (remove-hook! commands:after-command run-noted)
+> (hooks:remove! commands:before-command run-noted)
+> (hooks:remove! commands:after-command run-noted)
 > (list (take-events!) (name-of (commands:last-command)))
 (((before inner inner careful) (noted noted careful) (inner inner careful) (after inner inner careful) (noted noted careful)) inner)
 ; A raise from report itself is reported once more; a report that
@@ -141,8 +139,8 @@ done
 (1 2)
 ; The command and its interactive expressions run as the user, (repl).
 > (commands:define-command (owner [o (current-owner)]) "Returns the owners it sees." (list o (current-owner)))
-> (as-module '(console) (commands:run owner))
-((repl) (repl))
+> (call-as-owner (module-owner '(console)) (lambda () (commands:run owner)))
+(#<owner (repl) 1> #<owner (repl) 1>)
 ; run checks its command.
 > (commands:run 'inner)
 ! commands:run: not a command with irritant inner
@@ -200,7 +198,7 @@ inner
 > (commands:keep-last-command!)
 ! commands:keep-last-command!: no command is running
 > (let ([result #f])
-    (fork-thread (lambda () (set! result (guard (c [#t (condition-message c)]) (commands:keep-last-command!)))))
+    (fork-task (lambda (restore) (set! result (guard (c [#t (condition-message c)]) (commands:keep-last-command!)))))
     (testing:wait-until (lambda () result))
     result)
 "not on the main thread"

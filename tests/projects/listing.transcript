@@ -4,15 +4,15 @@
 ; under its path, in place of the submodule itself.
 > (listed-in "src/app/lib")
 (".gitignore" ".gitmodules" ".hidden" "README" "lib/a.ss" "lib/deep/b.ss" "libs/lib/.gitmodules" "libs/lib/lib.ss" "libs/lib/vendor/inner/inner.ss" "notes.txt" "odd\nname" "pkg/go.mod" "pkg/main.go")
-> (set-option! projects:merge-submodules? #f)
+> (options:set! projects:merge-submodules? #f)
 > (listed-in "src/app")
 (".gitignore" ".gitmodules" ".hidden" "README" "lib/a.ss" "lib/deep/b.ss" "notes.txt" "odd\nname" "pkg/go.mod" "pkg/main.go")
 > (listed-in "src/app/libs/lib")
 (".gitmodules" "lib.ss")
-> (set-option! projects:merge-submodules? #t)
+> (options:set! projects:merge-submodules? #t)
 ; A root found by an extra marker inside a repository lists its own
 ; files with git, a submodule under it in place of the submodule.
-> (set-option! projects:extra-root-markers (list "go.mod" ".project"))
+> (options:set! projects:extra-root-markers (list "go.mod" ".project"))
 > (listed-in "src/app/pkg")
 ("go.mod" "main.go")
 > (write-file! "src/app/libs/go.mod" "module libs\n")
@@ -24,10 +24,10 @@
 ("a.txt" "link-to-file" "sub/b.txt")
 > (listed-in "notes/proj")
 (".project" "p.txt")
-> (set-option! projects:ignores (list "./sub/" "*.txt"))
+> (options:set! projects:ignores (list "./sub/" "*.txt"))
 > (listed-in "hg-thing")
 (".hg/store" "a.o" "link-to-file")
-> (set-option! projects:ignores '())
+> (options:set! projects:ignores '())
 > (listed-in "notes/proj")
 (".project" "p.txt")
 ; A program's complaint is reported, and the paths it listed stay.
@@ -39,7 +39,7 @@
 > (define stop (projects:list-files (projects:find (string-append home "/src/app")) (lambda (files) (set! calls (+ calls 1)))))
 > (stop)
 > (stop)
-> (sleep-for 0.5)
+> (timers:sleep 0.5)
 > calls
 0
 ; What code passes is checked.

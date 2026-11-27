@@ -106,7 +106,7 @@
 ""
 > (minibuffer:history)
 ("b" "c" "xy!z")
-> (with-options ([minibuffer:history-length 2]) (ask "d"))
+> (options:with ([minibuffer:history-length 2]) (ask "d"))
 "d"
 > (minibuffer:history)
 ("d" "b")
@@ -132,7 +132,7 @@
 "typed"
 ; An empty input answers with the default.
 > (press! "C-g")
-! &quit
+! &cancelled
 > (define t (start! (lambda () (minibuffer:read "Name: " minibuffer:history "fallback"))))
 > (press! "RET")
 > (result t)
@@ -159,15 +159,15 @@
 ; C-g from another client quits the prompt too.
 > (define t (start! (lambda () (minibuffer:read "Name: "))))
 > (press-in! other-client "C-g")
-! &quit
+! &cancelled
 > (result t)
-(raised #<condition &quit>)
+(raised #<condition &cancelled>)
 ; ESC, a quit key that runs keyboard-quit by default, aborts too.
 > (define t (start! (lambda () (minibuffer:read "Name: "))))
 > (press! "ESC")
-! &quit
+! &cancelled
 > (result t)
-(raised #<condition &quit>)
+(raised #<condition &cancelled>)
 ; Hooks follow every prompt; add-keymap! keys win while point is in the
 ; input; set-content! adds after it.
 > (define seen '())
@@ -175,10 +175,10 @@
 > (define note-started (note 'started))
 > (define note-changed (note 'changed))
 > (define note-ended (note 'ended))
-> (add-hook! minibuffer:prompt-started note-started)
-> (add-hook! minibuffer:input-changed note-changed)
-> (add-hook! minibuffer:prompt-ended note-ended)
-> (define-table extra)
+> (hooks:add! minibuffer:prompt-started note-started)
+> (hooks:add! minibuffer:input-changed note-changed)
+> (hooks:add! minibuffer:prompt-ended note-ended)
+> (tables:define-table extra)
 > (commands:define-command (shout) "Answers in capitals." (let ([p (minibuffer:current-prompt)]) (minibuffer:exit! p (string-upcase (minibuffer:input p)))))
 > (keys:bind! extra "RET" shout)
 > (define t (start! (lambda () (minibuffer:call-with-setup (lambda (p) (minibuffer:add-keymap! p extra) (minibuffer:set-content! p '("[list]"))) (lambda () (minibuffer:read "Name: "))))))
@@ -190,13 +190,13 @@
 "HI"
 > (reverse seen)
 ((started "") (changed "h") (changed "hi") (ended "hi"))
-> (remove-hook! minibuffer:prompt-started note-started)
-> (remove-hook! minibuffer:input-changed note-changed)
-> (remove-hook! minibuffer:prompt-ended note-ended)
+> (hooks:remove! minibuffer:prompt-started note-started)
+> (hooks:remove! minibuffer:input-changed note-changed)
+> (hooks:remove! minibuffer:prompt-ended note-ended)
 ; The plugin's writes are silent, so content set on every key leaves the
 ; input's undo whole.
 > (define (show-input p) (minibuffer:set-content! p (list (string-append "[" (minibuffer:input p) "]"))))
-> (add-hook! minibuffer:input-changed show-input)
+> (hooks:add! minibuffer:input-changed show-input)
 > (define t (start! (lambda () (minibuffer:read "Name: "))))
 > (type! "ab")
 > (press! "SPC")
@@ -212,10 +212,10 @@
 > (list (input) (datums minibuf))
 ("ab cd" ((minibuffer:%prompts () (minibuffer:prompt ((depth . 1)) (minibuffer:question () "Name: ") (minibuffer:input-field () "ab cd") "\n" (minibuffer:content () "[ab cd]")))))
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
-(raised #<condition &quit>)
-> (remove-hook! minibuffer:input-changed show-input)
+(raised #<condition &cancelled>)
+> (hooks:remove! minibuffer:input-changed show-input)
 ; exit! on a prompt that ended raises.
 > (define p #f)
 > (define t (start! (lambda () (minibuffer:call-with-setup (lambda (q) (set! p q)) (lambda () (minibuffer:read "Name: "))))))
@@ -233,17 +233,17 @@
 > (layout:zoomed-view)
 #f
 > (press! "C-g")
-! &quit
+! &cancelled
 > (press! "C-x" "1")
 ; A prompt whose start raises leaves nothing behind.
-> (table-set! layout:display-rules minibuffer:buffer? (lambda (b) (error 'no-room "no room")))
+> (tables:set! layout:display-rules minibuffer:buffer? (lambda (b) (error 'no-room "no room")))
 > (define t (start! (lambda () (minibuffer:read "Name: "))))
 ! no-room: no room
 > (result t)
 (raised "no room")
 > (list (minibuffer:current-prompt) (html (bar)))
 (#f "<div class=\"minibuffer-prompts\"></div>")
-> (table-remove! layout:display-rules minibuffer:buffer?)
+> (tables:remove! layout:display-rules minibuffer:buffer?)
 ; The buffer cannot be killed.
 > (buffers:kill! minibuf)
 #f
@@ -259,9 +259,9 @@
 > (input)
 "a"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
-(raised #<condition &quit>)
+(raised #<condition &cancelled>)
 ; M-n past what was typed inserts the prompt's default, as Emacs's
 ; future history; M-p goes back to what was typed.
 > (define t (start! (lambda () (minibuffer:read "Name: " #f "fallback"))))
@@ -281,9 +281,9 @@
 > (press! "M-p")
 ! minibuffer:previous-history: beginning of history
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
-(raised #<condition &quit>)
+(raised #<condition &cancelled>)
 > (raised (lambda () (minibuffer:prompt-default 'no)))
 (minibuffer:prompt-default "not a prompt")
 ; minibuffer:prompt-selected-view gives the view selected when the prompt
@@ -293,9 +293,9 @@
 > (list (eq? (minibuffer:prompt-selected-view (prompt)) before) (eq? (view) before))
 (#t #f)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
-(raised #<condition &quit>)
+(raised #<condition &cancelled>)
 > (raised (lambda () (minibuffer:prompt-selected-view 'no)))
 (minibuffer:prompt-selected-view "not a prompt")
 ; read-entry's own entries come before the history under M-p and are never

@@ -1,18 +1,18 @@
 ; Plain data is numbers, characters, strings, symbols, booleans,
 ; bytevectors, the empty list, and pairs and vectors of plain data,
 ; without cycles.
-> (map plain-data? (list 1 1/2 2.5 1+2i (expt 2 100) #\c "s" 'sym #t #vu8(1 2) '() '(a . 1) (vector "s" #\c) '#(1 (2 #(3)))))
+> (map plain-data:plain-data? (list 1 1/2 2.5 1+2i (expt 2 100) #\c "s" 'sym #t #vu8(1 2) '() '(a . 1) (vector "s" #\c) '#(1 (2 #(3)))))
 (#t #t #t #t #t #t #t #t #t #t #t #t #t #t)
-> (map plain-data? (list car (make-eq-hashtable) (box 1) (fxvector 1) (void) (list 1 car) (vector (box 1))))
+> (map plain-data:plain-data? (list car (make-eq-hashtable) (box 1) (fxvector 1) (void) (list 1 car) (vector (box 1))))
 (#f #f #f #f #f #f #f)
-> (let ([p (list 1 2)]) (set-cdr! (cdr p) p) (plain-data? p))
+> (let ([p (list 1 2)]) (set-cdr! (cdr p) p) (plain-data:plain-data? p))
 #f
-> (let ([p (list 1)]) (set-car! p p) (plain-data? p))
+> (let ([p (list 1)]) (set-car! p p) (plain-data:plain-data? p))
 #f
-> (let ([v (vector 1)]) (vector-set! v 0 (list v)) (plain-data? v))
+> (let ([v (vector 1)]) (vector-set! v 0 (list v)) (plain-data:plain-data? v))
 #f
 ; Shared structure is not a cycle.
-> (let ([shared (list "s")]) (plain-data? (list shared shared (vector shared))))
+> (let ([shared (list "s")]) (plain-data:plain-data? (list shared shared (vector shared))))
 #t
-> (plain-data? (let loop ([i 0] [v '()]) (if (= i 200) v (loop (+ i 1) (cons v v)))))
+> (plain-data:plain-data? (let loop ([i 0] [v '()]) (if (= i 200) v (loop (+ i 1) (cons v v)))))
 #t

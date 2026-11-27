@@ -118,9 +118,9 @@
 > (define t (start! "C-u" "M-:"))
 > (type! "(let loop () (loop))")
 > (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
-> (begin (fork-thread (lambda () (chez:sleep (make-time 'time-duration 300000000 0)) (request-quit!))) (void))
+> (begin (fork-task (lambda (restore) (chez:sleep (make-time 'time-duration 300000000 0)) (testing:request-quit!))) (void))
 > (press! "RET")
-! &quit
+! &cancelled
 > (finish t)
 #t
 > (press! "C-g")
@@ -152,7 +152,7 @@
 > (message)
 "#0=(1 2 . #0#)"
 ; With eval:print-length #f, lists are written whole.
-> (set-option! eval:print-length #f)
+> (options:set! eval:print-length #f)
 > (eval! "(make-list 30 'a)")
 #t
 > (message)
@@ -164,7 +164,7 @@
 (588891 "(0 1 2" "99999)")
 > (string-length (car (log-tail 1)))
 588891
-> (set-option! eval:print-length 12)
+> (options:set! eval:print-length 12)
 ; Each result is logged; an equal one counts on the last line.
 > (eval! "(+ 1 2)")
 #t

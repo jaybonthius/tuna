@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins) (document) (haml) (web))
+(import (tables))
+(import (tuna) (document) (haml) (web))
 (use-plugin layout-split)
 (use-plugin layout-scroll)
 (use-plugin layout-float)
@@ -53,7 +54,7 @@
 (define (press! client . keys)
   (for-each
     (lambda (key)
-      ((table-ref web:input-handlers "key") client
+      ((tables:ref web:input-handlers "key") client
        (list (cons "type" "key") (cons "key" (car key)) (cons "code" "") (cons "modifiers" (list->vector (cdr key))))))
     keys))
 (define (lines name n)
@@ -82,7 +83,7 @@
 (define (strip-report-whole! client items whole . rest)
   (let ([html (screen-of client)])
     (set! reports (+ reports 1))
-    ((table-ref web:input-handlers "scroller") client
+    ((tables:ref web:input-handlers "scroller") client
      (append `(("type" . "scroller") ("scroller" . ,(car (numbers-after html "data-scroller=\"")))
                ("placement" . ,(car (numbers-after html "data-placement=\""))) ("report" . ,reports)
                ("items" . ,(list->vector items)) ("whole" . ,(list->vector whole)) ("settled" . ,(pair? rest)))

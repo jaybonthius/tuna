@@ -1,36 +1,38 @@
 #!tuna
 (import (processes) (buffers) (document) (views) (modes) (keys) (commands) (faces) (ask) (files)
-        (ansi-colors))
+        (ansi-colors) (hooks) (options) (tables) (saved))
 
-(define-option shell
+(define %self (current-owner))
+
+(options:define-option shell
   (list (let ([s (getenv "SHELL")]) (if (and s (fx> (string-length s) 0)) s "/bin/sh")) "-c")
   (lambda (v) (and (list? v) (pair? v) (for-all string? v)))
   "The shell's program and its switches, which a command line follows as the last argument.")
 
-(define-option environment '(("TERM" . "dumb") ("PAGER" . "")) processes:environment?
+(options:define-option environment '(("TERM" . "dumb") ("PAGER" . "")) processes:environment?
   "Variables a run's program gets over Tuna's environment: names and values, where #f removes a variable.")
 
-(define-option colors? #t boolean?
+(options:define-option colors? #t boolean?
   "Whether SGR sequences style a run's output; with #f they are removed and the text stays plain.")
 
-(define-option follow-output? #f boolean?
+(options:define-option follow-output? #f boolean?
   "Whether a run starts with its views' points at the end of its buffer, so they follow its output.")
 
-(define-option always-stop? #f boolean?
+(options:define-option always-stop? #f boolean?
   "Whether runs:start stops the going run in its buffer without asking.")
 
-(define-hook started
+(hooks:define-hook started
   "Called with a run's buffer once its header is written and its program is starting.")
 
-(define-hook output-written
+(hooks:define-hook output-written
   "Called with a run's buffer and the start and end of the text written, after each piece of output, with the buffer current.")
 
-(define-hook ended
+(hooks:define-hook ended
   "Called once per run with its buffer and its end: 0, stopped, an exit code, -n for signal n, or the condition that kept the program from starting.")
 
-(define-table keymap "Keys in a run's buffer.")
+(tables:define-table keymap "Keys in a run's buffer.")
 
-(define-hook mode-hook
+(hooks:define-hook mode-hook
   "Called in each buffer that turns on runs:mode or a mode derived from it.")
 
 (modes:define-major-mode mode (parent modes:special) (lighter "Run") (keymap keymap) (hook mode-hook) (plugin-only #t))
@@ -50,7 +52,7 @@
 
 ;; Unload actions also run at exit, so the process id tells a reload,
 ;; whose user processes still run, from a restart, which has none.
-(define-saved %saved-runs '() %saved-runs?)
+(saved:define-saved %saved-runs '() %saved-runs?)
 
 (module %internals
   (check-main-thread check-command start-folder check-run-buffer run-of start-run! stop-run! run-command quoted-line run-mode
@@ -247,8 +249,8 @@
   (define (new-filter r)
     (ansi-colors:filter (lambda (text value) (run-stretches-set! r (cons (cons text value) (run-stretches r))))))
 
-  ;; Tuna's dynamic-wind runs its in with quits held off, so the end, its
-  ;; footer and the ended entries are never split by a quit, nor a start
+  ;; Tuna's dynamic-wind runs its in with cancels held off, so the end, its
+  ;; footer and the ended entries are never split by a cancel, nor a start
   ;; between the program and the run that follows it.
   (define (hold-quits thunk)
     (let ([result #f])
@@ -275,9 +277,10 @@
   (define (attach! b r from)
     (let ([receiver (processes:text-receiver from
                       (lambda (text end) (unless (eof-object? text) (receive! b r text end))))])
-      (as-module (this-module)
-        (processes:attach! (run-process r) from receiver
-          (lambda (status) (end-run! b r status #t))))))
+      (call-as-owner %self
+        (lambda ()
+          (processes:attach! (run-process r) from receiver
+            (lambda (status) (end-run! b r status #t)))))))
 
   (define (merged-environment given)
     (fold-left
@@ -354,14 +357,14 @@
     (if (condition? end) (end-message end) end))
 
   (define (save-runs!)
-    (set-saved! %saved-runs
+    (saved:set! %saved-runs
       (cons* (get-process-id) last-number
         (fold-right
           (lambda (b acc)
             (let ([r (run-of b)])
               (if r
                   (cons (list (run-number r) (buffers:name b) (and (run-process r) (processes:id (run-process r)))
-                              (run-command r) (run-mode r) (run-owner r) (run-directory r) (run-environment r)
+                              (run-command r) (run-mode r) (and (run-owner r) (owner-name (run-owner r))) (run-directory r) (run-environment r)
                               (run-offset r) (saved-end (run-end r)) (run-started r) (run-ended-at r))
                         acc)
                   acc)))
@@ -369,8 +372,11 @@
 
   (define (restore-run! entry b)
     (apply
-      (lambda (number name id command major-mode owner directory environment offset end started ended-at)
+      (lambda (number name id command major-mode owner-name directory environment offset end started ended-at)
+        ;; Saved data holds an owner by name; a module's run is its
+        ;; instance's again, another owner's is no one's.
         (let* ([p (and id (processes:find id))]
+               [owner (and (list? owner-name) (pair? owner-name) (for-all symbol? owner-name) (module-owner owner-name))]
                [r (make-run number p command major-mode owner directory environment started
                             offset end ended-at #f #f #f '() #f)])
           (cond
@@ -532,12 +538,12 @@
     (and r (run-directory r))))
 
 (define (%set-local-options)
-  (set-option-local! views:point-after-insertion? #t buffers:revert-function run-again))
+  (options:set-local! views:point-after-insertion? #t buffers:revert-function run-again))
 
-(add-hook! mode-hook %set-local-options)
-(add-hook! ended tell-end)
-(add-hook! buffers:killed forget-killed!)
-(add-hook! files:directory-finders %run-directory)
+(hooks:add! mode-hook %set-local-options)
+(hooks:add! ended tell-end)
+(hooks:add! buffers:killed forget-killed!)
+(hooks:add! files:directory-finders %run-directory)
 (keys:bind! keymap "C-c C-k" stop)
 (restore-runs!)
 (on-unload save-runs!)

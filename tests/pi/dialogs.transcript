@@ -84,11 +84,12 @@
 ; while pi was off.
 > (say! f (ui-request "d6" "confirm" '("title" . "Soon?") '("timeout" . 300)))
 > (testing:wait-until (lambda () (= 1 (length (pi:chat-dialogs chat)))))
-> (unload-module! '(pi))
-> (sleep-for 0.4)
+> (unload-owner! (module-owner '(pi)))
+> (timers:sleep 0.4)
 > (load-module! '(pi))
+#<owner (pi) 2>
 > (define chat (car (pi:chats)))
 > (testing:wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (pi:chat-dialogs chat)
 ()

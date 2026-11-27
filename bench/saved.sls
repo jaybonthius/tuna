@@ -1,4 +1,5 @@
 #!tuna
+(import (saved))
 ;; The writer thread shares the one CPU the bench is pinned to, so wall
 ;; time would charge its work to the main thread; the main thread's own
 ;; CPU time is what a command waits for.
@@ -21,11 +22,11 @@
 (define (show name value)
   (printf "~a ~,2f\n" name value))
 
-(define-saved ring '() list?)
-(define-saved history '() list?)
+(saved:define-saved ring '() list?)
+(saved:define-saved history '() list?)
 
 (define (save-cost datum make-value)
-  (ns-per-op 20 (lambda () (set-saved! datum (make-value)))))
+  (ns-per-op 20 (lambda () (saved:set! datum (make-value)))))
 
 (define (run)
   (let ([entries (map (lambda (i)
@@ -37,5 +38,5 @@
   (let ([entries (map (lambda (i) (string->immutable-string (format "a line of history number ~a" i)))
                       (iota 10000))])
     (show "saved-history-10000" (save-cost history (lambda () entries))))
-  (remove-saved! ring)
-  (remove-saved! history))
+  (saved:remove! ring)
+  (saved:remove! history))

@@ -65,12 +65,13 @@
       (write '(commands:define-command (hi) "Hi." (display "hi\n")))
       (write '(ui:define-button bye hi))))
 > (load-module! '(gone))
+#<owner (gone) 1>
 > (buffers:replace! c 1 1 (list 'gone:bye '() "Bye"))
 #<edit 1>
 > (show! c)
 > (click-at! (view) 3)
 hi
-> (unload-module! '(gone))
+> (unload-owner! (module-owner '(gone)))
 > (buffers:kind 'gone:bye)
 #f
 > (views:set-point! (view) 3)
@@ -106,7 +107,7 @@ hi
 ; there still leaves it.
 > (define (type! key . modifiers)
     (parameterize ([web:current-client client])
-      ((table-ref web:input-handlers "key") client
+      ((tables:ref web:input-handlers "key") client
        (list (cons "type" "key") (cons "key" key) (cons "code" "") (cons "modifiers" (list->vector modifiers))))))
 > (views:set-point! (view) 7)
 > (type! "x" "control")

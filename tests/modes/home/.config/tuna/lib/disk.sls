@@ -8,4 +8,4 @@
   (call-with-port (open-file-output-port (expand path) (file-options no-fail))
     (lambda (p) (put-bytevector p (string->utf8 text)))))
 
-(define (folder! path) (mkdir (expand path)))
+(define (folder! path) (unless (file-directory? (expand path)) (mkdir (expand path))))

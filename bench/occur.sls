@@ -1,5 +1,5 @@
 #!tuna
-(import (occur) (search) (search-bench) (buffers) (document) (jobs) (views) (layout) (web))
+(import (occur) (search) (search-bench) (buffers) (document) (jobs) (views) (layout) (web) (timers))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -9,31 +9,31 @@
 
 (define (add-phase! name ms) (hashtable-update! phases name (lambda (v) (+ v ms)) 0))
 
-(define filling? #f)
+(define %filling? #f)
 
 (define (timed name)
   (lambda (proc . args)
-    (if filling?
+    (if %filling?
         (let ([start (now-ns)])
           (call-with-values (lambda () (apply proc args))
             (lambda results (add-phase! name (/ (- (now-ns) start) 1e6)) (apply values results))))
         (apply proc args))))
 
-(define occur-start 0)
+(define %occur-start 0)
 
 ;; Only occur's grouping job is timed, told apart by its worker's name,
 ;; which is all a job's worker shows.
 (define (time-group-job start worker input on-result . rest)
   (if (string=? (format "~a" worker) "#<worker %group-lines>")
       (let ([job-start (now-ns)])
-        (add-phase! 'scan (/ (- job-start occur-start) 1e6))
+        (add-phase! 'scan (/ (- job-start %occur-start) 1e6))
         (apply start worker input
                (lambda (groups)
                  (let ([fill-start (now-ns)])
                    (add-phase! 'job (/ (- fill-start job-start) 1e6))
-                   (set! filling? #t)
+                   (set! %filling? #t)
                    (on-result groups)
-                   (set! filling? #f)
+                   (set! %filling? #f)
                    (add-phase! 'fill (/ (- (now-ns) fill-start) 1e6))))
                rest))
       (apply start worker input on-result rest)))
@@ -42,14 +42,14 @@
   (let ([old (buffers:find "*Occur*")]) (when old (buffers:kill! old)))
   (layout:switch-to-buffer b)
   (collect-rendezvous)
-  (set! occur-start (now-ns))
+  (set! %occur-start (now-ns))
   (views:call-with-view (layout:selected-view) (lambda () (occur:occur q 0 template)))
   (let wait ()
     (let ([o (buffers:find "*Occur*")])
       (unless (and o (> (document:length (buffers:document o)) 2))
-        (sleep-for 0.001)
+        (timers:sleep 0.001)
         (wait))))
-  (/ (- (now-ns) occur-start) 1e6))
+  (/ (- (now-ns) %occur-start) 1e6))
 
 (define (listing name b q template)
   (hashtable-clear! phases)

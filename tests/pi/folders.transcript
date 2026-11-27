@@ -5,7 +5,7 @@
 > (for-each (lambda (f) (mkdir (at f))) '("proj" "proj/src" "other"))
 > (with-output-to-file (at "proj/src/notes.txt") (lambda () (display "a needle in proj\n")))
 > (with-output-to-file (at "other/notes.txt") (lambda () (display "a needle elsewhere\n")))
-> (set-option! projects:extra-root-markers '(".project"))
+> (options:set! projects:extra-root-markers '(".project"))
 > (with-output-to-file (at "proj/.project") void)
 > (define chat (pi:start (at "proj")))
 > (chat:show! chat)
@@ -17,7 +17,7 @@
 > (minibuffer:input (minibuffer:current-prompt))
 "~/proj/"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (define t (start! (lambda () (commands:run shell-commands:shell-command "pwd" #f))))
 > (result t)
@@ -33,7 +33,7 @@
 > (texts s)
 ("src/notes.txt:1:a needle in proj")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (define t (start! (lambda () (commands:run shell-commands:compile "pwd"))))
 > (result t)

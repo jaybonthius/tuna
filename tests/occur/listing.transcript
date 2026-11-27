@@ -40,14 +40,14 @@
 "Searched 1 buffer; 4 matches for \"foo\""
 ; With no regexp read, the default is the last regexp search, else
 ; the last search, quoted.
-> (set-saved! search:prompt-regexp-history '())
-> (set-saved! search:regexp-history '())
-> (set-saved! search:history '("a.b"))
+> (saved:set! search:prompt-regexp-history '())
+> (saved:set! search:regexp-history '())
+> (saved:set! search:history '("a.b"))
 > (start! "M-s" "o")
 > (question)
 "List lines matching regexp (default a\\.b): "
 > (press! "C-g")
-! &quit
+! &cancelled
 ; No match: *Occur* is killed and its view shows its previous buffer;
 ; the echo area says so.
 > (occur! (search:make-query "zzz" search:regexp) 0 #f)
@@ -90,14 +90,14 @@
 > (listed)
 "2 matches for \"X\" in buffer: src\nb\nX\nf\nX\n"
 ; occur:context-lines is the count with no prefix, negative too.
-> (set-option! occur:context-lines -1)
+> (options:set! occur:context-lines -1)
 > (start! "M-s" "o")
 > (type! "X")
 > (press! "RET")
 > (wait-listed)
 > (listed)
 "2 matches for \"X\" in buffer: src\nb\nX\nf\nX\n"
-> (set-option! occur:context-lines 0)
+> (options:set! occur:context-lines 0)
 ; Context lines do not look clickable; listed lines do.
 > (occur! (search:make-query "X" search:regexp) 1 #f)
 > (count-of (occur-html) "clickable")
@@ -106,7 +106,7 @@
 ; point is at its end.
 > (define d (src "one foo\ntwo\nfoo three foo\nfour\n"))
 > (views:set-point! (view) 10)
-> (set-option! occur:jump-to-current-line #t)
+> (options:set! occur:jump-to-current-line #t)
 > (occur! (search:make-query "foo" search:regexp) 0 #f)
 > (list (listed) (where))
 ("3 matches in 2 lines for \"foo\" in buffer: src\none foo\ntwo\nfoo three foo\n" (2 "two"))
@@ -114,7 +114,7 @@
 1
 > (views:set-point! (view) 2)
 > (occur! (search:make-query "foo" search:regexp) 0 #f)
-> (set-option! occur:jump-to-current-line #f)
+> (options:set! occur:jump-to-current-line #f)
 > (list (where) (count-of (occur-html) "match.other"))
 ((1 "one foo") 1)
 ; C-u collects: the prompt says so; with no group \& is collected
@@ -130,7 +130,7 @@
 > (start! "C-u" "M-s" "o")
 > (type! "(f)(o)o")
 > (press! "RET")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (question)
 "Regexp to collect (default \\1): "
 > (type! "\\2\\1")
@@ -150,7 +150,7 @@
 ; and not after one without.
 > (define seen '())
 > (define (note! b) (set! seen (cons (buffers:name b) seen)))
-> (add-hook! occur:listed note!)
+> (hooks:add! occur:listed note!)
 > (occur! (search:make-query "foo" search:regexp) 0 #f)
 > (in-occur!)
 ; g lists again, says so, and puts point at the start.
@@ -167,7 +167,7 @@
 > (wait-listed)
 > (list (occur-buffer) (last-message) seen)
 (#f "Searched 1 buffer; no matches for \"foo\"" ("*Occur*" "*Occur*"))
-> (remove-hook! occur:listed note!)
+> (hooks:remove! occur:listed note!)
 ; g after the source is killed.
 > (define e (src "one foo\n"))
 > (occur! (search:make-query "foo" search:regexp) 0 #f)

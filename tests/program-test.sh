@@ -65,11 +65,13 @@ done
 
 # Without TUNA_LIBRARY, Tuna's own library is plugins/ beside the program,
 # however the program is started, and holds the bundled plugins; the
-# libraries they name are in libraries/ beside it.
+# libraries they name are in libraries/ beside it, and its start folder
+# is start/.
 mkdir -p "$dir/bin/plugins" "$dir/home/.config/tuna"
 cp "$tuna" "$dir/bin/tuna"
 sh boot/copy-library.sh "$(dirname "$tuna")/plugins" "$dir/bin/plugins"
 sh boot/copy-library.sh "$(dirname "$tuna")/libraries" "$dir/bin/libraries"
+cp -R "$(dirname "$tuna")/start" "$dir/bin/start"
 printf '(import (console))\n' > "$dir/home/.config/tuna/init.ss"
 printf '#!tuna\n(define (where) "beside the program")\n' > "$dir/bin/plugins/own.sls"
 ln -s "$dir/bin/tuna" "$dir/linked-tuna"
@@ -90,7 +92,7 @@ output=$(cd "$dir/work" && echo "(import (tuna extra))" | env -u TUNA_LIBRARY HO
 mkdir -p "$dir/slow/.config/tuna"
 printf '(import (tuna))\n(import (rename (only (chezscheme) sleep) (sleep chez:sleep)))\n(on-unload (lambda () (chez:sleep (make-time (quote time-duration) 100000000 0))))\n(import (console))\n' \
   > "$dir/slow/.config/tuna/init.ss"
-for form in '(exit 4)' '(thread-join (fork-thread (lambda () (exit 4))))'; do
+for form in '(exit 4)' '(join-task (fork-task (lambda (restore) (exit 4))))'; do
   status=0
   echo "$form" | HOME="$dir/slow" "$tuna" > /dev/null 2>&1 || status=$?
   [ "$status" -eq 4 ] || fail "$form exited with status $status, not 4"
@@ -101,10 +103,8 @@ mkdir -p "$dir/waiting/.config/tuna"
 cat > "$dir/waiting/.config/tuna/init.ss" <<'END'
 (import (tuna))
 (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
-(fork-thread
-  (lambda ()
-    (chez:sleep (make-time 'time-duration 200000000 0))
-    (post! (lambda () (display "posted") (newline)))
+(fork-task (lambda (restore) (chez:sleep (make-time 'time-duration 200000000 0))
+    (spawn-task (lambda (restore) (display "posted") (newline)))
     (chez:sleep (make-time 'time-duration 300000000 0))
     (exit 5)))
 (import (console))

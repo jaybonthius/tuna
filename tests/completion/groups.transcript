@@ -49,7 +49,7 @@
 > (list (selected-text s) (input))
 ("apple" "a")
 > (press! "C-g")
-! &quit
+! &cancelled
 ; Every match is a row, with a heading above each group's first row; C-v
 ; pages the selection by completion-list:lines, 15 here.
 > (define long-group
@@ -68,7 +68,7 @@
 > (selected-text s)
 "b.txt:1:x"
 > (press! "C-g")
-! &quit
+! &cancelled
 ; The order of groups follows the first match: with an in-order source,
 ; that is the candidates' order.
 > (define mixed
@@ -85,7 +85,7 @@
 ; A row procedure gives the text a row shows under its title; spans are
 ; found in that text.
 > (press! "C-g")
-! &quit
+! &cancelled
 > (define lines
     (completion:source
       (candidates (vector (cons "notes.txt:1:needle" 1) (cons "notes.txt:2:hay" 2) (cons "todo.txt:1:needle" 3)))
@@ -98,7 +98,7 @@
 > (map (lambda (m) (list (completion:title s m) (completion:row-text s m) (completion:spans s m))) (match-list s))
 (("notes.txt" "1:needle" ((2 6 completion.match-0))) ("todo.txt" "1:needle" ((2 6 completion.match-0))))
 > (press! "C-g")
-! &quit
+! &cancelled
 ; Bad clauses.
 > (raised (lambda () (completion:source (candidates (vector "a")) (group 1))))
 (completion:source "not a procedure")
@@ -137,7 +137,7 @@
 > (selected-text s)
 "fig"
 > (press! "C-g")
-! &quit
+! &cancelled
 ; A negative count moves the other way, as completion:next's does.
 > (define abc
     (completion:source
@@ -159,7 +159,7 @@
 > (selected-text s)
 "blueberry"
 > (press! "C-g")
-! &quit
+! &cancelled
 ; C-v and M-v move a page of rows, as many as the list shows; with none
 ; selected, counting from before the first match.
 > (define many (completion:source (candidates (list->vector (map (lambda (i) (format "row ~2,'0d" i)) (iota 40)))) (in-order)))
@@ -193,7 +193,7 @@
 > (kill-ring:text (kill-ring:current))
 "row 3"
 > (press! "C-g")
-! &quit
+! &cancelled
 ; With none selected and an empty input, M-w saves the read's default.
 > (define t (start! (lambda () (completion:read "? " (list many) #f "row 07"))))
 > (define s (session))
@@ -202,7 +202,7 @@
 > (kill-ring:text (kill-ring:current))
 "row 07"
 > (press! "C-g")
-! &quit
+! &cancelled
 ; A prefix is a candidate's base only where its source emits one, as a
 ; file's folder; a split alone, as grep's search, is no part of it.
 > (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "main" "more")) (split (lambda (input) (min 4 (string-length input)))))) #f))))
@@ -215,17 +215,17 @@
 > (kill-ring:text (kill-ring:current))
 "lib"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (define t (start! (lambda () (press! "C-x" "C-f"))))
 > (type! "src/te")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (selected-text (session))
 "text.txt"
 > (press! "M-w")
 > (kill-ring:text (kill-ring:current))
 "~/src/text.txt"
 > (press! "C-g")
-! &quit
+! &cancelled
 ; Narrowing: a narrow character then SPC shows only the sources with that
 ; character and clears the input, as Consult's; DEL on the empty input
 ; widens. The count line names the source narrowed to.
@@ -284,7 +284,7 @@
 > (in-client (lambda () (commands:run completion:narrow-by-input)))
 ! completion:narrow-by-input: the input is not one narrow character with irritant ""
 > (press! "C-g")
-! &quit
+! &cancelled
 ; Narrowing chooses among a read's sources, so a read of one source,
 ; such as C-x k's or C-x b's by default, types SPC after its narrow
 ; character.
@@ -293,15 +293,15 @@
 > (list (input) (completion:narrowed (session)))
 ("b sc" #f)
 > (press! "C-g")
-! &quit
-> (set-option! buffer-picker:sources (option-default buffer-picker:sources))
+! &cancelled
+> (options:set! buffer-picker:sources (options:default buffer-picker:sources))
 > (define t (start! (lambda () (press! "C-x" "b"))))
 > (type! "b ")
 > (list (input) (completion:narrowed (session)))
 ("b " #f)
 > (press! "C-g")
-! &quit
-> (remove-option! buffer-picker:sources)
+! &cancelled
+> (options:unset! buffer-picker:sources)
 ; A prefix key bound to completion:narrow-key-keymap in
 ; completion:narrowing-keymap narrows by the next character and keeps the
 ; input, as consult-narrow does; a character no source has, such as the
@@ -336,18 +336,18 @@
 > (completion:narrow-characters s)
 ((#\b . "Buffers") (#\f . "Files"))
 > (press! "C-g")
-! &quit
+! &cancelled
 > (define t (start! (lambda () (completion:read "? " (list buffers-like) #f))))
 > (completion:narrow-characters (session))
 ()
 > (press! "C-g")
-! &quit
+! &cancelled
 > (define t (start! (lambda () (completion:read "? " (list fruit) #f))))
 > (type! "<a")
 > (input)
 "<a"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (keys:unbind! completion:narrowing-keymap "<")
 ; Moving between groups walks one group's matches: across a group of a
 ; million, M-} and M-{ still land on the groups' first matches.
@@ -371,16 +371,16 @@
 > (selected-text s)
 "0"
 > (press! "C-g")
-! &quit
+! &cancelled
 ; Actions act on a grouped list's candidates: a grep line's whole text,
 ; without the search, as M-w copies it. A narrowed read's input takes
 ; the category of the sources it shows, as its matches do.
 > (use-plugin actions)
 > (define (act! . keys)
     (let ([t (start! (lambda () (apply press! keys)))])
-      (testing:wait-until (lambda () (or (task-done? t) (keys:reading client))))
+      (testing:wait-until (lambda () (or (eq? (task-state t) 'done) (keys:reading client))))
       t))
-> (set-option! grep:command-line (list (string-append (getenv "HOME") "/bin/grouped-rg")))
+> (options:set! grep:command-line (list (string-append (getenv "HOME") "/bin/grouped-rg")))
 > (views:set-buffer! (view) (files:visit "~/src/text.txt"))
 > (define t (start! (lambda () (press! "M-s" "r"))))
 > (define s (session))
@@ -391,10 +391,10 @@
 "a.txt:2:two a"
 > (define a (act! "C-."))
 > (press! "w")
-! &quit
+! &cancelled
 > (kill-ring:text (kill-ring:current))
 "a.txt:2:two a"
-> (remove-option! grep:command-line)
+> (options:unset! grep:command-line)
 > (define t (start! (lambda () (completion:read-or-input "? " (list buffers-like files-like) #f))))
 > (define s (session))
 > (completion:session-categories s)
@@ -402,7 +402,7 @@
 > (define typed-buffers (completion:source (candidates (vector "notes" "todo")) (title "Buffers") (narrow #\b) (category completion:location-category)))
 > (define typed-files (completion:source (candidates (vector "notes.txt")) (title "Files") (narrow #\f) (category completion:file-category)))
 > (press! "C-g")
-! &quit
+! &cancelled
 > (define t (start! (lambda () (completion:read-or-input "? " (list typed-buffers typed-files) #f))))
 > (define s (session))
 > (completion:session-categories s)
@@ -412,4 +412,4 @@
 > (completion:session-categories s)
 (completion:file-category)
 > (press! "C-g")
-! &quit
+! &cancelled

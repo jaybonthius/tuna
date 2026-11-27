@@ -116,7 +116,7 @@
 > (buffers:name (views:buffer h))
 "a"
 ; views:skipped-buffer-predicate passes over buffers for a reason.
-> (set-option! views:skipped-buffer-predicate
+> (options:set! views:skipped-buffer-predicate
     (lambda (view buffer reason)
       (and (eq? reason (views:switch-reason previous)) (string=? (buffers:name buffer) "b"))))
 > (define s (views:make a))
@@ -130,7 +130,7 @@
 #t
 > (buffers:name (views:buffer s))
 "b"
-> (remove-option! views:skipped-buffer-predicate)
+> (options:unset! views:skipped-buffer-predicate)
 ; views:replace-buffer! shows the newest previous buffer and drops the
 ; one the view showed from its history; with nothing to show it leaves
 ; the view as it was.
@@ -142,7 +142,7 @@
 #f
 > (define only (buffers:make " only" "o\n"))
 > (define q (views:make only))
-> (with-options ([views:skipped-buffer-predicate (lambda (view buffer reason) #t)]) (views:replace-buffer! q))
+> (options:with ([views:skipped-buffer-predicate (lambda (view buffer reason) #t)]) (views:replace-buffer! q))
 #f
 > (buffers:name (views:buffer q))
 " only"

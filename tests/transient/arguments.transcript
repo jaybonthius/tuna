@@ -2,13 +2,13 @@
 > (define todo (buffers:make "todo" "three\n"))
 > (views:set-buffer! (view) notes)
 > (import (magit))
-> (define (merges) magit:merges)
+> (define (merges) (magit:merges))
 > (transient:arguments magit:merge-menu)
 ()
 ; A menu's arguments start from its option, read in the menu's view, each
 ; time it shows; a buffer's local value applies.
-> (set-option! magit:merge-arguments '("--no-ff"))
-> (buffers:with-buffer todo (set-option-local! magit:merge-arguments '("--ff-only")))
+> (options:set! magit:merge-arguments '("--no-ff"))
+> (buffers:with-buffer todo (options:set-local! magit:merge-arguments '("--ff-only")))
 > (press! "C-c" "m")
 > (menu)
 ("Merge" ("Arguments" ("- f" "Fast-forward only" "--ff-only") ("- n" "No fast-forward" "*--no-ff") ("- s" "Strategy" "--strategy=")) ("Actions" ("m" "Merge")))
@@ -19,7 +19,7 @@
 ("Merge" ("Arguments" ("- f" "Fast-forward only" "*--ff-only") ("- n" "No fast-forward" "--no-ff") ("- s" "Strategy" "--strategy=")) ("Actions" ("m" "Merge")))
 > (press! "C-g")
 > (views:set-buffer! (view) notes)
-> (remove-option! magit:merge-arguments)
+> (options:unset! magit:merge-arguments)
 ; Outside a chosen command, transient:arguments gives the option's value.
 > (transient:arguments magit:merge-menu)
 ()
@@ -82,7 +82,7 @@
 ("Merge" ("Arguments" ("- f" "Fast-forward only" "--ff-only") ("- n" "No fast-forward" "--no-ff") ("- s" "Strategy" "--strategy=")) ("Actions" ("m" "Merge")))
 > (define t (start! (lambda () (press! "-" "s"))))
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (menu)
 ("Merge" ("Arguments" ("- f" "Fast-forward only" "--ff-only") ("- n" "No fast-forward" "--no-ff") ("- s" "Strategy" "--strategy=")) ("Actions" ("m" "Merge")))
@@ -121,8 +121,8 @@
 ; command chosen quits, and the prompt goes.
 > (press! "C-c" "m")
 > (define t (start! (lambda () (press! "-" "s"))))
-> (unload-module! '(transient))
-! &quit
+> (unload-owner! (module-owner '(transient)))
+! &cancelled
 > (result t)
 > (list (popups) (minibuffer:current-prompt))
 ((layout:popups-root ()) #f)

@@ -1,12 +1,14 @@
-(import (tuna) (tuna plugins) (document) (haml) (web))
+(import (hooks) (options) (tables) (timers) (plugins))
+(import (tuna) (document) (haml) (web))
 (use-plugin views
   (config
-    (set-option! views:scroll-margin 2
+    (options:set! views:scroll-margin 2
                  views:wrap-lines #f)))
 (use-plugin modes)
 (use-plugin files)
 (use-plugin auto-mode)
-(use-plugin python)
+;; Loaded, not imported, so its unload in a test stays an unload.
+(load-module! '(python))
 (use-plugin undo)
 (use-plugin kill-ring)
 
@@ -35,12 +37,13 @@
     (path-parent (path-parent (car (command-line)))) (substring python-commit 0 12)))
 (define installed-grammar
   (format "~a/.local/share/tuna/grammars/libtree-sitter-python-~a.so" home (substring python-commit 0 12)))
-(copy-file built-grammar installed-grammar)
+(unless (file-exists? installed-grammar) (copy-file built-grammar installed-grammar))
 
-(use-plugin treesit)
+;; Loaded, not imported, so its unload in a test stays an unload.
+(load-module! '(treesit))
 
-(define-table initish-keymap "Keys.")
-(define-hook initish-hook "Setup.")
+(tables:define-table initish-keymap "Keys.")
+(hooks:define-hook initish-hook "Setup.")
 (modes:define-major-mode initish (keymap initish-keymap) (hook initish-hook) (language "python"))
 
 ;; Chez evaluates a call's arguments in no fixed order, and these read
@@ -51,7 +54,7 @@
     [(_ e rest ...) (let ([v e]) (cons v (in-order rest ...)))]))
 
 (define messages '())
-(set-option! ask:message-writer (lambda (text) (set! messages (cons text messages))))
+(options:set! ask:message-writer (lambda (text) (set! messages (cons text messages))))
 (define (told-messages) (let ([m (reverse messages)]) (set! messages '()) m))
 
 (define (spans-of b)
@@ -70,7 +73,7 @@
       (unless (or (= n 3000)
                   (and (>= same 15)
                        (or (> last-set last-asked) (> (- (real-time) last-asked) 1000))))
-        (sleep-for 0.02)
+        (timers:sleep 0.02)
         (loop (+ n 1) (if (equal? now last) (+ same 1) 0) now)))))
 
 (define (face-of span) (cdr (assq 'face (caddr span))))
@@ -205,7 +208,7 @@
          [whole-to (- (+ top (quotient h 20)) 1 2)]
          [mark (lambda (line) (or (cdr (or (assv line marks) '(#f . #f))) (list (cons "line" line))))])
     (set! reports (+ reports 1))
-    ((table-ref web:input-handlers "scroll") client
+    ((tables:ref web:input-handlers "scroll") client
      `(("type" . "scroll") ("view" . ,(views:id view))
        ("placement" . ,(car (numbers-after html "data-placement=\""))) ("report" . ,reports)
        ("version" . ,(car (numbers-after html "data-version=\"")))

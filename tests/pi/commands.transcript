@@ -35,7 +35,7 @@
 > (list (length (pi:chats)) (buffers:name (chat:buffer second)) (eq? (car (chat:chats-for file-buffer)) second))
 (2 "*pi: tuna*<2>" #t)
 > (pi:stop! second)
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (buffers:find "*pi: tuna*<2>")
 #f
 ; A chat started in a folder inside the project, as resume can start
@@ -130,7 +130,7 @@
 > (append-entry! f (entry "r1" "a2" (tool-result "t1" "read" "two\nthree" #f)))
 > (run-turn! f "u2" "a3" "Second" '("Done."))
 > (testing:wait-until (lambda () (= 5 (length (filter pi:item-entry-id (pi:chat-transcript chat))))))
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (point-at! chat "Done.")
 > (press! "p")
 > (point-at! chat "Second")
@@ -270,7 +270,7 @@
 > (define g (fake-of old))
 > (testing:wait-until (lambda () (= 2 (length (filter pi:item-entry-id (pi:chat-transcript old))))))
 > (in-client (lambda () (chat:show! old)))
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (list (text file-buffer) (filter (lambda (d) (eq? (car d) 'notice)) (drawn old)))
 ("xedited by Pi\n" ())
 > (pi:stop! old)
@@ -308,11 +308,11 @@ thinking
 ; With no chat in the buffer's project, C-c a r asks whether to start
 ; one, naming the folder with ~.
 > (define questions '())
-> (set-option! ask:y-or-n-reader (lambda (question) (set! questions (cons question questions)) #f))
+> (options:set! ask:y-or-n-reader (lambda (question) (set! questions (cons question questions)) #f))
 > (write-file! (string-append project "/lib/c.txt") "c\n")
 > (in-client (lambda () (layout:switch-to-buffer (files:visit (string-append project "/lib/c.txt")))))
 > (in-client (lambda () (views:set-point! (view) 1) (views:set-mark! (view) 2)))
 > (run! chat:add-region)
 > (list questions (pi:chats))
 (("Start a Pi chat in ~/src/tuna/? ") ())
-> (remove-option! ask:y-or-n-reader)
+> (options:unset! ask:y-or-n-reader)

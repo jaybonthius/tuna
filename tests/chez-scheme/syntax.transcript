@@ -1,13 +1,13 @@
 ; Lexers and lexemes. A mode derived from one with a lexer uses it,
 ; unless it has an entry of its own; a mode with none has no lexer.
-> (define-table derived-keymap)
-> (define-hook derived-hook)
+> (tables:define-table derived-keymap)
+> (hooks:define-hook derived-hook)
 > (modes:define-major-mode derived (parent chez-scheme:mode) (keymap derived-keymap) (hook derived-hook))
 > (list (eq? (syntax:lexer derived) chez-scheme:lexer) (syntax:lexer modes:fundamental) (syntax:lexer prog:mode))
 (#t #f #f)
 > (define calls 0)
 > (define (counting-lexer doc) (set! calls (+ calls 1)) (chez-scheme:lexer doc))
-> (table-set! syntax:lexers derived counting-lexer)
+> (tables:set! syntax:lexers derived counting-lexer)
 > (eq? (syntax:lexer derived) counting-lexer)
 #t
 ; Classes and marks are checked when their forms expand.
@@ -54,10 +54,10 @@
 #t
 ; A document's lexemes are kept only while something else holds the
 ; document.
-> (define-table unhighlighted-keymap)
-> (define-hook unhighlighted-hook)
+> (tables:define-table unhighlighted-keymap)
+> (hooks:define-hook unhighlighted-hook)
 > (modes:define-major-mode unhighlighted (parent prog:mode) (keymap unhighlighted-keymap) (hook unhighlighted-hook))
-> (table-set! syntax:lexers unhighlighted chez-scheme:lexer)
+> (tables:set! syntax:lexers unhighlighted chez-scheme:lexer)
 > (define kept (buffers:make "kept.ss" "(a b)\n"))
 > (modes:set-major-mode unhighlighted kept)
 > (syntax:sexp-before kept 6)
@@ -73,7 +73,7 @@
 ; So their cost does not grow with the buffer: in 2,000 forms, the
 ; openings deep in one read about that form's text, not the buffer's.
 > (define lexed 0)
-> (table-set! syntax:lexers unhighlighted (lambda (doc) (set! lexed (+ lexed (document:length doc))) (chez-scheme:lexer doc)))
+> (tables:set! syntax:lexers unhighlighted (lambda (doc) (set! lexed (+ lexed (document:length doc))) (chez-scheme:lexer doc)))
 > (define forms (buffers:make "forms.ss" (apply string-append (map (lambda (k) (format "(define (f~a x)\n  (g x\n     ~a))\n" k k)) (iota 2000)))))
 > (modes:set-major-mode unhighlighted forms)
 > (define middle (+ (document:line-start (buffers:document forms) 3002) 5))
@@ -142,12 +142,12 @@
         (loop (+ line 1)))))
 > (< lexed (* 3 (document:length (buffers:document body))))
 #t
-> (table-set! syntax:lexers unhighlighted chez-scheme:lexer)
+> (tables:set! syntax:lexers unhighlighted chez-scheme:lexer)
 ; Questions raise on another thread, past the end of the buffer, and
 ; for a mode without a lexer.
 > (define (on-thread thunk)
     (let ([m (make-mutex)] [c (make-condition)] [result #f])
-      (fork-thread (lambda () (let ([r (raised thunk)]) (with-mutex m (set! result r) (condition-signal c)))))
+      (fork-task (lambda (restore) (let ([r (raised thunk)]) (with-mutex m (set! result r) (condition-signal c)))))
       (with-mutex m (let wait () (unless result (condition-wait c m) (wait))))
       result))
 > (on-thread (lambda () (syntax:sexp-before d 3)))
@@ -161,7 +161,7 @@
 ; A lexer that raises, or returns anything but lexemes in order within
 ; the document, makes the question raise, naming the lexer.
 > (define (broken doc) (car '()))
-> (table-set! syntax:lexers derived broken)
+> (tables:set! syntax:lexers derived broken)
 > (define broken-result (raised (lambda () (syntax:sexp-after d 1))))
 > (car broken-result)
 syntax:sexp-after
@@ -170,13 +170,13 @@ syntax:sexp-after
 > (define (overlapping doc)
     (vector (syntax:make-lexeme (syntax:class atom) 1 4 0 (syntax:lexeme-marks))
             (syntax:make-lexeme (syntax:class atom) 3 5 0 (syntax:lexeme-marks))))
-> (table-set! syntax:lexers derived overlapping)
+> (tables:set! syntax:lexers derived overlapping)
 > (raised (lambda () (syntax:sexp-after d 1)))
 (syntax:sexp-after "the lexer did not return lexemes in order within the document")
-> (table-set! syntax:lexers derived (lambda (doc) (list)))
+> (tables:set! syntax:lexers derived (lambda (doc) (list)))
 > (raised (lambda () (syntax:sexp-after d 1)))
 (syntax:sexp-after "the lexer did not return lexemes in order within the document")
-> (table-remove! syntax:lexers derived)
+> (tables:remove! syntax:lexers derived)
 ; Sexps: an atom, a string or a list, with the prefixes before it, and
 ; comments may come between a prefix and what follows it.
 > (define s (scheme-buffer "sexps.ss" "(f 'x #;(g) ' ; note\n (h) \"s\" #(1) . y)"))
@@ -295,7 +295,7 @@ modes:fundamental
 ()
 > (syntax:brackets-used? k)
 #f
-> (table-set! syntax:bracket-users 'test (lambda (buffer) (eq? buffer k)))
+> (tables:set! syntax:bracket-users 'test (lambda (buffer) (eq? buffer k)))
 > (syntax:brackets-used? k)
 #t
 > (syntax-highlighting:update!)
@@ -303,7 +303,7 @@ modes:fundamental
 ((1 2 ((bracket . 1))) (4 5 ((bracket . 2))) (6 7 ((bracket . mismatched))) (8 13 ((bracket . 2))) (14 15 ((bracket . 2))) (24 25 ((bracket . 1))) (25 26 ((bracket . unmatched))))
 > (map (lambda (layer) (eq? layer (buffers:layer k syntax:brackets))) (buffers:layers k))
 (#f #t)
-> (table-remove! syntax:bracket-users 'test)
+> (tables:remove! syntax:bracket-users 'test)
 > (syntax-highlighting:update!)
 > (brackets k)
 ()

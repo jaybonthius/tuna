@@ -167,7 +167,7 @@
 ((((markdown:paragraph () "Hi\n") (markdown:table ((columns . 2)) (markdown:table-row () (markdown:table-cell () "b\n") (markdown:table-cell () "a\n"))) (markdown:paragraph () "Yo\n")) 19) (((markdown:paragraph () "Hi\n") (markdown:table ((columns . 2)) (markdown:table-row () (markdown:table-cell () "b\n") (markdown:table-cell () "a\n"))) (markdown:paragraph () "Yo\n")) 13) (((markdown:paragraph () "Hi\n") (markdown:table ((columns . 2)) (markdown:table-row () (markdown:table-cell () "a\n") (markdown:table-cell () "Yo\n"))) (markdown:paragraph () "b\n")) 21))
 ; Regions: typing over one deletes it first and goes where the deletion
 ; leaves the cursor; a kill reaching into cells yanks back as text.
-> (set-option! editing:delete-selection #t)
+> (options:set! editing:delete-selection #t)
 > (define (over-sheet point mark . keys)
     (let ([b (fresh-sheet point)])
       (views:set-mark! (view) mark)
@@ -179,7 +179,7 @@
 (((markdown:table ((columns . 2)) (markdown:table-row () (markdown:table-cell () "x\n") (markdown:table-cell () "b\n"))) (markdown:paragraph () "Yo\n")) 5)
 > (over-sheet 20 10 "x")
 (((markdown:paragraph () "Hi\n") (markdown:table ((columns . 2)) (markdown:table-row () (markdown:table-cell () "ax\n") (markdown:table-cell () "\n"))) (markdown:paragraph () "o\n")) 11)
-> (set-option! editing:delete-selection #f)
+> (options:set! editing:delete-selection #f)
 > (list (over-sheet 13 2 "C-w" "C-y") (kill-ring:text (kill-ring:current)))
 ((((markdown:table ((columns . 2)) (markdown:table-row () (markdown:table-cell () "Hi\na\n") (markdown:table-cell () "b\n"))) (markdown:paragraph () "Yo\n")) 8) "Hi\na")
 > (kill-ring:push! (list (buffers:piece (page:make "*plan*" "# Plan\n\nBuy.\n") 1 8)))

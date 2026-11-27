@@ -1,12 +1,13 @@
-(import (tuna) (testing) (tuna plugins))
+(import (hooks) (options) (tables) (plugins))
+(import (tuna) (testing))
 (use-plugin kill-ring
   (config
-    (set-option! kill-ring:skip-duplicates #t)))
+    (options:set! kill-ring:skip-duplicates #t)))
 (import (document) (buffers))
 
 (define pushed '())
 (define (note-push entry) (set! pushed (cons (kill-ring:text entry) pushed)))
-(add-hook! kill-ring:after-push note-push)
+(hooks:add! kill-ring:after-push note-push)
 (define (take-pushed!)
   (let ([p (reverse pushed)]) (set! pushed '()) p))
 

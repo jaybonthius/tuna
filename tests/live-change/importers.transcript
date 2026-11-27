@@ -6,9 +6,9 @@
 > (import (user))
 > (user:h)
 (1 g)
-> (unload-module! '(user))
+> (unload-owner! (module-owner '(user)))
 > (put-version! "base-2.sls" ".config/tuna/lib/base.sls")
-> (eval-file "~/.config/tuna/lib/base.sls")
+> (reload-modules! '((base)))
 base unloading 
 > (base:f)
 2
@@ -16,30 +16,33 @@ base unloading
 ! attempt to reference unbound identifier base:g at line 4, char 29 of $HOME/.config/tuna/lib/user.sls
 > (user:h)
 ! user:h: module (user) is unloaded
-> (unload-module! '(base))
+> (unload-owner! (module-owner '(base)))
 base unloading 
 > (load-module! '(base))
+#<owner (base) 3>
 > (base:f)
 2
 > (put-version! "user-2.sls" ".config/tuna/lib/user.sls")
 > (load-module! '(user))
+#<owner (user) 2>
 > (user:h)
 (2)
-> (unload-module! '(user))
+> (unload-owner! (module-owner '(user)))
 > (delete-file (string-append (getenv "HOME") "/.config/tuna/lib/user.sls"))
 #t
-> (eval-file "~/.config/tuna/lib/base.sls")
+> (reload-modules! '((base)))
 base unloading 
-> (unload-module! '(base))
+> (unload-owner! (module-owner '(base)))
 base unloading 
 > (load-module! '(base))
+#<owner (base) 5>
 > (base:f)
 2
 ; A module importing another and one of its importers is unloaded once.
 > (put-version! "user-2.sls" ".config/tuna/lib/user.sls")
 > (put-version! "diamond.sls" ".config/tuna/lib/diamond.sls")
 > (import (diamond))
-> (unload-module! '(base))
+> (unload-owner! (module-owner '(base)))
 diamond unloading base unloading 
-> (module-changes '(diamond))
-()
+> (module-owner '(diamond))
+#f

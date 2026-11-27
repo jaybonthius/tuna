@@ -3,22 +3,24 @@
 > (import (starter))
 > (define own (starter:own!))
 > (testing:wait-until (lambda () (string=? (output own) "own\n")))
-> (unload-module! '(starter))
+> (unload-owner! (module-owner '(starter)))
 > (list (runs:status own) (taken-ends))
 (stopped (("*own*" stopped stopped)))
 ; The owner's next instance gets an unload action of its own.
 > (load-module! '(starter))
+#<owner (starter) 2>
 > (define own-again (starter:own!))
 > (testing:wait-until (lambda () (string=? (output own-again) "own\n")))
-> (unload-module! '(starter))
+> (unload-owner! (module-owner '(starter)))
 > (list (runs:status own-again) (taken-ends))
 (stopped (("*own*" stopped stopped)))
 ; The user's run goes on across a reload of the module that started it,
 ; and of runs, and its output still arrives.
 > (load-module! '(starter))
+#<owner (starter) 3>
 > (define users (starter:users!))
 > (testing:wait-until (lambda () (string=? (output users) "users\n")))
-> (eval-file (string-append (getenv "HOME") "/.config/tuna/lib/starter.sls"))
+> (reload-modules! '((starter)))
 > (reload! "runs")
 > (runs:status users)
 #f
@@ -56,10 +58,11 @@
 > (define old (runs:start-for-user "*old*" "echo old" home))
 > (ended? old)
 0
-> (unload-module! '(runs))
+> (unload-owner! (module-owner '(runs)))
 > (buffers:rename! old "*old, renamed*")
 > (define plain (buffers:make "*old*" "plain\n"))
 > (load-module! '(runs))
+#<owner (runs) 5>
 > (list (runs:command old) (runs:run-buffer? plain) (text plain))
 ("echo old" #f "plain\n")
 > (taken-ends)

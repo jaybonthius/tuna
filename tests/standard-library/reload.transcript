@@ -1,14 +1,14 @@
 ; Reloading a module keeps its options, hooks and tables, and other
 ; owners' changes to them.
 > (put-version! "spell-1.sls" ".local/share/tuna/plugins/spell/spell.sls")
-> (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
+> (reload-modules! '((spell)))
 > (put-version! "speller.sls" ".config/tuna/lib/speller.sls")
 > (import (speller))
 > (speller:go)
 (v1 "z")
 > (define held spell:language)
 > (put-version! "spell-2.sls" ".local/share/tuna/plugins/spell/spell.sls")
-> (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
+> (reload-modules! '((spell)))
 ; The module that uses spell's changed macro is recompiled.
 > (speller:go)
 (v2 "z")
@@ -18,12 +18,12 @@
 > (list (spell:language) (eq? held spell:language))
 ("en-GB" #t)
 > (files:after-save "x")
-> (map car (module-changes '(spell)))
-(hook-entry define define)
+> (map car (owner-changes (module-owner '(spell))))
+(define define define)
 ; A failed reload is reported, and the previous version runs again.
 > (put-version! "spell-broken.sls" ".local/share/tuna/plugins/spell/spell.sls")
-> (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
-! (spell) car: () is not a pair
+> (reload-modules! '((spell)))
+! car: () is not a pair
 > (speller:go)
 (v2 "z")
 > (spell:language)
@@ -31,13 +31,13 @@
 ; Reloading files, which defines hooks, an option and a table, keeps the
 ; entries, settings and table entries that other modules made.
 > (put-version! "spell-2.sls" ".local/share/tuna/plugins/spell/spell.sls")
-> (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
+> (reload-modules! '((spell)))
 > (define (noted path) (display "[noted]"))
-> (add-hook! files:after-save noted)
-> (table-set! files:modes "rkt" 'racket)
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/files.sls"))
+> (hooks:add! files:after-save noted)
+> (tables:set! files:modes "rkt" 'racket)
+> (reload-modules! '((files)))
 > (files:save! "y")
 [noted]
 "y"
-> (list (files:autosave-seconds) (table-ref files:modes "rkt"))
+> (list (files:autosave-seconds) (tables:ref files:modes "rkt"))
 (30 racket)

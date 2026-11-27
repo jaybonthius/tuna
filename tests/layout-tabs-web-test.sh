@@ -10,8 +10,8 @@ home=$dir/layout-tabs-web/home/.config/tuna
 mkdir -p "$home/lib"
 cp tests/web/home/.config/tuna/lib/http.sls "$home/lib/"
 cat > "$home/init.ss" <<'END'
-(import (tuna) (tuna plugins) (http))
-(use-plugin web (config (set-option! web:port (http:free-port))))
+(import (tuna) (http))
+(use-plugin web (config (options:set! web:port (http:free-port))))
 (use-plugin layout-tabs)
 (import (console))
 (http:use-port! (lambda () (web:port)))

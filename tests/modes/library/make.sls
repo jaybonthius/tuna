@@ -1,8 +1,8 @@
 #!tuna
-(import (modes) (auto-mode))
+(import (modes) (auto-mode) (hooks) (tables))
 
-(define-table keymap "Keys in makefiles.")
-(define-hook mode-hook "Called in each buffer that turns on Make mode.")
+(tables:define-table keymap "Keys in makefiles.")
+(hooks:define-hook mode-hook "Called in each buffer that turns on Make mode.")
 
 (modes:define-major-mode mode
   (lighter "Make")

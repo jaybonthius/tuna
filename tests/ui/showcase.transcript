@@ -105,8 +105,7 @@
 1
 ; Reloading ui writes the lists' rows again from the same code; the
 ; counts live in the buffer and stay.
-> (import (tuna eval))
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/ui.sls"))
+> (reload-modules! '((ui)))
 > (list (rows-of (short)) (rows-of (long)) (document:node-attribute (live 'ui:%sample-button) 'n))
 (8 300 2)
 > (element (view) "<li class=\"ui-list-row\" aria-current=\"true\"" "li")
@@ -116,7 +115,7 @@
 > (buffers:kill! b)
 #t
 > (define f (buffers:make "*Showcase*" (buffers:text '() "my notes\n")))
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/ui.sls"))
+> (reload-modules! '((ui)))
 > (and (ui:label "x") #t)
 #t
 > (in-client (lambda () (commands:run ui:showcase)))

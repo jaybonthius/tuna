@@ -1,35 +1,37 @@
 #!tuna
 (import (projects) (markdown) (ask) (buffers) (document) (views) (layout) (keys) (commands) (modes)
-        (status-line) (ui) (kill-ring) (files) (editing) (faces) (web) (haml))
+        (status-line) (ui) (kill-ring) (files) (editing) (faces) (web) (haml) (hooks) (options) (tables) (saved))
 
-(define-table sources "Each source's name to its description, from chat:define-source.")
+(define %self (current-owner))
 
-(define-table block-kinds "The kinds that fold, each a kind's constructor.")
+(tables:define-table sources "Each source's name to its description, from chat:define-source.")
 
-(define-table status-menus "Each source's name to the command a click on its chats' status segment runs.")
+(tables:define-table block-kinds "The kinds that fold, each a kind's constructor.")
 
-(define-option default-source #f (lambda (v) (or (not v) (symbol? v)))
+(tables:define-table status-menus "Each source's name to the command a click on its chats' status segment runs.")
+
+(options:define-option default-source #f (lambda (v) (or (not v) (symbol? v)))
   "The source chat:toggle and chat:add-region start a conversation with when the project has no chat; #f for the source of the chat used last.")
 
-(define-option thinking-shown? #f boolean? "Whether an agent's finished thinking stays unfolded.")
+(options:define-option thinking-shown? #f boolean? "Whether an agent's finished thinking stays unfolded.")
 
-(define-table keymap "Keys anywhere in a chat.")
+(tables:define-table keymap "Keys anywhere in a chat.")
 
-(define-table prompt-keymap "Keys in a chat's prompt.")
+(tables:define-table prompt-keymap "Keys in a chat's prompt.")
 
-(define-table transcript-keymap "Keys in the conversation above a chat's prompt.")
+(tables:define-table transcript-keymap "Keys in the conversation above a chat's prompt.")
 
-(define-table question-keymap "Keys in one of an agent's questions.")
+(tables:define-table question-keymap "Keys in one of an agent's questions.")
 
-(define-table answers-keymap "Keys on a question's list of answers.")
+(tables:define-table answers-keymap "Keys on a question's list of answers.")
 
-(define-table status-keymap "Clicks on a chat's status segment.")
+(tables:define-table status-keymap "Clicks on a chat's status segment.")
 
-(define-hook %mode-hook)
+(hooks:define-hook %mode-hook)
 
 (modes:define-major-mode mode (lighter "Chat") (keymap keymap) (hook %mode-hook) (plugin-only #t))
 
-(define (%tail) (set-option-local! views:tail #t))
+(define (%tail) (options:set-local! views:tail #t))
 
 (define-enumeration delivery (next-step turn-end) %deliveries)
 
@@ -56,9 +58,9 @@
 (define (%checked-source s)
   (unless (symbol? (%source-mode s))
     (assertion-violation 'chat:source "not a mode" (%source-mode s)))
-  (unless (saved? (%source-history s))
+  (unless (saved:saved? (%source-history s))
     (assertion-violation 'chat:source "not saved data" (%source-history s)))
-  (unless (saved? (%source-drafts s))
+  (unless (saved:saved? (%source-drafts s))
     (assertion-violation 'chat:source "not saved data" (%source-drafts s)))
   s)
 
@@ -294,7 +296,7 @@
 (define %history-place (make-eq-hashtable))
 
 (define (%exported-symbol id)
-  (let ([owner (current-owner)])
+  (let ([owner (owner-name (current-owner))])
     (if (member owner '((init) (repl)))
         id
         (string->symbol
@@ -308,7 +310,7 @@
               (put-char p #\:)
               (display id p)))))))
 
-(define (%source-entries) (table-entries sources))
+(define (%source-entries) (tables:entries sources))
 
 (define (%entry-of c)
   (find (lambda (entry) ((%source-conversation? (cdr entry)) c)) (%source-entries)))
@@ -429,7 +431,7 @@
 ;; of chat is still found by the session its buffer was marked with.
 (define (%define-source! id s)
   (let ([name (%exported-symbol id)])
-    (table-set! sources name s)
+    (tables:set! sources name s)
     (for-each (lambda (c)
                 (let ([entry (cons name s)])
                   (%buffer-of entry c)
@@ -545,14 +547,14 @@
   (unless (null? %waiting-texts)
     (let ([texts %waiting-texts])
       (set! %waiting-texts '())
-      (fork-thread
-        (lambda ()
+      (fork-task
+        (lambda (restore)
           (let ([results (map (lambda (text)
                                 (guard (c [#t (list text (%plain-blocks text) c)])
                                   (list text (markdown:blocks text) #f)))
                               texts)])
-            (post!
-              (lambda ()
+            (spawn-task
+              (lambda (restore)
                 (for-each (lambda (r)
                             (hashtable-delete! %converting (car r))
                             (hashtable-set! %block-cache (car r) (cadr r))
@@ -801,7 +803,7 @@
     (when (and b (eq? (hashtable-ref %claims b #f) c))
       (hashtable-delete! %claims b)
       (when (buffers:live? b)
-        (spawn-task (lambda () (when (buffers:live? b) (buffers:kill! b))))))))
+        (spawn-task (lambda (restore) (when (buffers:live? b) (buffers:kill! b))))))))
 
 (define (%redraw-dirty!)
   (let ([dirty %dirty])
@@ -828,7 +830,7 @@
                                    (if (and b (buffers:live? b)) (%drafts-updated entry ds c (%prompt-text b)) ds)))
                                (%drafts entry) live)])
                 (unless (equal? updated (%drafts entry))
-                  (set-saved! (%source-drafts (cdr entry)) updated))))))
+                  (saved:set! (%source-drafts (cdr entry)) updated))))))
         (%source-entries)))))
 
 ;; A draft is its session's, read back when the session is opened again,
@@ -880,7 +882,7 @@
   (lambda (p) (string=? (%project-folder (%directory (car p) (cdr p))) project)))
 
 (define (%check-source-name who v)
-  (unless (and (symbol? v) (table-ref sources v #f))
+  (unless (and (symbol? v) (tables:ref sources v #f))
     (assertion-violation who "not a loaded source" v))
   v)
 
@@ -950,13 +952,13 @@
 (define (%default-source-name)
   (let ([chosen (default-source)])
     (cond
-      [(and chosen (table-ref sources chosen #f)) chosen]
+      [(and chosen (tables:ref sources chosen #f)) chosen]
       [(and (pair? %used) (%entry-of (car %used))) => car]
       [(pair? (%source-entries)) (car (car (%source-entries)))]
       [else (error 'chat "no chat source is loaded")])))
 
 (define (%start! name folder)
-  ((%source-start (table-ref sources name #f)) folder))
+  ((%source-start (tables:ref sources name #f)) folder))
 
 (define open
   (case-lambda
@@ -974,7 +976,7 @@
       [(not v) (show! (if last (cdr last) (%start! (%default-source-name) (folder-for b))))]
       [(not (layout:deletable? (layout:view-node v)))
        (let ([skip? (views:skipped-buffer-predicate)])
-         (with-options ([views:skipped-buffer-predicate (lambda (view o reason) (or (skip? view o reason) (conversation-of o)))])
+         (options:with ([views:skipped-buffer-predicate (lambda (view o reason) (or (skip? view o reason) (conversation-of o)))])
            (views:replace-buffer! v)
            (void)))]
       [else (layout:delete-part! (layout:view-node v))])))
@@ -1014,7 +1016,7 @@
                [(%last-in b #f) => cdr]
                [else
                 (let* ([name (%default-source-name)] [folder (folder-for b)])
-                  (and (ask:y-or-n? (string-append "Start a " (%title (cons name (table-ref sources name #f)) #f)
+                  (and (ask:y-or-n? (string-append "Start a " (%title (cons name (tables:ref sources name #f)) #f)
                                                    " chat in " (files:abbreviated-path folder) "? "))
                        (%start! name folder)))])])
       (when c
@@ -1053,7 +1055,7 @@
 
 (define (%remember! entry text)
   (let ([history (%source-history (cdr entry))])
-    (set-saved! history (cons text (remove text (history))))))
+    (saved:set! history (cons text (remove text (history))))))
 
 (define (%trimmed s)
   (let loop ([i 0])
@@ -1140,7 +1142,7 @@
   (%recall! 'chat:next-prompt -1))
 
 (define (%block-kind-names)
-  (map (lambda (e) (buffers:kind-name (buffers:constructor-kind (car e)))) (table-entries block-kinds)))
+  (map (lambda (e) (buffers:kind-name (buffers:constructor-kind (car e)))) (tables:entries block-kinds)))
 
 (define (%item-node-of b node)
   (let ([doc (buffers:document b)])
@@ -1192,7 +1194,7 @@
 
 (commands:define-command (toggle-thinking)
   "Shows the agents' finished thinking in every chat, or folds it."
-  (set-option! thinking-shown? (not (thinking-shown?)))
+  (options:set! thinking-shown? (not (thinking-shown?)))
   (%tell (if (thinking-shown?) "Finished thinking is shown" "Finished thinking is folded")))
 
 (define (%item-at entry c b position)
@@ -1398,7 +1400,7 @@
                 (%notice! entry c (level warning)
                   (string-append (buffers:name b) " has unsaved changes, so " (%title entry c)
                                  "'s edit of its file is not shown in it"))
-                (spawn-task (lambda () (files:revert-from-file b)))))))
+                (spawn-task (lambda (restore) (files:revert-from-file b)))))))
       paths)))
 
 (define (show-status view)
@@ -1426,7 +1428,7 @@
     (assertion-violation 'chat:status-menu "not an event" event))
   (let* ([node (views:posn-node (keys:event-end event))] [v (and node (layout:part-view node))]
          [b (and v (views:buffer v))] [c (and b (conversation-of b))]
-         [command (and c (table-ref status-menus (car (%entry-of c)) #f))])
+         [command (and c (tables:ref status-menus (car (%entry-of c)) #f))])
     ;; This binding shadows layout's left click, which selects the clicked
     ;; window, so it selects the window too, as a click elsewhere on the
     ;; line does.
@@ -1435,7 +1437,7 @@
     (when command
       (views:call-with-view v (lambda () (commands:run command))))))
 
-(define-table %waiting-keymap "Clicks on the count of the agents' questions.")
+(tables:define-table %waiting-keymap "Clicks on the count of the agents' questions.")
 
 (status-line:define-segment status (show show-status) (keymap status-keymap))
 
@@ -1451,7 +1453,7 @@
   (let ([c (conversation-of b)])
     (when c
       (let* ([entry (%entry-of c)] [d (%moved-draft entry c)] [text (%prompt-text b)])
-        (set-saved! (%source-drafts (cdr entry))
+        (saved:set! (%source-drafts (cdr entry))
           (%drafts-updated entry (%drafts entry) c (if d (%joined (cdr d) text) text)))
         (hashtable-delete! %buffers c)
         (hashtable-delete! %claims b)
@@ -1467,8 +1469,8 @@
 (keys:bind! %waiting-keymap "<drag-mouse-1>" keys:ignore)
 (keys:bind! status-keymap "<mouse-1>" status-menu)
 
-(table-set! status-line:segments status (status-line:right 30))
-(table-set! status-line:segments waiting (status-line:left 60))
+(tables:set! status-line:segments status (status-line:right 30))
+(tables:set! status-line:segments waiting (status-line:left 60))
 
 (keys:bind! prompt-keymap "RET" send)
 (keys:bind! prompt-keymap "C-c C-c" send)
@@ -1491,30 +1493,30 @@
 (keys:bind! keymap "C-c C-k" cancel)
 (keys:bind! keymap "C-c C-o" toggle-all-blocks)
 
-(for-each (lambda (command) (table-set! commands:command-modes command (list mode)))
+(for-each (lambda (command) (tables:set! commands:command-modes command (list mode)))
   (list send follow-up send-now cancel take-queue previous-prompt next-prompt toggle-block toggle-all-blocks
         toggle-thinking visit next-message previous-message fork copy-message copy-last-reply answer
         answer-by-key cancel-question))
 
-(table-set! block-kinds thinking)
-(table-set! block-kinds tool-call)
+(tables:set! block-kinds thinking)
+(tables:set! block-kinds tool-call)
 
-(table-set! views:position-describers %chat %describe-nothing)
-(table-set! views:position-describers transcript describe-message)
-(table-set! views:position-describers prompt views:describe-line)
-(table-set! web:stylesheets 'chat "chat/chat.css")
+(tables:set! views:position-describers %chat %describe-nothing)
+(tables:set! views:position-describers transcript describe-message)
+(tables:set! views:position-describers prompt views:describe-line)
+(tables:set! web:stylesheets 'chat "chat/chat.css")
 
-(add-hook! %mode-hook %tail)
-(add-hook! buffers:after-edit %chat-edited)
-(add-hook! buffers:killed %chat-buffer-killed)
-(add-hook! files:directory-finders %chat-buffer-directory)
-(add-hook! files:unsaved-kept %draft-kept?)
-(add-hook! option-changed %option-changed)
+(hooks:add! %mode-hook %tail)
+(hooks:add! buffers:after-edit %chat-edited)
+(hooks:add! buffers:killed %chat-buffer-killed)
+(hooks:add! files:directory-finders %chat-buffer-directory)
+(hooks:add! files:unsaved-kept %draft-kept?)
+(hooks:add! options:changed %option-changed)
 
 (advice-add! batch-ended
   (lambda (ended)
     (guard (c [#t (report c)])
-      (as-module (this-module) (%redraw-dirty!)))
+      (call-as-owner %self (lambda () (%redraw-dirty!))))
     (ended)))
 
-(table-set! commands:region-commands add-region #t)
+(tables:set! commands:region-commands add-region #t)

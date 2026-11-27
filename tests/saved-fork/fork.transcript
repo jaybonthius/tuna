@@ -3,7 +3,7 @@
 ; stays for its return.
 > (list (notes:origin) (notes:hits))
 ("bob" 7)
-> (import (tuna eval))
+> (import (plugins))
 > (define (use-source! from to)
     (let* ([file "~/.config/tuna/init.ss"]
            [old (call-with-input-file file get-string-all)]
@@ -13,13 +13,13 @@
           (put-string p (string-append (substring old 0 at) to
                           (substring old (+ at (string-length from)) (string-length old)))))
         'replace)
-      (unload-module! '(notes))
-      (eval-file file)))
+      (unload-owner! (module-owner '(notes)))
+      (plugins:load-configuration!)))
 > (use-source! "bob/notes" "alice/notes")
 ! use-plugin: replaced $HOME/.local/share/tuna/plugins/notes, installed from another source or commit than its line's
 > (list (notes:origin) (notes:hits))
 ("alice" 0)
-> (set-saved! notes:hits 1)
+> (saved:set! notes:hits 1)
 > (use-source! "alice/notes" "bob/notes")
 ! use-plugin: replaced $HOME/.local/share/tuna/plugins/notes, installed from another source or commit than its line's
 > (list (notes:origin) (notes:hits))

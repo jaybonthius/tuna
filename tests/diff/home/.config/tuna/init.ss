@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (tuna eval))
+(import (tuna))
 (use-plugin diff)
 
 (define home (getenv "HOME"))

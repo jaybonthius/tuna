@@ -52,9 +52,9 @@ terminal:mode
 ("xterm-ghostty truecolor tuna" "1")
 ; With kill-buffer-on-exit? off the buffer stays, the exited hook gets the
 ; status, and a key warns.
-> (set-option! terminal:kill-buffer-on-exit? #f)
+> (options:set! terminal:kill-buffer-on-exit? #f)
 > (define statuses '())
-> (add-hook! terminal:exited (lambda (t status) (set! statuses (cons (list (buffers:name t) status) statuses))))
+> (hooks:add! terminal:exited (lambda (t status) (set! statuses (cons (list (buffers:name t) status) statuses))))
 > (define d (terminal:start '("sh" "-c" "echo bye; exit 3")))
 > (testing:wait-until (lambda () (pair? statuses)))
 > (list statuses (buffers:live? d) (screen-lines d))
@@ -74,7 +74,7 @@ terminal:mode
 ; The plugin's writes leave no unsaved text, so killing an idle shell
 ; from a command asks nothing.
 > (define e (shell!))
-> (set-option! ask:y-or-n-reader (lambda (question) (display question) (newline) #f))
+> (options:set! ask:y-or-n-reader (lambda (question) (display question) (newline) #f))
 > (buffers:modified? e)
 #f
 > (commands:define-command (kill-shell) "Kills the shell's terminal." (buffers:kill! e))

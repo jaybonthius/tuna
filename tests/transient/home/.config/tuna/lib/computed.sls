@@ -3,9 +3,11 @@
 
 (transient:define-menu menu "A menu with a computed group.")
 
-(define log '())
+(define %log '())
 
-(commands:define-command (note [what 'none]) "Notes WHAT." (set! log (cons what log)))
+(define (log) %log)
+
+(commands:define-command (note [what 'none]) "Notes WHAT." (set! %log (cons what %log)))
 
 (commands:define-command (show-menu) "Shows the menu." (transient:show! menu))
 

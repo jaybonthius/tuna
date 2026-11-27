@@ -18,20 +18,20 @@ mkdir -p "$home/.config/tuna/lib" "$dir/library" "$dir/work"
 sh tests/test-home.sh "$tuna" "$dir/library" "$home"
 cp tests/undo-log/home/.config/tuna/lib/web.sls "$home/.config/tuna/lib/"
 cat > "$home/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins) (document))
+(import (tuna) (document))
 ;; ask's own writer prints each message, which the checks would read as
 ;; a result.
 (use-plugin ask
   (config
-    (set-option! ask:message-writer (lambda (text) (void)))))
+    (options:set! ask:message-writer (lambda (text) (void)))))
 (use-plugin undo-log
   (config
-    (set-option! undo-log:keep-log? (lambda (path) #t))))
+    (options:set! undo-log:keep-log? (lambda (path) #t))))
 (use-plugin command-line)
 (define (wait-until done?)
   (let loop ([n 0])
     (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
+      (timers:sleep 0.01)
       (loop (+ n 1)))))
 (define (shown)
   (let* ([view (layout:selected-view)] [b (and view (views:buffer view))])
@@ -100,7 +100,7 @@ expect "after quitting with a logged edit" "$output" '("unsaved alpha\nbeta\ngam
 
 # Exit waits for the writer even after many batches.
 output=$(run '(wait-until (lambda () (showing? "b.txt")))
-(do ([i 0 (+ i 1)]) ((= i 200)) (buffers:replace! (b) 1 1 "x") (sleep-for 0))
+(do ([i 0 (+ i 1)]) ((= i 200)) (buffers:replace! (b) 1 1 "x") (timers:sleep 0))
 (string-length (text))')
 expect "many batches" "$output" '231'
 output=$(run '(wait-until (lambda () (showing? "b.txt")))
@@ -112,7 +112,7 @@ expect "after many batches" "$output" '(231 204)'
 output=$(run '(wait-until (lambda () (showing? "b.txt")))
 (undo:forget! (b))
 (buffers:replace! (b) 1 1 "y")
-(set-option! ask:yes-or-no-reader (lambda (question) (display question) (newline) #t))
+(options:set! ask:yes-or-no-reader (lambda (question) (display question) (newline) #t))
 (commands:run files:save-buffers-kill-tuna)')
 expect "quit after forgetting" "$output" '#<edit 1>
 Modified buffers exist; exit anyway? '

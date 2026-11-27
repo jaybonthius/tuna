@@ -14,7 +14,7 @@
 > (for-each (lambda (x) (buffers:replace! x 1 1 "edit ")) (list a other b))
 #<edit 1>
 > (define (in-repo? buffer) (let ([p (files:path buffer)]) (and p (string=? (substring p 0 (min (string-length p) (string-length (disk-checks:expand "~/repo/")))) (disk-checks:expand "~/repo/")))))
-> (set-option! ask:y-or-n-reader (answer #t))
+> (options:set! ask:y-or-n-reader (answer #t))
 > (files:save-some-buffers in-repo?)
 > (list (questions) (map buffers:modified? (list a other b)))
 (("Save file ~/repo/a.py? " "Save file ~/repo/b.py? ") (#f #t #f))
@@ -43,7 +43,7 @@
 ()
 ; An unchanged file's buffer is not read again.
 > (define reverts 0)
-> (add-hook! files:after-revert (lambda (buffer) (set! reverts (+ reverts 1))))
+> (hooks:add! files:after-revert (lambda (buffer) (set! reverts (+ reverts 1))))
 > (files:revert-changed-buffers in-repo?)
 > reverts
 0

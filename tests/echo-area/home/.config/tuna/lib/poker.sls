@@ -1,5 +1,5 @@
 #!tuna
-(import (echo-area))
-(define-hook poke)
+(import (echo-area) (hooks))
+(hooks:define-hook poke)
 (define (say) (echo-area:message! "Poked"))
-(add-hook! poke say)
+(hooks:add! poke say)

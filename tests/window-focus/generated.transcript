@@ -3,7 +3,7 @@
 ; operations on them; after each, what layout holds is checked against a
 ; model of the rules. Each result says whether many checks ran, and how
 ; many failed. recent-views' timer would make a run depend on timing.
-> (set-option! recent-views:delay 1000)
+> (options:set! recent-views:delay 1000)
 > (let ([r (focus-checks:run client 1 200 30)]) (list (> (car r) 10000) (cadr r)))
 (#t 0)
 > (let ([r (focus-checks:run client 2 200 30)]) (list (> (car r) 10000) (cadr r)))

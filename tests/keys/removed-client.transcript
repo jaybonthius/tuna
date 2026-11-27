@@ -3,7 +3,7 @@
 ; another client's keymaps stay.
 > (define c1 (web:make-client 1))
 > (define c2 (web:make-client 2))
-> (define-table jump-keymap)
+> (tables:define-table jump-keymap)
 > (define exits '())
 > (define (exit-of name) (lambda () (set! exits (cons name exits))))
 > (procedure? (keys:push-keymap! c1 jump-keymap (lambda (found command) #t) (exit-of 'one) "Jump: "))
@@ -12,15 +12,15 @@
 #t
 > (define outcome #f)
 > (commands:define-command (waiting) "Pauses until resumed."
-    (guard (c [(quit-condition? c) (set! outcome 'quit)])
+    (guard (c [(cancelled? c) (set! outcome 'quit)])
       (suspend (lambda (resume) (void)))))
 > (keys:bind! keys:global "C-c w" waiting)
-> (spawn-task (lambda () (keys:press! c1 "C-c") (keys:press! c1 "w")))
+> (spawn-task (lambda (restore) (keys:press! c1 "C-c") (keys:press! c1 "w")))
 #<task>
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (list (keys:prompt c1) (keys:prompt c2))
 ("Jump: " "Jump: ")
 > (web:client-removed c1)
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (list exits outcome (keys:prompt c1) (keys:prompt c2))
 ((one) quit #f "Jump: ")

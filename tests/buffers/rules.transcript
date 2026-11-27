@@ -28,9 +28,9 @@
 (#t #f #f)
 ; Killing calls the queries, then killed with the buffer current and
 ; still live, then drops its scope.
-> (define-option width 70 fixnum?)
-> (buffers:with-buffer plain (set-option-local! width 3))
-> (add-hook! buffers:killed
+> (options:define-option width 70 fixnum?)
+> (buffers:with-buffer plain (options:set-local! width 3))
+> (hooks:add! buffers:killed
     (lambda (b) (write (list 'killed (buffers:name b) (eq? (buffers:current) b) (buffers:live? b) (width)))))
 > (buffers:kill! plain)
 (killed "renamed" #t #t 3)
@@ -48,7 +48,7 @@
     (write (list 'edit (buffers:edit-version e) (buffers:edit-start e)
                  (document:datums (buffers:piece-document (buffers:edit-removed e))) (document:datums (buffers:piece-document (buffers:edit-inserted e)))
                  (eq? b (buffers:current)) (width))))
-> (buffers:with-buffer t (set-option-local! width 4) (add-local-hook! buffers:after-edit note))
+> (buffers:with-buffer t (options:set-local! width 4) (hooks:add-local! buffers:after-edit note))
 > (buffers:replace! t 2 3 "XY")
 (edit 1 2 ("b") ("XY") #t 4)
 #<edit 1>
@@ -58,9 +58,9 @@
 > (buffers:replace! t 1 1 (document:from-datum "doc"))
 (edit 3 1 () ("doc") #t 4)
 #<edit 3>
-> (buffers:with-buffer t (remove-local-hook! buffers:after-edit note))
+> (buffers:with-buffer t (hooks:remove-local! buffers:after-edit note))
 ; with-buffer binds the buffer's scope even when the buffer is current.
-> (buffers:with-buffer t (parameterize ([current-scope (make-scope)]) (buffers:with-buffer t (width))))
+> (buffers:with-buffer t (parameterize ([scopes:current (scopes:make)]) (buffers:with-buffer t (width))))
 4
 > (list (buffers:version t) (document:text (buffers:document t)) (eq? (buffers:document t) (buffers:document t)))
 (3 "docLaXYc\n" #t)
@@ -119,12 +119,12 @@
 ; A constructor names its kind, and a kind its name and the module that
 ; defined it.
 > (map (lambda (k) (and k (list (buffers:kind-name k) (buffers:kind-owner k)))) (list (buffers:constructor-kind md:para) (buffers:constructor-kind fresh)))
-((md:para (md)) #f)
+((md:para #<owner (md) 1>) #f)
 > (buffers:define-kind own)
 > (eq? (buffers:constructor-kind own) (buffers:kind 'own))
 #t
 > (buffers:kind-owner (buffers:kind 'own))
-(repl)
+#<owner (repl) 1>
 > (buffers:kind-owner (buffers:kind 'document:raw-byte))
 (buffers)
 > (buffers:constructor-kind 'md:para)
@@ -418,7 +418,8 @@
 (("a read-only span refuses the edit" (locked)) ("a read-only span refuses the edit" (locked)) ("a read-only span refuses the edit" (locked)))
 > (list (buffers:refuses-text? t 5 5) (buffers:refuses-text? t 3 5) (buffers:refuses-text? t 7 7))
 (#t #t #f)
-> (list (buffers:replace! t 6 6 "x") (buffers:replace! t 2 4 "") (buffers:splice! t 3 3 (document:from-datum "s")))
+> (let* ([a (buffers:replace! t 6 6 "x")] [b (buffers:replace! t 2 4 "")] [c (buffers:splice! t 3 3 (document:from-datum "s"))])
+    (list a b c))
 (#<edit 12> #<edit 13> #<edit 14>)
 > (all-spans g)
 ((2 5 locked))
@@ -429,7 +430,7 @@
 > (buffers:add-span! m 3 5 'm)
 > (buffers:layer-keymap m)
 mark-keys
-> (unload-module! '(marks))
+> (unload-owner! (module-owner '(marks)))
 > (buffers:replace! t 5 5 "zz")
 #<edit 15>
 > (list (all-spans m) (buffers:layer-keymap m))
@@ -439,6 +440,7 @@ mark-keys
 > (all-spans m)
 ()
 > (load-module! '(marks))
+#<owner (marks) 2>
 > (buffers:layer-keymap m)
 mark-keys
 ; Anchors stay before text inserted at them, or move after it; one that
@@ -476,9 +478,9 @@ mark-keys
 > (do ([i 0 (+ i 1)]) ((= i 1500)) (buffers:replace! t 1 1 "x"))
 > (length (buffers:edits-since t 0))
 1500
-> (set-idle! #t)
-> (sleep-for 1.5)
-> (set-idle! #f)
+> (timers:set-idle! #t)
+> (timers:sleep 1.5)
+> (timers:set-idle! #f)
 > (list (buffers:edits-since t 0) (buffers:edits-since t 499) (length (buffers:edits-since t 500)))
 (#f #f 1000)
 > (list (buffers:map-position t 3 0) (buffers:map-position t 3 500) (buffers:anchor-position early))
@@ -588,9 +590,9 @@ two
 > (list (buffers:modified? quiet) (buffers:save-stamp quiet))
 (#t 1)
 ; A task that pauses inside the body is still inside it.
-> (spawn-task (lambda () (buffers:with-silent-edits quiet (sleep-for 0.01) (buffers:replace! quiet 1 1 "p"))))
+> (spawn-task (lambda (restore) (buffers:with-silent-edits quiet (timers:sleep 0.01) (buffers:replace! quiet 1 1 "p"))))
 #<task>
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (map buffers:edit-silent? (buffers:edits-since quiet 3))
 (#t)
 ; A buffer is silent when every edit to it is; one made with an

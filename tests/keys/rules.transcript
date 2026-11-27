@@ -1,6 +1,6 @@
 ; Key syntax: modifiers C- M- S- s- in that order, then a character or a
 ; named key; shift on a character is in the character.
-> (define-table km)
+> (tables:define-table km)
 > (define (valid? keys) (not (pair? (raised (lambda () (keys:bind! km keys file-picker:find-file))))))
 > (map valid? '("a" "A" "C-a" "C-A" "M-x" "C-M-x" "s-a" "C-M-s-a" "C--" "M-<" "C->" "é" "≈"
                 "RET" "SPC" "TAB" "ESC" "DEL" "<f1>" "<left>" "S-<left>" "C-S-<right>" "M-S-RET"
@@ -20,10 +20,10 @@
 > (raised (lambda () (keys:lookup (layout:current-frame) "C-x  C-f")))
 (keys:lookup "not a valid key sequence")
 ; Binding marks each leading part as a prefix; bindings leaves the marks out.
-> (define-table m)
+> (tables:define-table m)
 > (keys:bind! m "C-x 4 C-f" file-picker:find-file)
 > (keys:bind! m "C-x o" layout:other-view)
-> (map (lambda (e) (cons (car e) (name-of (cdr e)))) (table-entries m))
+> (map (lambda (e) (cons (car e) (name-of (cdr e)))) (tables:entries m))
 (("C-x" . #t) ("C-x 4" . #t) ("C-x 4 C-f" . file-picker:find-file) ("C-x o" . layout:other-view))
 > (map (lambda (e) (cons (car e) (name-of (cdr e)))) (keys:bindings m))
 (("C-x 4 C-f" . file-picker:find-file) ("C-x o" . layout:other-view))
@@ -35,11 +35,11 @@
 (("C-x 4 C-f" . file-picker:find-file) ("C-x o" . layout:other-view))
 > (keys:unbind! m "C-x o")
 > (keys:bindings m)
-(("C-x 4 C-f" . #<procedure>))
+(("C-x 4 C-f" . #<procedure file-picker:find-file>))
 ; A leading part bound to a keymap stays that keymap.
 > (keys:bind! m "C-c p" cape:prefix-map)
 > (keys:bind! m "C-c p x" layout:other-view)
-> (eq? (table-ref m "C-c p") cape:prefix-map)
+> (eq? (tables:ref m "C-c p") cape:prefix-map)
 #t
 ; A binding under another module's prefix keymap keeps its prefix when
 ; that module unloads.
@@ -49,59 +49,65 @@
 > (write-module "pa" "#!tuna\n(import (keys) (cape))\n(keys:bind! keys:global \"C-c q\" cape:prefix-map)\n")
 > (write-module "pb" "#!tuna\n(import (keys) (layout))\n(keys:bind! keys:global \"C-c q x\" layout:other-view)\n")
 > (load-module! '(pa))
+#<owner (pa) 1>
 > (load-module! '(pb))
+#<owner (pb) 1>
 > (name-of (keys:lookup (layout:current-frame) "C-c q x"))
 layout:other-view
-> (unload-module! '(pa))
+> (unload-owner! (module-owner '(pa)))
 > (name-of (keys:lookup (layout:current-frame) "C-c q x"))
 layout:other-view
-> (unload-module! '(pb))
-> (list (keys:lookup (layout:current-frame) "C-c q x") (table-ref keys:global "C-c q"))
+> (unload-owner! (module-owner '(pb)))
+> (list (keys:lookup (layout:current-frame) "C-c q x") (tables:ref keys:global "C-c q"))
 (#f #f)
 ; Bindings are each module's changes: unloading the binder takes its
 ; bindings back and leaves another module's marks of the same prefix.
 > (define (where frame command) (keys:where-is frame command))
 > (define frame (layout:current-frame))
 > (keys:bind! keys:global "C-x m" file-picker:find-file)
-> (table-owner keys:global "C-x m")
-(repl)
-> (table-owner keys:global "C-x")
-(repl)
-> (unload-module! '(layout))
-> (table-owner keys:global "C-x")
-(repl)
+> (tables:owner keys:global "C-x m")
+#<owner (repl) 1>
+> (tables:owner keys:global "C-x")
+#<owner (repl) 1>
+> (unload-owner! (module-owner '(layout)))
+> (tables:owner keys:global "C-x")
+#<owner (repl) 1>
 > (load-module! '(layout))
+#<owner (layout) 2>
 > (keys:where-is frame file-picker:find-file)
 ("C-x m")
-; A lib/ module removes the REPL's binding; unloading it brings it back.
+; A module's removal hides only the bindings of owners ranked below it,
+; and the REPL ranks above every module, so its binding stays.
 > (call-with-output-file (string-append (getenv "HOME") "/.config/tuna/lib/unbinder.sls")
     (lambda (p) (display "#!tuna\n(import (keys))\n(keys:unbind! keys:global \"C-x m\")\n" p)))
 > (load-module! '(unbinder))
-> (table-ref keys:global "C-x m")
-#f
-> (unload-module! '(unbinder))
-> (table-owner keys:global "C-x m")
-(repl)
+#<owner (unbinder) 1>
+> (tables:ref keys:global "C-x m")
+#<procedure file-picker:find-file>
+> (unload-owner! (module-owner '(unbinder)))
+> (tables:owner keys:global "C-x m")
+#<owner (repl) 1>
 ; A posted thunk binds as the module that posted it.
-> (as-module '(file-picker) (post! (lambda () (keys:bind! keys:global "C-p" file-picker:find-file))))
-> (testing:wait-until (lambda () (table-ref keys:global "C-p")))
-> (table-owner keys:global "C-p")
-(file-picker)
+> (call-as-owner (module-owner '(file-picker)) (lambda () (spawn-task (lambda (restore) (keys:bind! keys:global "C-p" file-picker:find-file)))))
+#<task>
+> (testing:wait-until (lambda () (tables:ref keys:global "C-p")))
+> (tables:owner keys:global "C-p")
+#<owner (file-picker) 1>
 ; Active keymaps: temporary ones, newest first, then the entries of
 ; keys:find-keymaps in the hook's order, then the global keymap.
-> (define-table a)
-> (define-table b)
-> (define-table c)
-> (define-table t1)
-> (define-table t2)
+> (tables:define-table a)
+> (tables:define-table b)
+> (tables:define-table c)
+> (tables:define-table t1)
+> (tables:define-table t2)
 > (define (names keymaps)
     (map (lambda (k) (cond [(eq? k a) 'a] [(eq? k b) 'b] [(eq? k c) 'c] [(eq? k t1) 't1] [(eq? k t2) 't2]
                            [(eq? k keys:global) 'global] [else k]))
          keymaps))
 > (define (inner client posn) (list a b))
 > (define (outer client posn) (list c))
-> (add-hook! keys:find-keymaps inner)
-> (add-hook! keys:find-keymaps outer 10)
+> (hooks:add! keys:find-keymaps inner)
+> (hooks:add! keys:find-keymaps outer 10)
 > (define end1 (keys:push-keymap! frame t1 (lambda (found command) #t)))
 > (define end2 (keys:push-keymap! frame t2 (lambda (found command) #t)))
 > (names (keys:active-keymaps frame))
@@ -127,26 +133,26 @@ file-picker:find-file
 ; reported and the others are searched.
 > (define (broken client posn) (car '()))
 > (define (wrong client posn) 'a)
-> (add-hook! keys:find-keymaps broken 5)
-> (add-hook! keys:find-keymaps wrong 6)
+> (hooks:add! keys:find-keymaps broken 5)
+> (hooks:add! keys:find-keymaps wrong 6)
 > (names (keys:active-keymaps frame))
 ! car: () is not a pair
 ! keys:find-keymaps: an entry returned what is not a list of keymaps with irritant a
 (a b c global)
-> (remove-hook! keys:find-keymaps broken)
-> (remove-hook! keys:find-keymaps wrong)
+> (hooks:remove! keys:find-keymaps broken)
+> (hooks:remove! keys:find-keymaps wrong)
 ; A warning is reported and the entry goes on.
 > (define (warned client posn) (warning 'warned "careful") (list t1))
-> (add-hook! keys:find-keymaps warned 5)
+> (hooks:add! keys:find-keymaps warned 5)
 > (names (keys:active-keymaps frame))
 ! warned: careful
 (a b t1 c global)
-> (remove-hook! keys:find-keymaps warned)
-> (remove-hook! keys:find-keymaps outer)
-> (remove-hook! keys:find-keymaps inner)
+> (hooks:remove! keys:find-keymaps warned)
+> (hooks:remove! keys:find-keymaps outer)
+> (hooks:remove! keys:find-keymaps inner)
 ; One printing character with no binding in a keymap uses that keymap's
 ; <printing-char>, before the keymaps after it.
-> (add-hook! keys:find-keymaps (lambda (client posn) (list a)))
+> (hooks:add! keys:find-keymaps (lambda (client posn) (list a)))
 > (keys:bind! a "<printing-char>" layout:other-view)
 > (keys:bind! a "q" file-picker:find-file)
 > (map (lambda (k) (name-of (keys:lookup frame k))) '("x" "é" "q" "SPC" "C-x" "<f1>"))
@@ -156,7 +162,7 @@ file-picker:find-file
 editing:self-insert
 ; ESC then a key is that key with M-, when ESC is not a quit key, is
 ; bound to no command, and nothing binds ESC and the key.
-> (set-option! keys:quit-keys '("C-g"))
+> (options:set! keys:quit-keys '("C-g"))
 > (keys:unbind! keys:global "ESC")
 > (keys:bind! keys:global "M-x" layout:other-view)
 > (keys:bind! keys:global "C-M-f" file-picker:find-file)
@@ -186,7 +192,7 @@ editing:next-line
 > (raised (lambda () (keys:remap! a editing:forward-char 'x)))
 (keys:remap! "not a command")
 > (keys:bindings a)
-(("C-c x" . #<procedure>) ("q" . #<procedure>) ("ESC x" . #<procedure>))
+(("C-c x" . #<procedure layout:other-view>) ("q" . #<procedure file-picker:find-file>) ("ESC x" . #<procedure file-picker:find-file>))
 ; where-is lists what runs a command now, remapping included, shortest first.
 > (keys:where-is frame editing:next-line)
 ("C-n" "C-f" "<right>" "M-g g")
@@ -205,10 +211,10 @@ editing:next-line
 ; bindings it decides: a sequence goes under the keymap lookup finds it
 ; in, through keymaps bound as prefixes, remapped; a binding an earlier
 ; keymap hides is left out. A posn gives the keymaps at it.
-> (define-table d)
-> (define-table e)
+> (tables:define-table d)
+> (tables:define-table e)
 > (define (in-d client posn) (if posn (list e) (list d)))
-> (add-hook! keys:find-keymaps in-d)
+> (hooks:add! keys:find-keymaps in-d)
 > (keys:bind! d "C-c z a" editing:next-line)
 > (keys:bind! d "C-c z p" cape:prefix-map)
 > (keys:bind! keys:global "C-c z a" layout:other-view)
@@ -231,4 +237,4 @@ editing:next-line
 #t
 > (on-thread (lambda () (keys:active-bindings frame)))
 (keys:active-bindings "not on the main thread")
-> (remove-hook! keys:find-keymaps in-d)
+> (hooks:remove! keys:find-keymaps in-d)

@@ -2,9 +2,9 @@
 ; The read pauses C-q's task, so C-q is pressed in a task of its own and
 ; the next key from the REPL's.
 > (define (quote! . keys)
-    (spawn-task (lambda () (apply press! keys)))
-    (sleep-for 0.02))
-> (define (settle) (sleep-for 0.02))
+    (spawn-task (lambda (restore) (apply press! keys)))
+    (timers:sleep 0.02))
+> (define (settle) (timers:sleep 0.02))
 > (start! "ab" 2)
 ("ab" ((2 #f)))
 > (quote! "C-q")

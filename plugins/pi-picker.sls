@@ -1,5 +1,5 @@
 #!tuna
-(import (pi) (pi-chat) (chat) (completion) (minibuffer) (ask) (commands) (keys) (views) (faces))
+(import (pi) (pi-chat) (chat) (completion) (minibuffer) (ask) (commands) (keys) (views) (faces) (tables))
 
 (completion:define-category session-category "Pi's sessions of a folder, valued by the session.")
 
@@ -193,24 +193,24 @@
         (list (cons faces:shadow (%first-line (pi:slash-command-description c))))
         '())))
 
-(table-set! completion:annotators session-category annotate-session)
-(table-set! completion:annotators model-category annotate-model)
-(table-set! completion:annotators command-category annotate-command)
+(tables:set! completion:annotators session-category annotate-session)
+(tables:set! completion:annotators model-category annotate-model)
+(tables:set! completion:annotators command-category annotate-command)
 
-(table-set! pi-chat:slash-commands "/model"
+(tables:set! pi-chat:slash-commands "/model"
   (lambda (chat argument) (pi:set-model! chat (%read-model chat argument))))
-(table-set! pi-chat:slash-commands "/thinking"
+(tables:set! pi-chat:slash-commands "/thinking"
   (lambda (chat argument) (pi:set-thinking-level! chat (%read-thinking-level chat argument))))
-(table-set! pi-chat:slash-commands "/resume"
+(tables:set! pi-chat:slash-commands "/resume"
   (lambda (chat argument)
     (%resume! chat (pi:chat-directory chat) (%read-session (pi:chat-directory chat) argument))))
-(table-set! pi-chat:slash-commands "/fork"
+(tables:set! pi-chat:slash-commands "/fork"
   (lambda (chat argument) (%fork! chat (%read-fork-message chat argument))))
 
 (keys:bind! pi-chat:keymap "C-c C-r" resume)
 (keys:bind! pi-chat:keymap "C-c C-m" select-model)
 
-(table-set! commands:command-modes fork (list pi-chat:mode))
-(table-set! commands:command-modes select-model (list pi-chat:mode))
-(table-set! commands:command-modes select-thinking-level (list pi-chat:mode))
-(table-set! commands:command-modes run-command (list pi-chat:mode))
+(tables:set! commands:command-modes fork (list pi-chat:mode))
+(tables:set! commands:command-modes select-model (list pi-chat:mode))
+(tables:set! commands:command-modes select-thinking-level (list pi-chat:mode))
+(tables:set! commands:command-modes run-command (list pi-chat:mode))

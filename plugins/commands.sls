@@ -1,15 +1,16 @@
 #!tuna
+(import (hooks) (tables) (plugins))
 
-(define-hook before-command
+(hooks:define-hook before-command
   "Called with the command before each outermost run, before its interactive expressions.")
 
-(define-hook after-command
+(hooks:define-hook after-command
   "Called with the command that ended last in each outermost run, also after a raise or a quit.")
 
-(define-table command-modes
+(tables:define-table command-modes
   "Maps a command to the list of modes it is for; an empty list marks a command for no mode.")
 
-(define-table region-commands
+(tables:define-table region-commands
   "Maps a command that acts on each cursor's region, when it has one, to #t, so that an action runs it on its target as the region.")
 
 (module %internals
@@ -27,7 +28,7 @@
 
   ;; Keyed by name, not procedure: every procedure has the same equal-hash,
   ;; so a table keyed by procedures is searched one key at a time.
-  (define-table registry)
+  (tables:define-table registry)
 
   ;; The registry keeps the configuration's and the REPL's entries across
   ;; a reload of this module, so the record type stays the same while its
@@ -37,7 +38,7 @@
     (sealed #t)
     (fields procedure reader))
 
-  (define (command-entry name) (table-ref registry name #f))
+  (define (command-entry name) (tables:ref registry name #f))
 
   ;; Weak, since a command the configuration or the REPL defines again
   ;; leaves its previous procedure behind. Only the main thread adds to
@@ -50,7 +51,7 @@
     (let ([names (make-weak-eq-hashtable)])
       (for-each
         (lambda (entry) (eq-hashtable-set! names (entry-procedure (cdr entry)) (car entry)))
-        (table-entries registry))
+        (tables:entries registry))
       names))
 
   (define (exported-name owner id)
@@ -58,13 +59,13 @@
         id
         (string->symbol (format "~{~a~^/~}:~a" owner id))))
 
-  ;; The index is written first: a quit landing between the two writes
+  ;; The index is written first: a cancel landing between the two writes
   ;; leaves an index entry that command-name-of ignores, never a registry
   ;; entry run and command? refuse.
   (define (register! procedure id reader)
-    (let ([name (exported-name (current-owner) id)])
+    (let ([name (exported-name (owner-name (current-owner)) id)])
       (with-mutex names-mutex (eq-hashtable-set! names procedure name))
-      (table-set! registry name (make-entry procedure reader))))
+      (tables:set! registry name (make-entry procedure reader))))
 
   (define (command-name-of v)
     (let ([name (and (procedure? v)
@@ -111,8 +112,8 @@
         (set! state outer)))
     (dynamic-wind #t swap! thunk swap!))
 
-  ;; The hooks run in dynamic-wind's in and out, where quits wait, so a
-  ;; quit landing as the command ends cannot skip after-command. A paused
+  ;; The hooks run in dynamic-wind's in and out, where cancels wait, so a
+  ;; cancel landing as the command ends cannot skip after-command. A paused
   ;; task leaves and enters again, so in calls the hook only the first
   ;; time and out only once the command has ended and its raise has been
   ;; reported, since report may pause too. The hooks run inside the run,
@@ -124,9 +125,9 @@
   ;; as the core reports one no handler takes; a warning goes on to the
   ;; caller's handler, which reports it and lets the command continue.
   ;; with-exception-handler runs its handler with the handlers outside
-  ;; it, so a quit landing while the handler reports would escape to the
+  ;; it, so a cancel landing while the handler reports would escape to the
   ;; caller. The only handler of a fresh exception state takes a raise from
-  ;; report, or a quit landing while it reports, too; that one is reported
+  ;; report, or a cancel landing while it reports, too; that one is reported
   ;; as well, but no third, so a report that always raises cannot loop.
   (define (call-outermost command thunk)
     (let ([o (make-outermost last #f #f)] [started? #f] [results #f] [reporting #f])
@@ -228,7 +229,7 @@
     (and entry (entry-procedure entry))))
 
 (define (command-names)
-  (map car (table-entries registry)))
+  (map car (tables:entries registry)))
 
 (define (%private-name? name)
   (let* ([s (symbol->string name)] [n (string-length s)])
@@ -251,8 +252,8 @@
                        (unless reader
                          (assertion-violation 'commands:run
                            "a parameter has no interactive expression; pass the arguments" name))
-                       (lambda () (as-module '(repl) (apply command (reader)))))
-                     (lambda () (as-module '(repl) (apply command args))))])
+                       (lambda () (call-as-owner (plugins:repl-owner) (lambda () (apply command (reader))))))
+                     (lambda () (call-as-owner (plugins:repl-owner) (lambda () (apply command args)))))])
       (if (running-command)
           (call-inner command thunk)
           (call-outermost command thunk)))))

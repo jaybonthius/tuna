@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (layout-split) (layout-tabs) (views) (buffers) (document) (commands) (web) (haml))
+(import (layout) (layout-split) (layout-tabs) (views) (buffers) (document) (commands) (web) (haml) (tables))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -52,7 +52,7 @@
 (define (run)
   (let* ([notes (buffers:make "notes" "one\ntwo\nthree\n")]
          [client (web:add-client! 1)]
-         [mouse (table-ref web:input-handlers "mouse")])
+         [mouse (tables:ref web:input-handlers "mouse")])
     (build! notes)
     (batch-ended)
     (show "parts" (parts))

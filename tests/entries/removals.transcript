@@ -1,26 +1,24 @@
 ; Each removal is its own change: an entry, advice or a table value stays
 ; hidden while any removal of it stands.
 > (import (target) (helper) (adder))
-> (begin (target:greeted "Harpo") (list (target:text "Harpo") (table-ref target:names 'harpo)))
+> (begin (target:greeted "Harpo") (list (target:text "Harpo") (tables:ref target:names 'harpo)))
 hello Harpo
 ("[Harpo]" "Harpo")
 > (import (quiet1) (quiet2))
-> (begin (target:greeted "Chico") (list (target:text "Chico") (table-ref target:names 'harpo)))
+> (begin (target:greeted "Chico") (list (target:text "Chico") (tables:ref target:names 'harpo)))
 ("Chico" #f)
-> (map car (module-changes '(quiet2)))
-(removal removal removal)
-> (unload-module! '(quiet1))
-> (begin (target:greeted "Chico") (list (target:text "Chico") (table-ref target:names 'harpo)))
+> (map car (owner-changes (module-owner '(quiet2))))
+(removal)
+> (unload-owner! (module-owner '(quiet1)))
+> (begin (target:greeted "Chico") (list (target:text "Chico") (tables:ref target:names 'harpo)))
 ("Chico" #f)
-> (unload-module! '(quiet2))
-> (begin (target:greeted "Zeppo") (list (target:text "Zeppo") (table-ref target:names 'harpo)))
+> (unload-owner! (module-owner '(quiet2)))
+> (begin (target:greeted "Zeppo") (list (target:text "Zeppo") (tables:ref target:names 'harpo)))
 hello Zeppo
 ("[Zeppo]" "Harpo")
 ; Removing again what a module has removed already records nothing more.
 > (load-module! '(quiet1))
-> (as-module '(quiet1)
-    (remove-hook! target:greeted helper:shout)
-    (advice-remove! target:text helper:wrap)
-    (table-remove! target:names 'harpo))
-> (map car (module-changes '(quiet1)))
-(removal removal removal)
+#<owner (quiet1) 2>
+> (call-as-owner (module-owner '(quiet1)) (lambda () (hooks:remove! target:greeted helper:shout) (advice-remove! target:text helper:wrap) (tables:remove! target:names 'harpo)))
+> (map car (owner-changes (module-owner '(quiet1))))
+(removal)

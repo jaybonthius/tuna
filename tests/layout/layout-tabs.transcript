@@ -44,7 +44,7 @@
 ! ask:message: No other view to select
 > (selected)
 3
-> (set-option! layout:display-action layout:use-other-view)
+> (options:set! layout:display-action layout:use-other-view)
 > (layout:display-buffer (buffers:make "elsewhere" ""))
 #<view 3>
 > (tree)
@@ -115,7 +115,7 @@
       (parameterize ([web:current-client c1])
         (for-each
           (lambda (action)
-            ((table-ref web:input-handlers "mouse") c1
+            ((tables:ref web:input-handlers "mouse") c1
              (append fields (list place)
                      (if (null? keymaps) '() (list (cons "keymaps" (list->vector (map mark-number keymaps)))))
                      `(("type" . "mouse") ("action" . ,action) ("button" . ,buttons) ("clicks" . 1) ("modifiers" . #())
@@ -372,7 +372,7 @@
 > (set-parts! (layout-tabs:container '() (atom r1) (atom r2)))
 > (layout:select! r2)
 > (parameterize ([web:current-client c1])
-    ((table-ref web:input-handlers "mouse") c1
+    ((tables:ref web:input-handlers "mouse") c1
      `(("type" . "mouse") ("action" . "click") ("button" . 1) ("clicks" . 1) ("modifiers" . #())
        ("token" . ,(label-at r1)) ("keymaps" . ,(vector (mark-number layout-tabs:keymap)))
        ("view" . ,(views:id layout:screen-view)) ("version" . ,(buffers:version layout:buffer))

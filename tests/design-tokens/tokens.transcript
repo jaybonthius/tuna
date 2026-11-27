@@ -85,10 +85,14 @@
 ; Light and dark come from each device's setting.
 > (and (search tokens-css "color-scheme: light dark;" 0) #t)
 #t
-; The plugin's only work is registering its stylesheet, which goes when
-; it is turned off.
-> (table-ref web:stylesheets 'design-tokens #f)
+; The plugin's only work is registering its stylesheet: an unload takes
+; its instance's entry back, and the configuration, which imports it,
+; loads a new instance that registers its own.
+> (tables:ref web:stylesheets 'design-tokens #f)
 "design-tokens/design-tokens.css"
-> (unload-module! '(design-tokens))
-> (table-ref web:stylesheets 'design-tokens #f)
-#f
+> (define old (module-owner '(design-tokens)))
+> (eq? (tables:owner web:stylesheets 'design-tokens) old)
+#t
+> (unload-owner! old)
+> (list (owner-live? old) (eq? (tables:owner web:stylesheets 'design-tokens) (module-owner '(design-tokens))))
+(#f #t)

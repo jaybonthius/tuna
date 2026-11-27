@@ -2,7 +2,7 @@
 ; buffer, with the selected view, the buffer it left and its point there.
 > (define calls '())
 > (define (note view left point) (set! calls (cons (list (views:id view) (buffers:name left) point) calls)))
-> (add-hook! layout:after-switch-to-buffer note)
+> (hooks:add! layout:after-switch-to-buffer note)
 > (define notes (buffers:make "notes" "one\ntwo\n"))
 > (define mail (buffers:make "mail" "Dear Harpo,\n"))
 > (layout:switch-to-buffer notes)
@@ -22,7 +22,7 @@
 ()
 ; In a locked view the buffer is shown and selected elsewhere, and the
 ; hook reports that view and what it showed, not the locked view's buffer.
-> (set-option! layout:display-action layout:use-other-view)
+> (options:set! layout:display-action layout:use-other-view)
 > (define echo ((layout-split:display-at-side (layout:direction down) 90 'content '((locked . #t))) (buffers:make "*Echo*" "")))
 > (layout:select! echo)
 > (layout:switch-to-buffer (buffers:make "draft" ""))

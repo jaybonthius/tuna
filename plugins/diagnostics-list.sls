@@ -1,6 +1,6 @@
 #!tuna
 (import (diagnostics) (jump-history) (next-error) (pulse) (status-line) (ui) (projects) (files) (buffers) (document) (views)
-        (layout) (editing) (modes) (commands) (keys) (faces) (haml))
+        (layout) (editing) (modes) (commands) (keys) (faces) (haml) (hooks) (options) (tables))
 
 (define-record-type %list
   (sealed #t)
@@ -8,10 +8,10 @@
 
 (define %lists (make-weak-eq-hashtable))
 
-(define-table keymap "Keys in diagnostics lists.")
+(tables:define-table keymap "Keys in diagnostics lists.")
 
-(define-table link-keymap "Clicks on a row's message, and on a project list's file: a click goes to the row's diagnostic.")
-(define-hook mode-hook "Called in each buffer that turns on diagnostics-list:mode.")
+(tables:define-table link-keymap "Clicks on a row's message, and on a project list's file: a click goes to the row's diagnostic.")
+(hooks:define-hook mode-hook "Called in each buffer that turns on diagnostics-list:mode.")
 
 (modes:define-major-mode mode (parent modes:special) (lighter "Diagnostics") (keymap keymap) (hook mode-hook) (plugin-only #t))
 
@@ -233,7 +233,7 @@
                  [(warning) (loop (cdr ds) errors (fx+ warnings 1) infos)]
                  [else (loop (cdr ds) errors warnings (fx+ infos 1))]))))))
 
-(define-table %counts-keymap "Clicks on the diagnostics counts.")
+(tables:define-table %counts-keymap "Clicks on the diagnostics counts.")
 
 (commands:define-command (%show-clicked-diagnostics [event (keys:command-event)])
   "Shows the diagnostics of the buffer whose status line was clicked."
@@ -242,10 +242,10 @@
 
 (status-line:define-segment counts (show show-counts) (keymap %counts-keymap))
 
-(define (%set-local-options) (set-option-local! buffers:revert-function refresh))
+(define (%set-local-options) (options:set-local! buffers:revert-function refresh))
 
-(add-hook! mode-hook %set-local-options)
-(add-hook! diagnostics:changed %follow-change)
+(hooks:add! mode-hook %set-local-options)
+(hooks:add! diagnostics:changed %follow-change)
 (keys:bind! keymap "RET" go-to-diagnostic)
 (keys:bind! keymap "SPC" show-diagnostic)
 (keys:bind! keymap "C-o" show-diagnostic)
@@ -255,4 +255,4 @@
 (keys:bind! link-keymap "<mouse-1>" mouse-go-to-diagnostic)
 (keys:bind! link-keymap "<mouse-2>" mouse-go-to-diagnostic)
 (keys:bind! %counts-keymap "<mouse-1>" %show-clicked-diagnostics)
-(table-set! status-line:segments counts (status-line:right 40))
+(tables:set! status-line:segments counts (status-line:right 40))

@@ -10,7 +10,7 @@
            [end (let loop ([i 0]) (if (or (= i (string-length t)) (char=? (string-ref t i) #\#)) i (loop (+ i 1))))])
       (buffers:replace! m 1 (+ end 1) text)))
 > (define hooked 0)
-> (add-hook! git-commit:mode-hook (lambda () (set! hooked (+ hooked 1))))
+> (hooks:add! git-commit:mode-hook (lambda () (set! hooked (+ hooked 1))))
 ; C-c C-k cancels: the view shows the status buffer, the message
 ; is saved, and the cancel is no Git error.
 > (press! "c" "c")
@@ -65,21 +65,22 @@
 ("Saved" "" "Signed-off-by: Tuna <tuna@example.org>" "Reviewed-by: Ada <ada@example.org>" "Acked-by: Bob <bob@example.org>")
 ; faces: the summary, past git-commit:summary-max-length the
 ; overlong face, a non-empty second line, trailer keys and comments.
-> (set-option! git-commit:summary-max-length 4)
+> (options:set! git-commit:summary-max-length 4)
 > (buffers:replace! m 1 1 "X")
 #<edit 9>
-> (define (faces) (map (lambda (s) (cdr (assq 'face (caddr s)))) (buffers:spans (buffers:layer m git-commit:%faces) 0 (document:length (buffers:document m)))))
+> (define faces-layer (eval-in-module '%faces '(git-commit)))
+> (define (faces) (map (lambda (s) (cdr (assq 'face (caddr s)))) (buffers:spans (buffers:layer m faces-layer) 0 (document:length (buffers:document m)))))
 > (list-head (faces) 5)
 ("git-commit.summary" "git-commit.overlong-summary" "git-commit.trailer-key" "git-commit.trailer-key" "git-commit.trailer-key")
-> (set-option! git-commit:summary-max-length 68)
+> (options:set! git-commit:summary-max-length 68)
 ; an edit above the scissors line repaints only the message, as the diff
 ; below it can be large; an edit below it repaints the diff too.
 > (define (diff-faces)
     (let* ([doc (buffers:document m)] [at (git-commit:%scissors-start doc)])
-      (map (lambda (s) (cdr (assq 'face (caddr s)))) (buffers:spans (buffers:layer m git-commit:%faces) at (document:length doc)))))
+      (map (lambda (s) (cdr (assq 'face (caddr s)))) (buffers:spans (buffers:layer m faces-layer) at (document:length doc)))))
 > (list-head (diff-faces) 3)
 (comment comment diff.minus)
-> (let ([doc (buffers:document m)]) (buffers:set-spans! (buffers:layer m git-commit:%faces) (git-commit:%scissors-start doc) (document:length doc) '()))
+> (let ([doc (buffers:document m)]) (buffers:set-spans! (buffers:layer m faces-layer) (git-commit:%scissors-start doc) (document:length doc) '()))
 #t
 > (buffers:replace! m 1 1 "Y")
 #<edit 10>
@@ -103,14 +104,14 @@
 (("Trailer: " "Value: " "Name: " "Email: " "Second line is not empty.  Commit anyway? ") "COMMIT_EDITMSG")
 ; with overlong-summary-line in git-commit:style-checks, a long
 ; summary asks too.
-> (set-option! git-commit:style-checks (list (git-commit:style-check overlong-summary-line)))
+> (options:set! git-commit:style-checks (list (git-commit:style-check overlong-summary-line)))
 > (set-message! m (string-append (make-string 70 #\s) "\n"))
 #<edit 13>
 > (answer! #f)
 > (press! "C-c" "C-c")
 > (list (take-asked!) (shown-buffer))
 (("Summary line is too long.  Commit anyway? ") "COMMIT_EDITMSG")
-> (set-option! git-commit:style-checks (list (git-commit:style-check non-empty-second-line)))
+> (options:set! git-commit:style-checks (list (git-commit:style-check non-empty-second-line)))
 ; C-u C-c C-c commits without the checks.
 > (set-message! m "Forced\nnot blank\n")
 #<edit 14>
@@ -123,7 +124,7 @@
 > (press! "c" "-" "e" "c")
 > (define m (message!))
 > (define (keep b) #f)
-> (add-hook! with-editor:cancel-checks keep)
+> (hooks:add! with-editor:cancel-checks keep)
 > (press! "C-c" "C-k")
 > (shown-buffer)
 "COMMIT_EDITMSG"
@@ -131,7 +132,7 @@
 > (settle!)
 > (shown-buffer)
 "*git: repo*"
-> (remove-hook! with-editor:cancel-checks keep)
+> (hooks:remove! with-editor:cancel-checks keep)
 ; killing the buffer another way cancels, saving the message.
 > (press! "c" "-" "e" "c")
 > (define m (message!))
@@ -155,7 +156,7 @@
 ; the history is saved data, kept across restarts, the newest 32.
 > (length (git-commit:messages))
 5
-> (for-each (lambda (i) (set-saved! git-commit:messages (cons (format "m~a" i) (git-commit:messages)))) (iota 40))
+> (for-each (lambda (i) (saved:set! git-commit:messages (cons (format "m~a" i) (git-commit:messages)))) (iota 40))
 > (press! "c" "-" "e" "c")
 > (define m (message!))
 > (buffers:replace! m 1 1 "Newest\n")
@@ -164,7 +165,7 @@
 > (settle!)
 > (list (length (git-commit:messages)) (car (git-commit:messages)))
 (32 "Newest")
-> (sleep-for 0.5)
+> (timers:sleep 0.5)
 > (file-exists? (at ".local/share/tuna/saved/tuna/git-commit/messages.ss"))
 #t
 ; visiting a message file in a git folder any other way gives it

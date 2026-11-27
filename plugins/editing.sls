@@ -1,21 +1,21 @@
 #!tuna
 (import (document) (buffers) (views) (commands) (keys) (modes) (kill-ring) (undo) (layout) (web) (syntax)
-        (syntax characters) (ask) (jump-history) (indentation))
+        (syntax characters) (ask) (jump-history) (indentation) (hooks) (options) (tables))
 
-(define-option delete-selection #f boolean?
+(options:define-option delete-selection #f boolean?
   "When true, typing, newline, paste and yank replace an active, non-empty region, and delete-char, delete-forward-char and delete-backward-char delete it.")
 
-(define-option delete-active-region #t boolean?
+(options:define-option delete-active-region #t boolean?
   "When true, delete-forward-char and delete-backward-char with a count of 1 delete an active, non-empty region, as delete-selection does.")
 
-(define-option backward-kill-word-stops-at-whitespace? #f boolean?
+(options:define-option backward-kill-word-stops-at-whitespace? #f boolean?
   "When true, backward-kill-word with a count of 1 after spaces, tabs or line breaks deletes only them, without putting them on the kill ring.")
 
 (modes:define-minor-mode electric-indent
   "Whether newline, run as a command in a buffer whose major mode has an indenter, indents the line it starts and the line it ends."
   (default #t))
 
-(define-option electric-reindent #t boolean?
+(options:define-option electric-reindent #t boolean?
   "Whether newline, indenting as electric-indent says, indents the line it ends. A mode whose indentation carries meaning, such as Python's, sets it to #f locally.")
 
 (module %internals
@@ -517,7 +517,7 @@
 
   (define (yank-end rs) (let-values ([(s e) (range-bounds (car (last-pair rs)))]) e))
 
-  ;; The record is set only once every kill is in, so a quit part-way
+  ;; The record is set only once every kill is in, so a cancel part-way
   ;; makes the next yank-pop raise rather than act on half a record.
   (define (yank-kills! view entry delete-selection?)
     (let ([b (views:buffer view)] [kill (kill-for entry (length (views:cursors view)))] [yanked '()]
@@ -598,7 +598,7 @@
     (sealed #t)
     (fields view buffer anchor mode (mutable moved?) end))
 
-  (define-table drag-keymap)
+  (tables:define-table drag-keymap)
 
   (define drags (make-weak-eq-hashtable))
 
@@ -1853,10 +1853,10 @@
     (when (and v (views:buffer v)) (clear-marks! v)))
   (quit))
 
-(add-hook! buffers:after-edit note-change!)
-(add-hook! commands:after-command clear-changed-marks!)
-(add-hook! commands:after-command remember-kill!)
-(add-hook! commands:after-command %select-active-region!)
+(hooks:add! buffers:after-edit note-change!)
+(hooks:add! commands:after-command clear-changed-marks!)
+(hooks:add! commands:after-command remember-kill!)
+(hooks:add! commands:after-command %select-active-region!)
 (advice-add! keys:keyboard-quit %quit-clears-marks)
 
 (keys:bind! keys:global "<printing-char>" self-insert)
@@ -1928,7 +1928,7 @@
 (keys:bind! keys:global "<mouse-2>" mouse-yank-primary)
 (keys:bind! keys:global "<mouse-3>" mouse-save-then-kill)
 (keys:bind! drag-keymap "<mouse-movement>" mouse-drag-movement)
-(for-each (lambda (command) (table-set! commands:region-commands command #t))
+(for-each (lambda (command) (tables:set! commands:region-commands command #t))
           (list kill-region kill-ring-save upcase-region downcase-region capitalize-region sort-lines duplicate-dwim
                 move-line-down move-line-up delete-trailing-whitespace delete-backward-char delete-forward-char
                 indent-for-tab-command))

@@ -29,12 +29,12 @@ cp -R "$server/.cache" "$client/"
 cp tests/web/home/.config/tuna/lib/http.sls "$server/.config/tuna/lib/"
 cp tests/web/home/.config/tuna/lib/http.sls "$client/.config/tuna/lib/"
 cat > "$server/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins) (http))
+(import (tuna) (http))
 (use-plugin jobs)
 (use-plugin document)
 (use-plugin buffers)
 (use-plugin commands)
-(use-plugin web (config (set-option! web:port (http:free-port))))
+(use-plugin web (config (options:set! web:port (http:free-port))))
 (use-plugin design-tokens)
 (use-plugin modus)
 (use-plugin faces)
@@ -103,7 +103,7 @@ run() {
   done
   port=$(sed -n 's|^Tuna is at http://127\.0\.0\.1:\([0-9]*\)/$|\1|p' "$dir/server.out")
   cat > "$client/.config/tuna/init.ss" <<END
-(import (tuna) (tuna plugins) (http) (console))
+(import (tuna) (http) (console))
 (http:use-port! (lambda () $port))
 END
 

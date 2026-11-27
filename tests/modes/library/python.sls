@@ -1,8 +1,8 @@
 #!tuna
-(import (modes) (auto-mode) (prog) (syntax) (fill))
+(import (modes) (auto-mode) (prog) (syntax) (fill) (hooks) (options) (tables))
 
-(define-table keymap "Keys in Python buffers.")
-(define-hook mode-hook "Called in each buffer that turns on Python mode.")
+(tables:define-table keymap "Keys in Python buffers.")
+(hooks:define-hook mode-hook "Called in each buffer that turns on Python mode.")
 
 (modes:define-major-mode mode
   (parent prog:mode)
@@ -11,11 +11,11 @@
   (hook mode-hook))
 
 (define (setup)
-  (set-option-local! fill:column 79))
+  (options:set-local! fill:column 79))
 
-(add-hook! mode-hook setup)
-(table-set! syntax:word-characters mode "")
-(table-set! syntax:symbol-characters mode "_")
-(for-each (lambda (name) (table-set! auto-mode:file-names name mode))
+(hooks:add! mode-hook setup)
+(tables:set! syntax:word-characters mode "")
+(tables:set! syntax:symbol-characters mode "_")
+(for-each (lambda (name) (tables:set! auto-mode:file-names name mode))
           '("py" "pyi" "pyw"))
-(table-set! auto-mode:interpreters "python" mode)
+(tables:set! auto-mode:interpreters "python" mode)

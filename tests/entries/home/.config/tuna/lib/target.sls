@@ -1,5 +1,6 @@
 #!tuna
-(define-hook greeted)
-(define-table names)
+(import (hooks) (tables))
+(hooks:define-hook greeted)
+(tables:define-table names)
 (define (text name) name)
-(table-set! names 'harpo "Harpo")
+(tables:set! names 'harpo "Harpo")

@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (commands) (undo) (undo-log))
+(import (buffers) (document) (commands) (undo) (undo-log) (options) (timers) (saved))
 
 (define (expand path)
   (if (and (>= (string-length path) 2) (string=? (substring path 0 2) "~/"))
@@ -16,8 +16,12 @@
 
 (define (exists? path) (file-exists? (expand path)))
 
+;; undo-log keeps its log folder private, so a test reads it in
+;; undo-log's scope.
+(define (log-folder) (eval-in-module '%log-folder '(undo-log)))
+
 (define (log-of path)
-  (string-append (undo-log:%log-folder) (expand path) ".ss"))
+  (string-append ((log-folder)) (expand path) ".ss"))
 
 (define (log-records path)
   (let ([file (log-of path)])
@@ -49,7 +53,7 @@
   "Inserts TEXT at the start, pauses, and inserts it again."
   (let ([b (buffers:current)])
     (buffers:replace! b 1 1 text)
-    (sleep-for 0.01)
+    (timers:sleep 0.01)
     (buffers:replace! b 1 1 text)))
 
 (define (file-mode path) (number->string (get-mode path) 8))
@@ -62,5 +66,5 @@
 ;; the body sets this again whenever undo-log loads again with this
 ;; module. Logs go in a folder of a fixed name, so reports that name one
 ;; read the same in every run.
-(set-option! undo-log:keep-log? (lambda (path) #t))
-(set-saved! undo-log:%log-folder (string-append (getenv "HOME") "/undo-logs"))
+(options:set! undo-log:keep-log? (lambda (path) #t))
+(saved:set! (log-folder) (string-append (getenv "HOME") "/undo-logs"))

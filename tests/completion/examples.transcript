@@ -3,11 +3,11 @@
 ; commands try prefix, then substring, and locations and lines substring.
 ; The configuration sets the styles, which puts those defaults aside.
 ; Files try partial before them.
-> (equal? (option-default completion:styles) (list completion:prefix completion:partial))
+> (equal? (options:default completion:styles) (list completion:prefix completion:partial))
 #t
 > (equal? (completion:styles) (list completion:any-order))
 #t
-> (define (entries t) (map (lambda (e) (cons (car e) (map (lambda (style) (style "a b")) (cdr e)))) (table-entries t)))
+> (define (entries t) (map (lambda (e) (cons (car e) (map (lambda (style) (style "a b")) (cdr e)))) (tables:entries t)))
 > (entries completion:category-default-styles)
 ((completion:buffer-category ((starts "a b")) ((contains "a b"))) (completion:location-category ((contains "a b"))) (completion:name-category ((starts "a b")) ((contains "a b"))) (completion:identifier-category ((starts "a b")) ((contains "a b"))) (completion:command-category ((starts "a b")) ((contains "a b"))) (line-picker:line-category ((contains "a b"))))
 > (entries completion:category-styles)
@@ -15,7 +15,7 @@
 > (completion-list:lines)
 15
 ; completion:read, with a history.
-> (define-saved fruit-history '() list?)
+> (saved:define-saved fruit-history '() list?)
 > (define t (start! (lambda ()
     (completion:read "Fruit: "
       (list (completion:source (candidates (vector "apple" "banana" (cons "cherry" 'stone)))))
@@ -49,7 +49,7 @@ words:word-category
 > (map (lambda (path) (substring path (string-length (getenv "HOME")) (string-length path))) (list-sort string<? (texts s)))
 ("/notes/a.txt" "/notes/sub/b.sls")
 > (press! "C-g")
-! &quit
+! &cancelled
 ; The examples of the styles.
 > (completion:prefix "fi")
 ((starts "fi"))
@@ -112,7 +112,7 @@ words:word-category
 > (views:set-buffer! (view) code)
 > (press! "M->")
 > (type! "buf")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (texts (session))
 ("buf" "buffer")
 > (popups)
@@ -128,7 +128,7 @@ words:word-category
 > (rows (session))
 (("file-picker:find-file" (keyword . "C-x C-f") (shadow . "Visits PATH and shows its buffer in the selected view.")) ("file-picker:find-file-other-view" (keyword . "C-x 4 f") (shadow . "Visits PATH and shows its buffer in another view, which it selects.")))
 > (press! "C-g")
-! &quit
+! &cancelled
 ; The configuration's buffer sources: C-x b offers the notes too, valued
 ; by locations.
 > (define t (start! (lambda () (press! "C-x" "b"))))

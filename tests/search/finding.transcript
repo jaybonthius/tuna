@@ -97,8 +97,9 @@
 ; A quit between pieces stops a long find.
 > (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 > (define slow (text-buffer "slow" (make-string 20000000 #\x)))
-> (define (quit-soon) (fork-thread (lambda () (chez:sleep (make-time 'time-duration 20000000 0)) (request-quit!))))
-> (guard (c [(quit-condition? c) 'quit])
+> (import (testing))
+> (define (quit-soon) (fork-task (lambda (restore) (chez:sleep (make-time 'time-duration 20000000 0)) (testing:request-quit!))))
+> (guard (c [(cancelled? c) 'quit])
     (quit-soon)
     (search:find slow (search:make-query "\\b\\w+-\\w+\\b" search:regexp) 0 forward))
 quit

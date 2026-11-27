@@ -1,3 +1,4 @@
 #!tuna
+(import (options))
 (define (act) "embark act")
-(define-option integrated #f boolean?)
+(options:define-option integrated #f boolean?)

@@ -1,8 +1,9 @@
-(import (tuna) (testing) (tuna plugins) (web) (keys) (commands) (document) (buffers) (views))
+(import (hooks) (options) (timers) (plugins))
+(import (tuna) (testing) (web) (keys) (commands) (document) (buffers) (views))
 (define said '())
 (use-plugin ask
   (config
-    (set-option! ask:message-writer (lambda (text) (set! said (cons text said))))))
+    (options:set! ask:message-writer (lambda (text) (set! said (cons text said))))))
 (define (take-said!) (let ([s (reverse said)]) (set! said '()) s))
 (use-plugin layout)
 (use-plugin files)
@@ -39,7 +40,7 @@
 
 (define (subjects repo) (utf8->string (git:query repo '("log" "--format=%s"))))
 
-(sh "mkdir tmp")
+(sh "mkdir -p tmp")
 (putenv "TMPDIR" (at "tmp"))
 
 (define (request-folders) (directory-list (at "tmp")))

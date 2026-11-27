@@ -1,5 +1,5 @@
 #!tuna
-(import (web) (views) (layout) (keys) (editing) (kill-ring) (ask))
+(import (web) (views) (layout) (keys) (editing) (kill-ring) (ask) (hooks) (tables))
 
 ;; A paste puts its text on the kill ring, where this plugin would copy
 ;; it back to the computer's clipboard, which holds it already.
@@ -38,7 +38,7 @@
         "Copy failed: the page has no clipboard, which needs HTTPS or localhost"
         (format "Copy failed: the browser refused the clipboard (~a)" (%text item "reason")))))
 
-(table-set! web:scripts 'clipboard "clipboard/clipboard.js")
-(table-set! web:input-handlers "paste" %paste)
-(table-set! web:input-handlers "clipboard" %failed)
-(add-hook! kill-ring:after-push copy)
+(tables:set! web:scripts 'clipboard "clipboard/clipboard.js")
+(tables:set! web:input-handlers "paste" %paste)
+(tables:set! web:input-handlers "clipboard" %failed)
+(hooks:add! kill-ring:after-push copy)

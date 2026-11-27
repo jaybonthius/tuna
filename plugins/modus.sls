@@ -1,4 +1,4 @@
 #!tuna
-(import (web))
+(import (web) (tables))
 
-(table-set! web:stylesheets 'theme "modus/modus.css")
+(tables:set! web:stylesheets 'theme "modus/modus.css")

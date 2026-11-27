@@ -2,7 +2,7 @@ SCHEME ?= /usr/lib/csv10.4.1/ta6le/scheme
 CHEZ_DIR := $(patsubst %/,%,$(dir $(SCHEME)))
 OBJ := build/obj
 LIBDIRS := src::$(OBJ)/src:lib/chez-lang/src::$(OBJ)/lib/chez-lang/src
-TEST_LIBDIRS := $(LIBDIRS):tests/lib::$(OBJ)/tests/lib
+TEST_LIBDIRS := $(LIBDIRS):start::$(OBJ)/start:tests/lib::$(OBJ)/tests/lib
 TEST_TIMEOUT ?= 60
 BROWSER_TEST_TIMEOUT ?= 300
 TESTS := $(sort $(wildcard tests/*-test.sps))
@@ -101,7 +101,8 @@ exe: build
 	cd build/boot && ld -r -b binary -z noexecstack -o boot-files.o petite.boot scheme.boot tuna.boot
 	cc -O2 -I$(CHEZ_DIR) -o build/bin/tuna boot/main.c build/boot/boot-files.o \
 	  $(CHEZ_DIR)/libkernel.a $(CHEZ_DIR)/liblz4.a $(CHEZ_DIR)/libz.a -lm -ltinfo
-	rm -rf build/bin/plugins build/bin/plugins-cache build/bin/libraries
+	rm -rf build/bin/start build/bin/start-cache build/bin/plugins build/bin/plugins-cache build/bin/libraries
+	cp -R start build/bin/start
 	sh boot/copy-library.sh plugins build/bin/plugins
 	sh boot/copy-library.sh libraries build/bin/libraries
 	sh boot/build-plugins.sh build/bin/tuna

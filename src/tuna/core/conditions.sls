@@ -1,9 +1,18 @@
 (library (tuna core conditions)
-  (export condition-text write-condition warning-only? call-with-only-handler)
+  (export
+    condition-text write-condition warning-only? call-with-only-handler
+    &cancelled make-cancelled cancelled? cancelled-reason
+    &unloaded make-unloaded unloaded? unloaded-owner)
   (import (chezscheme))
 
+  ;; Both are raised into a task from outside, so a handler must be able to
+  ;; tell them from an error; neither is the other, or a hook runner that
+  ;; lets a cancel end the task would end it for a turned-off plugin's entry.
+  (define-condition-type &cancelled &serious make-cancelled cancelled? (reason cancelled-reason))
+  (define-condition-type &unloaded &serious make-unloaded unloaded? (owner unloaded-owner))
+
   ;; with-exception-handler runs its handler with the handlers outside it,
-  ;; so a quit landing while the handler reports a raise would escape to
+  ;; so a cancel landing while the handler reports a raise would escape to
   ;; them. The only handler of a fresh exception state takes the raises in
   ;; itself too.
   (define (call-with-only-handler handler thunk)
@@ -82,9 +91,12 @@
 
   ;; A condition's irritants or a record's writer can raise, and the caller
   ;; is often the code that reports a raise.
+  ;; Printed with labels, so a cyclic irritant does not make the whole
+  ;; report unprintable.
   (define (condition-text c)
     (guard (e [#t "condition that cannot be printed"])
-      (raw-condition-text c)))
+      (parameterize ([print-graph #t])
+        (raw-condition-text c))))
 
   ;; Standard output is flushed first, so that text written before the raise
   ;; comes before the report when both streams go to one file.

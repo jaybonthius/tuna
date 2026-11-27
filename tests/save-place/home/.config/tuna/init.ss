@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins) (document))
+(import (options))
+(import (tuna) (document))
 (use-plugin views)
 (use-plugin files)
 (use-plugin save-place)

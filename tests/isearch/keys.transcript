@@ -8,7 +8,7 @@
 > (here)
 (4 "I-search: foo" "foo")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (here)
 (1 #f #f)
 ; ESC cancels at once.
@@ -16,7 +16,7 @@
 > (here)
 (7 "I-search: ba" "ba")
 > (press! "ESC")
-! &quit
+! &cancelled
 > (here)
 (1 #f #f)
 ; A key isearch:keymap does not bind ends the search at the match and
@@ -56,13 +56,13 @@
 > (here)
 (1 "Failing I-search: {q}" #f)
 > (press! "C-g" "C-g")
-! &quit
+! &cancelled
 ; A failing word search the same.
 > (press! "M-s" "w" "q" "x")
 > (list finds (here))
 (1 (1 "Failing word I-search: {qx}" #f))
 > (press! "C-g" "C-g")
-! &quit
+! &cancelled
 ; A regexp searches again at each key: (foo is unfinished until ) closes it.
 > (set! finds 0)
 > (press! "C-M-s" "(" "f" "o")

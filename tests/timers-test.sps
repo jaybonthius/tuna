@@ -1,4 +1,15 @@
-(import (chezscheme) (tuna-test) (tuna core changes) (except (tuna core main-thread) exit) (tuna timers))
+(import (chezscheme) (tuna-test) (kernel-test)
+        (only (tuna) load-module! spawn-task join-task fork-task suspend cancel-task))
+
+(define (top form) (eval form (interaction-environment)))
+
+(define run-with-timer #f)
+(define run-with-idle-timer #f)
+(define cancel-timer! #f)
+(define timers #f)
+(define sleep-for #f)
+(define set-idle! #f)
+(define idle-seconds #f)
 
 (define (seconds-now)
   (let ([t (current-time 'time-monotonic)])
@@ -28,9 +39,6 @@
   (or (null? dues) (null? (cdr dues))
       (and (<= (due-earliest (car dues)) (due-latest (cadr dues))) (in-due-order? (cdr dues)))))
 
-(define (timer-changes)
-  (filter (lambda (change) (eq? (car change) 'timer)) (module-changes '(repl))))
-
 (define (tests)
   (test "timers run in the order of their times, and none early"
     (let ([ran '()] [n 80])
@@ -46,8 +54,7 @@
       (let ([ran (reverse ran)])
         (check (in-due-order? (map car ran)))
         (check (for-all (lambda (r) (>= (cdr r) (due-earliest (car r)))) ran)))
-      (check-equal? '() (timers))
-      (check-equal? '() (timer-changes))))
+      (check-equal? '() (timers))))
 
   (test "a timer cancelled after its run was posted never runs"
     (let ([ran 0])
@@ -57,15 +64,14 @@
           (cancel-timer! t)))
       (sleep-for 0.05)
       (check-equal? 0 ran)
-      (check-equal? '() (timers))
-      (check-equal? '() (timer-changes))))
+      (check-equal? '() (timers))))
 
   ;; The block ends half a period before the next due time, so the one
   ;; run that waited is the only one when the task goes on.
   (test "a repeating timer that falls behind runs once"
     (let* ([runs 0] [t (run-with-timer 0.1 (lambda () (set! runs (+ runs 1))) 0.1)])
       (block 0.45)
-      (sleep-for 0)
+      (sleep-for 0.01)
       (check-equal? 1 runs)
       (sleep-for 0.1)
       (check-equal? 2 runs)
@@ -79,7 +85,7 @@
            [tasks (map (lambda (i)
                          (let ([seconds (/ (random 100) 1000.)])
                            (spawn-task
-                             (lambda ()
+                             (lambda (restore)
                                (let* ([now (seconds-now)] [due (make-due seconds now)])
                                  (when previous (due-set-after! previous now))
                                  (set! previous due)
@@ -94,10 +100,10 @@
 
   (test "set-idle! from many threads while an idle timer runs"
     (let* ([runs 0] [t (run-with-idle-timer 0 (lambda () (set! runs (+ runs 1))))])
-      (for-each thread-join
+      (for-each join-task
         (map (lambda (i)
-               (fork-thread
-                 (lambda ()
+               (fork-task
+                 (lambda (restore)
                    (do ([n 0 (+ n 1)]) ((= n 2000))
                      (set-idle! (odd? n))
                      (idle-seconds)))))
@@ -112,31 +118,34 @@
       (set-idle! #f)
       (cancel-timer! t)))
 
-  (test "a quit never leaves a timer half added or half cancelled"
-    (let ([changing? #f] [quits-while-changing 0])
-      (define (burn n) (if (fx= n 0) 0 (fx+ 1 (burn (fx- n 1)))))
-      (do ([i 0 (+ i 1)]) ((= i 3000))
-        (guard (c [(quit-condition? c)
-                   (when changing? (set! quits-while-changing (+ quits-while-changing 1)))])
-          (burn (random 1500))
-          (request-quit!)
-          (set! changing? #t)
-          (do ([j 0 (fx+ j 1)]) ((fx= j 30))
-            (let ([once (run-with-timer 0 void)] [repeating (run-with-timer 0 void 1)])
-              (cancel-timer! once)
-              (cancel-timer! repeating)))
-          (set! changing? #f)
-          (let loop () (loop))))
-      (check (> quits-while-changing 1000))
-      (let ([live (timers)] [changed (map cadr (timer-changes))])
-        (check-equal? (length live) (length changed))
-        (check (for-all (lambda (t) (memq t changed)) live)))
+  (test "a cancel never leaves a timer half added or half cancelled"
+    (let ([cancelled 0])
+      (do ([i 0 (+ i 1)]) ((= i 300))
+        (let ([t (spawn-task
+                   (lambda (restore)
+                     (let loop ()
+                       (let ([once (run-with-timer 0 void)] [repeating (run-with-timer 0 void 1)])
+                         (cancel-timer! once)
+                         (cancel-timer! repeating))
+                       (loop))))])
+          (fork-task (lambda (restore) (sleep-ms (random 3)) (cancel-task t)))
+          (let-values ([(how detail) (join-task t)])
+            (when (eq? how 'cancelled) (set! cancelled (+ cancelled 1))))))
+      (check (> cancelled 250))
       (for-each cancel-timer! (timers))
       (sleep-for 0.05)
-      (check-equal? '() (timers))
-      (check-equal? '() (timer-changes)))))
+      (check-equal? '() (timers)))))
 
-(post! (lambda ()
-         (tests)
-         (test-exit)))
-(run-main-loop)
+(run-in-kernel
+  (lambda ()
+    (load-module! '(timers))
+    (set! run-with-timer (top 'timers:run-after))
+    (set! run-with-idle-timer (top 'timers:run-when-idle))
+    (set! cancel-timer! (top 'timers:cancel!))
+    (set! timers (top 'timers:live))
+    (set! sleep-for (top 'timers:sleep))
+    (set! set-idle! (top 'timers:set-idle!))
+    (set! idle-seconds (top 'timers:idle-seconds))
+    (as-test-owner tests)
+    (delete-test-folder!)
+    (test-exit)))

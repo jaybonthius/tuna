@@ -1,21 +1,19 @@
 ; Reports raised on four threads while a prompt waits are all logged,
 ; and the message shown last is drawn after the input in its face. The
 ; core's writer of reports is silenced beneath the echo area's advice,
-; which a reload puts outside it, rather than four threads writing
-; standard error.
-> (load-module! '(quiet))
-> (unload-module! '(echo-area))
-> (use-plugin echo-area (config (set-option! echo-area:log-max 16384)))
-> (use-plugin minibuffer)
+; rather than four threads writing standard error.
+> (quiet:silence! #t)
+> (options:set! echo-area:log-max 16384)
 > (define t (start! (lambda () (minibuffer:read "Name: "))))
 > (define done 0)
+> (define done-mutex (make-mutex))
 > (define (raiser i)
     (lambda ()
       (do ([k 0 (+ k 1)]) ((= k 100))
         (report (condition (make-error) (make-message-condition (format "t~a-~a" i k)))))
-      (with-interrupts-disabled (set! done (+ done 1)))))
+      (with-mutex done-mutex (set! done (+ done 1)))))
 > (begin
-    (for-each (lambda (i) (fork-thread (raiser i))) '(0 1 2 3))
+    (for-each (lambda (i) (fork-task (lambda (restore) ((raiser i))))) '(0 1 2 3))
     (let loop ()
       (unless (= done 4)
         (echo-area:message! "Working")
@@ -40,10 +38,8 @@
 ; shows in the echo area, which draws again.
 > (define reported #f)
 > (begin
-    (fork-thread
-      (lambda ()
-        (report (condition (make-error) (make-message-condition "late")))
-        (with-interrupts-disabled (set! reported #t))))
+    (fork-task (lambda (restore) (report (condition (make-error) (make-message-condition "late")))
+        (set! reported #t)))
     (press! "RET")
     (let spin () (unless reported (spin)))
     (void))
@@ -56,9 +52,7 @@
 > (define stop #f)
 > (define askers
     (map (lambda (i)
-           (spawn-task
-             (lambda ()
-               (let loop ([n 0])
+           (spawn-task (lambda (restore) (let loop ([n 0])
                  (unless (or stop (= n 200))
                    (guard (c [#t #f])
                      (in-client
@@ -69,23 +63,21 @@
                    (loop (+ n 1)))))))
          (iota 3)))
 > (define quitter
-    (spawn-task
-      (lambda ()
-        (let loop ([n 0])
+    (spawn-task (lambda (restore) (let loop ([n 0])
           (unless (= n 300)
-            (for-each (lambda (t) (signal-task t (make-message-condition "q"))) askers)
+            (for-each (lambda (t) (cancel-task t (make-message-condition "q"))) askers)
             (echo-area:message! "Quitting")
-            (sleep-for 0.001)
+            (timers:sleep 0.001)
             (loop (+ n 1)))))))
-> (testing:wait-until (lambda () (task-done? quitter)))
+> (testing:wait-until (lambda () (eq? (task-state quitter) 'done)))
 > (set! stop #t)
-> (for-each (lambda (t) (signal-task t (make-message-condition "q"))) askers)
-> (testing:wait-until (lambda () (for-all task-done? askers)))
-> (for-all task-done? askers)
+> (for-each (lambda (t) (cancel-task t (make-message-condition "q"))) askers)
+> (testing:wait-until (lambda () (for-all testing:done? askers)))
+> (for-all testing:done? askers)
 #t
 > (list (prompt) (echo-area:hidden?) (echo-drawn?))
 (#f #f #t)
 > (echo-area:message! "Calm")
 > (list (echo-area:current-message) (last-logged))
 ("Calm" "Calm")
-> (unload-module! '(quiet))
+> (unload-owner! (module-owner '(quiet)))

@@ -6,7 +6,7 @@
 > (wait-for t "\n500\n$ ")
 > (list (length (lines (text t))) (history-rows))
 (502 478)
-> (set-option! terminal:scrollback-lines 100)
+> (options:set! terminal:scrollback-lines 100)
 > (list (length (lines (text t))) (car (lines (text t))))
 (124 "378")
 > (terminal:send! t "seq 501 700\r")

@@ -25,7 +25,9 @@
 > (list (job-events) (map car (marks:inputs)))
 (((start #<job %marks>)) ("other.mk" "other.mk"))
 > (modes:set-major-mode marks:derived q)
-> (list (faces q) (job-events) (map car (marks:inputs)))
+> (let* ([faces (faces q)] [events (job-events)])
+    (testing:wait-until (lambda () (= 2 (marks:inputs-count))))
+    (list faces events (map car (marks:inputs))))
 ((("#other" comment)) ((stop #<job %marks>) (start #<job %marks>)) ("other.mk" "other.mk"))
 > (buffers:kill! q)
 #t
@@ -39,7 +41,7 @@
 (("#m" comment))
 > (job-events)
 ((start #<job %marks>))
-> (unload-module! '(marks))
+> (unload-owner! (module-owner '(marks)))
 > (map all-spans (list p m))
 ((() ()) (() ()))
 > (job-events)
@@ -51,7 +53,7 @@
 ((start #<job %marks>) (start #<job %marks>))
 ; Unloading syntax-highlighting stops every job and takes its spans
 ; away, and the language plugins that import it go with it.
-> (unload-module! '(syntax-highlighting))
+> (unload-owner! (module-owner '(syntax-highlighting)))
 > (map all-spans (list p m))
 ((() ()) (() ()))
 > (job-events)

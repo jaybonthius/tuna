@@ -44,13 +44,13 @@
 > (list (take-asked!) (last-command))
 (("Push topic to: ") ("push" "-v" "origin" "topic:refs/heads/elsewhere"))
 ; git-remotes:push-arguments sets the switches the menu starts with.
-> (set-option! git-remotes:push-arguments '("--force-with-lease"))
+> (options:set! git-remotes:push-arguments '("--force-with-lease"))
 > (press! "P")
 > (cadr (menu-now))
 ("Arguments" ("- f" "Force with lease" "*--force-with-lease") ("- F" "Force" "--force") ("- h" "Disable hooks" "--no-verify") ("- n" "Dry run" "--dry-run") ("- T" "Include all tags" "--tags") ("- t" "Include related annotated tags" "--follow-tags"))
 > (press! "u")
 > (settle!)
-> (set-option! git-remotes:push-arguments '())
+> (options:set! git-remotes:push-arguments '())
 > (last-command)
 ("push" "-v" "--force-with-lease" "origin" "topic:refs/heads/topic")
 ; f u fetches the upstream's remote, f a every remote, and

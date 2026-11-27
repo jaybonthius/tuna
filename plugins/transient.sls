@@ -1,10 +1,12 @@
 #!tuna
-(import (keys) (commands) (views) (buffers) (document) (layout) (layout-float) (ui) (faces) (web) (haml))
+(import (keys) (commands) (views) (buffers) (document) (layout) (layout-float) (ui) (faces) (web) (haml) (hooks) (options) (tables))
 
-(define-table keymap
+(define %self (current-owner))
+
+(tables:define-table keymap
   "The keys of every open menu, searched after the top menu's keymap.")
 
-(define-table staying-commands
+(tables:define-table staying-commands
   "Commands, as keys, that run without closing the open menus, though no menu binds them.")
 
 (define %main-thread (get-thread-id))
@@ -14,7 +16,7 @@
     (assertion-violation who "not on the main thread")))
 
 (define (%check-menu who menu)
-  (unless (table? menu)
+  (unless (tables:table? menu)
     (assertion-violation who "not a table" menu)))
 
 (define (%check-heading who heading)
@@ -34,7 +36,7 @@
   (sealed #t)
   (fields title option incompatible))
 
-(define-table %menus)
+(tables:define-table %menus)
 
 (define-record-type (%showing %make-showing %showing?)
   (sealed #t)
@@ -43,7 +45,7 @@
 (define %stack '())
 
 (define (%initial-arguments menu view)
-  (let ([settings (table-ref %menus menu #f)])
+  (let ([settings (tables:ref %menus menu #f)])
     (if (and settings (%settings-option settings))
         (views:call-with-view view (lambda () (list-copy ((%settings-option settings)))))
         '())))
@@ -67,14 +69,14 @@
   title)
 
 (define (%checked-option option)
-  (unless (option? option)
+  (unless (options:option? option)
     (assertion-violation 'transient:define-menu "not an option" option))
   option)
 
 (define (%register-menu! menu title option incompatible)
   (unless (for-all (lambda (set) (and (list? set) (for-all string? set))) incompatible)
     (assertion-violation 'transient:define-menu "not a list of lists of strings" incompatible))
-  (table-set! %menus menu (%make-settings title option incompatible))
+  (tables:set! %menus menu (%make-settings title option incompatible))
   (let ([registered (box menu)])
     (set! %registered (cons registered %registered))
     (on-unload
@@ -92,7 +94,7 @@
        (let loop ([clauses #'(clause ...)] [seen '()] [title #'#f] [option #'#f] [incompatible #''()])
          (if (null? clauses)
              #`(begin
-                 (define-table id doc)
+                 (tables:define-table id doc)
                  (define-values () (begin (%register-menu! id #,title #,option #,incompatible) (values))))
              (let* ([c (car clauses)]
                     [name (syntax-case c () [(k . _) (identifier? #'k) (syntax->datum #'k)] [_ #f])])
@@ -154,9 +156,9 @@
   (sealed #t)
   (fields heading procedure order))
 
-(define-table %entries)
+(tables:define-table %entries)
 
-(define-table %computed-groups)
+(tables:define-table %computed-groups)
 
 (define %order 0)
 
@@ -172,7 +174,7 @@
   (for-each
     (lambda (e)
       (keys:bind! menu (%entry-key e) press)
-      (table-set! %entries (cons menu (%entry-key e)) (%make-placed heading e (%next-order!))))
+      (tables:set! %entries (cons menu (%entry-key e)) (%make-placed heading e (%next-order!))))
     entries))
 
 (define (add-computed! menu heading entries)
@@ -181,14 +183,14 @@
   (%check-heading 'transient:add-computed! heading)
   (unless (procedure? entries)
     (assertion-violation 'transient:add-computed! "not a procedure" entries))
-  (table-set! %computed-groups (cons menu heading) (%make-computed heading entries (%next-order!))))
+  (tables:set! %computed-groups (cons menu heading) (%make-computed heading entries (%next-order!))))
 
 (define (remove! menu key)
   (%check-main-thread 'transient:remove!)
   (%check-menu 'transient:remove! menu)
   (unless (string? key)
     (assertion-violation 'transient:remove! "not a string" key))
-  (table-remove! %entries (cons menu key))
+  (tables:remove! %entries (cons menu key))
   (keys:unbind! menu key))
 
 (define (%prefix? prefix s)
@@ -205,7 +207,7 @@
            (%prefix? member argument))))
 
 (define (%put-in! s argument)
-  (let* ([settings (table-ref %menus (%showing-menu s) #f)]
+  (let* ([settings (tables:ref %menus (%showing-menu s) #f)]
          [sets (if settings (%settings-incompatible settings) '())]
          [excluded (fold-left
                      (lambda (acc set)
@@ -224,7 +226,7 @@
   (let ([chosen (%chosen)])
     (if (and chosen (eq? (car chosen) menu))
         (list-copy (cdr chosen))
-        (let ([settings (table-ref %menus menu #f)])
+        (let ([settings (tables:ref %menus menu #f)])
           (if (and settings (%settings-option settings))
               (list-copy ((%settings-option settings)))
               '())))))
@@ -261,9 +263,9 @@
           " "
           (:span.transient-argument ([data-face (and (not (eq? in #t)) (symbol->string faces:shadow))]) argument))))))
 
-(define-table %root-keys)
+(tables:define-table %root-keys)
 
-(define-table %entry-keys)
+(tables:define-table %entry-keys)
 
 (buffers:define-kind %root (content nodes) (whole) (keymap %root-keys) (draw %draw-root))
 
@@ -288,7 +290,7 @@
     (report (condition (make-warning) (make-who-condition 'transient:add-computed!) (make-message-condition text)))))
 
 (define (%call s who procedure check what)
-  (guard (c [(not (quit-condition? c)) (%report-once! s procedure c) #f])
+  (guard (c [(not (cancelled? c)) (%report-once! s procedure c) #f])
     (let ([v (procedure)])
       (unless (check v)
         (assertion-violation who what v))
@@ -342,13 +344,13 @@
       (fold-left
         (lambda (acc e)
           (let ([k (car e)])
-            (if (and (eq? (car k) menu) (eq? (table-ref menu (cdr k) #f) press))
+            (if (and (eq? (car k) menu) (eq? (tables:ref menu (cdr k) #f) press))
                 (cons (cdr e) acc)
                 acc)))
-        '() (table-entries %entries))
+        '() (tables:entries %entries))
       (fold-left
         (lambda (acc e) (if (eq? (car (car e)) menu) (cons (cdr e) acc) acc))
-        '() (table-entries %computed-groups)))))
+        '() (tables:entries %computed-groups)))))
 
 (define (%grouped items)
   (let loop ([items items] [groups '()])
@@ -360,12 +362,12 @@
               (loop (cdr items) (cons (list heading item) groups)))))))
 
 (define (%binding-description binding)
-  (if (table? binding)
-      (or (documentation binding) "")
+  (if (tables:table? binding)
+      (or (tables:documentation binding) "")
       (symbol->string (commands:command-name binding))))
 
 (define (%build s)
-  (let* ([menu (%showing-menu s)] [settings (table-ref %menus menu #f)]
+  (let* ([menu (%showing-menu s)] [settings (tables:ref %menus menu #f)]
          [title (and settings (%settings-title settings)
                      (%text s 'transient:define-menu (%settings-title settings)))]
          [drawn '()])
@@ -381,7 +383,7 @@
           [(not (%printing-key? key))
            (%warn-once! s key (format "the computed entry ~a is left out: its key is not one printing character" key))
            #f]
-          [(or (table-ref menu key #f) (table-ref keymap key #f) (assoc key drawn))
+          [(or (tables:ref menu key #f) (tables:ref keymap key #f) (assoc key drawn))
            (%warn-once! s key (format "the computed entry ~a is left out: the menu has its key" key))
            #f]
           [else (entry-datum e)])))
@@ -418,7 +420,7 @@
           (let ([last (let each ([bs (keys:bindings menu)] [acc '()])
                         (cond
                           [(null? bs) (reverse acc)]
-                          [(let ([b (cdar bs)]) (or (eq? b press) (not (or (table? b) (commands:command? b)))))
+                          [(let ([b (cdar bs)]) (or (eq? b press) (not (or (tables:table? b) (commands:command? b)))))
                            (each (cdr bs) acc)]
                           [else
                            (set! drawn (cons (car bs) drawn))
@@ -433,7 +435,7 @@
 
 (define %buffer
   (let ([b (or (buffers:find " *transient*") (buffers:make " *transient*" (%root '())))])
-    (buffers:with-buffer b (set-option-local! views:cursor-visible #f))
+    (buffers:with-buffer b (options:set-local! views:cursor-visible #f))
     (let ([doc (buffers:document b)])
       (unless (equal? (document:datums doc) (list (%root '())))
         (buffers:splice! b 0 (document:length doc) (document:from-datum (%root '())))))
@@ -452,7 +454,7 @@
 
 (define (%display!)
   (unless (%popup-view)
-    (let ([v (as-module (this-module) (layout:display-buffer %buffer %display-action))])
+    (let ([v (call-as-owner %self (lambda () (layout:display-buffer %buffer %display-action)))])
       (set! %popup-id (views:id v)))))
 
 (define (%hide!)
@@ -514,7 +516,7 @@
   (let ([c %choice-running])
     (and c (not (%choice-ended? c))
          (let ([t (%choice-task c)])
-           (and t (not (eq? t (current-task))) (not (task-done? t)))))))
+           (and t (not (eq? t (current-task))) (not (eq? (task-state t) 'done)))))))
 
 (define (%keymaps client posn)
   (if (and (not posn) (pair? %stack) (not (%running?)))
@@ -524,7 +526,7 @@
 (define (%leave command)
   (when (and (pair? %stack) (keys:command-keys) (not (%running?))
              (not (eq? command press)) (not (eq? command quit)) (not (eq? command %keep-prefix))
-             (not (table-ref staying-commands command #f)))
+             (not (tables:ref staying-commands command #f)))
     (%close-all!)))
 
 (define (%pressed-key)
@@ -582,7 +584,7 @@
             (views:call-with-view v (lambda () (%act! s (cdr drawn))))
             (%choice-ended?-set! c #t)
             (%draw!))]
-         [(and drawn (table? (cdr drawn))) (show! (cdr drawn))]
+         [(and drawn (tables:table? (cdr drawn))) (show! (cdr drawn))]
          [drawn
           (%close-all!)
           (views:call-with-view v (lambda () (commands:run (cdr drawn))))]
@@ -599,7 +601,7 @@
 
 (define (%keep-buffer b) (not (eq? b %buffer)))
 
-(define %quit (record-constructor (record-constructor-descriptor &quit)))
+(define (%quit) (make-cancelled #f))
 
 ;; A chosen command paused at a prompt would resume into this module's
 ;; definitions, which raise once it has unloaded.
@@ -607,14 +609,13 @@
   (let ([c %choice-running])
     (when (and c (not (%choice-ended? c)))
       (let ([t (%choice-task c)])
-        (when (and t (not (eq? t (current-task))) (not (task-done? t)))
-          (signal-task t (%quit)))))))
+        (when (and t (not (eq? t (current-task))) (not (eq? (task-state t) 'done)))
+          (cancel-task t))))))
 
 (define (%unload)
   (for-each (lambda (registered) (set-box! registered #f)) %registered)
   (%quit-chosen!)
   (%close-all!)
-  (remove-hook! buffers:kill-queries %keep-buffer)
   (buffers:kill! %buffer))
 
 (keys:bind! keymap "C-g" quit)
@@ -630,17 +631,17 @@
 (keys:bind! %entry-keys "<mouse-1>" press)
 (keys:bind! %entry-keys "<mouse-2>" press)
 (keys:bind! %entry-keys "<drag-mouse-1>" keys:ignore)
-(for-each (lambda (c) (table-set! staying-commands c))
+(for-each (lambda (c) (tables:set! staying-commands c))
           (list keys:universal-argument keys:digit-argument keys:negative-argument keys:ignore keys:undefined))
-(table-set! commands:command-modes press '())
-(table-set! commands:command-modes quit '())
-(table-set! commands:command-modes %keep-prefix '())
-(table-set! web:stylesheets 'transient "transient/transient.css")
-(add-hook! keys:find-keymaps %keymaps -50)
-(add-hook! commands:before-command %leave)
-(add-hook! buffers:kill-queries %keep-buffer)
+(tables:set! commands:command-modes press '())
+(tables:set! commands:command-modes quit '())
+(tables:set! commands:command-modes %keep-prefix '())
+(tables:set! web:stylesheets 'transient "transient/transient.css")
+(hooks:add! keys:find-keymaps %keymaps -50)
+(hooks:add! commands:before-command %leave)
+(hooks:add! buffers:kill-queries %keep-buffer)
 (advice-add! batch-ended
   (lambda (ended)
-    (guard (c [#t (report c)]) (as-module (this-module) (%draw!)))
+    (guard (c [#t (report c)]) (call-as-owner %self (lambda () (%draw!))))
     (ended)))
 (on-unload %unload)

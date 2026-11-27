@@ -1,7 +1,7 @@
 #!tuna
-(import (keys) (commands))
+(import (keys) (commands) (tables))
 
-(define-table keymap "Plain keys.")
+(tables:define-table keymap "Plain keys.")
 
 (commands:define-command (hello) "Says hello." (void))
 

@@ -5,7 +5,7 @@
     (apply start! keys)
     (let ([d (minibuffer:prompt-default (minibuffer:current-prompt))])
       (press! "C-g")
-      (sleep-for 0.05)
+      (timers:sleep 0.05)
       d))
 > (define bs (show-file! (string-append library "/buffers.sls")))
 > (settle-names bs)
@@ -17,14 +17,14 @@
             (loop (+ i 1))))))
 > (at! bs "(define (insert! " 11)
 > (default-of "C-h" "f")
-! &quit
+! &cancelled
 "buffers:insert!"
 ; A helper in its own module's file.
 > (define zp (show-file! "~/.config/tuna/lib/zeppo.sls"))
 > (settle-names zp)
 > (at! zp "(define (%tune" 11)
 > (default-of "C-h" "f")
-! &quit
+! &cancelled
 "zeppo:%tune"
 ; In a plain buffer the name is read as Scheme; on an argument it is the
 ; list's first symbol, for C-h x the command it names. A space after the
@@ -33,25 +33,25 @@
 > (views:set-buffer! (view) plain)
 > (views:set-point! (view) 23)
 > (list (default-of "C-h" "f") (default-of "C-h" "x"))
-! &quit
-! &quit
+! &cancelled
+! &cancelled
 ("editing:forward-word" "editing:forward-word")
 > (views:set-point! (view) 49)
 > (list (default-of "C-h" "f") (default-of "C-h" "x"))
-! &quit
-! &quit
+! &cancelled
+! &cancelled
 (#f #f)
 > (views:set-point! (view) 55)
 > (default-of "C-h" "f")
-! &quit
+! &cancelled
 "buffers:insert!"
 ; In prose, a lone " above the call hides nothing, as in Emacs.
 > (define prose (buffers:make "prose" "He said \"hi.\nAnd then\nsee (editing:forward-word b) here\n"))
 > (views:set-buffer! (view) prose)
 > (at! prose "word b" 5)
 > (list (default-of "C-h" "f") (default-of "C-h" "x"))
-! &quit
-! &quit
+! &cancelled
+! &cancelled
 ("editing:forward-word" "editing:forward-word")
 > (define (help-holds? piece)
     (let ([t (text (buffers:find "*Help*"))] [n (string-length piece)])
@@ -76,11 +76,11 @@
 > (row-of (session) "help:keymap")
 ("help:keymap" help:keymap completion:name-category ("variable"))
 > (press! "C-g")
-! &quit
-; A #!tuna/base file sees post!, a name help describes.
+! &cancelled
+; A #!tuna file sees spawn-task, a name help describes.
 > (views:set-buffer! (view) zp)
 > (views:set-point! (view) (- (document:length (buffers:document zp)) 1))
-> (complete! "RET" "p" "o" "s" "t")
-> (row-of (session) "post!")
-("post!" post! completion:name-category ("procedure"))
+> (complete! "RET" "s" "p" "a" "w" "n")
+> (row-of (session) "spawn-task")
+("spawn-task" spawn-task completion:name-category ("procedure"))
 > (press! "C-g")

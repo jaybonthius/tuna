@@ -1,67 +1,54 @@
 ; A job started while a module's body runs belongs to the module.
 > (import (client))
-> (testing:wait-until (lambda () (pair? client:from-the-body)))
-> client:from-the-body
+> (testing:wait-until (lambda () (pair? (client:from-the-body))))
+> (client:from-the-body)
 (started-in-the-body)
 ; A job belongs to the current owner, whichever module's code starts it.
 ; Unloading another module leaves it running.
 > (define from-repl (client:start-waiting (lambda (ended) (note! (list 'from-repl ended)))))
-> (unload-module! '(client))
+> (unload-owner! (module-owner '(client)))
 > (jobs:stop! from-repl)
 > (testing:wait-until (lambda () (pair? log)))
 > (taken!)
 ((from-repl stopped))
 ; A raise is reported as the module that started the job.
 > (load-module! '(client))
+#<owner (client) 2>
 > (begin (finished client:fails 1) (void))
 ! car: 1 is not a pair
-> (begin (as-module '(client) (finished client:fails 1)) (void))
+> (begin (call-as-owner (module-owner '(client)) (lambda () (finished client:fails 1))) (void))
 ! (client) car: 1 is not a pair
 ; Unloading the starter stops its jobs, drops their values not yet run,
 ; and skips on-end.
 > (import (searcher))
-> (as-module '(searcher)
-    (jobs:start searcher:count-slowly "unloaded" note! (lambda (ended) (note! (list 'ended ended)))))
+> (call-as-owner (module-owner '(searcher)) (lambda () (jobs:start searcher:count-slowly "unloaded" note! (lambda (ended) (note! (list 'ended ended))))))
 #<job count-slowly>
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (file-exists? "unloaded")
 #f
 > (define seen #f)
-> (begin (unload-module! '(searcher)) (set! seen (length log)) (> seen 0))
+> (begin (unload-owner! (module-owner '(searcher))) (set! seen (length log)) (> seen 0))
 #t
 > (testing:wait-until (lambda () (file-exists? "unloaded")))
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (list (= seen (length log)) (exists pair? log))
 (#t #f)
 ; So does reloading it.
 > (set! log '())
 > (load-module! '(searcher))
-> (as-module '(searcher)
-    (jobs:start searcher:count-slowly "reloaded" note! (lambda (ended) (note! (list 'ended ended)))))
+#<owner (searcher) 2>
+> (call-as-owner (module-owner '(searcher)) (lambda () (jobs:start searcher:count-slowly "reloaded" note! (lambda (ended) (note! (list 'ended ended))))))
 #<job count-slowly>
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (begin
-    (eval-file (string-append (getenv "HOME") "/.config/tuna/lib/searcher.sls"))
+    (reload-modules! '((searcher)))
     (set! seen (length log))
     (> seen 0))
 #t
 > (testing:wait-until (lambda () (file-exists? "reloaded")))
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (list (= seen (length log)) (exists pair? log))
 (#t #f)
-; Code that acts for no module, such as advice on batch-ended, cannot
-; start a job, since nothing would stop it.
-> (jobs:define-worker (echo x emit) (emit x))
-> (define refused #f)
-> (define (start-for-no-module batch-ended)
-    (unless refused
-      (set! refused (guard (c [#t (condition-message c)]) (jobs:start echo 1 void))))
-    (batch-ended))
-> (advice-add! batch-ended start-for-no-module)
-> (sleep-for 0.05)
-> (advice-remove! batch-ended start-for-no-module)
-> refused
-"this code acts for no module; name its module with as-module"
 ; At most 64 of a job's values wait for the main thread: emit waits
 ; while the main thread is busy, and every value arrives in order.
 > (import (progress) (rename (only (chezscheme) sleep) (sleep chez:sleep)))

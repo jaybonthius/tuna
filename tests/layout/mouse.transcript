@@ -38,7 +38,7 @@
       (parameterize ([web:current-client c1])
         (for-each
           (lambda (action)
-            ((table-ref web:input-handlers "mouse") c1
+            ((tables:ref web:input-handlers "mouse") c1
              (append place
                      `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
                        ("view" . ,(views:id s)) ("version" . ,(buffers:version layout:buffer))

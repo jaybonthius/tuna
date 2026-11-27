@@ -1,19 +1,19 @@
 #!tuna
-(import (fake-talks) (chat) (modes))
+(import (fake-talks) (chat) (modes) (hooks) (tables) (saved))
 
 ;; Two sources, so the chat's own rules are tested without an agent.
 
-(define-saved echo-history '() list?)
+(saved:define-saved echo-history '() list?)
 
-(define-saved echo-drafts '() list?)
+(saved:define-saved echo-drafts '() list?)
 
-(define-saved parrot-history '() list?)
+(saved:define-saved parrot-history '() list?)
 
-(define-saved parrot-drafts '() list?)
+(saved:define-saved parrot-drafts '() list?)
 
-(define-table keymap "Keys in a fake agent's chat.")
+(tables:define-table keymap "Keys in a fake agent's chat.")
 
-(define-hook %mode-hook)
+(hooks:define-hook %mode-hook)
 
 (modes:define-major-mode mode (parent chat:mode) (lighter "Fake") (keymap keymap) (hook %mode-hook))
 
@@ -98,4 +98,4 @@
   (status (lambda (t) (string-append "Parrot · " (%activity t))))
   (kill %end))
 
-(add-hook! fake-talks:changed chat:changed!)
+(hooks:add! fake-talks:changed chat:changed!)

@@ -13,12 +13,12 @@
 ; A module's file is offered its own helpers, not its imports'.
 > (define zp (show-file! "~/.config/tuna/lib/zeppo.sls"))
 > (settle-names zp)
-> (described zp '(%tune sing volume post! buffers:insert! buffers:%replace))
-((zeppo:%tune (zeppo) procedure) (zeppo:sing (zeppo) procedure) (zeppo:volume (zeppo) variable) (post! (tuna base) procedure) (buffers:insert! (buffers) procedure) #f)
+> (described zp '(%tune sing volume spawn-task buffers:insert! buffers:%replace))
+((zeppo:%tune (zeppo) procedure) (zeppo:sing (zeppo) procedure) (zeppo:volume (zeppo) variable) (spawn-task (tuna) procedure) (buffers:insert! (buffers) procedure) #f)
 ; Its body imports (tuna core replaced) ahead of its first line's
 ; libraries, so its sleep and dynamic-wind are that library's.
 > (described zp '(sleep dynamic-wind car))
-((sleep (tuna core replaced) syntax) (dynamic-wind (tuna core replaced) procedure) (car (chezscheme) procedure))
+((sleep (tuna core replaced) procedure) (dynamic-wind (tuna core replaced) procedure) (car (chezscheme) procedure))
 ; A buffer with no scope of its own sees the REPL's names: every export of
 ; the REPL's libraries, helpers included, the first library's for a name
 ; two export, and no module's %scope.
@@ -26,10 +26,10 @@
 > (eq? (chez-scheme:names plain) (chez-scheme:repl-names))
 #t
 > (described plain '(sleep dynamic-wind car zeppo:%tune help:keymap help:%read-name zeppo:%scope))
-((sleep (tuna core replaced) syntax) (dynamic-wind (tuna core replaced) procedure) (car (chezscheme) procedure) (zeppo:%tune (zeppo) procedure) (help:keymap (help) variable) (help:%read-name (help) procedure) #f)
+((sleep (tuna core replaced) procedure) (dynamic-wind (tuna core replaced) procedure) (car (chezscheme) procedure) (zeppo:%tune (zeppo) procedure) (help:keymap (help) variable) (help:%read-name (help) procedure) #f)
 > (let ([libraries (chez-scheme:tuna-libraries)])
     (list (list-head libraries 6) (and (member '(zeppo) libraries) #t)))
-(((tuna core replaced) (chezscheme) (tuna) (tuna base) (tuna plugins) (tuna eval)) #t)
+(((tuna core replaced) (chezscheme) (tuna) (plugins) (start) (owned)) #t)
 > (let ([spellings (map chez-scheme:name-spelling (vector->list (chez-scheme:repl-names)))])
     (length (filter (lambda (s) (eq? s 'dynamic-wind)) spellings)))
 1
@@ -43,10 +43,11 @@
 > (chez-scheme:binding-kind variable)
 variable
 ; An unloaded module's names go.
-> (unload-module! '(zeppo))
+> (unload-owner! (module-owner '(zeppo)))
 > (described plain '(zeppo:sing))
 (#f)
 > (load-module! '(zeppo))
+#<owner (zeppo) 2>
 > (described plain '(zeppo:sing))
 ((zeppo:sing (zeppo) procedure))
 > (raised (lambda () (chez-scheme:names 'plain)))
@@ -97,7 +98,7 @@ variable
 ("zeppo:sing" "zeppo:%tune" "zeppo:volume")
 > (press! "C-g")
 ; Once an import unloads, the buffer's names lose its names.
-> (unload-module! '(zeppo))
+> (unload-owner! (module-owner '(zeppo)))
 > (chez-scheme:find-name user 'zeppo:sing)
 #f
 > (complete! "SPC" "z" "e" "p" "p" "o" ":")
@@ -105,6 +106,7 @@ variable
 ()
 > (press! "C-g")
 > (load-module! '(zeppo))
+#<owner (zeppo) 3>
 > (chez-scheme:name-export (chez-scheme:find-name user 'zeppo:sing))
 zeppo:sing
 ; In a helper's own module, the helper completes, valued by its export.
@@ -139,8 +141,8 @@ zeppo:sing
 ; there, as M-: does, offers the REPL's names.
 > (define (prompt-names)
     (and (minibuffer:current-prompt) (chez-scheme-completion:name-region)))
-> (add-hook! completion:find-region prompt-names)
-> (begin (spawn-task (lambda () (in-client (lambda () (minibuffer:read "Eval: " #f))))) (sleep-for 0.05))
+> (hooks:add! completion:find-region prompt-names)
+> (begin (spawn-task (lambda (restore) (in-client (lambda () (minibuffer:read "Eval: " #f))))) (timers:sleep 0.05))
 > (complete! "(" "b" "u" "f" "f" "e" "r" "s" ":" "i" "n" "s" "e" "r")
 > (map car (rows (session)))
 ("buffers:insert!")
@@ -151,5 +153,5 @@ zeppo:sing
 > (list (session) (prompt-input))
 (#f "(buffers:inser (help:%read-n ")
 > (press! "C-g")
-! &quit
-> (remove-hook! completion:find-region prompt-names)
+! &cancelled
+> (hooks:remove! completion:find-region prompt-names)

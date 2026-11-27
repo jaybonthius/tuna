@@ -1,6 +1,6 @@
 ; The modus theme registers its file as the theme.
 > (use-plugin modus)
-> (table-ref web:stylesheets 'theme #f)
+> (tables:ref web:stylesheets 'theme #f)
 "modus/modus.css"
 ; Its palette is Modus's: 109 named colours and 53 of Modus's mappings,
 ; each a pair of the operandi-tinted and the vivendi-tinted value.
@@ -76,6 +76,6 @@
 > (theme-contrast "border-strong" "chrome")
 (5.22 4.45)
 ; Turning the theme off takes its file back.
-> (unload-module! '(modus))
-> (table-ref web:stylesheets 'theme #f)
+> (unload-owner! (module-owner '(modus)))
+> (tables:ref web:stylesheets 'theme #f)
 #f

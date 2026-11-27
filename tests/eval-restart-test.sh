@@ -37,7 +37,7 @@ output=$(run '(define t (start! "M-:"))
 (input)
 (press! "C-g")')
 expect "restart" "$output" '"(+ 1 2)"
-! &quit'
+! &cancelled'
 
 [ "$failures" -eq 0 ] || exit 1
 echo "$0: ok"

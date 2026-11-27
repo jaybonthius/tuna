@@ -1,10 +1,10 @@
 ; Zsh and fish start with the plugin's integration, as bash does: each
 ; reports its directory (OSC 7) and marks its commands (OSC 133).
 > (define marks '())
-> (add-hook! terminal:semantic-prompt (lambda (t mark code command) (set! marks (cons (list mark code command) marks))))
+> (hooks:add! terminal:semantic-prompt (lambda (t mark code command) (set! marks (cons (list mark code command) marks))))
 > (define (commands-marked) (filter (lambda (m) (memq (car m) '(command-start command-end))) (reverse marks)))
-> (set-option! terminal:shell '("zsh"))
-> (set-option! terminal:environment '(("PS1" . "%% ")))
+> (options:set! terminal:shell '("zsh"))
+> (options:set! terminal:environment '(("PS1" . "%% ")))
 > (define z (terminal:start #f))
 > (testing:wait-until (lambda () (assq 'input marks)))
 > (terminal:send! z "cd /tmp; echo zsh-done\r")
@@ -12,7 +12,7 @@
 > (list (terminal:directory z) (commands-marked))
 ("/tmp" ((command-start #f "cd /tmp; echo zsh-done") (command-end 0 #f)))
 > (set! marks '())
-> (set-option! terminal:shell '("fish"))
+> (options:set! terminal:shell '("fish"))
 > (define f (terminal:start #f))
 > (testing:wait-until (lambda () (assq 'input marks)))
 > (terminal:send! f "cd /tmp; echo fish-done\r")

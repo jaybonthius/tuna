@@ -87,8 +87,8 @@
 > (all-seen notes)
 (("alpha" info "first word") ("delta" hint "second line"))
 > (do ([i 0 (+ i 1)]) ((= i 1100)) (buffers:with-silent-edits notes (buffers:replace! notes 1 1 "x") (buffers:replace! notes 1 2 "")))
-> (set-idle! #t)
-> (sleep-for 1.5)
+> (timers:set-idle! #t)
+> (timers:sleep 1.5)
 > (diagnostics:report! linter notes (list (diagnostics:make-diagnostic 1 2 (diagnostics:severity info) "late")) then)
 #f
 > (all-seen notes)
@@ -143,7 +143,7 @@
 #t
 > (define seen-changes '())
 > (define (note-change where) (set! seen-changes (cons where seen-changes)))
-> (add-hook! diagnostics:changed note-change)
+> (hooks:add! diagnostics:changed note-change)
 > (buffers:insert! notes (word notes "beta") "<")
 8
 > (buffers:insert! notes (+ (word notes "beta") 4) ">")
@@ -209,6 +209,6 @@
 #t
 > (all-seen notes)
 (("beta" error "wrong") ("beta" warning "vague") ("delta" error "bad"))
-> (unload-module! '(reporter))
+> (unload-owner! (module-owner '(reporter)))
 > (all-seen notes)
 (("beta" error "wrong") ("beta" warning "vague"))

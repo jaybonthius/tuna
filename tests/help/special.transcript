@@ -39,7 +39,9 @@
 ; q buries *Help*: it goes to the back of the buffers, behind notes.
 > (and (member "*Help*" (cdr (member "notes" (map buffers:name (buffers:all))))) #t)
 #t
-; Unloading layout-split takes its display action back.
-> (unload-module! '(layout-split))
-> (eq? (layout:display-action) layout:use-other-view)
-#t
+; Unloading layout-split takes its instance's display action back; the
+; configuration, which imports it, loads a new instance that sets it again.
+> (define old (module-owner '(layout-split)))
+> (unload-owner! old)
+> (list (owner-live? old) (eq? (layout:display-action) layout-split:display-pop-up))
+(#f #t)

@@ -1,7 +1,7 @@
 #!tuna
-(import (files))
+(import (files) (hooks) (options))
 
-(define-option language "en" string? "Dictionary used for checking.")
+(options:define-option language "en" string? "Dictionary used for checking.")
 
 (define (dictionary-path)
   "The file of words for the current language."
@@ -11,4 +11,4 @@
   "Reports misspelt words in the file at a path."
   (display (string-append "checking " path " against " (dictionary-path))))
 
-(add-hook! files:after-save check)
+(hooks:add! files:after-save check)

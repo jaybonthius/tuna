@@ -1,80 +1,79 @@
 ; current-owner names the module code runs for; this-module, in a
 ; module's code, the module the code is written in.
 > (current-owner)
-(repl)
-> (as-module '(spell) (greet:module-name))
+#<owner (repl) 1>
+> (call-as-owner (module-owner '(spell)) (lambda () (greet:module-name)))
 (greet)
-> (as-module '(spell) (current-owner))
-(spell)
+> (call-as-owner (module-owner '(spell)) (lambda () (current-owner)))
+#<owner (spell) 1>
 > (this-module)
 ! variable this-module is not bound
-; The loaded modules, in the order they loaded.
+; The loaded modules, in the order they loaded; spell, which the
+; configuration imports, loads again after its unload.
 > (loaded-modules)
-((greet) (spell) (display) (theme) (console))
-> (unload-module! '(spell))
+((plugins) (start) (timers) (greet) (spell) (display) (theme) (console))
+> (unload-owner! (module-owner '(spell)))
 > (loaded-modules)
-((greet) (display) (theme) (console))
+((plugins) (start) (timers) (greet) (display) (theme) (console) (spell))
 ; A changeable procedure is named by its exported name.
 > (greet:text)
 ! incorrect number of arguments 0 to #<procedure greet:text>
 > (greet:shout)
 ! incorrect number of arguments 0 to #<procedure greet:shout at greet.sls:109>
-; remove-override! removes the overrides of a definition, whichever
+; override-remove! removes the overrides of a definition, whichever
 ; module made them, as the current owner's change.
 > (display:mode-line)
 "-- themed --"
-> (set! display:mode-line (lambda () "-- custom --"))
+> (define display:mode-line (lambda () "-- custom --"))
 > (display:mode-line)
 "-- custom --"
-> (remove-override! display:mode-line)
+> (override-remove! display:mode-line)
 > (display:mode-line)
 "-- plain --"
 > (definition-changes display:mode-line)
-(((repl) removal #f) ((theme) override #f) ((display) define #f))
-> (module-changes '(repl))
-((removal display:mode-line #f))
-> (remove-override! car)
-! remove-override!: not a changeable definition car in (remove-override! car)
+((#<owner (repl) 1> removal #f) (#<owner (theme) 1> override #f) (#<owner (display) 1> define #f))
+> (owner-changes (plugins:repl-owner))
+((removal #<procedure display:mode-line> #f))
+> (override-remove! car)
+! override-remove!: not a changeable procedure with irritant #<procedure car>
 ; A module's removal goes when it unloads, and the override comes back.
 > (import (remover))
 > (definition-changes display:mode-line)
-(((remover) removal #f) ((repl) removal #f) ((theme) override #f) ((display) define #f))
-> (unload-module! '(remover))
+((#<owner (remover) 1> removal #f) (#<owner (repl) 1> removal #f) (#<owner (theme) 1> override #f) (#<owner (display) 1> define #f))
+> (unload-owner! (module-owner '(remover)))
 > (definition-changes display:mode-line)
-(((repl) removal #f) ((theme) override #f) ((display) define #f))
-> (on-chez-thread (lambda () (remove-override! display:mode-line)))
-"only the main thread makes changes"
-; A thread Chez forked acts for no module: it can neither change nor
-; post until it names its module.
+((#<owner (repl) 1> removal #f) (#<owner (theme) 1> override #f) (#<owner (display) 1> define #f))
+> (on-chez-thread (lambda () (override-remove! display:mode-line)))
+"this code acts for no owner; name one with call-as-owner"
+; A thread Chez forked acts for no owner: it can neither change nor
+; spawn until it names one.
 > (on-chez-thread current-owner)
-(tuna)
-> (as-module '(greet) (on-chez-thread current-owner))
-(tuna)
-> (on-chez-thread (lambda () (post! void)))
-"this code acts for no module; name its module with as-module"
+#f
+> (call-as-owner (module-owner '(greet)) (lambda () (on-chez-thread current-owner)))
+#f
+> (on-chez-thread (lambda () (spawn-task (lambda (restore) (void)))))
+"this thread acts for no owner; name one with call-as-owner"
 > (define posted-by #f)
-> (on-chez-thread (lambda () (as-module '(greet) (post! (lambda () (set! posted-by (current-owner)))))))
+> (on-chez-thread (lambda () (call-as-owner (module-owner '(greet)) (lambda () (spawn-task (lambda (restore) (set! posted-by (current-owner))))))))
+#<task>
 > posted-by
-(greet)
-> (as-module '(tuna) 1)
-! as-module: not a loaded module with irritant (tuna)
-; batch-ended runs after each batch, as (tuna): a change or post! in its
-; advice raises and goes to report, and the loop goes on.
+#<owner (greet) 1>
+; batch-ended runs after each batch; its advice runs as its owner, so what
+; it starts is its owner's, and a raise in it goes to report and the loop
+; goes on.
 > (define owners '())
 > (define (note-owner ended) (set! owners (cons (current-owner) owners)) (ended))
 > (advice-add! batch-ended note-owner)
-> (list (pair? owners) (for-all (lambda (o) (equal? o '(tuna))) owners))
+> (list (pair? owners) (for-all (lambda (o) (equal? (owner-name o) '(repl))) owners))
 (#t #t)
 > (advice-remove! batch-ended note-owner)
 > (define once? #f)
 > (define (once thunk) (unless once? (set! once? #t) (thunk)))
-> (define (stray ended) (ended) (once (lambda () (run-with-timer 60 void))))
+> (define (stray ended) (ended) (once (lambda () (timers:run-after 60 void))))
 > (advice-add! batch-ended stray)
-! run-with-timer: this code acts for no module; name its module with as-module
-> (begin (advice-remove! batch-ended stray) (set! once? #f))
-> (define (stray-post ended) (ended) (once (lambda () (post! void))))
+> (begin (advice-remove! batch-ended stray) (set! once? #f) (for-each timers:cancel! (timers:live)))
+> (define (stray-post ended) (ended) (once (lambda () (spawn-task (lambda (restore) (void))))))
 > (advice-add! batch-ended stray-post)
-! post!: this code acts for no module; name its module with as-module
 > (begin (advice-remove! batch-ended stray-post) (set! once? #f))
 > (define (boom ended) (once (lambda () (car '()))) (ended))
 > (advice-add! batch-ended boom)
@@ -82,13 +81,13 @@
 > (advice-remove! batch-ended boom)
 > 'goes-on
 goes-on
-; Advice that acts for its own module names it with as-module, and its
-; change goes when the module unloads.
+; A module's advice runs as the module, and what it starts goes when the
+; module unloads.
 > (import (disp))
-> (list (> disp:redraws 0) (map car (module-changes '(disp))))
-(#t (timer advice define define define))
-> (unload-module! '(disp))
-> (timers)
+> (list (> (disp:redraws) 0) (map car (owner-changes (module-owner '(disp)))))
+(#t (advice define define))
+> (unload-owner! (module-owner '(disp)))
+> (timers:live)
 ()
 ; What batch-ended's advice posts runs in the next batch.
 > (define order '())
@@ -96,16 +95,15 @@ goes-on
     (once
       (lambda ()
         (set! order (cons 'batch-ended order))
-        (as-module '(greet) (post! (lambda () (set! order (cons 'posted order)))))))
+        (call-as-owner (module-owner '(greet)) (lambda () (spawn-task (lambda (restore) (set! order (cons 'posted order))))))))
     (ended))
 > (begin (set! once? #f) (advice-add! batch-ended post-once) (set! order (cons 'form order)))
 > (reverse order)
 (form batch-ended posted)
 ; A redefinition in a module's file keeps the exported name.
-> (import (tuna eval))
-> (eval-text "(define (mode-line) \"-- again --\")" "~/.config/tuna/lib/display.sls")
+> (eval-in-module '(define (mode-line) "-- again --") '(display))
 > (display:mode-line 1)
-! incorrect number of arguments 1 to #<procedure display:mode-line>
+! incorrect number of arguments 1 to #<procedure>
 > (eval-in-module '(define mode-line (lambda () "-- once more --")) '(display))
 > (display:mode-line 1)
-! incorrect number of arguments 1 to #<procedure display:mode-line>
+! incorrect number of arguments 1 to #<procedure>

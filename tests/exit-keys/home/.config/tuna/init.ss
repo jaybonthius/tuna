@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (web))
+(import (tuna) (web))
 (use-plugin layout)
 (on-unload (lambda () (display "configuration unloading") (newline)))
 

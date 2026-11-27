@@ -1,5 +1,5 @@
 #!tuna
-(import (commands) (keys) (web))
+(import (commands) (keys) (web) (hooks) (tables))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -27,7 +27,7 @@
 (define (show name value)
   (printf "~a ~,2f\n" name value))
 
-(define seen 0)
+(define %seen 0)
 
 (commands:define-command (nothing) "Does nothing." #f)
 
@@ -36,15 +36,15 @@
   (keys:typed-char)
   n)
 
-(define-table m0)
-(define-table m1)
-(define-table m2)
-(define-table m3)
-(define-table m4)
-(define-table m5)
-(define-table m6)
-(define-table m7)
-(define-table m8)
+(tables:define-table m0)
+(tables:define-table m1)
+(tables:define-table m2)
+(tables:define-table m3)
+(tables:define-table m4)
+(tables:define-table m5)
+(tables:define-table m6)
+(tables:define-table m7)
+(tables:define-table m8)
 
 (define focus-path (list m0 m1 m2 m3 m4 m5 m6 m7 m8))
 
@@ -64,14 +64,14 @@
     focus-path (iota 9))
   (keys:bind! keys:global "<printing-char>" insert)
   (keys:bind! keys:global "C-x C-f" nothing)
-  (add-hook! keys:find-keymaps (lambda (client posn) focus-path))
+  (hooks:add! keys:find-keymaps (lambda (client posn) focus-path))
   (do ([i 0 (fx+ i 1)]) ((fx= i 3))
-    (add-hook! commands:before-command (lambda (c) (set! seen (fx+ seen 1))))
-    (add-hook! commands:after-command (lambda (c) (set! seen (fx+ seen 1))))))
+    (hooks:add! commands:before-command (lambda (c) (set! %seen (fx+ %seen 1))))
+    (hooks:add! commands:after-command (lambda (c) (set! %seen (fx+ %seen 1))))))
 
 (define item '(("type" . "key") ("key" . "≈") ("code" . "KeyX") ("modifiers" . #("control" "left-option"))))
 
-(define frame 'frame)
+(define frame (web:make-client 0))
 
 (define (run)
   (fill!)

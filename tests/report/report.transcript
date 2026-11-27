@@ -12,10 +12,10 @@ reported
 ; not the importer refers to their names.
 > (import (report b))
 > loads
-((report b) (report a))
+(#<owner (report b) 1> #<owner (report a) 1>)
 > (import (report unused))
 > loads
-((report unused) (report c) (report b) (report a))
+(#<owner (report unused) 1> #<owner (report c) 1> #<owner (report b) 1> #<owner (report a) 1>)
 ; An advice of report that raises does not lose the condition.
 > (advice-add! report (lambda (report c) (car '())))
 > (vector-ref (vector) 0)

@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (web) (keys) (commands) (document) (buffers) (views))
+(import (hooks) (options) (tables) (timers) (saved))
+(import (tuna) (testing) (web) (keys) (commands) (document) (buffers) (views))
 ;; ask's readers are the tests': each question is kept, and answered
 ;; from a queue the transcript fills.
 (define said '())
@@ -12,7 +13,7 @@
       (let ([a (car answers)]) (set! answers (cdr answers)) a)))
 (use-plugin ask
   (config
-    (set-option! ask:message-writer (lambda (text) (set! said (cons text said)))
+    (options:set! ask:message-writer (lambda (text) (set! said (cons text said)))
                  ask:y-or-n-reader (lambda (q) (next-answer q))
                  ask:line-reader (case-lambda [(q) (next-answer q)] [(q d) (next-answer q)])
                  ask:line-with-candidates-reader (lambda (q candidates default) (next-answer q))
@@ -146,15 +147,15 @@
 
 (define started 0)
 (define ended 0)
-(add-hook! commands:before-command (lambda (command) (set! started (+ started 1))))
-(add-hook! commands:after-command (lambda (command) (set! ended (+ ended 1))))
+(hooks:add! commands:before-command (lambda (command) (set! started (+ started 1))))
+(hooks:add! commands:after-command (lambda (command) (set! ended (+ ended 1))))
 
 ;; A key's command runs in a task of its own, and git's in processes,
 ;; so a test waits until every command has ended and the repository's
 ;; Git buffers are current.
 (define (settle!)
   (let loop ([n 0])
-    (sleep-for 0.05)
+    (timers:sleep 0.05)
     (testing:wait-until (lambda () (= started ended)))
     (let ([b (status-buffer)])
       (when b (git-mode:wait-until-current b)))
@@ -193,7 +194,7 @@
 
 (define (mouse-in! v action place . fields)
   (parameterize ([web:current-client client])
-    ((table-ref web:input-handlers "mouse") client
+    ((tables:ref web:input-handlers "mouse") client
      (append fields
              `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
                ("view" . ,(views:id v)) ("version" . ,(buffers:version (views:buffer v)))

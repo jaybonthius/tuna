@@ -12,7 +12,7 @@
 > (testing:wait-until (lambda () (equal? (shown) "COMMIT_EDITMSG")))
 > (piped "\n")
 #<process 2 git>
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (list (shown) (piped #f))
 ("COMMIT_EDITMSG" #f)
 > (buffers:replace! (views:buffer (layout:selected-view)) 1 1 "Through a pipe\n")
@@ -28,7 +28,7 @@
 > (testing:wait-until (lambda () (equal? (shown) "COMMIT_EDITMSG")))
 > (on-terminal "\r")
 #<process 4 git>
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (list (shown) (on-terminal #f))
 ("COMMIT_EDITMSG" #f)
 > (buffers:replace! (views:buffer (layout:selected-view)) 1 1 "On a terminal\n")

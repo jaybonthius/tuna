@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (document) (haml) (web))
+(import (options) (tables) (timers))
+(import (tuna) (testing) (document) (haml) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin layout-tabs)
@@ -10,11 +11,11 @@
 (use-plugin minibuffer)
 (use-plugin completion)
 (use-plugin buffer-picker)
-(use-plugin help (config (set-option! help:select-view? #t)))
+(use-plugin help (config (options:set! help:select-view? #t)))
 (use-plugin status-line)
 (use-plugin recent-views
   (config
-    (set-option! recent-views:delay 0.05)
+    (options:set! recent-views:delay 0.05)
     (keys:bind! keys:global "s-o" recent-views:select-recent-view)))
 
 ;; At exit modules unload newest first, and a container plugin that goes
@@ -36,13 +37,13 @@
 ;; A prompt pauses its command's task, so a test reads in a task of its
 ;; own and waits for the prompt.
 (define (ask!)
-  (let ([t (spawn-task (lambda () (guard (c [(quit-condition? c) 'quit]) (in-client (lambda () (minibuffer:read "Q: "))))))])
+  (let ([t (spawn-task (lambda (restore) (guard (c [(cancelled? c) 'quit]) (in-client (lambda () (minibuffer:read "Q: "))))))])
     (testing:wait-until minibuffer:current-prompt)
     t))
 
 (define (start-keys! . keys)
-  (let ([t (spawn-task (lambda () (guard (c [(quit-condition? c) 'quit]) (apply press! keys))))])
-    (testing:wait-until (lambda () (or (minibuffer:current-prompt) (task-done? t))))
+  (let ([t (spawn-task (lambda (restore) (guard (c [(cancelled? c) 'quit]) (apply press! keys))))])
+    (testing:wait-until (lambda () (or (minibuffer:current-prompt) (eq? (task-state t) 'done))))
     t))
 
 (define (end! t . keys)
@@ -50,7 +51,7 @@
     [(pair? keys) (apply press! keys)]
     [(eq? (layout:selected-view) (prompt-view)) (press! "C-g")]
     [else (in-client minibuffer:abort)])
-  (testing:wait-until (lambda () (task-done? t)))
+  (testing:wait-until (lambda () (eq? (task-state t) 'done)))
   (void))
 
 (define (prompt!) (end! (ask!)))
@@ -111,14 +112,14 @@
          "explorer"))
 
 (define (palette-prompts!)
-  (table-set! layout:display-rules minibuffer:buffer? layout-float:display-palette))
+  (tables:set! layout:display-rules minibuffer:buffer? layout-float:display-palette))
 
 (define (click-part! node)
   (let ([s layout:screen-view])
     (for-each
       (lambda (action)
         (parameterize ([web:current-client client])
-          ((table-ref web:input-handlers "mouse") client
+          ((tables:ref web:input-handlers "mouse") client
            `(("token" . ,(document:node-start node)) ("type" . "mouse") ("action" . ,action) ("button" . 1)
              ("clicks" . 1) ("modifiers" . #()) ("view" . ,(views:id s)) ("version" . ,(buffers:version layout:buffer))
              ("showing" . ,(views:shown-count s))))))
@@ -162,7 +163,7 @@
     (for-each
       (lambda (action)
         (parameterize ([web:current-client client])
-          ((table-ref web:input-handlers "mouse") client
+          ((tables:ref web:input-handlers "mouse") client
            `(("type" . "mouse") ("action" . ,action) ("button" . ,button) ("clicks" . 1) ("modifiers" . #())
              ("view" . ,(views:id s)) ("version" . ,(buffers:version layout:buffer))
              ("showing" . ,(views:shown-count s)) ("token" . ,at)
@@ -174,7 +175,7 @@
     (for-each
       (lambda (action)
         (parameterize ([web:current-client client])
-          ((table-ref web:input-handlers "mouse") client
+          ((tables:ref web:input-handlers "mouse") client
            `(("token" . ,at) ("type" . "mouse") ("action" . ,action) ("button" . ,button) ("clicks" . 1)
              ("modifiers" . #()) ("view" . ,(views:id s)) ("version" . ,(buffers:version layout:buffer))
              ("showing" . ,(views:shown-count s)) ("keymaps" . ,(list->vector (map mark-number keymaps)))))))
@@ -192,7 +193,7 @@
 
 (define (strip-rest! focus)
   (let ([html (html->string (layout:screen client))])
-    ((table-ref web:input-handlers "scroller") client
+    ((tables:ref web:input-handlers "scroller") client
      `(("type" . "scroller") ("scroller" . ,(car (numbers-after html "data-scroller=\"")))
        ("placement" . ,(car (numbers-after html "data-placement=\""))) ("report" . 1)
        ("items" . ,(vector focus)) ("whole" . ,(vector focus)) ("settled" . #t)

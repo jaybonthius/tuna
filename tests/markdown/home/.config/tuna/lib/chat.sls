@@ -1,6 +1,8 @@
 #!tuna
 (import (buffers) (document) (views) (haml) (markdown))
 
+(define %self (current-owner))
+
 (define (draw-reply node view) (haml (:div.reply (views:draw-children view node))))
 (buffers:define-kind reply (content nodes) (draw draw-reply))
 (buffers:define-layer written (read-only))
@@ -35,5 +37,5 @@
 (advice-add! batch-ended
   (lambda (ended)
     (guard (c [#t (report c)])
-      (as-module (this-module) (%show-reply!)))
+      (call-as-owner %self (lambda () (%show-reply!))))
     (ended)))

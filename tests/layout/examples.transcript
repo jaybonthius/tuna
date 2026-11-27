@@ -1,5 +1,5 @@
-> (list (eq? (layout:display-action) layout-split:display-right) (map cdr (table-entries layout:display-rules)))
-(#t (#<procedure> #<procedure>))
+> (list (eq? (layout:display-action) layout-split:display-right) (map cdr (tables:entries layout:display-rules)))
+(#t (#<procedure layout-tabs:display-in-new-tab> #<procedure layout-split:display-below>))
 > (define client (web:add-client! 1))
 > (set-parts!
     '(layout-split:container ((direction . column))
@@ -25,7 +25,7 @@
 "*Pager*"
 > (define (compilation-buffer? buffer)
     (string=? (buffers:name buffer) "*compilation*"))
-> (table-set! layout:display-rules compilation-buffer? layout-split:display-below)
+> (tables:set! layout:display-rules compilation-buffer? layout-split:display-below)
 > (set-parts!
     '(layout-split:container ((direction . column))
        #(views:view ((view . 1) (buffer . "notes.org") (weight . 2)))

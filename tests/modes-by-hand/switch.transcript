@@ -16,7 +16,7 @@
     (let ([t (apply start! (append prefix (list "M-x")))])
       (type! "modes:switch-major-mode")
       (press! "RET")
-      (sleep-for 0.05)
+      (timers:sleep 0.05)
       t))
 > (define (answer! text) (type! text) (press! "RET"))
 > (define (question) (let ([s (text minibuf)]) (substring s 0 (search s "\n" 0))))
@@ -37,7 +37,7 @@
           help:mode occur:mode occur:edit-mode completion/rows:mode completion-list:mode completion-popup:mode
           echo-area:messages-mode runs:mode shell-commands:compilation-mode jsonrpc:events-mode
           docs-at-point-display:docs-mode pi-chat:mode ui:showcase-mode))
-> (for-all (lambda (m) (and (table-ref modes:hooks m #f) #t)) own-modes)
+> (for-all (lambda (m) (and (tables:ref modes:hooks m #f) #t)) own-modes)
 #t
 > (filter (lambda (m) (member (symbol->string m) (texts (session)))) own-modes)
 ()
@@ -51,7 +51,7 @@
 > (texts (session))
 ()
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (modes:set-major-mode python:mode b)
 > (define t (ask-major!))
@@ -60,7 +60,7 @@
 > (selected-text (session))
 "chez-scheme:mode"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 ; Typing the name in full, or a part and RET on the selected
 ; candidate, answers it.
@@ -88,15 +88,15 @@ python:mode
 (waiting "<span class=\"minibuffer-message\" role=\"status\"> [No match]</span>" modes:fundamental)
 ; C-g quits, leaving the echo area empty; the mode and the local values
 ; are as before.
-> (buffers:with-buffer b (set-option-local! fill:column 60))
+> (buffers:with-buffer b (options:set-local! fill:column 60))
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (list (echo) (modes:major-mode b) (local fill:column b))
 (#f modes:fundamental 60)
 ; With no reader for choices, the command reports that none is
 ; loaded and changes nothing.
-> (with-options ([ask:choice-reader (option-default ask:choice-reader)])
+> (options:with ([ask:choice-reader (options:default ask:choice-reader)])
     (in-client (lambda () (commands:run modes:switch-major-mode))))
 ! ask:choice-reader: no reader is loaded
 > (modes:major-mode b)
@@ -109,15 +109,15 @@ modes:fundamental
         (result t)
         shown)))
 > (member "org:mode" (offered))
-! &quit
+! &cancelled
 #f
 > (import (org))
 > (member "org:mode" (offered))
-! &quit
+! &cancelled
 ("org:mode" "prog:mode" "python:mode")
-> (unload-module! '(org))
+> (unload-owner! (module-owner '(org)))
 > (member "org:mode" (offered))
-! &quit
+! &cancelled
 #f
 ; The answer sets the mode of the buffer, seen alike in both views on
 ; both clients.
@@ -128,21 +128,21 @@ modes:fundamental
 (python:mode #t #t)
 ; Local values and local hook entries set before go.
 > (modes:set-major-mode modes:fundamental b)
-> (define-hook probe)
+> (hooks:define-hook probe)
 > (define (probed) 'probed)
-> (buffers:with-buffer b (set-option-local! fill:column 60) (add-local-hook! probe probed))
-> (list (local fill:column b) (buffers:with-buffer b (map (lambda (e) (e)) (hook-entries probe))))
+> (buffers:with-buffer b (options:set-local! fill:column 60) (hooks:add-local! probe probed))
+> (list (local fill:column b) (buffers:with-buffer b (map (lambda (e) (e)) (hooks:entries probe))))
 (60 (probed))
 > (define t (ask-major!))
 > (answer! "python:mode")
 > (result t)
-> (list (local fill:column b) (buffers:with-buffer b (map (lambda (e) (e)) (hook-entries probe))))
+> (list (local fill:column b) (buffers:with-buffer b (map (lambda (e) (e)) (hooks:entries probe))))
 (70 ())
 ; A minor mode set locally goes; a mode on everywhere and turned off
 ; here by hand is on again; a view's own value stays in its view only.
 > (modes:set-major-mode modes:fundamental b)
-> (set-option! diagnostics:mode #t)
-> (buffers:with-buffer b (set-option-local! fill:mode #t) (set-option-local! diagnostics:mode #f))
+> (options:set! diagnostics:mode #t)
+> (buffers:with-buffer b (options:set-local! fill:mode #t) (options:set-local! diagnostics:mode #f))
 > (views:set-option! v rainbow-delimiters:mode #t)
 > (define (minor-states)
     (list (local fill:mode b) (local diagnostics:mode b)
@@ -155,7 +155,7 @@ modes:fundamental
 > (minor-states)
 (#f #t #t #f)
 > (views:remove-option! v rainbow-delimiters:mode)
-> (set-option! diagnostics:mode #f)
+> (options:set! diagnostics:mode #f)
 ; A minor mode whose state its plugin keeps stays on.
 > (modes:set-major-mode modes:fundamental b)
 > (view:set-viewing! b #t)
@@ -179,7 +179,7 @@ modes:fundamental
 > (modes:set-major-mode modes:fundamental b)
 > (define edits 0)
 > (define (count-edit buffer edit) (when (eq? buffer b) (set! edits (+ edits 1))))
-> (add-hook! buffers:after-edit count-edit)
+> (hooks:add! buffers:after-edit count-edit)
 > (define (lines-html x c) (html->string (views:draw x c)))
 > (define (w6-state)
     (list (text b) (views:point v) (views:mark v) (views:point w) (undo:history b)
@@ -191,19 +191,19 @@ modes:fundamental
 > (result t)
 > (list (equal? before (w6-state)) (equal? drawn-before (list (lines-html v client) (lines-html w other-client))) edits)
 (#t #t 0)
-> (remove-hook! buffers:after-edit count-edit)
+> (hooks:remove! buffers:after-edit count-edit)
 ; Read-only spans and kinds stay, and still refuse edits; a kind's
 ; keymap still comes before the mode's; the face and bracket spans of
 ; chez-scheme's highlighting go.
 > (buffers:define-layer locked (read-only))
-> (define-table keyed-keymap "Keys in a keyed node.")
+> (tables:define-table keyed-keymap "Keys in a keyed node.")
 > (buffers:define-kind keyed (keymap keyed-keymap))
 > (buffers:define-kind sealed (consent (lambda (node edit) #f)))
 > (buffers:define-kind page (content nodes))
 > (know! keyed-keymap 'keyed-keymap)
 > (define k (buffers:make "kinds.ss" '(page () (keyed () "(define [x] 1)\n") (sealed () "(c)\n"))))
 > (modes:set-major-mode chez-scheme:mode k)
-> (buffers:with-buffer k (set-option-local! rainbow-delimiters:mode #t))
+> (buffers:with-buffer k (options:set-local! rainbow-delimiters:mode #t))
 > (buffers:add-span! (buffers:layer k locked) 2 4 #t)
 > (views:set-buffer! v k)
 > (views:set-point! v 3)
@@ -229,13 +229,13 @@ python:mode
 ; The minor modes' keymaps on come first, then the mode's and its
 ; parent's; modes:fundamental's no longer applies.
 > (modes:set-major-mode modes:fundamental b)
-> (buffers:with-buffer b (set-option-local! fill:mode #t))
+> (buffers:with-buffer b (options:set-local! fill:mode #t))
 > (active-keymaps)
 (fill:keymap modes:fundamental-keymap)
 > (define t (ask-major!))
 > (answer! "python:mode")
 > (result t)
-> (buffers:with-buffer b (set-option-local! fill:mode #t))
+> (buffers:with-buffer b (options:set-local! fill:mode #t))
 > (active-keymaps)
 (fill:keymap python:keymap prog:keymap)
 ; Both views' status lines show the mode's lighter, on both clients'
@@ -271,45 +271,45 @@ python:mode
 > (echo)
 #f
 ; Entries record what runs, in order, with the buffer current and the
-; value of fill:column they read; option-changed records the values of
+; value of fill:column they read; options:changed records the values of
 ; fill:column and rainbow-delimiters:mode it reports; the command hooks
 ; and the prompt record when the command starts, asks and ends; the keys
 ; typed at the prompt are commands of their own, left out.
 > (define recorded '())
 > (define (record! . what) (set! recorded (cons what recorded)))
 > (define (prog-entry) (record! 'prog-hook (eq? (buffers:current) b) (fill:column)))
-> (define (python-entry) (record! 'python-hook (eq? (buffers:current) b) (fill:column)) (set-option-local! fill:column 79))
+> (define (python-entry) (record! 'python-hook (eq? (buffers:current) b) (fill:column)) (options:set-local! fill:column 79))
 > (define (changed-entry buffer) (when (eq? buffer b) (record! 'major-mode-changed (eq? (buffers:current) b) (fill:column))))
 > (define (option-entry option value)
     (when (and (eq? (buffers:current) b) (memq option (list fill:column rainbow-delimiters:mode)))
-      (record! 'option-changed (if (eq? option fill:column) 'fill:column 'rainbow-delimiters:mode) value)))
-> (add-hook! prog:mode-hook prog-entry)
-> (add-hook! python:mode-hook python-entry)
-> (add-hook! modes:major-mode-changed changed-entry)
-> (add-hook! option-changed option-entry)
+      (record! 'options:changed (if (eq? option fill:column) 'fill:column 'rainbow-delimiters:mode) value)))
+> (hooks:add! prog:mode-hook prog-entry)
+> (hooks:add! python:mode-hook python-entry)
+> (hooks:add! modes:major-mode-changed changed-entry)
+> (hooks:add! options:changed option-entry)
 > (define (before-entry command) (when (eq? command modes:switch-major-mode) (record! 'before-command)))
 > (define (after-entry command) (when (eq? command modes:switch-major-mode) (record! 'after-command)))
 > (define (prompt-entry p) (record! 'prompt (question)))
-> (add-hook! commands:before-command before-entry)
-> (add-hook! commands:after-command after-entry)
-> (add-hook! minibuffer:prompt-started prompt-entry)
+> (hooks:add! commands:before-command before-entry)
+> (hooks:add! commands:after-command after-entry)
+> (hooks:add! minibuffer:prompt-started prompt-entry)
 > (modes:set-major-mode modes:fundamental b)
-> (buffers:with-buffer b (set-option-local! rainbow-delimiters:mode #t fill:column 50))
+> (buffers:with-buffer b (options:set-local! rainbow-delimiters:mode #t fill:column 50))
 > (set! recorded '())
-> (define t (spawn-task (lambda () (in-client (lambda () (commands:run modes:switch-major-mode))))))
-> (sleep-for 0.05)
+> (define t (spawn-task (lambda (restore) (in-client (lambda () (commands:run modes:switch-major-mode))))))
+> (timers:sleep 0.05)
 > (answer! "python:mode")
 > (result t)
 > (reverse recorded)
-((before-command) (prompt "Major mode: ") (prog-hook #t 70) (python-hook #t 70) (option-changed fill:column 79) (major-mode-changed #t 79) (after-command))
-> (for-each (lambda (h e) (remove-hook! h e))
+((before-command) (prompt "Major mode: ") (prog-hook #t 70) (python-hook #t 70) (options:changed fill:column 79) (major-mode-changed #t 79) (after-command))
+> (for-each (lambda (h e) (hooks:remove! h e))
             (list commands:before-command commands:after-command minibuffer:prompt-started)
             (list before-entry after-entry prompt-entry))
 > (list (local fill:column b) (local rainbow-delimiters:mode b))
 (79 #f)
 ; Choosing the current mode resets the buffer as choosing another:
 ; the local values go and the hooks and major-mode-changed run again.
-> (buffers:with-buffer b (set-option-local! fill:column 50))
+> (buffers:with-buffer b (options:set-local! fill:column 50))
 > (set! recorded '())
 > (define t (ask-major!))
 > (annotated (session))
@@ -317,14 +317,14 @@ python:mode
 > (answer! "python:mode")
 > (result t)
 > (reverse recorded)
-((prog-hook #t 70) (python-hook #t 70) (option-changed fill:column 79) (major-mode-changed #t 79))
+((prog-hook #t 70) (python-hook #t 70) (options:changed fill:column 79) (major-mode-changed #t 79))
 > (local fill:column b)
 79
 ; In a buffer whose hooks wait, the switch runs them and
 ; major-mode-changed; delayed-mode-changed is not called.
 > (define delayed '())
 > (define (delayed-entry buffer) (set! delayed (cons buffer delayed)))
-> (add-hook! modes:delayed-mode-changed delayed-entry)
+> (hooks:add! modes:delayed-mode-changed delayed-entry)
 > (modes:set-major-mode-delaying-hooks python:mode b)
 > (list (modes:hooks-delayed? b) (length delayed))
 (#t 1)
@@ -334,10 +334,10 @@ python:mode
 > (answer! "python:mode")
 > (result t)
 > (list (map car (reverse recorded)) (modes:hooks-delayed? b) delayed)
-((prog-hook python-hook option-changed major-mode-changed) #f ())
-> (remove-hook! modes:delayed-mode-changed delayed-entry)
-> (for-each (lambda (h e) (remove-hook! h e))
-            (list prog:mode-hook python:mode-hook modes:major-mode-changed option-changed)
+((prog-hook python-hook options:changed major-mode-changed) #f ())
+> (hooks:remove! modes:delayed-mode-changed delayed-entry)
+> (for-each (lambda (h e) (hooks:remove! h e))
+            (list prog:mode-hook python:mode-hook modes:major-mode-changed options:changed)
             (list prog-entry python-entry changed-entry option-entry))
 ; In a buffer whose mode is plugin-only, no prompt opens; the command
 ; says why and changes nothing.
@@ -353,8 +353,8 @@ python:mode
 ; From a waiting prompt, the command refuses as above, naming
 ; minibuffer:mode; the prompt still waits with its input.
 > (views:set-buffer! v b)
-> (define outer (spawn-task (lambda () (in-client (lambda () (minibuffer:read "Name: "))))))
-> (sleep-for 0.05)
+> (define outer (spawn-task (lambda (restore) (in-client (lambda () (minibuffer:read "Name: "))))))
+> (timers:sleep 0.05)
 > (type! "abc")
 > (define t (start! "M-x"))
 > (type! "modes:switch-major-mode")
@@ -363,9 +363,9 @@ python:mode
 > (list (result t) (echo) (input) (result-now outer))
 (#<void> "minibuffer:mode is set only by its plugin" "abc" waiting)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result outer)
-(raised #<condition &quit>)
+(raised #<condition &cancelled>)
 ; From code, switching to a plugin-only mode, or a buffer in one,
 ; raises and changes nothing.
 > (modes:set-major-mode modes:fundamental b)
@@ -422,8 +422,8 @@ python:mode
 ()
 ; A mode chosen by hand, and the local values its hooks set, last
 ; through a revert.
-> (define (scheme-entry) (set-option-local! fill:column 40))
-> (add-hook! chez-scheme:mode-hook scheme-entry)
+> (define (scheme-entry) (options:set-local! fill:column 40))
+> (hooks:add! chez-scheme:mode-hook scheme-entry)
 > (define t (ask-major!))
 > (answer! "chez-scheme:mode")
 > (result t)
@@ -438,11 +438,10 @@ python:mode
 > (list (buffers:modified? b) (modes:major-mode b))
 (#f chez-scheme:mode)
 ; It lasts through a reload of modes too.
-> (import (tuna eval))
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/modes.sls"))
+> (reload-modules! '((modes)))
 > (list (modes:major-mode b) (local fill:column b))
 (chez-scheme:mode 40)
-> (remove-hook! chez-scheme:mode-hook scheme-entry)
+> (hooks:remove! chez-scheme:mode-hook scheme-entry)
 ; Auto-mode:normal-mode gives back the mode auto-mode chooses.
 > (define t (start! "M-x"))
 > (type! "auto-mode:normal-mode")
@@ -452,12 +451,12 @@ python:mode
 python:mode
 ; An entry the configuration sets wins over the plugin's mark: the
 ; mode is offered and its buffers are switched.
-> (table-set! modes:plugin-only help:mode #f)
+> (tables:set! modes:plugin-only help:mode #f)
 > (define t (ask-major!))
 > (member "help:mode" (texts (session)))
 ("help:mode" "modes:fundamental" "modes:special" "prog:mode" "python:mode")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (views:set-buffer! v help-buffer)
 > (define t (ask-major!))

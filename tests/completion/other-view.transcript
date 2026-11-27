@@ -41,7 +41,7 @@
 "C-x 4 4 C-u"
 > (define t (start! (lambda () (press! "C-x" "C-f"))))
 > (minibuffer:set-input! (prompt) "~/notes/a.txt")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (press! "RET")
 > (result t)
 > (shown)
@@ -54,7 +54,7 @@
 > (type! "buffer-picker:switch-to-buffer")
 > (wait-matches (session))
 > (press! "RET")
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (type! "elsewhere")
 > (wait-matches (session))
 > (press! "RET")
@@ -119,7 +119,7 @@
 > (eq? (layout:other-view-for-scrolling) here)
 #t
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (define below (layout-split:split-view! (view) (layout-split:direction column)))
 > (define (place-kind v)
@@ -139,7 +139,7 @@
 > (layout:delete-part! (layout:view-node below))
 > (define t (start! (lambda () (press! "C-x" "4" "f"))))
 > (minibuffer:set-input! (prompt) "~/notes/a.txt")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (press! "RET")
 > (result t)
 > (map car (shown))

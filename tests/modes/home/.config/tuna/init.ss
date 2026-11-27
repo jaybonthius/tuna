@@ -1,18 +1,19 @@
-(import (tuna) (tuna plugins) (document) (web) (disk))
+(import (hooks) (options) (tables) (timers) (plugins))
+(import (tuna) (document) (web) (disk))
 (use-plugin layout)
 (use-plugin editing)
 (use-plugin modes)
 (use-plugin auto-mode)
 (use-plugin text
   (config
-    (set-option! auto-mode:default-mode text:mode)))
+    (options:set! auto-mode:default-mode text:mode)))
 (use-plugin fill)
 (use-plugin python
   (config
-    (table-set! auto-mode:file-names "SConstruct" python:mode)
-    (table-set! modes:lighters python:mode "Py")
-    (add-hook! python:mode-hook
-      (lambda () (set-option-local! fill:mode #t)))))
+    (tables:set! auto-mode:file-names "SConstruct" python:mode)
+    (tables:set! modes:lighters python:mode "Py")
+    (hooks:add! python:mode-hook
+      (lambda () (options:set-local! fill:mode #t)))))
 
 (define client (web:add-client! 1))
 

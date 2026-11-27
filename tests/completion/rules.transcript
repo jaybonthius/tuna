@@ -86,33 +86,33 @@
 ; negated one takes none.
 > (completion:any-order "a !b\\ c d e f g")
 ((face completion.match-0 (contains "a")) (not (contains "b c")) (face completion.match-1 (contains "d")) (face completion.match-2 (contains "e")) (face completion.match-3 (contains "f")) (face completion.match-0 (contains "g")))
-> (with-options ([completion:any-order-faces (list completion:match-2)]) (completion:any-order "a b"))
+> (options:with ([completion:any-order-faces (list completion:match-2)]) (completion:any-order "a b"))
 ((face completion.match-2 (contains "a")) (face completion.match-2 (contains "b")))
-> (with-options ([completion:any-order-faces '()]) (completion:any-order "a b"))
+> (options:with ([completion:any-order-faces '()]) (completion:any-order "a b"))
 ((contains "a") (contains "b"))
 > (completion:any-order "")
 ()
-> (table-set! completion:any-order-dispatch #\, (lambda (rest) (list 'starts rest)))
+> (tables:set! completion:any-order-dispatch #\, (lambda (rest) (list 'starts rest)))
 > (completion:any-order ",ab")
 ((face completion.match-0 (starts "ab")))
-> (table-remove! completion:any-order-dispatch #\,)
+> (tables:remove! completion:any-order-dispatch #\,)
 ; Smart case per term: a capital in a term makes it exact.
-> (define-saved h '() list?)
+> (saved:define-saved h '() list?)
 > (define (choose-from cands keys)
     (let ([t (start! (lambda () (completion:read "? " (list (completion:source (candidates cands))) h)))])
       (apply press! keys)
       (let ([r (texts (session))]) (press! "C-g") r)))
 > (choose-from (vector "Makefile" "make.sls" "MAKE") '("m" "a" "k" "e"))
 ("MAKE" "Makefile" "make.sls")
-! &quit
+! &cancelled
 > (choose-from (vector "Makefile" "make.sls" "MAKE") '("M" "a" "k" "e"))
 ("Makefile")
-! &quit
+! &cancelled
 > (choose-from (vector "Makefile" "make.sls" "MAKE") '("M" "SPC" "s" "l" "s"))
 ()
-! &quit
+! &cancelled
 ; In a read, the default sorts first, then the history, newest first.
-> (set-saved! h '("cherry" "apple"))
+> (saved:set! h '("cherry" "apple"))
 > (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "apple" "banana" "cherry" "date")))) h "date"))))
 > (texts (session))
 ("date" "cherry" "apple" "banana")
@@ -131,11 +131,11 @@
 > (map (lambda (m) (list (completion:text s m) (completion:title s m))) (match-list s))
 (("a" "Ranked") ("c" "Ranked") ("b" "Ranked") ("zz" "In order") ("yy" "In order") ("xx" "In order"))
 > (press! "C-g")
-! &quit
+! &cancelled
 ; Each source matches with its own category's styles: the first style
 ; that matches any of its candidates gives its matches.
 > (completion:define-category letter-category "Letters.")
-> (table-set! completion:category-styles letter-category (list completion:prefix completion:flex))
+> (tables:set! completion:category-styles letter-category (list completion:prefix completion:flex))
 > (define t (start! (lambda () (completion:read "? "
     (list (completion:source (candidates (vector "abc" "xbc")) (category letter-category))
           (completion:source (candidates (vector "abc" "xbc"))))
@@ -147,7 +147,7 @@
 > (texts (session))
 ()
 > (press! "C-g")
-! &quit
+! &cancelled
 ; A source's procedure is called again when the prefix changes; split
 ; gives the prefix, and choosing replaces only the query.
 > (define calls '())
@@ -175,14 +175,14 @@
 > (in-client (lambda () (completion:select! (completion:current-session) #f)))
 > (type! "pre")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (define t (start! (lambda () (minibuffer:call-with-setup (lambda (p) (minibuffer:set-input! p "pre")) (lambda () (completion:read "? " (list (completion:source (candidates (vector "prefix-one" "prefix-two" "other")))) h))))))
 > (in-client (lambda () (completion:select! (completion:current-session) #f)))
 > (press! "TAB")
 > (input)
 "prefix-"
 > (press! "C-g")
-! &quit
+! &cancelled
 ; The common start must be longer than the input in characters, not in
 ; bytes, to replace it.
 > (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "ééXabc" "ééYabc")))) #f))))
@@ -194,7 +194,7 @@
 > (input)
 "abc"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "xxXabc" "xxYabc")))) #f))))
 > (type! "abc")
 > (in-client (lambda () (completion:select! (completion:current-session) #f)))
@@ -202,7 +202,7 @@
 > (input)
 "abc"
 > (press! "C-g")
-! &quit
+! &cancelled
 ; A read refuses an input that names no candidate, shows [No match],
 ; and takes one that names a candidate; M-RET answers with the input.
 > (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "apple" (cons "pear" 'fruit))))) h))))
@@ -237,14 +237,14 @@ fruit
 "abc"
 > (raised (lambda () (completion:select! s 99)))
 (completion:select! "not one of the matches")
-> (with-options ([completion:read-preselect 'none]) (void))
+> (options:with ([completion:read-preselect 'none]) (void))
 > (press! "C-g")
-! &quit
-> (define t (with-options ([completion:read-preselect 'none]) (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "ab")))) h)))))
+! &cancelled
+> (define t (options:with ([completion:read-preselect 'none]) (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "ab")))) h)))))
 > (completion:selected (session))
 0
 > (press! "C-g")
-! &quit
+! &cancelled
 ; A stream that emits prefer-input says its prefix is an answer as
 ; typed: until its next clear, while the input is the prefix, new matches
 ; select none, so RET takes the input.
@@ -283,7 +283,7 @@ fruit
 > (reverse given)
 ("ab/")
 > (press! "C-g")
-! &quit
+! &cancelled
 ; RET chooses a procedure source's selected match without matching the
 ; chosen text, which here would give a new prefix and new candidates.
 > (define calls 0)
@@ -312,7 +312,7 @@ fruit
 > (jobs:define-worker (slow-match input emit receive)
     (import (completion matcher))
     (serve emit (case-lambda [() (let ([m (receive)]) (sleep (make-time 'time-duration 200000000 0)) m)] [(s) (receive s)])))
-> (set-option! completion:matcher (completion:make-matcher (lambda (pattern texts ranks groups) (store-matches (make-store texts ranks groups) pattern)) pattern-spans slow-match))
+> (options:set! completion:matcher (completion:make-matcher (lambda (pattern texts ranks groups) (store-matches (make-store texts ranks groups) pattern)) pattern-spans slow-match))
 > (define emitter #f)
 > (define (held emit) (set! emitter emit) (lambda (prefix) (void)))
 > (define t (start! (lambda () (completion:read "? " (list (completion:source (stream held))) h))))
@@ -326,7 +326,7 @@ fruit
 > (begin (press! "RET") (emitter 'done))
 > (result t)
 "ab"
-> (set-option! completion:matcher completion:default-matcher)
+> (options:set! completion:matcher completion:default-matcher)
 ; A source's styles clause is tried before its category's styles, which
 ; are tried before the defaults.
 > (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "one two" "two")) (category letter-category) (styles (list completion:substring)))) h))))
@@ -337,16 +337,16 @@ fruit
 > (texts (session))
 ("one two")
 > (press! "C-g")
-! &quit
+! &cancelled
 ; Hooks follow every session; a selection change runs updated too.
 > (define log '())
 > (define (note what) (lambda (s) (set! log (cons (list what (completion:session-input s)) log))))
 > (define on-started (note 'started))
 > (define on-updated (note 'updated))
 > (define on-ended (note 'ended))
-> (add-hook! completion:started on-started)
-> (add-hook! completion:updated on-updated)
-> (add-hook! completion:ended on-ended)
+> (hooks:add! completion:started on-started)
+> (hooks:add! completion:updated on-updated)
+> (hooks:add! completion:ended on-ended)
 > (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "ab" "cd")))) h))))
 > (type! "a")
 > (press! "C-n")
@@ -355,9 +355,9 @@ fruit
 "ab"
 > (reverse log)
 ((started "") (updated "") (updated "a") (updated "a") (ended "ab"))
-> (remove-hook! completion:started on-started)
-> (remove-hook! completion:updated on-updated)
-> (remove-hook! completion:ended on-ended)
+> (hooks:remove! completion:started on-started)
+> (hooks:remove! completion:updated on-updated)
+> (hooks:remove! completion:ended on-ended)
 ; Preview: show is called on each selection change, with #f when nothing
 ; is selected; end once the session has ended, with the chosen value, or
 ; #f when it was quit.
@@ -369,9 +369,9 @@ fruit
 > (press! "C-n")
 > (type! "zz")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
-(raised #<condition &quit>)
+(raised #<condition &cancelled>)
 > (reverse seen)
 (1 2 #f (end #f))
 > (set! seen '())
@@ -399,14 +399,14 @@ fruit
 > (set! seen '())
 > (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector (cons "a" 1) (cons "b" 2))) (preview show end) (preview-delay 0.2))) h))))
 > (press! "C-n")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (reverse seen)
 ()
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (reverse seen)
 (1)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (reverse seen)
 (1 (end #f))
 > (completion:source (candidates (vector "a")) (preview show))
@@ -430,7 +430,7 @@ fruit
 > (map (lambda (m) (raised (lambda () (completion:text s m)))) '(0 1 3))
 ((completion:text "not a match of the session") (completion:text "not a match of the session") (completion:text "not a match of the session"))
 > (press! "C-g")
-! &quit
+! &cancelled
 ; A stream gets each new prefix on the main thread and the end-of-file
 ; object when the session ends; its session is busy from each prefix
 ; until it says done.
@@ -458,7 +458,7 @@ fruit
 > (texts s)
 ("xy")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (reverse prefixes)
 ("" "x" #!eof)
 > (stream-emit (vector "late"))
@@ -499,13 +499,13 @@ fruit
 > (raised (lambda () (completion:matches-index (vector) 0)))
 (completion:matches-index "not matches")
 > (press! "C-g")
-! &quit
+! &cancelled
 ; A replacement matcher: every candidate matches, in reverse.
 > (define (reverse-match pattern texts ranks groups)
     (list->vector (reverse (iota (vector-length texts)))))
 > (define (no-spans pattern text) '())
 > (jobs:define-worker (plain-worker input emit receive) (import (completion matcher)) (serve emit receive))
-> (set-option! completion:matcher (completion:make-matcher reverse-match no-spans plain-worker))
+> (options:set! completion:matcher (completion:make-matcher reverse-match no-spans plain-worker))
 > (define t (start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "a" "b" "c")))) h))))
 > (type! "zzz")
 > (texts (session))
@@ -513,8 +513,8 @@ fruit
 > (completion:spans (session) 0)
 ()
 > (press! "C-g")
-! &quit
-> (set-option! completion:matcher completion:default-matcher)
+! &cancelled
+> (options:set! completion:matcher completion:default-matcher)
 ; The form's clauses and the procedures' arguments are checked.
 > (raised (lambda () (completion:source (candidates 5))))
 (completion:source "neither a vector of candidates nor a procedure")
@@ -541,7 +541,7 @@ fruit
 > (completion:matches-count (completion:session-matches (session)))
 0
 > (press! "C-g")
-! &quit
+! &cancelled
 > (raised (lambda () (completion:source (candidates (vector)) (styles 5))))
 (completion:source "not a list of styles")
 > (completion:source (candidates (vector)) (title "a") (title "b"))

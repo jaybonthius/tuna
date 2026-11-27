@@ -2,7 +2,7 @@
 ; saves no buffer. With a run going there, it asks before a new buffer,
 ; *Async Shell Command*<2>.
 > (define asked '())
-> (set-option! ask:yes-or-no-reader (lambda (q) (set! asked (cons q asked)) #t))
+> (options:set! ask:yes-or-no-reader (lambda (q) (set! asked (cons q asked)) #t))
 > (run! shell-commands:async-shell-command "echo first; until [ -e go ]; do sleep 0.05; done")
 > (define first (buffers:find "*Async Shell Command*"))
 > (list (runs:status first) (shown) saved)
@@ -16,7 +16,7 @@
 ; An override of shell-commands:async-shell-command-buffer chooses
 ; otherwise: this one renames the busy run's buffer and reuses the
 ; default name.
-> (set! shell-commands:async-shell-command-buffer
+> (define shell-commands:async-shell-command-buffer
     (lambda ()
       (let ([busy (buffers:find "*Async Shell Command*")])
         (when (and busy (runs:run-buffer? busy) (not (runs:status busy)))

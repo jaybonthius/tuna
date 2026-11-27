@@ -1,3 +1,4 @@
+(import (timers) (plugins))
 (import (tuna))
 (import (greet) (spell) (display) (theme))
 (import (rename (only (chezscheme) fork-thread) (fork-thread chez:fork-thread)))

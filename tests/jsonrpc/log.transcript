@@ -67,7 +67,7 @@
 "nothing reverts this buffer"
 ; The log keeps at most jsonrpc:events-log-size characters, the oldest
 ; lines going first; with 0 nothing is logged.
-> (set-option! jsonrpc:events-log-size 120)
+> (options:set! jsonrpc:events-log-size 120)
 > (define small (start-fake! "small" (jsonrpc:handlers)))
 > (begin (for-each (lambda (n) (jsonrpc:request small "echo" (vector n))) '(1 2 3 4)) (jsonrpc:running? small))
 #t
@@ -75,7 +75,7 @@
 ("--> {\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"echo\",\"params\":[4]}" "<-- {\"jsonrpc\":\"2.0\",\"id\":4,\"result\":[4]}")
 > (<= (string-length (log-text small)) 120)
 #t
-> (set-option! jsonrpc:events-log-size 0)
+> (options:set! jsonrpc:events-log-size 0)
 > (define none (start-fake! "none" (jsonrpc:handlers)))
 > (jsonrpc:request none "echo" '#(1))
 #(1)
@@ -83,7 +83,7 @@
 ""
 ; Turning the log on reaches a running connection's reader, so what it
 ; receives next is logged.
-> (set-option! jsonrpc:events-log-size 2000)
+> (options:set! jsonrpc:events-log-size 2000)
 > (jsonrpc:request none "echo" '#(2))
 #(2)
 > (log-lines none)

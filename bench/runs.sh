@@ -13,7 +13,7 @@ lib=$dir/home/.config/tuna/lib
 mkdir -p "$lib"
 cp bench/runs.sls "$lib/runs-bench.sls"
 cp tests/runs/home/.config/tuna/lib/web.sls "$lib/"
-printf '(import (tuna) (runs-bench))\n(spawn-task (lambda () (runs-bench:run) (exit)))\n' > "$dir/home/.config/tuna/init.ss"
+printf '(import (tuna) (runs-bench))\n(spawn-task (lambda (restore) (runs-bench:run) (exit)))\n' > "$dir/home/.config/tuna/init.ss"
 
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
 echo "$output" | awk '

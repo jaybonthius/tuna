@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (layout-split) (layout-scroll) (layout-float) (views) (buffers) (document) (commands) (web) (haml))
+(import (layout) (layout-split) (layout-scroll) (layout-float) (views) (buffers) (document) (commands) (web) (haml) (tables))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -58,7 +58,7 @@
 (define (run)
   (let* ([notes (buffers:make "notes" "one\ntwo\nthree\n")]
          [client (web:add-client! 1)]
-         [report (table-ref web:input-handlers "scroller")])
+         [report (tables:ref web:input-handlers "scroller")])
     (build! notes)
     (batch-ended)
     (show "parts" (parts))

@@ -1,6 +1,6 @@
 ; A temporary keymap's prompt shows as the client's keys in progress
 ; while the keymap is up, on that client only, and is never logged.
-> (define-table pick-keymap)
+> (tables:define-table pick-keymap)
 > (commands:define-command (pick) "Stays." (void))
 > (keys:bind! pick-keymap "p" pick)
 > (define ended '())
@@ -70,13 +70,13 @@
 ; reported, and no prompt shows.
 > (define bad (lambda () (car '())))
 > (define end-bad (keys:push-keymap! client pick-keymap (lambda (found command) #t) void (lambda () (bad))))
-! car: () is not a pair
+! (echo-area) car: () is not a pair
 > (echo)
 "() is not a pair"
 > (map (lambda (value) (set! bad (lambda () value)) (echo-area:message! "") (echo)) (list '((3 . "fo")) '(("fo" . #f)) '()))
-! keys:push-keymap!: a prompt procedure returned what is not a prompt or #f with irritant ((3 . "fo"))
-! keys:push-keymap!: a prompt procedure returned what is not a prompt or #f with irritant (("fo" . #f))
-! keys:push-keymap!: a prompt procedure returned what is not a prompt or #f with irritant ()
+! (echo-area) keys:push-keymap!: a prompt procedure returned what is not a prompt or #f with irritant ((3 . "fo"))
+! (echo-area) keys:push-keymap!: a prompt procedure returned what is not a prompt or #f with irritant (("fo" . #f))
+! (echo-area) keys:push-keymap!: a prompt procedure returned what is not a prompt or #f with irritant ()
 (#f #f #f)
 > (end-bad)
 > (map (lambda (bad) (guard (c [#t (condition-message c)]) (keys:push-keymap! client pick-keymap (lambda (found command) #t) void bad)))

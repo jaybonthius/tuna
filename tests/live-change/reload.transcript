@@ -7,10 +7,10 @@ saving a [spell]
 ; value.
 > (spell:check "a")
 checking a against /home/groucho/words
-> spell:checked
+> (spell:checked)
 1
-> (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
-> spell:checked
+> (reload-modules! '((spell)))
+> (spell:checked)
 0
 ; Removing spell's advice is (repl)'s change, and the removal stays when
 ; spell reloads and advises again.
@@ -19,12 +19,12 @@ checking a against /home/groucho/words
 saving b 
 "b"
 > (put-version! "spell-macro.sls" ".local/share/tuna/plugins/spell/spell.sls")
-> (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
+> (reload-modules! '((spell)))
 > (files:save! "c")
 saving c 
 "c"
 > (map (lambda (change) (list-head change 2)) (definition-changes files:save!))
-(((spell) advice) ((repl) removal) ((init) advice) ((files) define))
+((#<owner (spell) 3> advice) (#<owner (repl) 1> removal) (#<owner (init) 1> advice) (#<owner (files) 1> define))
 > (eq? (caddr (car (definition-changes files:save!))) spell:log-save)
 #t
 ; Other owners' changes stay: the configuration's override is in effect.
@@ -40,10 +40,10 @@ saving c
 > (define loads '())
 > (advice-add! module-loaded (lambda (loaded name) (set! loads (cons name loads)) (loaded name)))
 > (put-version! "spell-macro-2.sls" ".local/share/tuna/plugins/spell/spell.sls")
-> (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
+> (reload-modules! '((spell)))
 speller unloading
 > loads
-((speller) (spell))
+(#<owner (speller) 2> #<owner (spell) 4>)
 > (speller:go)
 (v2 "z")
 ; A top-level form keeps its expansion until it is evaluated again.
@@ -51,38 +51,38 @@ speller unloading
 (v1 "q")
 > (spell:dictionary-path)
 "/home/groucho/words"
-> (map car (module-changes '(spell)))
+> (map car (owner-changes (module-owner '(spell))))
 (advice define define define define define)
 ; A version whose body raises goes to report, and the previous version is
 ; loaded again, its changes with it.
 > (set! loads '())
 > (put-version! "spell-raises.sls" ".local/share/tuna/plugins/spell/spell.sls")
-> (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
+> (reload-modules! '((spell)))
 speller unloading
-! (spell) car: () is not a pair
+! car: () is not a pair
 > loads
-((speller) (spell))
+(#<owner (speller) 3> #<owner (spell) 6>)
 > (speller:go)
 (v2 "z")
-> (map car (module-changes '(spell)))
+> (map car (owner-changes (module-owner '(spell))))
 (advice define define define define define)
 > (spell:check "d")
 checking d against /home/groucho/words
 ; So does a version that fails to compile, again and again.
 > (put-version! "spell-syntax-error.sls" ".local/share/tuna/plugins/spell/spell.sls")
-> (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
+> (reload-modules! '((spell)))
 speller unloading
 ! invalid syntax (if) at line 4, char 20 of $HOME/.local/share/tuna/plugins/spell/spell.sls
 > (speller:go)
 (v2 "z")
-> (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
+> (reload-modules! '((spell)))
 speller unloading
 ! invalid syntax (if) at line 4, char 20 of $HOME/.local/share/tuna/plugins/spell/spell.sls
 > (speller:go)
 (v2 "z")
 ; A fixed file reloads.
 > (put-version! "spell-macro-3.sls" ".local/share/tuna/plugins/spell/spell.sls")
-> (eval-file "~/.local/share/tuna/plugins/spell/spell.sls")
+> (reload-modules! '((spell)))
 speller unloading
 > (speller:go)
 (v3 "z")
@@ -93,9 +93,9 @@ saving e
 "e"
 ; Reloading the importer alone leaves spell as it is.
 > (set! loads '())
-> (eval-file "~/.config/tuna/lib/speller.sls")
+> (reload-modules! '((speller)))
 speller unloading
 > loads
-((speller))
+(#<owner (speller) 7>)
 ; Tuna exits at the end of its input, unloading every module.
 speller unloading

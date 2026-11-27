@@ -10,11 +10,11 @@ cpu=${BENCH_CPU:-$(($(nproc) - 1))}
 dir=$(mktemp -d "${TMPDIR:-/tmp}/tuna-bench-reload.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
 lib=$dir/home/.config/tuna/lib
-mkdir -p "$lib" "$dir/library"
+mkdir -p "$lib"
 cp bench/reload.sls "$lib/reload.sls"
 printf '(import (tuna) (reload))\n(reload:run)\n(exit)\n' > "$dir/home/.config/tuna/init.ss"
 
-output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$dir/library" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
+output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
 echo "$output" | awk '
   BEGIN {
     unit["reload-unchanged-small"] = "ms"

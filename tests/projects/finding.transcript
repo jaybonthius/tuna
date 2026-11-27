@@ -8,16 +8,16 @@
 ; through any depth of submodules; a worktree is a project of its own.
 > (map root-of '("src/app/libs/lib" "src/app/libs/lib/vendor/inner" "src/app-wt/lib"))
 ("$HOME/src/app/" "$HOME/src/app/" "$HOME/src/app-wt/")
-> (set-option! projects:merge-submodules? #f)
+> (options:set! projects:merge-submodules? #f)
 > (map root-of '("src/app/libs/lib" "src/app/libs/lib/vendor/inner"))
 ("$HOME/src/app/libs/lib/" "$HOME/src/app/libs/lib/vendor/inner/")
-> (set-option! projects:merge-submodules? #t)
+> (options:set! projects:merge-submodules? #t)
 ; An extra root marker makes its folder a root, inside a repository or
 ; outside any.
-> (set-option! projects:extra-root-markers (list "go.mod" ".project"))
+> (options:set! projects:extra-root-markers (list "go.mod" ".project"))
 > (map root-of '("src/app/pkg" "src/app/lib" "notes/proj"))
 ("$HOME/src/app/pkg/" "$HOME/src/app/" "$HOME/notes/proj/")
-> (set-option! projects:extra-root-markers '())
+> (options:set! projects:extra-root-markers '())
 ; The walk looks in the home folder last, so a repository above it holds
 ; no folder inside it, while it holds a folder outside the home folder.
 > (define above (path-parent home))
@@ -29,16 +29,16 @@
 > (define (notes-finder folder)
     (and (string=? folder (string-append home "/notes/"))
          (projects:make-project folder projects:list-with-find)))
-> (add-hook! projects:finders notes-finder)
+> (hooks:add! projects:finders notes-finder)
 > (map root-of '("notes" "src/app"))
 ("$HOME/notes/" "$HOME/src/app/")
 > (projects:project? (projects:find (string-append home "/notes")))
 #t
-> (remove-hook! projects:finders notes-finder)
+> (hooks:remove! projects:finders notes-finder)
 > (root-of "notes")
 #f
 ; What code passes is checked.
-> (add-hook! projects:finders (lambda (folder) 'yes))
+> (hooks:add! projects:finders (lambda (folder) 'yes))
 > (projects:find home)
 ! projects:find: a finder answered neither a project nor #f with irritant yes
 > (projects:find "src/app")
@@ -53,5 +53,5 @@
 ! projects:root: not a project with irritant app
 > (projects:project? 'app)
 #f
-> (set-option! projects:extra-root-markers (list "a/b"))
-! set-option!: ("a/b") is not a valid value for projects:extra-root-markers
+> (options:set! projects:extra-root-markers (list "a/b"))
+! options:set!: ("a/b") is not a valid value for projects:extra-root-markers

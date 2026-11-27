@@ -19,7 +19,7 @@
     (suspend
       (lambda (resume)
         (let next ([left n])
-          (post! (lambda () (if (fx= left 0) (resume void) (next (fx- left 1))))))))
+          (spawn-task (lambda (restore) (if (fx= left 0) (resume void) (next (fx- left 1))))))))
     (/ (- (hot-paths:now-ns) start) (exact->inexact n))))
 
 (define (pass-on ended) (ended))

@@ -18,18 +18,18 @@ mkdir -p "$home/.config/tuna/lib" "$dir/library" "$dir/work"
 sh tests/test-home.sh "$tuna" "$dir/library" "$home"
 cp -R tests/files/home/.config/tuna/lib/. "$home/.config/tuna/lib/"
 cat > "$home/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins) (document))
+(import (tuna) (document))
 ;; ask's own writer prints each message, which the checks would read as
 ;; a result.
 (use-plugin ask
   (config
-    (set-option! ask:message-writer (lambda (text) (void)))))
+    (options:set! ask:message-writer (lambda (text) (void)))))
 (use-plugin files)
 (use-plugin command-line)
 (define (wait-until done?)
   (let loop ([n 0])
     (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
+      (timers:sleep 0.01)
       (loop (+ n 1)))))
 (define (shown)
   (let* ([view (layout:selected-view)] [b (and view (views:buffer view))])
@@ -80,7 +80,7 @@ expect "restart" "$output" '("a.txt" "b.txt")
 # command line are read side by side, so their order is not fixed.
 output=$(run '(wait-until (lambda () (showing? "c.txt")))
 (shown)
-(commands:run (table-ref keys:global "C-x C-c"))
+(commands:run (tables:ref keys:global "C-x C-c"))
 (display "not reached")' +2 c.txt)
 expect "quit command" "$output" '("c.txt" 1)'
 output=$(run '(wait-until (lambda () (= (length (files:buffers)) 3)))

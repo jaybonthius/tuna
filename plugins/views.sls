@@ -1,45 +1,47 @@
 #!tuna
-(import (buffers) (document) (web) (haml) (keys) (commands) (faces))
+(import (buffers) (document) (web) (haml) (keys) (commands) (faces) (hooks) (options) (tables) (timers) (saved) (plain-data))
 
-(define-option drawn-screens 2 (lambda (v) (and (real? v) (finite? v) (> v 0)))
+(define %self (current-owner))
+
+(options:define-option drawn-screens 2 (lambda (v) (and (real? v) (finite? v) (> v 0)))
   "How many view heights a view keeps drawn beyond each edge of what is in view.")
-(define-option tail #f boolean?
+(options:define-option tail #f boolean?
   "Whether a view scrolled to its end stays at its end as its buffer grows there.")
-(define-option scroll-margin 0 (lambda (v) (and (fixnum? v) (fx>= v 0)))
+(options:define-option scroll-margin 0 (lambda (v) (and (fixnum? v) (fx>= v 0)))
   "How many of a client's line heights a view keeps between the primary cursor and its top and bottom edges, at most a quarter of the view's height.")
-(define-option wrap-lines #t boolean?
+(options:define-option wrap-lines #t boolean?
   "Whether a line longer than the view wraps onto several screen lines.")
-(define-option cursor-visible #t boolean?
+(options:define-option cursor-visible #t boolean?
   "Whether a view draws its cursors.")
-(define-option hand-scroll-moves-point #t boolean?
+(options:define-option hand-scroll-moves-point #t boolean?
   "Whether a scroll made with the pointer that leaves point outside the view moves point into it.")
-(define-option column-number #f boolean?
+(options:define-option column-number #f boolean?
   "Whether views:describe-line shows the column after the line.")
-(define-option point-after-insertion? #f boolean?
+(options:define-option point-after-insertion? #f boolean?
   "Whether a view's point where text is inserted stays after the text, and the view follows it; read when the view shows the buffer, and set locally by a buffer's mode.")
 
-(define-option vertical-scroll-bar #t boolean?
+(options:define-option vertical-scroll-bar #t boolean?
   "Whether a view draws a scroll bar at its side when its text is taller than it.")
-(define-option horizontal-scroll-bar #f boolean?
+(options:define-option horizontal-scroll-bar #f boolean?
   "Whether a view whose lines do not wrap draws a scroll bar along its foot when a line is wider than it.")
 
-(define-table scroll-bar-keymap
+(tables:define-table scroll-bar-keymap
   "The keymap of a view's vertical scroll bar: a press there off the thumb is a mouse key at the place in the text at the press's share of the bar.")
-(define-table horizontal-scroll-bar-keymap
+(tables:define-table horizontal-scroll-bar-keymap
   "The keymap of a view's horizontal scroll bar: a press there off the thumb is a mouse key at the place on the line in view at the press's share of the bar.")
 
-(define-table span-properties
+(tables:define-table span-properties
   "Maps a key of a span's value to a procedure that returns attributes for the span's element.")
 
-(define-table span-sources
+(tables:define-table span-sources
   "Maps a procedure of a view, a client and the start and end of the run drawn, which returns spans as buffers:spans does, to the priority of a layer they draw as.")
 
-(define-table position-describers
+(tables:define-table position-describers
   "Maps a kind's constructor to a procedure of a node of the kind and a view that describes where the view's point is in the node.")
 
 (define-enumeration switch-reason (previous next bury kill) switch-reasons)
 
-(define-option skipped-buffer-predicate (lambda (view buffer reason) #f) procedure?
+(options:define-option skipped-buffer-predicate (lambda (view buffer reason) #f) procedure?
   "A procedure of a view, a buffer and a switch reason that returns true for a buffer views:previous-buffer!, views:next-buffer!, views:replace-buffer! or a killed buffer's views must not show in that view.")
 
 (define-enumeration align (top center bottom) %alignments)
@@ -52,10 +54,10 @@
 ;; thumb lies in.
 (define-enumeration bar-part (above-handle below-handle before-handle after-handle) %bar-parts)
 
-(define-hook fold-opened
+(hooks:define-hook fold-opened
   "Called with a view, and the start and end of a fold it opened so that a position in it could be seen, with the view's buffer current: a cursor inside the fold when the view was drawn, or views:reveal!. Inner folds come first.")
 
-(define-hook drawn-ranges-changed
+(hooks:define-hook drawn-ranges-changed
   "Called with a view and a buffer, current, when the view's drawn ranges of the buffer differ from what they were after the previous screens.")
 
 (module %internals
@@ -216,7 +218,7 @@
       (assertion-violation who "not a node" n)))
 
   (define (check-option who o)
-    (unless (option? o)
+    (unless (options:option? o)
       (assertion-violation who "not an option" o)))
 
   (define (find-view id) (hashtable-ref by-id id #f))
@@ -229,13 +231,14 @@
 
   (define (add-view! v)
     (let ([all (append views (list v))] [b (view-record-buffer v)])
-      (with-interrupts-disabled
-        (hashtable-set! by-id (view-record-id v) v)
-        (set! views all)
-        (when b (hashtable-update! by-buffer b (lambda (vs) (cons v vs)) '()))
-        (when (fx>= (view-record-id v) next-id)
-          (set! next-id (fx+ (view-record-id v) 1)))
-        (set! dirty? #t)))
+      (call-with-cancellation-masked
+        (lambda (restore)
+          (hashtable-set! by-id (view-record-id v) v)
+          (set! views all)
+          (when b (hashtable-update! by-buffer b (lambda (vs) (cons v vs)) '()))
+          (when (fx>= (view-record-id v) next-id)
+            (set! next-id (fx+ (view-record-id v) 1)))
+          (set! dirty? #t))))
     v)
 
   (define (spot-position s) (if (fixnum? s) s (buffers:anchor-position s)))
@@ -323,15 +326,17 @@
       (lambda (p) (bytevector-uint-ref (get-bytevector-n p 6) 0 (endianness little) 6))))
 
   (define (send-placement! cs place)
-    (with-interrupts-disabled
-      (set! last-placement (fx+ last-placement 1))
-      (client-view-number-set! cs last-placement)
-      (client-view-placement-set! cs place)))
+    (call-with-cancellation-masked
+      (lambda (restore)
+        (set! last-placement (fx+ last-placement 1))
+        (client-view-number-set! cs last-placement)
+        (client-view-placement-set! cs place))))
 
   (define (next-number!)
-    (with-interrupts-disabled
-      (set! last-placement (fx+ last-placement 1))
-      last-placement))
+    (call-with-cancellation-masked
+      (lambda (restore)
+        (set! last-placement (fx+ last-placement 1))
+        last-placement)))
 
   ;; Anchors are numbered from the placements' random base, so a number
   ;; kept in another plugin's data from before this module reloaded never
@@ -426,7 +431,7 @@
     (unless (exists (lambda (p) (and (eq? (car p) v) (eq? (cdr p) b))) changed-ranges)
       (set! changed-ranges (cons (cons v b) changed-ranges)))
     (unless ranges-task-posted?
-      (as-module (this-module) (post! tell-ranges-changed!))
+      (call-as-owner %self (lambda () (spawn-task (lambda (restore) (tell-ranges-changed!)))))
       (set! ranges-task-posted? #t)))
 
   (define (tell-ranges-changed!)
@@ -520,10 +525,11 @@
       (vector-for-each proc cs states)))
 
   (define (place-all! v place)
-    (with-interrupts-disabled
-      (view-record-place-set! v place)
-      (for-each-client-view (lambda (c cs) (send-placement! cs place)) v)
-      (set! dirty? #t)))
+    (call-with-cancellation-masked
+      (lambda (restore)
+        (view-record-place-set! v place)
+        (for-each-client-view (lambda (c cs) (send-placement! cs place)) v)
+        (set! dirty? #t))))
 
   (define (align-view! v p align)
     (lead! v)
@@ -541,17 +547,19 @@
   ;; no one, as when C reports again where its C-v went.
   (define (set-view-scroll! v c own)
     (unless (same-position? own (view-record-place v))
-      (with-interrupts-disabled
-        (view-record-place-set! v own)
-        (for-each-client-view (lambda (other cs) (unless (eq? other c) (send-placement! cs own))) v)
-        (set! dirty? #t))))
+      (call-with-cancellation-masked
+        (lambda (restore)
+          (view-record-place-set! v own)
+          (for-each-client-view (lambda (other cs) (unless (eq? other c) (send-placement! cs own))) v)
+          (set! dirty? #t)))))
 
   ;; C's page already follows point.
   (define (follow-from! v c)
-    (with-interrupts-disabled
-      (view-record-place-set! v (follow-place))
-      (for-each-client-view (lambda (other cs) (unless (eq? other c) (send-placement! cs (follow-place)))) v)
-      (set! dirty? #t)))
+    (call-with-cancellation-masked
+      (lambda (restore)
+        (view-record-place-set! v (follow-place))
+        (for-each-client-view (lambda (other cs) (unless (eq? other c) (send-placement! cs (follow-place)))) v)
+        (set! dirty? #t))))
 
   ;; What a page reported of one buffer says nothing of another, not
   ;; even how many of its items fill the view, but each client keeps
@@ -590,14 +598,15 @@
   (define (reset-view! v b)
     (let* ([n (if b (buffer-length b) 0)]
            [cursors (list (make-cursor-record v (point-spot b (if b (stop-within b 0 n 0) 0)) #f #f))])
-      (with-interrupts-disabled
-        (view-record-cursors-set! v cursors)
-        (view-record-moved?-set! v #f)
-        (view-record-folds-set! v '())
-        (view-record-narrowing-set! v #f)
-        (view-record-states-set! v '())
-        (forget-measured! v)
-        (place-all! v (make-place 'position (make-spot b 0 #f) 0.0 0 #f)))))
+      (call-with-cancellation-masked
+        (lambda (restore)
+          (view-record-cursors-set! v cursors)
+          (view-record-moved?-set! v #f)
+          (view-record-folds-set! v '())
+          (view-record-narrowing-set! v #f)
+          (view-record-states-set! v '())
+          (forget-measured! v)
+          (place-all! v (make-place 'position (make-spot b 0 #f) 0.0 0 #f))))))
 
   (define (make-new-view! id b name)
     (let ([v (make-view-record (or id next-id) name b (make-place 'position 0 0.0 0 #f) '() #f #f)])
@@ -607,13 +616,14 @@
   (define (set-shown-buffer! v b)
     (let ([old (view-record-buffer v)])
       (unless (eq? old b)
-        (with-interrupts-disabled
-          (when old
-            (let ([vs (remq v (hashtable-ref by-buffer old '()))])
-              (if (null? vs) (hashtable-delete! by-buffer old) (hashtable-set! by-buffer old vs))))
-          (when b (hashtable-update! by-buffer b (lambda (vs) (cons v vs)) '()))
-          (view-record-buffer-set! v b)
-          (view-record-shown-count-set! v (fx+ (view-record-shown-count v) 1)))
+        (call-with-cancellation-masked
+          (lambda (restore)
+            (when old
+              (let ([vs (remq v (hashtable-ref by-buffer old '()))])
+                (if (null? vs) (hashtable-delete! by-buffer old) (hashtable-set! by-buffer old vs))))
+            (when b (hashtable-update! by-buffer b (lambda (vs) (cons v vs)) '()))
+            (view-record-buffer-set! v b)
+            (view-record-shown-count-set! v (fx+ (view-record-shown-count v) 1))))
         (for-each-client-view (lambda (c cs) (forget-range! v cs)) v)
         (forget-items! v)
         (for-each forget-anchor! (hashtable-ref anchors-by-view v '())))))
@@ -628,12 +638,13 @@
       (when (and b (buffers:live? b)) (note-left! v b)))
     (set! history-dirty? #t)
     (let ([all (remq v views)])
-      (with-interrupts-disabled
-        (set-shown-buffer! v #f)
-        (hashtable-delete! by-id (view-record-id v))
-        (set! views all)
-        (view-record-dropped?-set! v #t)
-        (set! dirty? #t)))
+      (call-with-cancellation-masked
+        (lambda (restore)
+          (set-shown-buffer! v #f)
+          (hashtable-delete! by-id (view-record-id v))
+          (set! views all)
+          (view-record-dropped?-set! v #t)
+          (set! dirty? #t))))
     (let-values ([(keys vs) (hashtable-entries copies)])
       (vector-for-each (lambda (k c) (when (eq? c v) (hashtable-delete! copies k))) keys vs)))
 
@@ -664,14 +675,15 @@
 
   (define (bind-kept! k b)
     (let* ([n (buffer-length b)] [spot (lambda (s after?) (make-spot b (fxmin n (spot-position s)) after?))])
-      (with-interrupts-disabled
-        (kept-buffer-set! k b)
-        (kept-cursors-set! k (map (lambda (pm) (cons (point-spot b (fxmin n (spot-position (car pm))))
-                                                     (and (cdr pm) (spot (cdr pm) #f))))
-                                  (kept-cursors k)))
-        (kept-place-set! k (map-place (kept-place k) (lambda (s) (spot s #f))))
-        (kept-folds-set! k (map (lambda (f) (cons (spot (car f) #t) (spot (cdr f) #f))) (kept-folds k)))
-        (kept-narrowing-set! k (let ([r (kept-narrowing k)]) (and r (cons (spot (car r) #f) (spot (cdr r) #t))))))))
+      (call-with-cancellation-masked
+        (lambda (restore)
+          (kept-buffer-set! k b)
+          (kept-cursors-set! k (map (lambda (pm) (cons (point-spot b (fxmin n (spot-position (car pm))))
+                                                       (and (cdr pm) (spot (cdr pm) #f))))
+                                    (kept-cursors k)))
+          (kept-place-set! k (map-place (kept-place k) (lambda (s) (spot s #f))))
+          (kept-folds-set! k (map (lambda (f) (cons (spot (car f) #t) (spot (cdr f) #f))) (kept-folds k)))
+          (kept-narrowing-set! k (let ([r (kept-narrowing k)]) (and r (cons (spot (car r) #f) (spot (cdr r) #t)))))))))
 
   (define (kept-now k)
     (let ([b (kept-buffer k)])
@@ -726,16 +738,17 @@
                   [(lo hi) (let ([r (kept-narrowing k)])
                              (if r (values (spot-position (car r)) (spot-position (cdr r))) (values 0 n)))]
                   [(fresh) (lambda (s after?) (make-spot b (spot-position s) after?))])
-      (with-interrupts-disabled
-        (view-record-cursors-set! v
-          (map (lambda (pm)
-                 (make-cursor-record v (point-spot b (stop-within b lo hi (spot-position (car pm))))
-                   (and (cdr pm) (fresh (cdr pm) #f)) #f))
-               (kept-cursors k)))
-        (view-record-folds-set! v (map (lambda (f) (cons (fresh (car f) #t) (fresh (cdr f) #f))) (kept-folds k)))
-        (view-record-narrowing-set! v (let ([r (kept-narrowing k)]) (and r (cons (fresh (car r) #f) (fresh (cdr r) #t)))))
-        (view-record-states-set! v (kept-states k))
-        (view-record-moved?-set! v (eq? (place-kind (kept-place k)) 'follow)))
+      (call-with-cancellation-masked
+        (lambda (restore)
+          (view-record-cursors-set! v
+            (map (lambda (pm)
+                   (make-cursor-record v (point-spot b (stop-within b lo hi (spot-position (car pm))))
+                     (and (cdr pm) (fresh (cdr pm) #f)) #f))
+                 (kept-cursors k)))
+          (view-record-folds-set! v (map (lambda (f) (cons (fresh (car f) #t) (fresh (cdr f) #f))) (kept-folds k)))
+          (view-record-narrowing-set! v (let ([r (kept-narrowing k)]) (and r (cons (fresh (car r) #f) (fresh (cdr r) #t)))))
+          (view-record-states-set! v (kept-states k))
+          (view-record-moved?-set! v (eq? (place-kind (kept-place k)) 'follow))))
       (forget-measured! v)
       (let ([pl (kept-place k)])
         (place-all! v (map-place pl (lambda (s) (fresh s #f)))))))
@@ -743,9 +756,10 @@
   (define (show-at-point! v b p)
     (show-buffer! v b)
     (let ([n (buffer-length b)])
-      (with-interrupts-disabled
-        (cursor-record-point-set! (car (view-record-cursors v)) (point-spot b (stop-within b 0 n (fxmin p n))))
-        (view-record-moved?-set! v #t))))
+      (call-with-cancellation-masked
+        (lambda (restore)
+          (cursor-record-point-set! (car (view-record-cursors v)) (point-spot b (stop-within b 0 n (fxmin p n))))
+          (view-record-moved?-set! v #t)))))
 
   (define (leave! v)
     (let ([b (view-record-buffer v)])
@@ -882,17 +896,18 @@
            [folds (map (lambda (f) (cons (spot (car f) #t) (spot (cdr f) #f))) (view-record-folds v))])
       (commit-positions! v b cs points marks pl folds narrowing)))
 
-  ;; A quit leaves a view showing its old buffer or its new one, never
+  ;; A cancel leaves a view showing its old buffer or its new one, never
   ;; positions of both.
   (define (commit-positions! v b cs points marks pl folds narrowing)
-    (with-interrupts-disabled
-      (for-each (lambda (c p m) (cursor-record-point-set! c p) (cursor-record-mark-set! c m)) cs points marks)
-      (view-record-folds-set! v folds)
-      (view-record-narrowing-set! v narrowing)
-      (view-record-states-set! v '())
-      (set-shown-buffer! v b)
-      (forget-measured! v)
-      (place-all! v pl)))
+    (call-with-cancellation-masked
+      (lambda (restore)
+        (for-each (lambda (c p m) (cursor-record-point-set! c p) (cursor-record-mark-set! c m)) cs points marks)
+        (view-record-folds-set! v folds)
+        (view-record-narrowing-set! v narrowing)
+        (view-record-states-set! v '())
+        (set-shown-buffer! v b)
+        (forget-measured! v)
+        (place-all! v pl))))
 
   (define (bound-buffer v)
     (let ([b (view-record-buffer v)])
@@ -995,10 +1010,12 @@
                                         (exists (lambda (p) (fx< s p e)) points))))]
              [b (view-record-buffer v)])
         (unless (null? opened)
-          (as-module (this-module)
-            (post! (lambda ()
-                     (when (and (not (view-record-dropped? v)) (eq? (view-record-buffer v) b) (buffers:live? b))
-                       (tell-opened! v b opened)))))))))
+          (call-as-owner %self
+            (lambda ()
+              (spawn-task
+                (lambda (restore)
+                  (when (and (not (view-record-dropped? v)) (eq? (view-record-buffer v) b) (buffers:live? b))
+                    (tell-opened! v b opened))))))))))
 
   (define (merge-cursors! v)
     (let loop ([cs (view-record-cursors v)] [seen '()] [kept '()])
@@ -1014,10 +1031,10 @@
   (define owners-with-actions '())
 
   (define (set-view-option! who v option value owner)
-    (guard (c [(and (message-condition? c) (not (quit-condition? c)))
+    (guard (c [(and (message-condition? c) (not (cancelled? c)))
                (apply assertion-violation who (condition-message c)
                       (if (irritants-condition? c) (condition-irritants c) '()))])
-      (with-options ([option value]) #f))
+      (options:with ([option value]) #f))
     (when (and owner (not (member owner owners-with-actions)))
       (on-unload (lambda () (take-back-options! owner)))
       (set! owners-with-actions (cons owner owners-with-actions)))
@@ -1042,7 +1059,7 @@
     (let loop ([options (view-record-options v)])
       (if (null? options)
           (thunk)
-          (with-options ([(view-option-option (car options)) (view-option-value (car options))])
+          (options:with ([(view-option-option (car options)) (view-option-value (car options))])
             (loop (cdr options))))))
 
   ;; Node state is kept against an anchor right after the node's opening,
@@ -1336,7 +1353,7 @@
         (values (if (fx<= s lo) lo (item-start-at v doc s))
                 (if (fx>= e hi) hi (item-end-from v doc e))))))
 
-  ;; A quit between the two edges would leave a run with one, so both
+  ;; A cancel between the two edges would leave a run with one, so both
   ;; are made before either is set. A run that reaches HI, the last
   ;; position drawn, ends at an anchor that stays after text inserted
   ;; there, so typing at the buffer's end keeps the run whole rather than
@@ -1347,9 +1364,10 @@
                               (fx= (spot-position (client-view-to cs)) we)))])
         (let ([from (let ([s (client-view-from cs)]) (if s (move-spot s b ws #f) (make-spot b ws #f)))]
               [to (make-spot b we (fx= we hi))])
-          (with-interrupts-disabled
-            (client-view-from-set! cs from)
-            (client-view-to-set! cs to)))
+          (call-with-cancellation-masked
+            (lambda (restore)
+              (client-view-from-set! cs from)
+              (client-view-to-set! cs to))))
         (when (and moved? (client-view-range-buffer cs))
           (ranges-changed! v (client-view-range-buffer cs))))))
 
@@ -1487,16 +1505,17 @@
   ;; Following point lasts on a page until its hand scrolls the view or
   ;; another placement comes, so a client already following needs none.
   (define (follow-point! v)
-    (with-interrupts-disabled
-      (view-record-moved?-set! v #f)
-      (unless (eq? (place-kind (view-record-place v)) 'follow)
-        (view-record-place-set! v (follow-place))
-        (set! dirty? #t))
-      (for-each-client-view
-        (lambda (c cs)
-          (unless (eq? (place-kind (client-view-placement cs)) 'follow)
-            (send-placement! cs (follow-place))))
-        v)))
+    (call-with-cancellation-masked
+      (lambda (restore)
+        (view-record-moved?-set! v #f)
+        (unless (eq? (place-kind (view-record-place v)) 'follow)
+          (view-record-place-set! v (follow-place))
+          (set! dirty? #t))
+        (for-each-client-view
+          (lambda (c cs)
+            (unless (eq? (place-kind (client-view-placement cs)) 'follow)
+              (send-placement! cs (follow-place))))
+          v))))
 
   (define (follows-point? v) (eq? (place-kind (view-record-place v)) 'follow))
 
@@ -1586,10 +1605,11 @@
     (let* ([f (report-facts v b (buffers:document b) r)]
            [first? (not (eqv? (client-view-measured cs) (client-view-number cs)))]
            [kind (place-kind (client-view-placement cs))])
-      (with-interrupts-disabled
-        (client-view-facts-set! cs f)
-        (client-view-measured-set! cs (client-view-number cs))
-        (client-view-wanted-set! cs (measured-wanted r)))
+      (call-with-cancellation-masked
+        (lambda (restore)
+          (client-view-facts-set! cs f)
+          (client-view-measured-set! cs (client-view-number cs))
+          (client-view-wanted-set! cs (measured-wanted r))))
       (cond
         [(measured-hand? r)
          (when (facts-top f)
@@ -1616,7 +1636,7 @@
   ;; context lines, as Emacs's C-v does, and answers with the report of
   ;; where it went; a page with too little drawn asks for more first.
   ;; The page sends that report as an item too, which changes nothing
-  ;; once the answer is taken and tells where the view went when a quit
+  ;; once the answer is taken and tells where the view went when a cancel
   ;; came first.
   ;; A page asked again steps as far as it has drawn, so a screen that
   ;; never reaches it cannot keep the command asking. Sideways, Emacs
@@ -1763,8 +1783,8 @@
       [else #f]))
 
   (define (report-as module c)
-    (if (and module (member module (loaded-modules)))
-        (as-module module (report c))
+    (if (and module (owner-live? module))
+        (call-as-owner module (lambda () (report c)))
         (report c)))
 
   ;; Attribute names come from users' tables, so the element is written
@@ -1790,9 +1810,9 @@
                (put-char p #\")))
            (reverse others))
          (put-char p #\>)]
-        [(and (pair? (car value)) (symbol? (caar value)) (table-ref span-properties (caar value) #f))
+        [(and (pair? (car value)) (symbol? (caar value)) (tables:ref span-properties (caar value) #f))
          => (lambda (proc)
-              (let add ([as (let ([as (guard (c [(not (quit-condition? c)) (report c) '()])
+              (let add ([as (let ([as (guard (c [(not (cancelled? c)) (report c) '()])
                                         (proc (cdar value)))])
                               (if (and (list? as) (for-all (lambda (a) (and (pair? a) (attribute-name? (car a)))) as))
                                   as
@@ -1881,7 +1901,7 @@
   (define (span-groups b v client ws we)
     (define (source-spans source)
       (lambda ()
-        (guard (c [(not (quit-condition? c)) (report c) '()])
+        (guard (c [(not (cancelled? c)) (report c) '()])
           (let ([spans (source v client ws we)])
             (unless (and (list? spans)
                          (for-all (lambda (s) (and (list? s) (fx= (length s) 3) (fixnum? (car s)) (fixnum? (cadr s)))) spans))
@@ -1891,7 +1911,7 @@
                (append (map (lambda (l) (make-span-group (buffers:layer-priority l) (buffers:layer-keymap l) (lambda () (buffers:spans l ws we))))
                             (buffers:layers b v))
                        (if client
-                           (map (lambda (e) (make-span-group (cdr e) #f (source-spans (car e)))) (table-entries span-sources))
+                           (map (lambda (e) (make-span-group (cdr e) #f (source-spans (car e)))) (tables:entries span-sources))
                            '()))))
 
   (define (window-spans b v client doc regions ws we)
@@ -1937,7 +1957,7 @@
         (and (pair? r) (fixnum? (car r)) (fixnum? (cdr r)) (fx<= 0 (car r) (cdr r) n)))
       (let ([ranges (fold-left
                       (lambda (acc c)
-                        (let ([rs (guard (e [(not (quit-condition? e)) (report e) '()])
+                        (let ([rs (guard (e [(not (cancelled? e)) (report e) '()])
                                     (region-ranges v c))])
                           (if (and (list? rs) (for-all range? rs))
                               (append (filter (lambda (r) (fx< (car r) (cdr r))) rs) acc)
@@ -2211,7 +2231,7 @@
     (let* ([kind (buffers:kind (document:node-kind node))] [draw (and kind (buffers:kind-draw kind))])
       (cond
         [draw
-         (let ([html (guard (c [(not (quit-condition? c))
+         (let ([html (guard (c [(not (cancelled? c))
                                 (report-as (buffers:kind-owner kind) c)
                                 failed])
                        (if (eq? (in-line?) inline?)
@@ -2579,7 +2599,7 @@
   (define (datum-html ctx datum)
     (if (string? datum)
         datum
-        (guard (c [(not (quit-condition? c)) (report c) '()])
+        (guard (c [(not (cancelled? c)) (report c) '()])
           (let* ([doc (document:from-datum datum)] [n (document:length doc)]
                  [sub (new-context (context-view ctx) (context-client ctx) doc 0 n 0 n #f '() '() '#() '#() 0 '() '() #f #f (make-eqv-hashtable) #f #f '() 0)])
             (parameterize ([current-context sub])
@@ -3011,7 +3031,7 @@
 
   (define (span-keymap value)
     (let ([entry (and (list? value) (assq 'keymap value))])
-      (and entry (table? (cdr entry)) (cdr entry))))
+      (and entry (tables:table? (cdr entry)) (cdr entry))))
 
   (define (keymaps-at v b p)
     (let ([doc (buffers:document b)])
@@ -3062,7 +3082,7 @@
   (define (saved-state? x)
     (or (null? x) (and (pair? x) (fixnum? (car x)) (list? (cdr x)) (for-all entry? (cdr x)))))
 
-  (define-saved state '() saved-state?)
+  (saved:define-saved state '() saved-state?)
 
   ;; A view's place and a kept one are saved as the shared position is
   ;; kept, in text: an item's position, a fraction of it, a column and
@@ -3087,7 +3107,7 @@
           (let ([n (view-record-narrowing v)]) (and n (cons (spot-position (car n)) (spot-position (cdr n)))))
           (fold-right (lambda (e acc)
                         (let ([own (find-first (lambda (o) (eq? (cdr o) (view-option-option e))) own-options)])
-                          (if (and own (plain-data? (view-option-value e)))
+                          (if (and own (plain-data:plain-data? (view-option-value e)))
                               (cons (cons (car own) (view-option-value e)) acc)
                               acc)))
                       '() (view-record-options v))))
@@ -3096,7 +3116,7 @@
     (for-each bound-buffer views)
     (let ([now (cons next-id (map entry-of (filter view-record-saved? views)))])
       (unless (equal? now (state))
-        (set-saved! state now))
+        (saved:set! state now))
       (set! dirty? #f)))
 
   (define (restore!)
@@ -3112,7 +3132,7 @@
                   (add-view! v)
                   (for-each
                     (lambda (o)
-                      (guard (c [(not (quit-condition? c)) (report c)])
+                      (guard (c [(not (cancelled? c)) (report c)])
                         (set-view-option! 'views:set-option! v (cdr (assq (car o) own-options)) (cdr o) #f)))
                     options)))))
           (cdr saved))
@@ -3139,7 +3159,7 @@
                   (car x))
          (for-all (lambda (p) (and (pair? p) (string? (car p)) (position? (cdr p)))) (cdr x))))
 
-  (define-saved histories '(()) saved-histories?)
+  (saved:define-saved histories '(()) saved-histories?)
 
 
   (define (kept-datum k)
@@ -3171,7 +3191,7 @@
                               (map cons (vector->list names) (vector->list ps))))]
            [now (cons kept (append points (list-sort (lambda (a b) (string<? (car a) (car b))) waiting)))])
       (unless (equal? now (histories))
-        (set-saved! histories now))))
+        (saved:set! histories now))))
 
   ;; A start makes its buffers again before it first idles, so an entry
   ;; or a last point still waiting then names a buffer that is gone, and
@@ -3403,7 +3423,7 @@
   ;; so only the keymap's own bindings, which a click searches first,
   ;; can make it inert.
   (define (click-state keymap posn)
-    (and (exists (lambda (key) (table-ref keymap key #f)) left-click-keys)
+    (and (exists (lambda (key) (tables:ref keymap key #f)) left-click-keys)
          (let* ([keymaps (keys:active-keymaps #f posn)]
                 [found (map (lambda (key) (keys:lookup-in keymaps key)) left-click-keys)]
                 [placed? (posn-record-view posn)])
@@ -3423,7 +3443,7 @@
 
   (define (marked-keymap id)
     (let ([entry (and (fixnum? id) (hashtable-ref id-keymaps id #f))])
-      (and entry (table? (car entry)) (car entry))))
+      (and entry (tables:table? (car entry)) (car entry))))
 
   (define (marked-keymaps ids)
     (if (vector? ids)
@@ -3576,7 +3596,7 @@
 
   (restore!)
   (restore-histories!)
-  (run-with-idle-timer 1
+  (timers:run-when-idle 1
     (lambda ()
       (when waiting? (forget-waiting!))
       (when history-dirty? (write-histories!))))
@@ -4082,7 +4102,7 @@
         (format "L~a" lines))))
 
 (define (%describer kind)
-  (let loop ([es (table-entries position-describers)])
+  (let loop ([es (tables:entries position-describers)])
     (cond
       [(null? es) #f]
       [(eq? (buffers:constructor-kind (caar es)) kind) (cdar es)]
@@ -4102,7 +4122,7 @@
                 => (lambda (describe) (call-with-view view (lambda () (describe n view))))]
                [else (loop (document:enclosing doc (document:node-start n)))]))))))
 
-(define-option position-description describe-at-point (lambda (v) (or (not v) (procedure? v)))
+(options:define-option position-description describe-at-point (lambda (v) (or (not v) (procedure? v)))
   "A procedure of a view that returns what describes where its primary point is, or #f to show none.")
 
 (define (%scroll-report client item) (scroll-report client item))
@@ -4115,7 +4135,7 @@
   (if (posn-record? posn) (posn-record-keymaps posn) '()))
 
 (define (keymap-mark keymap)
-  (unless (table? keymap)
+  (unless (tables:table? keymap)
     (assertion-violation 'views:keymap-mark "not a keymap" keymap))
   (check-main-thread 'views:keymap-mark)
   (let ([id (number->string (keymap-id keymap))])
@@ -4285,19 +4305,19 @@
 
 (define (%scroller-report client item) (scroller-report client item))
 
-(table-set! span-properties 'face face-attributes)
-(table-set! span-properties 'title title-attributes)
-(table-set! web:scripts 'views "views/views.js")
-(table-set! web:early-scripts 'views "views/place.js")
-(table-set! web:stylesheets 'views "views/views.css")
-(table-set! web:input-handlers "scroll" %scroll-report)
-(table-set! web:input-handlers "mouse" %mouse-item)
-(table-set! web:input-handlers "scroller" %scroller-report)
-(add-hook! keys:find-keymaps %posn-keymaps)
+(tables:set! span-properties 'face face-attributes)
+(tables:set! span-properties 'title title-attributes)
+(tables:set! web:scripts 'views "views/views.js")
+(tables:set! web:early-scripts 'views "views/place.js")
+(tables:set! web:stylesheets 'views "views/views.css")
+(tables:set! web:input-handlers "scroll" %scroll-report)
+(tables:set! web:input-handlers "mouse" %mouse-item)
+(tables:set! web:input-handlers "scroller" %scroller-report)
+(hooks:add! keys:find-keymaps %posn-keymaps)
 ;; The keymaps marked around the element clicked come before every other
 ;; keymap at the position.
-(add-hook! keys:find-keymaps %marked-keymaps -100)
-(add-hook! web:client-removed forget-client!)
+(hooks:add! keys:find-keymaps %marked-keymaps -100)
+(hooks:add! web:client-removed forget-client!)
 (keys:bind! keys:global "C-v" scroll-up)
 (keys:bind! keys:global "<next>" scroll-up)
 (keys:bind! keys:global "M-v" scroll-down)
@@ -4315,6 +4335,6 @@
     (keys:bind! keymap "<mouse-3>" keys:ignore))
   (list scroll-bar-keymap horizontal-scroll-bar-keymap)
   (list scroll-bar-scroll horizontal-scroll-bar-scroll))
-(add-hook! buffers:after-edit note-edit)
-(add-hook! buffers:killed note-kill)
+(hooks:add! buffers:after-edit note-edit)
+(hooks:add! buffers:killed note-kill)
 (advice-add! batch-ended after-batch)

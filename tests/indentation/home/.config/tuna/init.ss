@@ -1,15 +1,16 @@
-(import (tuna) (tuna plugins) (document) (web))
+(import (hooks) (options) (tables))
+(import (tuna) (document) (web))
 (use-plugin ask
   (config
-    (set-option! ask:message-writer (lambda (text) (void)))))
+    (options:set! ask:message-writer (lambda (text) (void)))))
 (use-plugin layout)
 (use-plugin modes)
 (use-plugin undo)
 (use-plugin editing)
 (use-plugin chez-scheme)
 
-(define-table plain-keymap)
-(define-hook plain-hook)
+(tables:define-table plain-keymap)
+(hooks:define-hook plain-hook)
 (modes:define-major-mode plain (keymap plain-keymap) (hook plain-hook))
 
 (commands:define-command (break-line)

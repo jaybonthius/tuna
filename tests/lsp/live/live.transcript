@@ -1,7 +1,7 @@
 ; basedpyright and ruff on a three-file project.
 > (import (python))
-> (table-set! lsp:language-servers "python" (list lsp:basedpyright lsp:ruff))
-> (add-hook! python:mode-hook lsp:ensure)
+> (tables:set! lsp:language-servers "python" (list lsp:basedpyright lsp:ruff))
+> (hooks:add! python:mode-hook lsp:ensure)
 > (define shop (string-append home "/shop"))
 > (system (format "mkdir -p '~a/.git'" shop))
 0
@@ -36,11 +36,11 @@
 ; Rename across files, an open and an unopened one.
 > (in-client (lambda () (layout:switch-to-buffer cart)))
 > (in-client (lambda () (views:set-point! (view) (+ 1 (string-length "import os\nfrom prices import ")))))
-> (with-options ([lsp:confirm-edits (lsp:confirmation never)]) (in-client (lambda () (commands:run lsp:rename "grand_total"))))
+> (options:with ([lsp:confirm-edits (lsp:confirmation never)]) (in-client (lambda () (commands:run lsp:rename "grand_total"))))
 > (list (text cart) (text (files:buffer-visiting (string-append shop "/prices.py"))))
 ("import os\nfrom prices import grand_total\n\n\ndef checkout(items):\n    return grand_total(items)\n" "def grand_total(items):\n    return sum(items)\n")
 ; Ruff formats on save.
-> (buffers:with-buffer cart (add-local-hook! files:before-save lsp:format-buffer))
+> (buffers:with-buffer cart (hooks:add-local! files:before-save lsp:format-buffer))
 > (buffers:replace! cart 1 1 "x=1\n")
 #<edit 3>
 > (in-client (lambda () (files:save-buffer cart)))
@@ -49,8 +49,8 @@
 ; Ruff with diagnostics, hover and formatting ignored: its initialize
 ; still offers formatting, it still announces hover and formatting, and
 ; none of the three is used: no Ruff diagnostic, pulled or pushed.
-> (buffers:with-buffer cart (remove-local-hook! files:before-save lsp:format-buffer))
-> (table-set! lsp:servers lsp:ruff (lsp:server '("ruff" "server") (ignored-capabilities (lsp:capabilities diagnostics hover formatting))))
+> (buffers:with-buffer cart (hooks:remove-local! files:before-save lsp:format-buffer))
+> (tables:set! lsp:servers lsp:ruff (lsp:server '("ruff" "server") (ignored-capabilities (lsp:capabilities diagnostics hover formatting))))
 > (define (ruff-of b) (find (lambda (c) (eq? (lsp:connection-server c) lsp:ruff)) (lsp:buffer-connections b)))
 > (lsp:reconnect (ruff-of cart))
 > (testing:wait-until (lambda () (let ([c (ruff-of cart)]) (and c (lsp:connection-capability c "textDocumentSync")))))
@@ -59,7 +59,7 @@
           (and (lsp:connection-capability c "hoverProvider") #t) (and (lsp:connection-capability c "documentFormattingProvider") #t)))
 (#t #t #t)
 > (begin (buffers:replace! cart 1 1 "import sys\n") (void))
-> (sleep-for 3)
+> (timers:sleep 3)
 > (list (exists ruff-unused? (messages cart)) (and (exists (unused? "basedpyright") (messages cart)) #t))
 (#f #t)
 > (lsp:shutdown-all)

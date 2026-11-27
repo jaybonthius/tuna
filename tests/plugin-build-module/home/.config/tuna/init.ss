@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins))
+(import (tuna))
 (use-plugin gen (git "https://github.com/bob/gen") (commit "da13deb"))
 
 (define (show path)

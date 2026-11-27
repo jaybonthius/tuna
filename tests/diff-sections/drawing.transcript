@@ -54,9 +54,9 @@ deleted    caf￼.txt
 > (define (rebuild-edits! buffer datums)
     (let ([edits 0])
       (define (count! edited edit) (when (eq? edited buffer) (set! edits (+ edits 1))))
-      (add-hook! buffers:after-edit count!)
+      (hooks:add! buffers:after-edit count!)
       (buffers:reconcile! buffer (document:token (buffers:document buffer) 0) datums)
-      (remove-hook! buffers:after-edit count!)
+      (hooks:remove! buffers:after-edit count!)
       edits))
 > (rebuild-edits! b (map diff-sections:file-section files))
 0
@@ -77,10 +77,10 @@ deleted    caf￼.txt
 ; The gutter of line numbers is drawn only when asked for.
 > (occurrences drawn "diff-sections-numbers")
 0
-> (set-option! diff-sections:line-numbers? #t)
+> (options:set! diff-sections:line-numbers? #t)
 > (occurrences (html (view)) "diff-sections-numbers")
 10
-> (remove-option! diff-sections:line-numbers?)
+> (options:unset! diff-sections:line-numbers?)
 ; A file section takes extra attributes, such as its first visibility.
 > (define hidden-file (diff-sections:file-section (car files) '((hidden . #t))))
 > (define c (show-sections! "*hidden*" hidden-file))

@@ -1,11 +1,11 @@
 #!tuna
 (import (buffers) (document) (views) (ui) (commands) (keys) (editing) (faces) (web) (haml) (browse-url)
-        (md4c) (markdown unfinished))
+        (md4c) (markdown unfinished) (tables))
 
 ;; This module defines quote and list as kind constructors, so its own
 ;; code writes symbols and lists with quasiquote and cons.
 
-(define-table table-keymap "Keys in a Markdown table.")
+(tables:define-table table-keymap "Keys in a Markdown table.")
 
 (module %convert (blocks->datums)
 
@@ -280,6 +280,6 @@
 
 (keys:remap! table-keymap editing:next-line next-row)
 (keys:remap! table-keymap editing:previous-line previous-row)
-(table-set! views:position-describers code-block views:describe-line)
-(table-set! views:position-describers table-cell describe-cell)
-(table-set! web:stylesheets `markdown "markdown/markdown.css")
+(tables:set! views:position-describers code-block views:describe-line)
+(tables:set! views:position-describers table-cell describe-cell)
+(tables:set! web:stylesheets `markdown "markdown/markdown.css")

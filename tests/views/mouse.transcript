@@ -21,7 +21,7 @@
               ("view" . ,(views:id view)) ("version" . ,(buffers:version (views:buffer view)))
               ("showing" . ,(views:shown-count view)))))
 > (define (mouse! view . fields)
-    (as-client c1 (lambda () ((table-ref web:input-handlers "mouse") c1 (apply item view fields)))))
+    (as-client c1 (lambda () ((tables:ref web:input-handlers "mouse") c1 (apply item view fields)))))
 ; The view's element names its buffer's version and how many buffers it
 ; has shown; a line that starts after its line's start names where.
 > (show v)
@@ -136,8 +136,8 @@
 ; Each drawn node's element names its range; a token place on a node's
 ; opening names the position inside it, so the node encloses it, and on
 ; an atom the position before it.
-> (define-table link-keys)
-> (define-table image-keys)
+> (tables:define-table link-keys)
+> (tables:define-table image-keys)
 > (commands:define-command (on-link [event (keys:command-event)])
     "Records a click on a link."
     (set! seen (cons (list 'link (views:posn-point (keys:event-start event))) seen)))
@@ -164,8 +164,8 @@
 #t
 ; A click on a span looks the key up in the span's own keymap before its
 ; layer type's; on a span without one, in the layer type's.
-> (define-table own-keys)
-> (define-table marked-keys)
+> (tables:define-table own-keys)
+> (tables:define-table marked-keys)
 > (commands:define-command (on-own [event (keys:command-event)])
     "Records a click on a span with its own keymap."
     (set! seen (cons (list 'own (views:posn-point (keys:event-start event))) seen)))
@@ -219,7 +219,7 @@
 ; it looks the mouse key up there before every keymap at its position.
 ; The page sends the keymaps of the marked elements from the one clicked
 ; out, innermost first, each by the number before the mark's state.
-> (define-table close-keys)
+> (tables:define-table close-keys)
 > (commands:define-command (on-close [event (keys:command-event)])
     "Records a click on a close button."
     (set! seen (cons (list 'close (views:posn-point (keys:event-start event))) seen)))
@@ -241,7 +241,7 @@
 (#t #t)
 ; A key the innermost marked keymap does not bind is looked up in the
 ; marked keymaps around it, then at the position.
-> (define-table tab-keys)
+> (tables:define-table tab-keys)
 > (commands:define-command (on-tab [event (keys:command-event)])
     "Records a click on a tab."
     (set! seen (cons (list 'tab (views:posn-point (keys:event-start event))) seen)))

@@ -1,4 +1,4 @@
-> (set-option! editing:delete-selection #f)
+> (options:set! editing:delete-selection #f)
 ; Words are runs of letters, digits and the word characters; other
 ; characters, such as an em dash, end them.
 > (start! "foo-bar, naïve—café 中文 $5%" 1)
@@ -14,14 +14,14 @@
 > (points-after "C-<right>" "M-<right>")
 (4 8)
 ; A word's characters are those of the buffer's major mode.
-> (table-set! syntax:word-characters modes:fundamental "-")
+> (tables:set! syntax:word-characters modes:fundamental "-")
 > (points-after "M-b" "M-f")
 (1 8)
-> (table-set! syntax:word-characters modes:fundamental "$%")
+> (tables:set! syntax:word-characters modes:fundamental "$%")
 ; A minor mode changes one buffer's word characters by advising
 ; syntax:buffer-word-characters and testing itself in the buffer handed
 ; to it, as Emacs's superword-mode makes a symbol one word.
-> (define-option superword #f boolean? "Whether symbols are words.")
+> (options:define-option superword #f boolean? "Whether symbols are words.")
 > (define (superword-characters word-characters buffer)
     (if (buffers:with-buffer buffer (superword))
         (string-append (word-characters buffer) (syntax:buffer-symbol-characters buffer))
@@ -31,7 +31,7 @@
 ("foo_bar baz" ((1 #f)))
 > (points-after "M-f")
 (4)
-> (buffers:with-buffer (views:buffer (view)) (set-option-local! superword #t))
+> (buffers:with-buffer (views:buffer (view)) (options:set-local! superword #t))
 > (views:set-point! (view) 1)
 > (points-after "M-f" "M-f")
 (8 12)
@@ -175,7 +175,7 @@
 ; delete-selection replaces an active region when typing, yanking,
 ; pasting and making a line, and deletes it for C-d and DEL; an empty
 ; region is left alone.
-> (set-option! editing:delete-selection #t)
+> (options:set! editing:delete-selection #t)
 > (start! "abcd" 1)
 ("abcd" ((1 #f)))
 > (press! "S-<right>" "S-<right>" "x")
@@ -203,7 +203,7 @@
 > (press! "C-SPC" "C-b" "C-d")
 > (state)
 ("acd" ((2 #f)))
-> (set-option! editing:delete-selection #f)
+> (options:set! editing:delete-selection #f)
 > (press! "S-<right>" "x")
 > (state)
 ("acxd" ((4 #f)))
@@ -470,11 +470,11 @@
 ; cluster's code points, as with Emacs's composition-break-at-point.
 > (start! (string #\e #\x301 #\x302 #\x) 1)
 ("é̂x" ((1 #f)))
-> (buffers:with-buffer (views:buffer (view)) (set-option-local! buffers:stop-inside-clusters #t))
+> (buffers:with-buffer (views:buffer (view)) (options:set-local! buffers:stop-inside-clusters #t))
 > (press! "C-f")
 > (cursors)
 ((2 #f))
-> (buffers:with-buffer (views:buffer (view)) (remove-option-local! buffers:stop-inside-clusters))
+> (buffers:with-buffer (views:buffer (view)) (options:unset-local! buffers:stop-inside-clusters))
 > (press! "C-f")
 > (cursors)
 ((4 #f))
@@ -556,7 +556,7 @@
 > (press! "C-x" "C-u")
 > (state)
 ("ABcd" ((2 #f) (3 #f)))
-> (set-option! editing:delete-selection #t)
+> (options:set! editing:delete-selection #t)
 > (define (two-regions!)
     (start! "abcdef" 2 4)
     (views:set-cursor! (car (views:cursors (view))) 2 4)
@@ -582,7 +582,7 @@
 > (press! "M-y")
 > (state)
 ("aPPf" ((3 #f)))
-> (set-option! editing:delete-selection #f)
+> (options:set! editing:delete-selection #f)
 ; Kills that overlap put each text on the ring once, one piece per
 ; cursor.
 > (start! "one two\nx" 1 5)
@@ -804,7 +804,7 @@
 (((md:para () "ab\n") (md:para () "cd\n")) ((7 #f)))
 ; Typing, C-y and DEL then typing over a selected heading give one
 ; result, where the deletion leaves the cursor.
-> (set-option! editing:delete-selection #t)
+> (options:set! editing:delete-selection #t)
 > (define (plan) (md:doc '() (md:heading '() "Plan\n") (md:para '() "Buy milk.\n")))
 > (cadr (start! (plan) 9))
 ((9 #f))
@@ -825,7 +825,7 @@
 > (press! "DEL" "x")
 > (list (blocks) (cursors))
 (((md:para () "xBuy milk.\n")) ((3 #f)))
-> (set-option! editing:delete-selection #f)
+> (options:set! editing:delete-selection #f)
 ; M-w, C-w and the primary selection of a heading's line take one kill,
 ; the heading whole, which C-y puts back as a heading.
 > (cadr (start! (plan) 9))
@@ -888,7 +888,7 @@
 ((editing:insert! "not a view") (editing:insert! "not a string"))
 ; DEL and <delete> delete an active region, as Emacs's
 ; delete-active-region, but not with a count; C-d deletes a character.
-> (commands:command-name (table-ref keys:global "<delete>"))
+> (commands:command-name (tables:ref keys:global "<delete>"))
 editing:delete-forward-char
 > (start! "one two three" 5)
 ("one two three" ((5 #f)))
@@ -909,13 +909,13 @@ editing:delete-forward-char
 > (state)
 ("adef" ((2 #f)))
 ; With editing:delete-active-region off, DEL deletes one character.
-> (set-option! editing:delete-active-region #f)
+> (options:set! editing:delete-active-region #f)
 > (start! "abc" 1)
 ("abc" ((1 #f)))
 > (press! "C-SPC" "C-f" "C-f" "DEL")
 > (state)
 ("ac" ((2 #f)))
-> (remove-option! editing:delete-active-region)
+> (options:unset! editing:delete-active-region)
 ; M-DEL after spaces and line breaks kills them and the word before, as
 ; Emacs's backward-kill-word. With
 ; editing:backward-kill-word-stops-at-whitespace?, when the primary
@@ -926,7 +926,7 @@ editing:delete-forward-char
 > (press! "M-DEL")
 > (list (state) (kills 1))
 (("one " ((5 #f))) ("two  \n"))
-> (set-option! editing:backward-kill-word-stops-at-whitespace? #t)
+> (options:set! editing:backward-kill-word-stops-at-whitespace? #t)
 > (start! "one two  \nthree \n" 11 18)
 ("one two  \nthree \n" ((11 #f) (18 #f)))
 > (press! "M-DEL")
@@ -940,7 +940,7 @@ editing:delete-forward-char
 > (press! "C-u" "2" "M-DEL")
 > (list (state) (kills 1))
 (("two" ((1 #f))) ("zero one  "))
-> (remove-option! editing:backward-kill-word-stops-at-whitespace?)
+> (options:unset! editing:backward-kill-word-stops-at-whitespace?)
 ; Setting the mark says Mark set and clearing it Mark deactivated, as
 ; Emacs's push-mark and set-mark-command do. M-@ extending a region says
 ; nothing, nor does a prompt's buffer, nor C-y, whose mark lasts only
@@ -959,7 +959,7 @@ editing:delete-forward-char
 ; With editing:backward-kill-word-stops-at-whitespace?, M-DEL's run of
 ; whitespace passes a block's end and its line break, as in plain text,
 ; and the deletion joins the blocks as DEL does.
-> (set-option! editing:backward-kill-word-stops-at-whitespace? #t)
+> (options:set! editing:backward-kill-word-stops-at-whitespace? #t)
 > (define (spaced) (md:doc '() (md:para '() "one \n") (md:para '() "  two\n")))
 > (cadr (start! (spaced) 11))
 ((11 #f))
@@ -969,4 +969,4 @@ editing:delete-forward-char
 > (press! "M-DEL")
 > (list (blocks) (cursors) (kills 1))
 (((md:para () "two\n")) ((2 #f)) ("one"))
-> (remove-option! editing:backward-kill-word-stops-at-whitespace?)
+> (options:unset! editing:backward-kill-word-stops-at-whitespace?)

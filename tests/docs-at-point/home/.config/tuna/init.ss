@@ -1,10 +1,11 @@
-(import (tuna) (testing) (tuna plugins) (document) (web))
+(import (hooks) (options) (timers))
+(import (tuna) (testing) (document) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
 (use-plugin docs-at-point
   (config
-    (set-option! docs-at-point:delay 0.05)))
+    (options:set! docs-at-point:delay 0.05)))
 
 (define client (web:add-client! 1))
 
@@ -28,10 +29,10 @@
 (define shown '())
 (define (note-display view docs asked?)
   (set! shown (cons (list (views:id view) (map docs-at-point:doc-text docs) asked?) shown)))
-(add-hook! docs-at-point:displays note-display)
+(hooks:add! docs-at-point:displays note-display)
 (define (displayed) (let ([s (reverse shown)]) (set! shown '()) s))
 
-(define notes (buffers:make "notes" "one two\nthree\n"))
+(define notes (or (buffers:find "notes") (buffers:make "notes" "one two\nthree\n")))
 (layout:switch-to-buffer notes)
-(set-idle! #t)
+(timers:set-idle! #t)
 (import (console))

@@ -170,10 +170,11 @@ class="float-child" style="--layout-float-inline-size:calc(30ch + var(--layout-f
 > (layout:select! ve)
 ; The popups a module made go when it unloads.
 > (load-module! '(popper))
-> (define made (as-module '(popper) (popper:show! (layout:selected-view))))
+#<owner (popper) 1>
+> (define made (call-as-owner (module-owner '(popper)) (lambda () (popper:show! (layout:selected-view)))))
 > (length (cddr (caddr (popups))))
 2
-> (unload-module! '(popper))
+> (unload-owner! (module-owner '(popper)))
 > (popups)
 (layout:popups-root () (layout-float:container () #(views:view ((view . 20) (buffer . "*question*") (place box 1/2 1/5) (width . 3/5) (height lines 12) (locked . #t)))))
 ; A popup can be anchored in a popup's text, as completion over a
@@ -232,15 +233,17 @@ class="float-child" style="--layout-float-inline-size:calc(30ch + var(--layout-f
 ; When this plugin unloads its popups go, and a module that showed one
 ; through a display rule, without importing it, unloads later quietly.
 > (load-module! '(asker))
-> (table-set! layout:display-rules (lambda (b) (string=? (buffers:name b) "*asked*")) layout-float:display-palette)
-> (define asked (as-module '(asker) (asker:ask!)))
+#<owner (asker) 1>
+> (tables:set! layout:display-rules (lambda (b) (string=? (buffers:name b) "*asked*")) layout-float:display-palette)
+> (define asked (call-as-owner (module-owner '(asker)) (lambda () (asker:ask!))))
 > (length (cddr (caddr (popups))))
 5
-> (unload-module! '(layout-float))
+> (unload-owner! (module-owner '(layout-float)))
 > (popups)
 (layout:popups-root ())
 > (load-module! '(layout-float))
-> (unload-module! '(asker))
+#<owner (layout-float) 2>
+> (unload-owner! (module-owner '(asker)))
 > (popups)
 (layout:popups-root ())
 ; A palette, or any float, may be as tall as what it draws. Such a float

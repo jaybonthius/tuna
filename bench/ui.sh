@@ -15,7 +15,7 @@ cp bench/ui.sls "$lib/ui-bench.sls"
 # Clicks reach views' handler as web would hand them over, so the web
 # plugin's stand-in spares the benchmark a server.
 cp tests/editing/home/.config/tuna/lib/web.sls "$lib/web.sls"
-printf '(import (tuna) (tuna plugins))\n(use-plugin editing)\n(import (ui-bench))\n(ui-bench:run)\n(exit)\n' > "$dir/home/.config/tuna/init.ss"
+printf '(import (tuna) (plugins))\n(use-plugin editing)\n(import (ui-bench))\n(ui-bench:run)\n(exit)\n' > "$dir/home/.config/tuna/init.ss"
 
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
 echo "$output" | awk '

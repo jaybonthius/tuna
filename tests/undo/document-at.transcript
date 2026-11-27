@@ -35,8 +35,8 @@
 ; #f.
 > (define t (buffers:make "trimmed" "abc\n"))
 > (do ([i 0 (+ i 1)]) ((= i 1500)) (buffers:replace! t 1 1 "x"))
-> (set-idle! #t)
-> (sleep-for 1.5)
-> (set-idle! #f)
+> (timers:set-idle! #t)
+> (timers:sleep 1.5)
+> (timers:set-idle! #f)
 > (list (buffers:document-at t 0) (buffers:document-at t 499) (string-length (document:text (buffers:document-at t 500))))
 (#f #f 504)

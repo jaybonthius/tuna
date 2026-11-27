@@ -6,11 +6,11 @@
 > (input)
 "~/"
 > (type! "src/")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (texts (session))
 (".hidden" "blob.bin" "link.txt" "text.txt")
 > (type! "te")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (press! "RET")
 > (result t)
 > (files:path (views:buffer (view)))
@@ -20,7 +20,7 @@
 > (minibuffer:input (prompt))
 "~/src/"
 > (type! "new.txt")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (press! "RET")
 > (let ([p (result t)]) (string=? p (string-append (getenv "HOME") "/src/new.txt")))
 #t
@@ -32,17 +32,19 @@
 > (eq? (ask:file-name-reader) file-picker:read-file-name)
 #t
 > (define asked '())
-> (set-option! ask:file-name-reader (lambda (question) (set! asked (cons question asked)) "~/src/other.txt"))
+> (options:set! ask:file-name-reader (lambda (question) (set! asked (cons question asked)) "~/src/other.txt"))
 > (views:set-buffer! (view) notes)
 > (define t (start! (lambda () (press! "C-x" "C-f"))))
 > (result t)
 > (list asked (files:path (views:buffer (view))))
 (("Find file: ") "$HOME/src/other.txt")
-> (remove-option! ask:file-name-reader)
-> (unload-module! '(file-picker))
-> (list (keys:lookup client "C-x C-f") (raised (lambda () (ask:file-name "File: "))))
-(#f (ask:file-name-reader "no reader is loaded"))
-> (use-plugin file-picker)
+> (options:unset! ask:file-name-reader)
+; The configuration imports file-picker, so its re-read loads a new
+; instance at once, which fills the reader and binds C-x C-f again.
+> (define old (module-owner '(file-picker)))
+> (unload-owner! old)
+> (list (owner-live? old) (eq? (module-owner '(file-picker)) old))
+(#f #f)
 > (eq? (ask:file-name-reader) file-picker:read-file-name)
 #t
 > (eq? (keys:lookup client "C-x C-f") file-picker:find-file)
@@ -52,7 +54,7 @@
 ; one replaces the rest.
 > (define t (start! (lambda () (file-picker:read-file-name "File: " "~/"))))
 > (type! "c/t/m")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (texts (session))
 ("code/tuna/main.sls")
 > (press! "RET")
@@ -60,23 +62,23 @@
 "/code/tuna/main.sls"
 > (define t (start! (lambda () (file-picker:read-file-name "File: " "~/"))))
 > (type! "n/s")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (texts (session))
 ("notes/sub/")
 > (press! "TAB")
 > (input)
 "~/notes/sub/"
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (texts (session))
 ("b.sls")
 > (press! "C-g")
-! &quit
+! &cancelled
 ; At the name of a folder, ending in /, no match is selected, so RET
 ; answers with the folder; C-n selects its first entry, and a name that
 ; is not a folder's selects the first match again. Each listing is done,
 ; so the read is not busy, and the file read before sorts first.
 > (define t (start! (lambda () (file-picker:read-file-name "File: " "~/src/"))))
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (list (input) (selected-text (session)) (completion:session-busy? (session)))
 ("~/src/" #f #f)
 > (texts (session))
@@ -85,13 +87,13 @@
 > (selected-text (session))
 "text.txt"
 > (type! "te")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (selected-text (session))
 "text.txt"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (define t (start! (lambda () (file-picker:read-file-name "File: " "~/src/"))))
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (press! "RET")
 > (let ([p (result t)]) (substring p (string-length (getenv "HOME")) (string-length p)))
 "/src/"
@@ -116,13 +118,13 @@
 > (shadowed)
 ()
 > (type! "~/src/")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (list (input) (shadowed) (texts (session)))
 ("~/notes/~/src/" ((0 8 ((face file-picker.discarded shadow)))) (".hidden" "blob.bin" "link.txt" "text.txt"))
 > (drawn-shadow)
 "~/notes/"
 > (type! "te")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (press! "RET")
 > (let ([p (result t)]) (substring p (string-length (getenv "HOME")) (string-length p)))
 "/src/text.txt"
@@ -131,14 +133,14 @@
 "~/src/text.txt"
 > (define t (start! (lambda () (file-picker:read-file-name "File: " "~/notes/"))))
 > (type! "/")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (list (input) (shadowed) (and (member "tmp/" (texts (session))) #t))
 ("~/notes//" ((0 8 ((face file-picker.discarded shadow)))) #t)
 > (press! "DEL")
 > (shadowed)
 ()
 > (press! "C-g")
-! &quit
+! &cancelled
 ; The rule and the prompts it applies to are offered, so a plugin can act
 ; on the discarded part, as Vertico's vertico-directory-tidy deletes it.
 > (map file-picker:substitute-file-name '("~/a/~/b" "/a//b//c" "/a/~x/c" "~/notes/"))
@@ -152,19 +154,19 @@
                [n (- (string-length input) (string-length (file-picker:substitute-file-name input)))])
           (when (> n 0)
             (minibuffer:set-input! p (substring input n (string-length input))))))))
-> (add-hook! commands:after-command tidy)
+> (hooks:add! commands:after-command tidy)
 > (define t (start! (lambda () (file-picker:read-file-name "File: " "~/notes/"))))
 > (type! "~/")
 > (list (input) (shadowed))
 ("~/" ())
 > (press! "C-g")
-! &quit
-> (remove-hook! commands:after-command tidy)
+! &cancelled
+> (hooks:remove! commands:after-command tidy)
 > (define t (start! (lambda () (minibuffer:read "Name: "))))
 > (list (file-picker:file-name-prompt? (prompt)) (begin (type! "a//b") (shadowed)))
 (#f ())
 > (press! "C-g")
-! &quit
+! &cancelled
 > (file-picker:file-name-prompt? 'p)
 ! file-picker:file-name-prompt?: not a prompt with irritant p
 > (file-picker:substitute-file-name 'p)

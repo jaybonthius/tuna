@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (tuna eval))
+(import (hooks) (options) (plain-data) (plugins))
+(import (tuna) (testing))
 (use-plugin git)
 (import (diff) (processes))
 

@@ -1,10 +1,22 @@
-(import (chezscheme) (tuna-test) (tuna plain-data))
+(import (chezscheme) (tuna-test) (kernel-test) (only (tuna) load-module!))
+
+(define plain-data? #f)
+(define plain-data-copy #f)
+
+(define (from-plugin module name)
+  (load-module! module)
+  (eval name (environment module)))
 
 (define (cpu-seconds thunk)
   (let ([start (cpu-time)])
     (thunk)
     (/ (- (cpu-time) start) 1000.)))
 
+(define (not-plain? c)
+  (and (assertion-violation? c) (eq? (condition-who c) 'copier)
+       (equal? (condition-message c) "not plain data")))
+
+(define (tests)
 (test "a long list, and a deep one, are plain data"
   (check (plain-data? (iota 1000000)))
   (check (plain-data? (let loop ([i 0] [v '()]) (if (= i 100000) v (loop (+ i 1) (list v)))))))
@@ -29,9 +41,6 @@
   (check (not (plain-data? (cons 1 car))))
   (check (not (plain-data? (list (string->symbol "s") (make-record-type-descriptor 'r #f #f #f #f '#()))))))
 
-(define (not-plain? c)
-  (and (assertion-violation? c) (eq? (condition-who c) 'copier)
-       (equal? (condition-message c) "not plain data")))
 
 (test "a copy is equal and shares no mutable object with the original"
   (let* ([fixed (string->immutable-string "fixed")]
@@ -76,6 +85,12 @@
     (set-car! (cdr p) p)
     (check-raises not-plain? (plain-data-copy 'copier (vector p))))
   (check-raises not-plain? (plain-data-copy 'copier (list 1 2 (vector 3 (list 4 (box 5))))))
-  (check-raises not-plain? (plain-data-copy 'copier car)))
+  (check-raises not-plain? (plain-data-copy 'copier car))))
 
-(test-exit)
+(run-in-kernel
+  (lambda ()
+    (set! plain-data? (from-plugin '(plain-data) 'plain-data:plain-data?))
+    (set! plain-data-copy (from-plugin '(plain-data) 'plain-data:copy))
+    (tests)
+    (delete-test-folder!)
+    (test-exit)))

@@ -36,14 +36,14 @@
 > (define t (start! "M-:"))
 > (type! "(+ 1")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (finish t)
 #t
 > (list (prompt) (message) (eval:expression-history))
 (#f #f ("(+ 1 2)" "1 ;; one"))
 ; M-p recalls the newest input first. M-: has a history of its own, which
 ; other prompts' inputs do not reach, and which is saved.
-> (set-saved! minibuffer:history '("from another prompt"))
+> (saved:set! minibuffer:history '("from another prompt"))
 > (define t (start! "M-:"))
 > (press! "M-p")
 > (input)
@@ -56,10 +56,10 @@
 > (input)
 "1 ;; one"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (finish t)
 #t
-> (saved? eval:expression-history)
+> (saved:saved? eval:expression-history)
 #t
 ; TAB completes the Scheme name before point from the REPL's names,
 ; listing the candidates at once, as completion at point does everywhere;
@@ -83,32 +83,32 @@
 > (input)
 "'greet:text"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (finish t)
 #t
 ; Another prompt gets no Scheme names: eval's entry of
 ; completion:find-region answers only in M-:'s prompt.
-> (define other (spawn-task (lambda () (in-client (lambda () (minibuffer:read "Other: "))))))
+> (define other (spawn-task (lambda (restore) (in-client (lambda () (minibuffer:read "Other: "))))))
 > (testing:wait-until (lambda () (prompt)))
 > (type! "buffers:ins")
 > (press! "M-TAB")
 > (list (input) (session))
 ("buffers:ins" #f)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (finish other)
 #t
 ; An entry of eval:expression-prompt-started runs once, with the
 ; prompt, before minibuffer:prompt-started, and before any key is read.
 ; A keymap it adds works in this prompt only.
 > (define calls '())
-> (define-table own-keymap "Keys the test adds to the prompt.")
+> (tables:define-table own-keymap "Keys the test adds to the prompt.")
 > (commands:define-command (mark-it) "Notes a key." (set! calls (cons 'key calls)))
 > (keys:bind! own-keymap "C-c C-c" mark-it)
 > (define (add-own p) (set! calls (cons (minibuffer:prompt? p) calls)) (minibuffer:add-keymap! p own-keymap))
 > (define (note-started p) (set! calls (cons 'started calls)))
-> (add-hook! eval:expression-prompt-started add-own)
-> (add-hook! minibuffer:prompt-started note-started)
+> (hooks:add! eval:expression-prompt-started add-own)
+> (hooks:add! minibuffer:prompt-started note-started)
 > (define t (start! "M-:"))
 > (reverse calls)
 (#t started)
@@ -116,17 +116,17 @@
 > (reverse calls)
 (#t started key)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (finish t)
 #t
-> (remove-hook! eval:expression-prompt-started add-own)
-> (define other (spawn-task (lambda () (in-client (lambda () (minibuffer:read "Other: "))))))
+> (hooks:remove! eval:expression-prompt-started add-own)
+> (define other (spawn-task (lambda (restore) (in-client (lambda () (minibuffer:read "Other: "))))))
 > (testing:wait-until (lambda () (prompt)))
 > (press! "C-c" "C-c")
 ! C-c C-c is undefined
 > (reverse calls)
 (#t started key started)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (finish other)
 #t

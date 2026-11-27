@@ -27,8 +27,8 @@
 > (list (eq? (view) lv) (views:point nv) (pulsed? nv) (equal? before (jump-history:places)))
 (#t 18 #t #t)
 ; The highlight also ends by itself, after pulse:duration.
-> (with-options ([pulse:duration 0.05]) (press! "SPC"))
-> (sleep-for 0.2)
+> (options:with ([pulse:duration 0.05]) (press! "SPC"))
+> (timers:sleep 0.2)
 > (pulsed? nv)
 #f
 ; n and p name the list they move in, as next-error does.
@@ -62,7 +62,7 @@
 ; RET on a project list's row of a file no buffer visits visits it and
 ; goes there; making a list calls the mode's hook in it.
 > (define made '())
-> (add-hook! diagnostics-list:mode-hook (lambda () (set! made (cons (buffers:name (buffers:current)) made))))
+> (hooks:add! diagnostics-list:mode-hook (lambda () (set! made (cons (buffers:name (buffers:current)) made))))
 > (define other (write-file! "other.txt" "one\ntwo\n"))
 > (diagnostics:report! source other (list (diagnostics:make-diagnostic '(2 . 1) '(2 . 3) (diagnostics:severity hint) "late")))
 #t

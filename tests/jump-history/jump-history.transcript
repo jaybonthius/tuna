@@ -5,8 +5,8 @@
 > (places)
 ()
 ; Nor does a switch a timer makes.
-> (define timer (run-with-timer 0 (lambda () (layout:switch-to-buffer second))))
-> (sleep-for 0.05)
+> (define timer (timers:run-after 0 (lambda () (layout:switch-to-buffer second))))
+> (timers:sleep 0.05)
 > (here)
 ("second" . 1)
 > (places)
@@ -94,7 +94,7 @@
 (("first" . 5))
 ; after-return is called with the view after going back or forward.
 > (define returned '())
-> (add-hook! jump-history:after-return (lambda (v) (set! returned (cons (views:id v) returned))))
+> (hooks:add! jump-history:after-return (lambda (v) (set! returned (cons (views:id v) returned))))
 > (press! "M-,")
 > (equal? returned (list (views:id (view))))
 #t
@@ -111,10 +111,10 @@
 ! jump-history:go-forward: At end of jump history
 > (layout:select! (minibuffer:prompt-view (minibuffer:current-prompt)))
 > (press! "C-g")
-! &quit
+! &cancelled
 ; jump-history:history-key chooses the history: with view-key each view
 ; keeps its own, recorded in the selected view.
-> (set-option! jump-history:history-key jump-history:view-key)
+> (options:set! jump-history:history-key jump-history:view-key)
 > (places)
 ()
 > (commands:run jump first 9)
@@ -145,9 +145,9 @@
 ; is not recentred. Nor does a buffer switch, which records too, run
 ; jump-history:after-jump. A picker that jumps runs it, and its own
 ; entry, jump-history:recenter, puts point's place at the view's centre.
-> (set-option! jump-history:history-key (lambda (view) #f))
+> (options:set! jump-history:history-key (lambda (view) #f))
 > (define jumped '())
-> (add-hook! jump-history:after-jump (lambda (v) (set! jumped (cons (views:point v) jumped))))
+> (hooks:add! jump-history:after-jump (lambda (v) (set! jumped (cons (views:point v) jumped))))
 > (commands:run jump first 9)
 > jumped
 ()
@@ -196,16 +196,16 @@
 (jump-history:jump-to "not a position in the buffer")
 ; One mark at a time: a mark in another view ends the first, and the
 ; first's timer does not end the second.
-> (set-option! pulse:duration 0.3)
+> (options:set! pulse:duration 0.3)
 > (pulse:highlight! top '((1 3)))
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (pulse:highlight! bottom '((1 3)))
 > (list (pulsed? top) (pulsed? bottom))
 (#f #t)
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (pulsed? bottom)
 #t
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (pulsed? bottom)
 #f
 ; A jump's ranges are what it marks; with none, the line from its

@@ -1,16 +1,16 @@
 #!tuna
-(import (buffers) (document) (files) (modes) (commands))
+(import (buffers) (document) (files) (modes) (commands) (hooks) (options) (tables))
 
-(define-hook choosers
+(hooks:define-hook choosers
   "Called with a buffer and a name; each entry returns a major mode or #f, and auto-mode:choose takes the first mode returned.")
 
-(define-table file-names
+(tables:define-table file-names
   "Maps a file name, or what follows a dot in one, to a major mode, or to a procedure of a buffer and a name that returns a major mode or #f.")
 
-(define-table interpreters
+(tables:define-table interpreters
   "Maps a program named on a #! line to a major mode.")
 
-(define-option default-mode modes:fundamental symbol?
+(options:define-option default-mode modes:fundamental symbol?
   "The major mode auto-mode:choose returns when no chooser gives one.")
 
 (module %internals (check-buffer interpreter without-version without-tilde file-name-keys)
@@ -97,10 +97,10 @@
     (assertion-violation 'auto-mode:by-interpreter "not a string" name))
   (let ([program (interpreter (buffers:document buffer))])
     (and program
-         (or (table-ref interpreters program #f)
+         (or (tables:ref interpreters program #f)
              (let ([plain (without-version program)])
                (and (not (string=? plain program))
-                    (table-ref interpreters plain #f)))))))
+                    (tables:ref interpreters plain #f)))))))
 
 (define (by-file-name buffer name)
   (check-buffer 'auto-mode:by-file-name buffer)
@@ -109,7 +109,7 @@
   (let ([name (without-tilde name)])
     (let loop ([keys (file-name-keys name)])
       (and (pair? keys)
-           (let ([found (table-ref file-names (car keys) #f)])
+           (let ([found (tables:ref file-names (car keys) #f)])
              (cond
                [(not found) (loop (cdr keys))]
                [(procedure? found) (found buffer name)]
@@ -125,7 +125,7 @@
      (unless (string? name)
        (assertion-violation 'auto-mode:choose "not a string" name))
      (buffers:with-buffer buffer
-       (or (exists (lambda (entry) (entry buffer name)) (hook-entries choosers))
+       (or (exists (lambda (entry) (entry buffer name)) (hooks:entries choosers))
            (default-mode)))]))
 
 (commands:define-command (normal-mode [buffer (buffers:current)])
@@ -140,7 +140,7 @@
   (check-buffer 'auto-mode:normal-mode-delaying-hooks buffer)
   (modes:set-major-mode-delaying-hooks (choose buffer) buffer))
 
-(add-hook! choosers by-interpreter -10)
-(add-hook! choosers by-file-name)
-(add-hook! files:after-visit normal-mode -50)
-(add-hook! files:after-temporary-visit normal-mode-delaying-hooks -50)
+(hooks:add! choosers by-interpreter -10)
+(hooks:add! choosers by-file-name)
+(hooks:add! files:after-visit normal-mode -50)
+(hooks:add! files:after-temporary-visit normal-mode-delaying-hooks -50)

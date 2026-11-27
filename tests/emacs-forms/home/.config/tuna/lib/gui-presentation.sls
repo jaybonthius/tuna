@@ -1,3 +1,3 @@
 #!tuna
-(import (fill))
-(define (start!) (set-option! fill:column 100) (quote presenting))
+(import (fill) (options))
+(define (start!) (options:set! fill:column 100) (quote presenting))

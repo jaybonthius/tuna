@@ -8,7 +8,7 @@
 > (layout:switch-to-buffer notes)
 > (modes:set-major-mode harpo:mode notes)
 > (define hooked 0)
-> (add-hook! help:mode-hook (lambda () (set! hooked (+ hooked 1))))
+> (hooks:add! help:mode-hook (lambda () (set! hooked (+ hooked 1))))
 > (press! "C-h" "m")
 > (list hooked (modes:major-mode (help-buffer)) (modes:lighter help:mode) (buffers:silent? (help-buffer)) (buffers:modified? (help-buffer)))
 (1 help:mode "Help" #t #f)
@@ -25,9 +25,9 @@ Whether a buffer's faces are set, so a user can read a buffer in one colour. Its
 Its lighter is Harpo.
 Harpo's keys.
 [C-c h]  <harpo:honk>
-> (table-set! modes:minor-modes harpo:horn-mode? 10)
-> (table-set! modes:keymaps harpo:horn-mode? harpo:minor-keymap)
-> (table-set! modes:lighters harpo:horn-mode? "Horn")
+> (tables:set! modes:minor-modes harpo:horn-mode? 10)
+> (tables:set! modes:keymaps harpo:horn-mode? harpo:minor-keymap)
+> (tables:set! modes:lighters harpo:horn-mode? "Horn")
 > (keys:bind! harpo:keymap "C-c p" harpo:minor-keymap)
 > (press! "C-h" "m")
 > (help)

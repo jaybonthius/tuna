@@ -6,16 +6,19 @@
     process-status process-terminal process-buffer process-buffer-set! process-input-ended?
     output-end error-output foreground-group on-main-thread?
     start! start-run! attach! send! close-input! resize! stop! signal!
-    all-processes find-process post-waiting-deliveries! set-log-limit! set-quit-holder!)
+    all-processes find-process post-waiting-deliveries! set-log-limit! set-cancel-holder! set-poster!)
   (import (except (chezscheme) process)
-          (only (tuna) as-module post! report on-unload)
+          (only (tuna) call-as-owner report on-unload unloaded?)
           (prefix (process) native-))
 
   ;; Chez creates this library once per process, so the processes, their
   ;; threads and their output outlive every reload of the plugin and of
-  ;; the modules that use it. Threads forked here act for no module, so
-  ;; what they post names the plugin's module.
-  (define plugin-module '(processes))
+  ;; the modules that use it. Threads forked here act for no owner, so
+  ;; what they post goes through the plugin's current instance, which
+  ;; hands over its poster as it loads.
+  (define poster #f)
+
+  (define (set-poster! post) (set! poster post))
 
   (define main-thread (get-thread-id))
 
@@ -172,7 +175,7 @@
 
   (define busy (list 'busy))
 
-  ;; A quit can land anywhere in code on the main thread, so the main
+  ;; A cancel can land anywhere in code on the main thread, so the main
   ;; thread holds a process's mutex only with interrupts disabled. A
   ;; blocked acquire with interrupts disabled would keep a collection
   ;; waiting for the main thread, so it only tries the mutex, which the
@@ -344,19 +347,17 @@
          (or (fx> (process-followers p) 0) (ended? p))
          (begin (process-posted-set! p 'waiting) #t)))
 
-  ;; Only Tuna's dynamic-wind, which a plain library cannot import, holds
-  ;; quits off as its in runs; the plugin's module hands it over as it
-  ;; loads.
-  (define hold-quits #f)
+  ;; The plugin's module hands over its mask as it loads, so a cancel
+  ;; cannot split a change to a process.
+  (define without-cancels #f)
 
-  (define (set-quit-holder! hold) (set! hold-quits hold))
+  (define (set-cancel-holder! hold) (set! without-cancels hold))
 
   ;; Posting fails while the plugin is off; its body posts what waits when
   ;; it loads again.
   (define (post-delivery! p)
-    (unless (guard (c [(assertion-violation? c) #f])
-              (as-module plugin-module (post! (lambda () (hold-quits (lambda () (deliver! p))))))
-              #t)
+    (unless (guard (c [(unloaded? c) #f])
+              (and poster (begin (poster (lambda () (without-cancels (lambda () (deliver! p))))) #t)))
       (with-process-mutex p (process-posted-set! p #f))))
 
   (define (post-waiting-deliveries!)
@@ -368,7 +369,7 @@
           (post-delivery! p)))
       (all-processes)))
 
-  ;; A quit can land in a posted delivery before it holds quits off, and
+  ;; A cancel can land in a posted delivery before it holds cancels off, and
   ;; nothing would then post the process's delivery again. One still
   ;; waiting a whole round later is posted again; a delivery that runs
   ;; twice delivers nothing twice.
@@ -546,10 +547,10 @@
                             (process-errors-next-set! p end)
                             (list (and (< from end) (byte-log-bytes! errors from end)) end
                                   (process-errors-eof? p)))))])
-          (when bytes (as-module (process-owner p) (on-errors bytes end)))
+          (when bytes (call-as-owner (process-owner p) (lambda () (on-errors bytes end))))
           (when (and eof? (not (process-errors-eof-sent? p)))
             (process-errors-eof-sent?-set! p #t)
-            (as-module (process-owner p) (on-errors (eof-object) end)))))))
+            (call-as-owner (process-owner p) (lambda () (on-errors (eof-object) end))))))))
 
   (define (input-port p)
     (let ([pty (process-pty p)])
@@ -718,7 +719,7 @@
       (with-process-mutex p (followers-changed! p attachments))))
 
   (define (call-back a procedure . arguments)
-    (as-module (attachment-owner a) (apply procedure arguments)))
+    (call-as-owner (attachment-owner a) (lambda () (apply procedure arguments))))
 
   (define (deliver! p)
     (let ([state (with-process-mutex p
@@ -734,7 +735,7 @@
                    (not (process-stopped? p)) (not (process-start-reported? p)))
           (process-start-reported?-set! p #t)
           (if (process-owner p)
-              (as-module (process-owner p) (report status))
+              (call-as-owner (process-owner p) (lambda () (report status)))
               (report status)))
         (let ([attachments (process-attachments p)] [shared '()])
           (define (attached? a) (memq a (process-attachments p)))

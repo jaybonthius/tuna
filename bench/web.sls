@@ -1,5 +1,6 @@
 #!tuna
-(import (web) (json) (haml))
+(import (web) (json) (haml) (tables) (timers)
+  (rename (only (chezscheme) collect-request-handler) (collect-request-handler chez:collect-request-handler)))
 
 ;; The client works on threads of its own, since code on the main thread
 ;; must not wait on the network.
@@ -113,15 +114,15 @@
 
 (define (show name value) (printf "~a ~,2f\n" name value))
 
-(define typed "")
+(define %typed "")
 
 ;; Tuna drops a quit requested while no item runs, so the key that quits
 ;; is posted only once the spin has started.
 (define spin-mutex (make-mutex))
 (define spin-started (make-condition))
-(define spinning? #f)
+(define %spinning? #f)
 
-;; A screen as a display draws one view: sixty lines of spans, the typed
+;; A screen as a display draws one view: sixty lines of spans, the %typed
 ;; text on the thirtieth, about 9 KB.
 (define (screen-of text)
   (haml
@@ -175,8 +176,8 @@
 (define (off-main-thread thunk)
   (suspend
     (lambda (resume)
-      (fork-thread
-        (lambda ()
+      (fork-task
+        (lambda (restore)
           (resume (guard (e [#t (lambda () (raise e))])
                     (let ([v (thunk)]) (lambda () v)))))))))
 
@@ -204,10 +205,10 @@
               (confirm! inputs id count)))
           (let ([quits
                  (map (lambda (i)
-                        (with-mutex spin-mutex (set! spinning? #f))
+                        (with-mutex spin-mutex (set! %spinning? #f))
                         (post-item! inputs id (next-seq!) '(("type" . "spin")))
                         (with-mutex spin-mutex
-                          (let wait () (unless spinning? (condition-wait spin-started spin-mutex) (wait))))
+                          (let wait () (unless %spinning? (condition-wait spin-started spin-mutex) (wait))))
                         (let* ([start (now-ns)]
                                [_ (post-item! inputs id (next-seq!) '(("type" . "key") ("key" . "q") ("quit" . #t)))]
                                [chunk (read-chunk stream)])
@@ -250,7 +251,7 @@
       (off-main-thread (lambda () (shut-down stream) (close-connection stream)))
       (/ elapsed n 1.0))))
 
-;; A screen that differs from the other only halfway along, where a typed
+;; A screen that differs from the other only halfway along, where a %typed
 ;; character would.
 (define (half-changed size)
   (let ([bytes (make-bytevector size 65)])
@@ -260,14 +261,14 @@
 ;; Every thread stops for a full collection, since collect alone refuses
 ;; while other threads run.
 (define (heap-bytes)
-  (parameterize ([collect-request-handler (lambda () (collect (collect-maximum-generation)))])
+  (parameterize ([chez:collect-request-handler (lambda () (collect (collect-maximum-generation)))])
     (collect-rendezvous))
   (bytes-allocated))
 
 (define (wait-for done?)
   (let loop ([n 0])
     (unless (or (done?) (= n 500))
-      (sleep-for 0.01)
+      (timers:sleep 0.01)
       (loop (+ n 1)))))
 
 (define (item-json-ns)
@@ -312,20 +313,20 @@
   (show "send-screen-equal" (send-screen-ns #t))
   (show "client-memory" (/ (client-memory-bytes) 1024.0)))
 
-(table-set! web:input-handlers "key"
-  (lambda (client item) (set! typed (string-append typed (cdr (assoc "key" item))))))
+(tables:set! web:input-handlers "key"
+  (lambda (client item) (set! %typed (string-append %typed (cdr (assoc "key" item))))))
 
-(table-set! web:input-handlers "nothing" (lambda (client item) (void)))
+(tables:set! web:input-handlers "nothing" (lambda (client item) (void)))
 
-(table-set! web:input-handlers "spin"
+(tables:set! web:input-handlers "spin"
   (lambda (client item)
-    (guard (e [(quit-condition? e) #f])
+    (guard (e [(cancelled? e) #f])
       (with-mutex spin-mutex
-        (set! spinning? #t)
+        (set! %spinning? #t)
         (condition-signal spin-started))
       (let loop () (loop)))))
 
 (advice-add! batch-ended
   (lambda (ended)
     (ended)
-    (for-each (lambda (client) (web:send-screen! client (screen-of typed) "Tuna")) (web:clients))))
+    (for-each (lambda (client) (web:send-screen! client (screen-of %typed) "Tuna")) (web:clients))))

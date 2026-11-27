@@ -17,8 +17,8 @@ cp bench/display.sls "$lib/display-bench.sls"
 cp bench/scroll-report.sls "$lib/scroll-report.sls"
 cp tests/web/home/.config/tuna/lib/http.sls "$lib/http.sls"
 cat > "$dir/home/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins) (http))
-(use-plugin web (config (set-option! web:port (http:free-port))))
+(import (tuna) (plugins) (options) (http))
+(use-plugin web (config (options:set! web:port (http:free-port))))
 (use-plugin layout)
 (use-plugin layout-split)
 (import (display-bench))

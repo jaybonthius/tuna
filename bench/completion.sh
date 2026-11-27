@@ -42,7 +42,7 @@ echo "$output" | awk '
     unit["point-key-popup-open"] = "µs"
     missing = 0
   }
-  $0 == "! &quit" { next }
+  $0 == "! &cancelled" { next }
   $1 in unit {
     seen[$1] = 1
     printf "%-40s %10.2f %s\n", $1, $2, unit[$1]

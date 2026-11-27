@@ -8,7 +8,7 @@
 > (taken!)
 (("one\ntwo\n" 8) (eof 8) (exit 0))
 > (list (processes:process? p) (processes:process? 'p) (processes:status p) (processes:owner p))
-(#t #f 0 (repl))
+(#t #f 0 #<owner (repl) 1>)
 > (processes:command-line p)
 ("printf" "one\ntwo\n")
 > (processes:all)
@@ -19,7 +19,7 @@
 #<process 2 printf>
 > (testing:wait-until exited?)
 > (taken!)
-(((repl) #t) (exit 0))
+((#<owner (repl) 1> #t) (exit 0))
 ; The exit status is the exit code, or -n when signal n ended the
 ; program.
 > (processes:start "sh" '("-c" "exit 3") noting-output noting-exit)
@@ -92,7 +92,7 @@
 ! processes:report-error-output: not a process with irritant complaining
 ; Output not yet taken stops reading at processes:log-size bytes, so a
 ; flood comes in pieces no larger, whole and in order.
-> (set-option! processes:log-size 1000)
+> (options:set! processes:log-size 1000)
 > (define pieces '())
 > (processes:start "head" '("-c" "100000" "/dev/zero")
     (lambda (bytes end)
@@ -109,7 +109,7 @@
             (or (null? pieces)
                 (and (= (cdar pieces) (+ at (caar pieces))) (loop (cdr pieces) (cdar pieces)))))))
 (100000 #t #t)
-> (remove-option! processes:log-size)
+> (options:unset! processes:log-size)
 ; A raise in on-output or on-exit goes to report, and delivery goes on.
 > (processes:start "printf" '("x")
     (lambda (bytes end) (if (eof-object? bytes) (note! 'eof) (car bytes)))
@@ -131,10 +131,8 @@
 > (processes:start "printf" '() noting-output noting-exit 'options)
 ! processes:start: not processes:options with irritant options
 > (let ([message #f])
-    (thread-join
-      (fork-thread
-        (lambda ()
-          (set! message
+    (join-task
+      (fork-task (lambda (restore) (set! message
             (guard (c [#t (condition-message c)]) (processes:start "printf" '() noting-output))))))
     message)
 "not on the main thread"

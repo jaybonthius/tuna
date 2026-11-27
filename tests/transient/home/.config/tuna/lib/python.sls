@@ -1,9 +1,9 @@
 #!tuna
-(import (keys) (commands) (transient))
+(import (keys) (commands) (transient) (tables))
 
-(define-table keymap "Python mode's keys.")
+(tables:define-table keymap "Python mode's keys.")
 
-(define-table shell-keymap "Python's shell keys.")
+(tables:define-table shell-keymap "Python's shell keys.")
 
 (commands:define-command (send-buffer) "Sends the buffer to Python." (void))
 

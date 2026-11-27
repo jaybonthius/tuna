@@ -63,7 +63,7 @@
 > (shown chat)
 "Pi refused the prompt: Cannot submit a prompt while compaction is in progress\nThen\ntest\nmore\n"
 ; An unsent prompt is saved data, by the chat's session.
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (equal? (pi-chat:drafts) (list (cons (pi:chat-session-id chat) "Then\ntest\nmore")))
 #t
 ; Pi's queue shows under the conversation. M-<up> takes it back into the
@@ -135,11 +135,11 @@
 ; the prompt, as an entry of files:unsaved-kept says.
 > (press! "C-/")
 > (type! "unsent")
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (list (buffers:modified? b) (equal? (pi-chat:drafts) (list (cons (pi:chat-session-id chat) "unsent"))))
 (#t #t)
 > (define asked '())
-> (set-option! ask:y-or-n-reader (lambda (question) (set! asked (cons question asked)) #f))
+> (options:set! ask:y-or-n-reader (lambda (question) (set! asked (cons question asked)) #f))
 > (commands:define-command (kill-chat) "Kills the chat's buffer." (buffers:kill! b))
 > (commands:run kill-chat)
 #t
@@ -151,7 +151,7 @@
 > (testing:wait-until (lambda () (eq? (pi:chat-activity other) 'idle)))
 > (in-client (lambda () (chat:show! other)))
 > (type! "x")
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (map cdr (pi-chat:drafts))
 ("x" "unsent")
 ; The prompt keeps its text when its chat moves to another session, so
@@ -161,11 +161,11 @@
 > (fake-state-set! (fake-of other) '(("sessionId" . "s-new")))
 > (result (start! (lambda () (pi:new-session! other))))
 > (testing:wait-until (lambda () (equal? (pi:chat-session-id other) "s-new")))
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (list (shown other) (assoc other-id (pi-chat:drafts)) (assoc "s-new" (pi-chat:drafts)))
 ("x\n" #f ("s-new" . "x"))
 > (in-client (lambda () (chat:set-prompt! other "")))
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (map cdr (pi-chat:drafts))
 ("unsent")
 > (define again (pi:start (getenv "HOME") other-id))
@@ -175,23 +175,23 @@
 ; A reload of the plugin keeps the draft moving with its chat.
 > (in-client (lambda () (chat:show! again)))
 > (type! "kept")
-> (sleep-for 0.1)
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/chat.sls"))
+> (timers:sleep 0.1)
+> (reload-modules! '((chat)))
 > (fake-state-set! (fake-of again) '(("sessionId" . "s-after")))
 > (result (start! (lambda () (pi:new-session! again))))
 > (testing:wait-until (lambda () (equal? (pi:chat-session-id again) "s-after")))
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (list (assoc other-id (pi-chat:drafts)) (assoc "s-after" (pi-chat:drafts)))
 (#f ("s-after" . "kept"))
 ; A chat killed in the batch it moves into a session that keeps a draft
 ; saves that draft before its own prompt's text.
 > (define chat-id (pi:chat-session-id chat))
 > (define again-buffer (chat:buffer again))
-> (add-hook! pi:chat-changed (lambda (c) (when (and (eq? c again) (equal? (pi:chat-session-id c) chat-id) (buffers:live? again-buffer)) (buffers:kill! again-buffer))))
+> (hooks:add! pi:chat-changed (lambda (c) (when (and (eq? c again) (equal? (pi:chat-session-id c) chat-id) (buffers:live? again-buffer)) (buffers:kill! again-buffer))))
 > (fake-state-set! (fake-of again) (list (cons "sessionId" chat-id)))
 > (define moving (start! (lambda () (pi:switch-session! again (string-append "/sessions/" chat-id ".jsonl")))))
 > (testing:wait-until (lambda () (not (buffers:live? again-buffer))))
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (list (cdr (assoc chat-id (pi-chat:drafts))) (assoc "s-after" (pi-chat:drafts)))
 ("unsent\nkept" #f)
 ; Resuming that session in another chat puts its draft back in the
@@ -201,7 +201,7 @@
 > (fake-state-set! (fake-of other) (list (cons "sessionId" chat-id)))
 > (result (start! (lambda () (pi:switch-session! other (string-append "/sessions/" chat-id ".jsonl")))))
 > (testing:wait-until (lambda () (equal? (pi:chat-session-id other) chat-id)))
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (list (shown other) (cdr (assoc chat-id (pi-chat:drafts))) (assoc "s-new" (pi-chat:drafts)))
 ("unsent\nkept\ntyped\n" "unsent\nkept\ntyped" #f)
 ; The prompt is isolating: it keeps the line break the text sent is read
@@ -233,7 +233,7 @@
 > (say! ef (ui-request "pw1" "setWidget" '("widgetKey" . "w1") '("widgetLines" . #("w1")))
          (ui-request "pw2" "setWidget" '("widgetKey" . "w2") '("widgetLines" . #("w2")) '("widgetPlacement" . "belowEditor")))
 > (testing:wait-until (lambda () (= 2 (length (pi:chat-widgets edges)))))
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (shown edges)
 "w1\nhi there\nw2\n"
 > (each-case)

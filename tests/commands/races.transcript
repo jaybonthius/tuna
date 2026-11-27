@@ -14,9 +14,7 @@ plain
 ; command.
 > (define (on-thread thunk)
     (let ([result #f])
-      (fork-thread
-        (lambda ()
-          (set! result
+      (fork-task (lambda (restore) (set! result
             (guard (c [#t (list (condition-who c) (condition-message c))])
               (thunk)))))
       (testing:wait-until (lambda () result))
@@ -40,39 +38,39 @@ plain
     "Pauses for its argument, then notes what it sees."
     (event! 'waiting x (name-of (commands:this-command)) (name-of (commands:last-command)))
     x)
-> (define paused (spawn-task (lambda () (commands:run waiting))))
+> (define paused (spawn-task (lambda (restore) (commands:run waiting))))
 > (testing:wait-until (lambda () resume-waiting))
 > (list (commands:this-command) (name-of (commands:last-command)))
 (#f forking)
 > (commands:run plain)
 plain
-> (begin (resume-waiting (lambda () 'resumed)) (join-task paused))
+> (begin (resume-waiting (lambda () 'resumed)) (testing:join paused))
 resumed
 > (list (take-events!) (name-of (commands:last-command)))
 (((waiting resumed waiting forking)) waiting)
 ; A raise or a signal reaching a paused command is reported when it
 ; resumes, and its run ends.
 > (set! resume-waiting #f)
-> (define paused (spawn-task (lambda () (commands:run waiting))))
+> (define paused (spawn-task (lambda (restore) (commands:run waiting))))
 > (testing:wait-until (lambda () resume-waiting))
-> (begin (resume-waiting (lambda () (raise 'cancelled))) (call-with-values (lambda () (join-task paused)) list))
+> (begin (resume-waiting (lambda () (raise 'cancelled))) (call-with-values (lambda () (testing:join paused)) list))
 ! non-condition value cancelled
 ()
 > (set! resume-waiting #f)
-> (define paused (spawn-task (lambda () (commands:run waiting))))
+> (define paused (spawn-task (lambda (restore) (commands:run waiting))))
 > (testing:wait-until (lambda () resume-waiting))
-> (begin (signal-task paused 'stop) (call-with-values (lambda () (join-task paused)) list))
-! non-condition value stop
+> (begin (cancel-task paused 'stop) (call-with-values (lambda () (testing:join paused)) list))
+! &cancelled
 ()
 > (list (take-events!) (map name-of (list-head recent-commands 5)))
 (() (waiting waiting waiting plain forking))
 ; A report that pauses, as a debugger waiting for the user would, ends
 ; the run once it returns, so after-command runs once.
 > (commands:define-command (broken) "Raises." (car '()))
-> (define (pausing-report report c) (sleep-for 0.01) (report c))
+> (define (pausing-report report c) (timers:sleep 0.01) (report c))
 > (advice-add! report pausing-report)
 > (set! recent-commands '())
-> (call-with-values (lambda () (join-task (spawn-task (lambda () (commands:run broken))))) list)
+> (call-with-values (lambda () (testing:join (spawn-task (lambda (restore) (commands:run broken))))) list)
 ! car: () is not a pair
 ()
 > (advice-remove! report pausing-report)
@@ -82,7 +80,7 @@ resumed
 ; Afterwards nothing is left running, and a run calls each hook once.
 > (define quits-reported 0)
 > (define (count-quits report c)
-    (if (quit-condition? c) (set! quits-reported (+ quits-reported 1)) (report c)))
+    (if (cancelled? c) (set! quits-reported (+ quits-reported 1)) (report c)))
 > (advice-add! report count-quits)
 > (define quits-caught 0)
 > (define runs 0)
@@ -95,7 +93,7 @@ resumed
     (let loop ()
       (if quitting
           (begin
-            (request-quit!)
+            (testing:request-quit!)
             (chez:sleep (make-time 'time-duration 1000000 0))
             (loop))
           (set! stopped #t))))
@@ -108,10 +106,10 @@ resumed
 ; before it enters the guard again.
 > (define (stress until)
     (let again ()
-      (guard (c [(quit-condition? c) (set! quits-caught (+ quits-caught 1)) (again)])
+      (guard (c [(cancelled? c) (set! quits-caught (+ quits-caught 1)) (again)])
         (unless forked
           (set! forked #t)
-          (fork-thread quitter))
+          (fork-task (lambda (restore) (quitter))))
         (let loop ()
           (when (< (real-time) until)
             (commands:run busy)
@@ -124,14 +122,15 @@ resumed
     (list (> quits-reported 100) (> runs 1000)))
 (#t #t)
 > (advice-remove! report count-quits)
-> (add-hook! commands:before-command (lambda (c) (event! 'before (name-of c))))
-> (add-hook! commands:after-command (lambda (c) (event! 'after (name-of c))))
-> (list (commands:this-command) (commands:run plain) (take-events!) (name-of (commands:last-command)))
+> (hooks:add! commands:before-command (lambda (c) (event! 'before (name-of c))))
+> (hooks:add! commands:after-command (lambda (c) (event! 'after (name-of c))))
+> (let* ([now (commands:this-command)] [ran (commands:run plain)] [events (take-events!)])
+    (list now ran events (name-of (commands:last-command))))
 (#f plain ((before plain) (after plain)) plain)
 ; Reloading the plugin reloads the modules that define commands, and
 ; keeps the configuration's and the REPL's commands and hook entries.
-> (import (demo) (tuna eval))
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/commands.sls"))
+> (import (demo) (plugins))
+> (reload-modules! '((commands)))
 > (list (commands:command? plain) (commands:command? open-notes) (commands:command? demo:hello))
 (#t #t #t)
 > (commands:command-names)

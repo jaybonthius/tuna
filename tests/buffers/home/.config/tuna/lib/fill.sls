@@ -1,2 +1,3 @@
 #!tuna
-(define-option column 70 fixnum?)
+(import (options))
+(options:define-option column 70 fixnum?)

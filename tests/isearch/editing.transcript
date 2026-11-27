@@ -15,7 +15,7 @@
 ; A quit in the prompt puts the keymap back and runs isearch:abort.
 > (start! "M-e")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (here)
 (1 #f #f)
 ; With no text typed, RET reads the text and searches once.
@@ -31,9 +31,9 @@
 > (minibuffer:input (minibuffer:current-prompt))
 "q"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (press! "C-g")
-! &quit
+! &cancelled
 ; Toggles change the search's rules and search again.
 > (views:set-point! (view) 1)
 > (press! "C-s" "f" "o" "o")

@@ -1,2 +1,3 @@
 #!tuna
-(define-table keymap)
+(import (tables))
+(tables:define-table keymap)

@@ -1,11 +1,12 @@
-; A quit requested while exit leaves its task has no task left to quit,
-; so it does not cut short an unload action, which runs with quits allowed.
+; A quit requested while exit leaves its task finds no running task to
+; cancel, so it does not cut short an unload action.
 > (on-unload
     (lambda ()
       (let loop ([i 0]) (when (< i 1000000) (loop (+ i 1))))
       (display "repl unloading")
       (newline)))
-> (dynamic-wind void (lambda () (exit)) (lambda () (thread-join (fork-thread request-quit!))))
+> (import (testing))
+> (dynamic-wind void (lambda () (exit)) (lambda () (join-task (fork-task (lambda (restore) (testing:request-quit!))))))
 repl unloading
 configuration unloading
 keeper unloading

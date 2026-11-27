@@ -16,9 +16,9 @@ extract
 > (input)
 "zz"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
-(raised #<condition &quit>)
+(raised #<condition &cancelled>)
 ; A line with candidates offers them, and answers with input that names
 ; none.
 > (define t (start! (lambda () (ask:line-with-candidates "Identifier: " (list "car" "cdr" "cons")))))
@@ -47,8 +47,8 @@ extract
 > (define quits 0)
 > (define (identifiers input)
     (set! asked (cons input asked))
-    (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (raise c)])
-      (sleep-for (if (string=? input "x") 1 0.01)))
+    (guard (c [(cancelled? c) (set! quits (+ quits 1)) (raise c)])
+      (timers:sleep (if (string=? input "x") 1 0.01)))
     (list (string-append input "-one") (string-append input "-two")))
 > (define t (start! (lambda () (ask:line-with-candidates "Identifier: " identifiers))))
 > (wait-matches (session))

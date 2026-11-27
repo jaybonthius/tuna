@@ -24,11 +24,11 @@
 > (text a)
 "xyf()\n"
 ; A mode's own keys in normal state, found along its ancestry.
-> (define-table prog-normal)
+> (tables:define-table prog-normal)
 > (know! prog-normal 'prog-normal)
 > (commands:define-command (forward) "Moves forward one character." (views:set-point! (view) (+ 1 (views:point (view)))))
 > (keys:bind! prog-normal "l" forward)
-> (table-set! vim:normal-keymaps prog:mode prog-normal)
+> (tables:set! vim:normal-keymaps prog:mode prog-normal)
 > (active-keymaps)
 (prog-normal vim:normal-keymap fill:keymap python:keymap prog:keymap layout:keymap keys:global)
 > (press! "l" "l")
@@ -36,7 +36,7 @@
 5
 ; The state a view starts in, by major mode; a mode switch forgets the
 ; states of the buffer's views.
-> (table-set! vim:initial-states text:mode vim:insert-keymap)
+> (tables:set! vim:initial-states text:mode vim:insert-keymap)
 > (disk:write-text! "~/n.txt" "")
 > (define n (show! (files:visit "~/n.txt")))
 > (modes:set-major-mode text:mode n)
@@ -53,7 +53,7 @@
 (prog-normal vim:normal-keymap fill:keymap python:keymap prog:keymap layout:keymap keys:global)
 ; A keymap at the cursor still comes first: a kind's keys in normal
 ; state.
-> (define-table button-keymap)
+> (tables:define-table button-keymap)
 > (know! button-keymap 'button-keymap)
 > (commands:define-command (pressed) "Notes the button." (display "pressed\n"))
 > (keys:bind! button-keymap "RET" pressed)
@@ -74,14 +74,14 @@ pressed
 > (define (has-mark?)
     (let ([v (views:current)])
       (and v (views:cursor-mark (car (views:cursors v))) #t)))
-> (define-table selection-keymap)
+> (tables:define-table selection-keymap)
 > (know! selection-keymap 'selection-keymap)
 > (commands:define-command (selection-command) "Runs only with a selection." (display "selected\n"))
 > (keys:bind! selection-keymap "C-c x" selection-command)
-> (table-set! modes:minor-modes has-mark? 0)
-> (table-set! modes:keymaps has-mark? selection-keymap)
+> (tables:set! modes:minor-modes has-mark? 0)
+> (tables:set! modes:keymaps has-mark? selection-keymap)
 > (define py (show! (files:visit "~/tool")))
-> (table-set! vim:initial-states python:mode vim:insert-keymap)
+> (tables:set! vim:initial-states python:mode vim:insert-keymap)
 > (modes:set-major-mode python:mode py)
 > (press! "C-c" "x")
 ! C-c x is undefined

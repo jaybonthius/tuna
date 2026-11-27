@@ -1,5 +1,5 @@
 #!tuna
-(import (lsp) (buffers) (document) (views) (layout) (files) (modes) (diagnostics) (completion) (keys) (web) (jsonrpc))
+(import (lsp) (buffers) (document) (views) (layout) (files) (modes) (diagnostics) (completion) (keys) (web) (jsonrpc) (hooks) (options) (tables) (timers))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -31,14 +31,14 @@
 
 (lsp:define-server bench (fake-command "bench"))
 
-(define-table bench-keymap)
-(define-hook bench-hook)
+(tables:define-table bench-keymap)
+(hooks:define-hook bench-hook)
 (modes:define-major-mode bench-mode (keymap bench-keymap) (hook bench-hook) (language "benchlang"))
 
 (define (wait-until done?)
   (let loop ([n 0])
     (unless (or (done?) (= n 3000))
-      (sleep-for 0.01)
+      (timers:sleep 0.01)
       (loop (+ n 1)))))
 
 (define project (string-append home "/project"))
@@ -67,15 +67,15 @@
 
 (define (run)
   (system (format "mkdir -p '~a/.git'" project))
-  (set-option! lsp:send-changes-delay 1000)
+  (options:set! lsp:send-changes-delay 1000)
   (configure! "bench" '((capabilities ("textDocumentSync" . 2) ("positionEncoding" . "utf-8") ("completionProvider" ("triggerCharacters" . #("."))))))
-  (table-set! lsp:language-servers "benchlang" (list bench))
+  (tables:set! lsp:language-servers "benchlang" (list bench))
   (let* ([text (lines 10000)]
          [m (managed-buffer "big.bench" text)] [plain (plain-buffer "plain" text)]
          [middle (lambda (b) (document:line-start (buffers:document b) 5000))])
     (show "keystroke-plain-us" (/ (keystroke plain (middle plain)) 1000.0))
     (show "keystroke-managed-us" (/ (keystroke m (middle m)) 1000.0))
-    (let* ([c (car (lsp:buffer-connections m))] [publish (table-ref lsp:notification-handlers "textDocument/publishDiagnostics")]
+    (let* ([c (car (lsp:buffer-connections m))] [publish (tables:ref lsp:notification-handlers "textDocument/publishDiagnostics")]
            [version (buffers:version m)]
            [params `(("uri" . ,(lsp:path->uri (files:path m))) ("version" . ,version)
                      ("diagnostics" . ,(list->vector (map (lambda (i) `(("range" ("start" ("line" . ,(* i 50)) ("character" . 5)) ("end" ("line" . ,(* i 50)) ("character" . 9)))
@@ -118,7 +118,7 @@
                           t))))
                   (iota 5)))
            1000000.0))))
-  (let ([c (car (lsp:connections))] [publish (table-ref lsp:notification-handlers "textDocument/publishDiagnostics")])
+  (let ([c (car (lsp:connections))] [publish (tables:ref lsp:notification-handlers "textDocument/publishDiagnostics")])
     (for-each (lambda (i) (write-file! (format "~a/f~a.bench" project i) (lines 200))) (iota 200))
     (let ([start (now-ns)])
       (for-each

@@ -3,7 +3,7 @@
 > (define asked '())
 > (define (answer c method params)
     (set! asked (cons method asked))
-    (sleep-for 0.05)
+    (timers:sleep 0.05)
     (cond
       [(string=? method "workspace/configuration") '#((("tabSize" . 4)))]
       [(string=? method "refuse") (raise (make-json-rpc-error -32001 "no, thanks"))]
@@ -37,12 +37,12 @@
 > (define errors '())
 > (jsonrpc:request-async ending "wait" '() (lambda (v) (set! errors (cons v errors))) (lambda (e) (set! errors (cons (list 'ended (jsonrpc:ended-status e)) errors))))
 #<jsonrpc-pending ending wait>
-> (define waiting (spawn-task (lambda () (raised (lambda () (jsonrpc:request ending "wait" '()))))))
-> (sleep-for 0.1)
+> (define waiting (spawn-task (lambda (restore) (raised (lambda () (jsonrpc:request ending "wait" '()))))))
+> (timers:sleep 0.1)
 > (jsonrpc:request-async ending "exit" '(("status" . 3)) (lambda (v) (void)) (lambda (e) (void)))
 #<jsonrpc-pending ending exit>
-> (testing:wait-until (lambda () (task-done? waiting)))
-> (join-task waiting)
+> (testing:wait-until (lambda () (eq? (task-state waiting) 'done)))
+> (testing:join waiting)
 (ended 3)
 > errors
 ((ended 3))
@@ -56,10 +56,10 @@
 (ended 3)
 > (jsonrpc:notify ending "anything" '())
 ; jsonrpc:stop! ends the program; its waiting requests get jsonrpc:&ended.
-> (define stopped (spawn-task (lambda () (raised (lambda () (jsonrpc:request plain "wait" '()))))))
-> (sleep-for 0.1)
+> (define stopped (spawn-task (lambda (restore) (raised (lambda () (jsonrpc:request plain "wait" '()))))))
+> (timers:sleep 0.1)
 > (jsonrpc:stop! plain)
-> (testing:wait-until (lambda () (task-done? stopped)))
-> (car (join-task stopped))
+> (testing:wait-until (lambda () (eq? (task-state stopped) 'done)))
+> (car (testing:join stopped))
 ended
 > (jsonrpc:stop! c)

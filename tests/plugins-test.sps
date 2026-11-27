@@ -1,14 +1,11 @@
-(import (chezscheme) (tuna-test) (lang loader)
-        (tuna core changes) (only (tuna core definitions) tick report advice-add! advice-remove!)
-        (tuna core modules) (except (tuna core main-thread) exit)
-        (tuna plugin-manager) (only (tuna files) string-prefix?))
+(import (chezscheme) (tuna-test) (kernel-test)
+        (only (tuna) load-module! reload-modules! module-owner owner-live? eval-in-module call-as-owner on-unload
+              spawn-task fork-task join-task current-task task-state cancel-task cancelled? suspend report tick
+              advice-add! advice-remove!))
 
-(define root
-  (let ([dir (format "/tmp/tuna-plugins-test-~a" (get-process-id))])
-    (mkdir dir)
-    dir))
+(define (top form) (eval form (interaction-environment)))
 
-(define (path . parts) (apply string-append root (map (lambda (part) (string-append "/" part)) parts)))
+(define (path . parts) (apply string-append test-folder (map (lambda (part) (string-append "/" part)) parts)))
 
 (define (write-file! file text)
   (let loop ([dir (path-parent file)])
@@ -19,8 +16,9 @@
 
 ;; A user's git settings, such as signing or address rewrites, would change
 ;; commits or addresses.
-(putenv "HOME" root)
+(putenv "HOME" test-folder)
 (putenv "GIT_CONFIG_NOSYSTEM" "1")
+(putenv "TUNA_LIBRARY" (path "library"))
 
 (define (make-remote! id)
   (let ([dir (path "remotes" (symbol->string id))])
@@ -60,13 +58,6 @@
 (define ids '(alpha beta gamma delta epsilon zeta))
 (define addresses (map make-remote! (cons 'shared ids)))
 
-(write-file! (path "config" "init.ss") "(import (tuna) (tuna plugins))\n")
-(compile-file-message #f)
-(start-plugins! (string-append (current-directory) "/build/bin/tuna") root (path "config" "init.ss") (path "config" "lib") (path "library") (path "plugins")
-  (path "own-libraries") (path "libraries"))
-(install-module-lookup! (library-directories) (path "config" "lib") (path "library") (path "cache"))
-(install-loader!)
-
 (define (line id) `(use-plugin ,id (git ,(format "file://~a" (path "remotes" (symbol->string id))))))
 
 (define (configuration-lines)
@@ -79,6 +70,9 @@
             [(and (pair? form) (eq? (car form) 'use-plugin)) (cons (cadr form) (loop))]
             [else (loop)]))))))
 
+(define (string-prefix? prefix s)
+  (and (<= (string-length prefix) (string-length s)) (string=? prefix (substring s 0 (string-length prefix)))))
+
 (define (delete-configuration-line! id)
   (let ([lines (call-with-input-file (path "config" "init.ss")
                  (lambda (p) (let loop () (let ([text (get-line p)]) (if (eof-object? text) '() (cons text (loop)))))))])
@@ -89,28 +83,46 @@
 
 (define (sorted ids) (sort (lambda (a b) (string<? (symbol->string a) (symbol->string b))) ids))
 
-(define (wait-until-called receive-done)
-  (suspend (lambda (resume) (receive-done (lambda () (resume void))))))
-
 (define (raised-message thunk)
   (guard (c [#t (if (message-condition? c) (condition-message c) c)]) (thunk) #f))
 
+(define (raised-text thunk)
+  (guard (c [#t (call-with-string-output-port (lambda (p) (display-condition c p)))]) (thunk) #f))
+
+(define (yield) (suspend (lambda (resume) (spawn-task (lambda (restore) (resume void))))))
+
+(define (pause-ms ms)
+  (suspend (lambda (resume) (fork-task (lambda (restore) (sleep-ms ms) (resume void))))))
+
+(define (ended t) (call-with-values (lambda () (join-task t)) list))
+
+(define install-plugin! #f)
+(define update-plugin! #f)
+(define remove-plugin! #f)
+(define remove-unused-plugins! #f)
+(define installed-plugins #f)
+(define plugin-commit #f)
+(define configuration-owner #f)
+(define read-configuration-lines! #f)
+
 (define (tests)
-  ;; Each round requests a quit at a later timer tick, so quits land all
-  ;; over the reading.
-  (test "a quit while the configuration's lines are read ends the reading rather than cutting the lines short"
+  ;; Each round cancels at a later timer tick, so cancels land all over the
+  ;; reading.
+  (test "a cancel while the configuration's lines are read ends the reading rather than cutting the lines short"
     (write-file! (path "config" "init.ss")
       (call-with-string-output-port
         (lambda (p)
-          (put-string p "(import (tuna) (tuna plugins))\n")
+          (put-string p "(import (tuna))\n")
           (do ([i 0 (+ i 1)]) ((= i 2000))
-            (fprintf p "(set-option! fill:column ~a)\n" i)))))
-    (let* ([ticks 0] [quit-at #f]
+            (fprintf p "(options:set! fill:column ~a)\n" i)))))
+    (let* ([ticks 0] [cancel-at #f]
            [counter (lambda (tick)
                       (tick)
                       (set! ticks (+ ticks 1))
-                      (when (eqv? ticks quit-at) (request-quit!)))])
+                      (when (eqv? ticks cancel-at) (cancel-task (current-task) 'tick)))]
+           [quiet (lambda (report c) (unless (cancelled? c) (report c)))])
       (advice-add! tick counter)
+      (advice-add! report quiet)
       (read-configuration-lines!)
       (let ([total ticks])
         (check (> total 20))
@@ -118,17 +130,18 @@
           (filter
             (lambda (n)
               (set! ticks 0)
-              (set! quit-at n)
-              (not (eq? 'quit (guard (c [(quit-condition? c) 'quit]) (read-configuration-lines!) 'read))))
+              (set! cancel-at n)
+              (not (eq? 'cancelled (car (ended (spawn-task (lambda (restore) (read-configuration-lines!))))))))
             (map add1 (iota (quotient total 2))))))
-      (advice-remove! tick counter))
-    (write-file! (path "config" "init.ss") "(import (tuna) (tuna plugins))\n")
+      (advice-remove! tick counter)
+      (advice-remove! report quiet))
+    (write-file! (path "config" "init.ss") "(import (tuna))\n")
     (read-configuration-lines!))
 
   (test "installs of different plugins run at once, while the main thread goes on"
     (let* ([finished-meanwhile #f]
-           [tasks (map (lambda (id) (spawn-task (lambda () (install-plugin! (line id))))) ids)])
-      (post! (lambda () (set! finished-meanwhile (length (filter task-done? tasks)))))
+           [tasks (map (lambda (id) (spawn-task (lambda (restore) (install-plugin! (line id))))) ids)])
+      (spawn-task (lambda (restore) (set! finished-meanwhile (length (filter (lambda (t) (eq? (task-state t) 'done)) tasks)))))
       (for-each join-task tasks)
       (check-equal? 0 finished-meanwhile)
       ;; Lines are written in the order the installs finish.
@@ -137,48 +150,48 @@
       (check (for-all plugin-commit ids))))
 
   (test "installs of plugins that name one library install it once, and its root once"
-    (let ([tasks (map (lambda (id) (spawn-task (lambda () (install-plugin! (make-library-user! id shared-library)))))
+    (let ([tasks (map (lambda (id) (spawn-task (lambda (restore) (install-plugin! (make-library-user! id shared-library)))))
                       '(user-1 user-2 user-3))])
       (for-each join-task tasks)
       (check (for-all (lambda (id) (memq id (configuration-lines))) '(user-1 user-2 user-3)))
       (check-equal? (cadr (assq 'commit (cddr shared-library)))
-        (call-with-input-file (path "libraries" "chez-shared" ".git" "HEAD") get-line))
-      (check-equal? 1 (length (filter (lambda (root) (equal? (car root) (path "libraries" "chez-shared" "src")))
+        (call-with-input-file (path "data" "libraries" "chez-shared" ".git" "HEAD") get-line))
+      (check-equal? 1 (length (filter (lambda (root) (equal? (car root) (path "data" "libraries" "chez-shared" "src")))
                                       (library-directories))))))
 
   (test "a second install of a plugin while git runs for it raises, and the first completes"
-    (let* ([first (spawn-task (lambda () (install-plugin! (line 'shared))))]
-           [second (spawn-task (lambda () (raised-message (lambda () (install-plugin! (line 'shared))))))])
-      (check-equal? "git is running for the plugin" (join-task second))
+    (let* ([first (spawn-task (lambda (restore) (install-plugin! (line 'shared))))]
+           [second (spawn-task (lambda (restore) (raised-message (lambda () (install-plugin! (line 'shared))))))])
+      (check-equal? '(returned ("git is running for the plugin")) (ended second))
       (join-task first)
       (check (memq 'shared (configuration-lines)))
       (check (plugin-commit 'shared))))
 
   (test "the commands make changes, so only the main thread runs them"
     (let ([outcome #f])
-      (thread-join
-        (fork-thread
-          (lambda ()
+      (join-task
+        (fork-task
+          (lambda (restore)
             (set! outcome
               (list (raised-message (lambda () (install-plugin! (line 'alpha))))
                     (raised-message (lambda () (update-plugin! 'alpha)))
                     (raised-message (lambda () (remove-plugin! 'alpha)))
                     (raised-message remove-unused-plugins!))))))
-      (check-equal? (make-list 4 "only the main thread makes changes") outcome)))
+      (check-equal? (make-list 4 "only the main thread installs and removes plugins") outcome)))
 
   (test "git has no terminal, so ssh cannot wait for an answer on it"
-    (let ([report (path "ssh-report")] [script (path "ssh")])
+    (let ([report-file (path "ssh-report")] [script (path "ssh")])
       (write-file! script
         (string-append
           "#!/bin/sh\n"
           "{ awk '{print $6}' /proc/$$/stat\n"
-          "  if (exec 3</dev/tty) 2>/dev/null; then echo tty; else echo none; fi; } > '" report "'\n"
+          "  if (exec 3</dev/tty) 2>/dev/null; then echo tty; else echo none; fi; } > '" report-file "'\n"
           "exit 1\n"))
       (chmod script #o755)
       (putenv "GIT_SSH_COMMAND" script)
       (check (raised-message
                (lambda () (install-plugin! '(use-plugin sessioned (git "ssh://example.invalid/sessioned"))))))
-      (let ([lines (call-with-input-file report (lambda (p) (list (get-line p) (get-line p))))]
+      (let ([lines (call-with-input-file report-file (lambda (p) (list (get-line p) (get-line p))))]
             [session (call-with-input-file (format "/proc/~a/stat" (get-process-id))
                        (lambda (p)
                          (let skip () (unless (char=? (read-char p) #\)) (skip)))
@@ -187,75 +200,65 @@
         (check (not (equal? session (car lines))))
         (check-equal? "none" (cadr lines)))))
 
-  (test "a quit install keeps the plugin taken until its git ends"
-    (let ([script (path "slow-ssh")] [line '(use-plugin slow (git "ssh://example.invalid/slow"))])
-      (define (yield) (suspend (lambda (resume) (post! (lambda () (resume void))))))
+  (test "a cancelled install keeps the plugin taken until its git ends"
+    (let ([script (path "slow-ssh")] [slow-line '(use-plugin slow (git "ssh://example.invalid/slow"))] [reported '()])
+      (define (keep original c) (set! reported (cons c reported)))
       (write-file! script "#!/bin/sh\nsleep 0.5\nexit 1\n")
       (chmod script #o755)
       (putenv "GIT_SSH_COMMAND" script)
-      (let ([first (spawn-task (lambda () (install-plugin! line)))] [reported '()])
-        (define (keep original c) (set! reported (cons c reported)))
+      (let ([first (spawn-task (lambda (restore) (install-plugin! slow-line)))])
         (yield)
         (advice-add! report keep)
-        (signal-task first (make-quit-condition))
-        (check (quit-condition? (guard (c [#t c]) (join-task first))))
+        (cancel-task first)
+        (check-equal? 'cancelled (car (ended first)))
         (advice-remove! report keep)
-        (check (and (= (length reported) 1) (quit-condition? (car reported))))
-        (check-equal? "git is running for the plugin" (raised-message (lambda () (install-plugin! line))))
-        (suspend
-          (lambda (resume)
-            (fork-thread (lambda () (sleep (make-time 'time-duration 0 3)) (resume void)))))
-        (check (not (equal? "git is running for the plugin"
-                            (raised-message (lambda () (install-plugin! line)))))))))
+        (check (and (= (length reported) 1) (cancelled? (car reported))))
+        (check-equal? "git is running for the plugin" (raised-message (lambda () (install-plugin! slow-line))))
+        (pause-ms 3000)
+        (check (not (equal? "git is running for the plugin" (raised-message (lambda () (install-plugin! slow-line)))))))))
 
-  (test "a quit install keeps its library taken until its git ends, and later installs wait for none"
+  (test "a cancelled install keeps its library taken until its git ends, and later installs wait for none"
     (let* ([library '(library chez-slow (git "ssh://example.invalid/slow") (commit "0000000") (build))]
            [first-line (make-library-user! 'slow-1 library)]
-           [second-line (make-library-user! 'slow-2 library)])
-      (define (yield) (suspend (lambda (resume) (post! (lambda () (resume void))))))
-      (define running "plugin slow-2 needs library chez-slow: git is running for the library with irritant chez-slow")
-      (let ([first (spawn-task (lambda () (install-plugin! first-line)))] [reported '()])
-        (define (keep original c) (set! reported (cons c reported)))
-        (let wait () (unless (file-exists? (path "plugins" "slow-1.installed")) (yield) (wait)))
+           [second-line (make-library-user! 'slow-2 library)]
+           [running "plugin slow-2 needs library chez-slow: git is running for the library with irritant chez-slow"]
+           [reported '()])
+      (define (keep original c) (set! reported (cons c reported)))
+      (let ([first (spawn-task (lambda (restore) (install-plugin! first-line)))])
+        (let wait () (unless (file-exists? (path "data" "plugins" "slow-1.installed")) (yield) (wait)))
         (yield)
         (advice-add! report keep)
-        (signal-task first (make-quit-condition))
-        (check (quit-condition? (guard (c [#t c]) (join-task first))))
+        (cancel-task first)
+        (check-equal? 'cancelled (car (ended first)))
         (advice-remove! report keep)
-        (check (and (= (length reported) 1) (quit-condition? (car reported))))
+        (check (and (= (length reported) 1) (cancelled? (car reported))))
         (check-equal? running (raised-message (lambda () (install-plugin! second-line))))
-        (suspend
-          (lambda (resume)
-            (fork-thread (lambda () (sleep (make-time 'time-duration 0 3)) (resume void)))))
+        (pause-ms 3000)
         (check (not (equal? running (raised-message (lambda () (install-plugin! second-line)))))))))
 
-  (test "a quit install whose library is building leaves no plugin and no line, and the install can run again"
-    (let ([line (make-library-user! 'quitter (slow-library 'chez-quitted 'quitted))])
-      (define (yield) (suspend (lambda (resume) (post! (lambda () (resume void))))))
-      (let ([task (spawn-task (lambda () (install-plugin! line)))] [reported '()])
-        (define (keep original c) (set! reported (cons c reported)))
-        (let wait () (unless (file-exists? (path "libraries" "chez-quitted")) (yield) (wait)))
-        (advice-add! report keep)
-        (signal-task task (make-quit-condition))
-        (check (quit-condition? (guard (c [#t c]) (join-task task))))
-        (advice-remove! report keep)
+  (test "a cancelled install whose library is building leaves no plugin and no line, and the install can run again"
+    (let ([quitter-line (make-library-user! 'quitter (slow-library 'chez-quitted 'quitted))]
+          [quiet (lambda (report c) (unless (cancelled? c) (report c)))])
+      (let ([task (spawn-task (lambda (restore) (install-plugin! quitter-line)))])
+        (let wait () (unless (file-exists? (path "data" "libraries" "chez-quitted")) (yield) (wait)))
+        (advice-add! report quiet)
+        (cancel-task task)
+        (check-equal? 'cancelled (car (ended task)))
+        (advice-remove! report quiet)
         (check (not (memq 'quitter (installed-plugins))))
         (check (not (memq 'quitter (configuration-lines))))
-        (suspend
-          (lambda (resume)
-            (fork-thread (lambda () (sleep (make-time 'time-duration 0 2)) (resume void)))))
-        (install-plugin! line)
+        (pause-ms 2000)
+        (install-plugin! quitter-line)
         (check (memq 'quitter (configuration-lines))))))
 
   (test "remove-unused-plugins! waits for an install whose library is building"
-    (let ([line (make-library-user! 'patient (slow-library 'chez-patient 'patient-library))])
-      (define (yield) (suspend (lambda (resume) (post! (lambda () (resume void))))))
-      (let ([task (spawn-task (lambda () (install-plugin! line)))])
-        (let wait () (unless (file-exists? (path "libraries" "chez-patient")) (yield) (wait)))
+    (let ([patient-line (make-library-user! 'patient (slow-library 'chez-patient 'patient-library))])
+      (let ([task (spawn-task (lambda (restore) (install-plugin! patient-line)))])
+        (let wait () (unless (file-exists? (path "data" "libraries" "chez-patient")) (yield) (wait)))
         (remove-unused-plugins!)
         (join-task task)
         (check (memq 'patient (configuration-lines)))
-        (check (file-exists? (path "libraries" "chez-patient.installed"))))))
+        (check (file-exists? (path "data" "libraries" "chez-patient.installed"))))))
 
   (test "an update installs the libraries its new commit names, whether or not the plugin has a line"
     (for-each
@@ -276,16 +279,76 @@
             (check (not (memq id (configuration-lines)))))
           (write-file! (format "~a/~a.sls" dir id) (format "#!tuna\n(import (~a))\n(define (answer) (library-answer))\n" library-id))
           (write-file! (format "~a/tuna.deps" dir) (format "~s\n" library))
-          (let ([commit (commit-remote! dir)])
+          (let ([new-commit (commit-remote! dir)])
             (update-plugin! id)
-            (check-equal? commit (plugin-commit id))
+            (check-equal? new-commit (plugin-commit id))
             (check (memq id (configuration-lines)))
-            (check (file-exists? (path "libraries" (format "~a.installed" library-id)))))))
+            (check (file-exists? (path "data" "libraries" (format "~a.installed" library-id)))))))
       '(updated-with-line updated-without-line)
-      '(#t #f))))
+      '(#t #f)))
 
-(post! (lambda ()
-         (tests)
-         (system (format "rm -rf '~a'" root))
-         (test-exit)))
-(run-main-loop)
+  (test "start and plugins load before any line, so a line for either raises, as does a plugin that holds their libraries"
+    (for-each
+      (lambda (id)
+        (let ([refused (format "~a loads before any line is read, so only tuna --start=FOLDER replaces it" id)])
+          (check-equal? (format "Exception in install-plugin!: ~a" refused)
+            (raised-text (lambda () (install-plugin! `(use-plugin ,id (git ,(make-remote! id)))))))
+          (check-equal? (format "Exception in use-plugin: ~a" refused)
+            (raised-text
+              (lambda ()
+                (call-as-owner (top '(plugins:repl-owner))
+                  (lambda () (top `(plugins:eval-form '(use-plugin ,id (local ,(path "remotes" (symbol->string id)))))))))))))
+      '(start plugins))
+    (check (not (exists (lambda (id) (memq id (configuration-lines))) '(start plugins))))
+    (let ([dir (path "remotes" "holder")])
+      (write-file! (format "~a/holder.sls" dir) "#!tuna\n(define (name) 'holder)\n")
+      (write-file! (format "~a/plugins/extra.sls" dir) "#!tuna\n(define (name) 'extra)\n")
+      (commit-remote! dir)
+      (check (string-prefix? "Exception in install-plugin!: plugin holder holds the library (plugins extra), a name Tuna keeps for itself"
+               (raised-text (lambda () (install-plugin! `(use-plugin holder (git ,(format "file://~a" dir))))))))))
+
+  ;; The configuration's unload action pauses, so the cancel lands while
+  ;; the operation waits in that unload, after asking for it.
+  (test "a reload cancelled while it waits for the configuration's unload still has the configuration read again"
+    (write-file! (path "config" "lib" "imported.sls") "#!tuna\n(define (name) 'imported)\n")
+    (write-file! (path "config" "init.ss") "(import (tuna) (imported))\n")
+    (top '(plugins:load-configuration!))
+    (let ([release #f] [before (configuration-owner)])
+      (call-as-owner before
+        (lambda () (on-unload (lambda () (suspend (lambda (resume) (set! release resume)))))))
+      (let ([t (spawn-task (lambda (restore) (reload-modules! '((imported)))))]
+            [quiet (lambda (report c) (unless (cancelled? c) (report c)))])
+        (let wait () (unless release (yield) (wait)))
+        (advice-add! report quiet)
+        (cancel-task t)
+        (yield)
+        (release void)
+        (check-equal? 'cancelled (car (ended t)))
+        (advice-remove! report quiet)
+        (let wait ([n 0])
+          (unless (or (= n 500) (not (eq? before (configuration-owner))))
+            (pause-ms 10)
+            (wait (+ n 1))))
+        (check (not (owner-live? before)))
+        (check (not (eq? before (configuration-owner))))
+        (check (owner-live? (configuration-owner)))))))
+
+(run-in-kernel
+  (lambda ()
+    (load-module! '(plugins))
+    (write-file! (path "config" "init.ss") "(import (tuna))\n")
+    (top `(plugins:start! ,(path "bin" "tuna") ,test-folder ,(path "config" "init.ss") ,(path "data") ,(path "cache")))
+    (set! install-plugin! (top 'plugins:install!))
+    (set! update-plugin! (top 'plugins:update!))
+    (set! remove-plugin! (top 'plugins:remove!))
+    (set! remove-unused-plugins! (top 'plugins:remove-unused!))
+    (set! installed-plugins (top 'plugins:installed))
+    (set! plugin-commit (top 'plugins:commit))
+    (set! configuration-owner (top 'plugins:configuration-owner))
+    (set! read-configuration-lines! (eval-in-module 'read-configuration-lines! '(plugins)))
+    (as-test-owner
+      (lambda ()
+        (top '(plugins:load-configuration!))
+        (tests)))
+    (delete-test-folder!)
+    (test-exit)))

@@ -14,7 +14,7 @@ mkdir -p "$lib" "$dir/home/folder"
 for i in $(seq 1 60); do echo "$i" > "$dir/home/folder/file-$i.txt"; done
 cp bench/dired.sls "$lib/dired-bench.sls"
 cp tests/editing/home/.config/tuna/lib/web.sls "$lib/web.sls"
-printf '(import (tuna) (tuna plugins))\n(use-plugin editing)\n(use-plugin dired)\n(import (dired-bench))\n(dired-bench:run "%s")\n(exit)\n' \
+printf '(import (tuna) (plugins))\n(use-plugin editing)\n(use-plugin dired)\n(import (dired-bench))\n(dired-bench:run "%s")\n(exit)\n' \
   "$dir/home/folder" > "$dir/home/.config/tuna/init.ss"
 
 output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)

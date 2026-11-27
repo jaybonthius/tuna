@@ -8,12 +8,12 @@
 (#f #t)
 ; Reloading the plugin that started the process: its body follows the
 ; process again from the offset it saved, so no line is lost or repeated.
-> (eval-file (user-file "chat.sls"))
+> (reload-modules! '((chat)))
 > (let ([past (car (reverse (pi-lines)))]) (testing:wait-until (lambda () (lines-past? (+ past 20)))))
 > (consecutive? (pi-lines))
 #t
 ; Reloading processes reloads the chat too; the process keeps running.
-> (eval-file (library-file "processes.sls"))
+> (reload-modules! '((processes)))
 > (eq? (processes:find (car (chat:agent))) agent)
 #t
 > (let ([past (car (reverse (pi-lines)))]) (testing:wait-until (lambda () (lines-past? (+ past 20)))))
@@ -21,26 +21,28 @@
 #t
 ; Turning processes off turns the chat off; the process goes on, and
 ; what it wrote meanwhile reaches the chat when both load again.
-> (unload-module! '(processes))
+> (unload-owner! (module-owner '(processes)))
 > (memq '(chat) (loaded-modules))
 #f
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (load-module! '(chat))
+#<owner (chat) 4>
 > (let ([past (car (reverse (pi-lines)))]) (testing:wait-until (lambda () (lines-past? (+ past 20)))))
 > (consecutive? (pi-lines))
 #t
 ; When the log no longer holds the offset the chat saved, it asks Pi for
 ; the messages so far.
-> (set-option! processes:log-size 50)
-> (unload-module! '(chat))
-> (sleep-for 0.5)
+> (options:set! processes:log-size 50)
+> (unload-owner! (module-owner '(chat)))
+> (timers:sleep 0.5)
 > (load-module! '(chat))
+#<owner (chat) 5>
 > (testing:wait-until (lambda () (transcript-has? "answer {\"type\":\"get_messages\"}")))
 > (transcript-has? "answer {\"type\":\"get_messages\"}")
 #t
 > (consecutive? (pi-lines))
 #f
-> (remove-option! processes:log-size)
+> (options:unset! processes:log-size)
 ; Killing the chat's buffer stops the process, and the chat's on-exit
 ; forgets it.
 > (buffers:kill! (buffers:find "*pi*"))
@@ -53,10 +55,10 @@
 > (import (searcher))
 > (define search (searcher:search noting-output noting-exit))
 > (processes:owner search)
-(searcher)
+#<owner (searcher) 1>
 > (testing:wait-until (lambda () (pair? log)))
-> (unload-module! '(searcher))
+> (unload-owner! (module-owner '(searcher)))
 > (testing:wait-until (lambda () (processes:status search)))
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (list (taken!) (processes:status search) (memq search (processes:all)))
 ((("first\n" 6)) -1 #f)

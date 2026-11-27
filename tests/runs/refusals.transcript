@@ -1,9 +1,9 @@
 ; runs:environment takes processes' rule for a variable, so a name
 ; processes would refuse is refused when it is set.
-> (set-option! runs:environment '(("A=B" . "x")))
-! set-option!: (("A=B" . "x")) is not a valid value for runs:environment
-> (set-option! runs:environment '(("" . "x")))
-! set-option!: (("" . "x")) is not a valid value for runs:environment
+> (options:set! runs:environment '(("A=B" . "x")))
+! options:set!: (("A=B" . "x")) is not a valid value for runs:environment
+> (options:set! runs:environment '(("" . "x")))
+! options:set!: (("" . "x")) is not a valid value for runs:environment
 ; The program starts before the buffer is made or emptied, so whatever
 ; processes refuses leaves no buffer, or the run's buffer as it was, and
 ; the name free for the next run.
@@ -38,7 +38,7 @@
 ; files:directory-finders answers only for a run's buffer.
 > (mkdir (string-append (getenv "HOME") "/src"))
 > (define file (files:visit "~/src/a.txt"))
-> (map (lambda (entry) (entry file)) (hook-entries files:directory-finders))
+> (map (lambda (entry) (entry file)) (hooks:entries files:directory-finders))
 ("$HOME/src/" #f)
 > (files:directory file)
 "$HOME/src/"

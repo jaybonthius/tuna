@@ -1,43 +1,45 @@
 #!tuna
 (import (search) (buffers) (document) (views) (keys) (commands) (editing) (syntax) (kill-ring) (minibuffer)
-        (jump-history) (faces) (web))
+        (jump-history) (faces) (web) (hooks) (options) (tables) (timers))
 
-(define-option default-style search:literal search:style?
+(define %self (current-owner))
+
+(options:define-option default-style search:literal search:style?
   "The style C-s and C-r start with.")
 
-(define-option lazy-highlight 'selected (lambda (v) (memq v '(none selected all)))
+(options:define-option lazy-highlight 'selected (lambda (v) (memq v '(none selected all)))
   "Where a search highlights its matches other than the current one: none, selected or all.")
 
-(define-option lazy-highlight-delay 0.25 (lambda (v) (and (real? v) (>= v 0)))
+(options:define-option lazy-highlight-delay 0.25 (lambda (v) (and (real? v) (>= v 0)))
   "Seconds without a change before a search shorter than isearch:lazy-highlight-no-delay-length characters highlights its other matches.")
 
-(define-option lazy-highlight-no-delay-length 3 (lambda (v) (and (fixnum? v) (fx>= v 0)))
+(options:define-option lazy-highlight-no-delay-length 3 (lambda (v) (and (fixnum? v) (fx>= v 0)))
   "The length from which a search highlights at once.")
 
-(define-option lazy-highlight-cleanup #t boolean?
+(options:define-option lazy-highlight-cleanup #t boolean?
   "Whether a search's highlights go when it ends; off, they stay in its view until the next search there or isearch:clear-highlights.")
 
-(define-option lazy-count #f boolean?
+(options:define-option lazy-count #f boolean?
   "Whether the prompt starts with the current match's number and the total.")
 
-(define-option wrap 'pause (lambda (v) (memq v '(pause immediately never)))
+(options:define-option wrap 'pause (lambda (v) (memq v '(pause immediately never)))
   "What a search does past its last match: pause, immediately or never.")
 
-(define-option repeat-on-direction-change #f boolean?
+(options:define-option repeat-on-direction-change #f boolean?
   "Whether turning a search around goes to another match.")
 
-(define-option search-folds #t boolean?
+(options:define-option search-folds #t boolean?
   "Whether searches find matches in folds.")
 
-(define-hook started "Called with a search after its first state.")
+(hooks:define-hook started "Called with a search after its first state.")
 
-(define-hook updated "Called with a search after each key that changed it, and when its count arrives.")
+(hooks:define-hook updated "Called with a search after each key that changed it, and when its count arrives.")
 
-(define-hook ended "Called with a search and whether it was cancelled, after its keymap and highlights are gone.")
+(hooks:define-hook ended "Called with a search and whether it was cancelled, after its keymap and highlights are gone.")
 
-(define-table keymap "The keymap of a search, a temporary keymap of its client.")
+(tables:define-table keymap "The keymap of a search, a temporary keymap of its client.")
 
-(define-table edit-keymap "Added to isearch:edit-string's prompt.")
+(tables:define-table edit-keymap "Added to isearch:edit-string's prompt.")
 
 (define fail 'isearch.fail)
 
@@ -157,7 +159,7 @@
 (define (%find s state position direction)
   (let-values ([(start end) (%bounds s)])
     (guard (c [(search:pattern-error? c) (values #f (%pattern-error c state))]
-              [(quit-condition? c) (values #f #f)])
+              [(cancelled? c) (values #f #f)])
       (values (search:find (%buffer s) (%query-of s state) (max start (min end position)) direction start end start end) #f))))
 
 (define (%with state . fields)
@@ -238,7 +240,7 @@
   (%cancel-timer! s))
 
 (define (%cancel-timer! s)
-  (when (%search-timer s) (cancel-timer! (%search-timer s)) (%search-timer-set! s #f)))
+  (when (%search-timer s) (timers:cancel! (%search-timer s)) (%search-timer-set! s #f)))
 
 ;; The first highlight, in the search's own view, always draws the current
 ;; match; isearch:lazy-highlight and its delay decide only where the
@@ -289,7 +291,7 @@
             (%search-scan-bounds-set! s bounds)))
         (if (or (>= (string-length text) (lazy-highlight-no-delay-length)) (zero? (lazy-highlight-delay)))
             (%show-other-matches! s)
-            (%search-timer-set! s (as-module (this-module) (run-with-timer (lazy-highlight-delay) (lambda () (%show-other-matches! s))))))))
+            (%search-timer-set! s (call-as-owner %self (lambda () (timers:run-after (lazy-highlight-delay) (lambda () (%show-other-matches! s)))))))))
     (%set-current! s)))
 
 (define (%keep found command)
@@ -561,12 +563,12 @@
   (%from-end! (%current 'isearch:end-of-buffer) #f (max n 1)))
 
 (commands:define-command (cancel)
-  "Ends the search, puts point back where it started, and raises &quit."
+  "Ends the search, puts point back where it started, and raises &cancelled."
   (let ([s (%current 'isearch:cancel)])
     (%finish! s #t)
     (raise (%quit))))
 
-(define %quit (record-constructor (record-constructor-descriptor &quit)))
+(define (%quit) (make-cancelled #f))
 
 (commands:define-command (abort)
   "In a failing search, or one whose pattern is unfinished, goes back to the last state that matched; otherwise cancels."
@@ -711,7 +713,7 @@
   (unless (procedure? thunk) (assertion-violation 'isearch:call-suspended "not a procedure" thunk))
   (%search-reading?-set! s #t)
   ((%search-end-keymap s))
-  (let ([v (guard (c [(or (serious-condition? c) (quit-condition? c)) (%search-reading?-set! s #f) (%push-keymap! s) (raise c)])
+  (let ([v (guard (c [(or (serious-condition? c) (cancelled? c)) (%search-reading?-set! s #f) (%push-keymap! s) (raise c)])
              (thunk))])
     (%search-reading?-set! s #f)
     (%push-keymap! s)
@@ -720,7 +722,7 @@
 (commands:define-command (edit-string)
   "Reads the text in the minibuffer, starting with the current text, then searches with what was read."
   (let* ([s (%current 'isearch:edit-string)] [state (%top s)])
-    (let ([answer (guard (c [(quit-condition? c) (abort) (raise c)])
+    (let ([answer (guard (c [(cancelled? c) (abort) (raise c)])
                     (call-suspended s
                       (lambda ()
                         (minibuffer:call-with-setup
@@ -742,7 +744,7 @@
 
 (define (%note! s text)
   (%search-note-set! s text)
-  (as-module (this-module) (run-with-timer 1 (lambda () (%search-note-set! s #f)))))
+  (call-as-owner %self (lambda () (timers:run-after 1 (lambda () (%search-note-set! s #f))))))
 
 (commands:define-command (toggle-case-fold)
   "Switches the search between the fold and exact case rules."
@@ -834,5 +836,5 @@
 (for-each (lambda (d) (keys:bind! keymap (string-append "M-" (number->string d)) keys:digit-argument)) (iota 10))
 (keys:bind! edit-keymap "C-s" edit-forward)
 (keys:bind! edit-keymap "C-r" edit-backward)
-(table-set! web:stylesheets 'isearch "isearch/isearch.css")
+(tables:set! web:stylesheets 'isearch "isearch/isearch.css")
 (on-unload %end-all!)

@@ -1,3 +1,4 @@
 #!tuna
-(define-option want-minibuffer #t boolean?)
+(import (options))
+(options:define-option want-minibuffer #t boolean?)
 (define (minibuffer?) (want-minibuffer))

@@ -17,17 +17,17 @@
     (transient:command "o" "Inner, alone" show-inner))
 > (transient:add! inner #f (transient:command "w" "Where" where))
 ; A keymap at depth 50, as a mode's, binding C-g, ESC and w.
-> (define-table mode-keys "A mode's keys.")
+> (tables:define-table mode-keys "A mode's keys.")
 > (keys:bind! mode-keys "C-g" note)
 > (keys:bind! mode-keys "ESC" note)
 > (keys:bind! mode-keys "w" note)
-> (add-hook! keys:find-keymaps (lambda (client posn) (if posn '() (list mode-keys))) 50)
+> (hooks:add! keys:find-keymaps (lambda (client posn) (if posn '() (list mode-keys))) 50)
 ; While a menu is open, its keymap and transient:keymap come first, for
 ; every client.
 > (press! "C-c" "t")
-> (map documentation (list-head (keys:active-keymaps client) 3))
+> (map tables:documentation (list-head (keys:active-keymaps client) 3))
 ("A menu." "The keys of every open menu, searched after the top menu's keymap." "A mode's keys.")
-> (map documentation (list-head (keys:active-keymaps other-client) 3))
+> (map tables:documentation (list-head (keys:active-keymaps other-client) 3))
 ("A menu." "The keys of every open menu, searched after the top menu's keymap." "A mode's keys.")
 ; An entry runs in the menu's view, whether its key is typed or clicked.
 > (press! "s")
@@ -119,7 +119,7 @@ none
 > (click-entry! "s")
 > (caddr (car log))
 (4)
-> (table-set! transient:staying-commands views:scroll-up)
+> (tables:set! transient:staying-commands views:scroll-up)
 > (press! "C-v")
 > (menu)
 (("Actions" ("w" "Where") ("s" "Where, staying") ("i" "Inner, above") ("o" "Inner, alone")))
@@ -139,8 +139,8 @@ none
 ; A click on a keymap's binding runs it in the menu's view and closes the
 ; menus, as its key does; a click on a binding to a keymap shows that
 ; keymap above.
-> (define-table plain-keys "Plain keys.")
-> (define-table sub-keys "Sub keys.")
+> (tables:define-table plain-keys "Plain keys.")
+> (tables:define-table sub-keys "Sub keys.")
 > (keys:bind! plain-keys "C-c w" where)
 > (keys:bind! plain-keys "C-c s" sub-keys)
 > (keys:bind! sub-keys "w" where)
@@ -158,7 +158,7 @@ none
 (() (1 "notes" #f))
 ; press and quit are marked for no mode, so M-x does not offer them; press
 ; with no menu open warns.
-> (list (table-ref commands:command-modes transient:press) (table-ref commands:command-modes transient:quit))
+> (list (tables:ref commands:command-modes transient:press) (tables:ref commands:command-modes transient:quit))
 (() ())
 > (press! "C-c" "t" "C-g")
 > (in-client (lambda () (commands:run transient:press)))

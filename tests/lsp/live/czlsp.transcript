@@ -2,8 +2,8 @@
 ; czlsp formats the buffer on request.
 > (import (chez-scheme))
 > (lsp:define-server czlsp '("czlsp" "--stdio"))
-> (table-set! lsp:language-servers "scheme" (list czlsp))
-> (add-hook! chez-scheme:mode-hook lsp:ensure)
+> (tables:set! lsp:language-servers "scheme" (list czlsp))
+> (hooks:add! chez-scheme:mode-hook lsp:ensure)
 > (define code (string-append home "/code"))
 > (system (format "mkdir -p '~a/.git'" code))
 0
@@ -27,7 +27,7 @@
 "(define (g y)\n  (+ y 2))\n"
 ; Turned on, on-type formatting asks nothing for a RET whose command went
 ; on to indent the line, since the answer would be for text since changed.
-> (set-option! lsp:on-type-formatting? #t)
+> (options:set! lsp:on-type-formatting? #t)
 > (in-client (lambda () (views:set-point! (view) (+ 1 (string-length "(define (g y)")))))
 > (press! "RET")
 > (around)

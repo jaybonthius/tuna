@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (document) (haml) (web))
+(import (hooks) (options) (tables) (timers) (saved))
+(import (tuna) (testing) (document) (haml) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -33,20 +34,20 @@
 ;; A command's prompt pauses its task, so tests press its keys in a task
 ;; of their own and wait for the prompt.
 (define (start! . keys)
-  (let ([t (spawn-task (lambda () (apply press! keys)))])
-    (testing:wait-until (lambda () (or (task-done? t) (minibuffer:current-prompt))))
+  (let ([t (spawn-task (lambda (restore) (apply press! keys)))])
+    (testing:wait-until (lambda () (or (eq? (task-state t) 'done) (minibuffer:current-prompt))))
     t))
 
 ;; An action's command reads its key in a task of its own, so a test
 ;; presses the key only once the read waits for it.
 (define (act! . keys)
-  (let ([t (spawn-task (lambda () (apply press! keys)))])
-    (testing:wait-until (lambda () (or (task-done? t) (keys:reading client))))
+  (let ([t (spawn-task (lambda (restore) (apply press! keys)))])
+    (testing:wait-until (lambda () (or (eq? (task-state t) 'done) (keys:reading client))))
     t))
 
 (define (finish t)
-  (testing:wait-until (lambda () (task-done? t)))
-  (task-done? t))
+  (testing:wait-until (lambda () (eq? (task-state t) 'done)))
+  (eq? (task-state t) 'done))
 
 (define (eval! text . prefix)
   (let ([t (apply start! (append prefix (list "M-:")))])
@@ -58,7 +59,7 @@
 
 (define (mouse-in! v action place)
   (parameterize ([web:current-client client])
-    ((table-ref web:input-handlers "mouse") client
+    ((tables:ref web:input-handlers "mouse") client
      (append place
              `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
                ("view" . ,(views:id v)) ("version" . ,(buffers:version (views:buffer v)))
@@ -144,7 +145,7 @@
 (define (at path) (string-append home "/" path))
 
 (define (write-file! path content)
-  (sleep-for 0.01)
+  (timers:sleep 0.01)
   (with-output-to-file (at path) (lambda () (display content)) 'replace))
-(import (tuna eval))
+(import)
 (import (console))

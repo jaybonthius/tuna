@@ -1,5 +1,7 @@
 #!tuna
-(import (buffers) (document) (views) (layout) (layout-split) (keys) (commands) (modes) (faces) (web) (haml) (ask))
+(import (buffers) (document) (views) (layout) (layout-split) (keys) (commands) (modes) (faces) (web) (haml) (ask) (hooks) (options) (tables) (timers))
+
+(define %self (current-owner))
 
 (define face
   (make-thread-parameter #f
@@ -26,13 +28,13 @@
 ;; only the log takes the procedure's name before their text.
 (define %log-prefix (make-thread-parameter ""))
 
-(define-option log-max 1000 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
+(options:define-option log-max 1000 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
   "How many lines *Messages* keeps; the oldest go first.")
 
-(define-option echo-keystrokes 1 (lambda (v) (and (real? v) (finite? v) (not (negative? v))))
+(options:define-option echo-keystrokes 1 (lambda (v) (and (real? v) (finite? v) (not (negative? v))))
   "Seconds of pause after which the echo area shows a client's unfinished keys; 0 shows none.")
 
-(define-table keymap "The echo area's keymap, for clicks on it.")
+(tables:define-table keymap "The echo area's keymap, for clicks on it.")
 
 ;; The plugin writes both buffers with splice!, which asks no kind, so
 ;; their kinds refuse every other edit.
@@ -54,9 +56,9 @@
 
 (buffers:define-layer %message-faces)
 
-(define-table messages-keymap "Keys in *Messages*.")
+(tables:define-table messages-keymap "Keys in *Messages*.")
 
-(define-hook messages-mode-hook "Called in each buffer that turns on echo-area:messages-mode.")
+(hooks:define-hook messages-mode-hook "Called in each buffer that turns on echo-area:messages-mode.")
 
 (modes:define-major-mode messages-mode
   (parent modes:special)
@@ -80,14 +82,14 @@
 
   (define echo-buffer
     (let ([b (or (buffers:find " *Echo Area*") (buffers:make " *Echo Area*" (area '())))])
-      (buffers:with-buffer b (set-option-local! views:cursor-visible #f))
+      (buffers:with-buffer b (options:set-local! views:cursor-visible #f))
       b))
 
   (define shown? (fx> (document:length (buffers:document echo-buffer)) 2))
 
   (define shown-spans '())
 
-  ;; Set first, so a quit landing in the edit leaves a key to clear an
+  ;; Set first, so a cancel landing in the edit leaves a key to clear an
   ;; echo area that may show nothing, never a message no key clears.
   (define (show! text face ranges)
     (set! shown? (or shown? (not (string=? text ""))))
@@ -156,17 +158,18 @@
 
   (define (stop-timer! e)
     (when (echo-timer e)
-      (cancel-timer! (echo-timer e))
+      (timers:cancel! (echo-timer e))
       (echo-timer-set! e #f)))
 
   (define (start-timer! e)
-    (as-module (this-module)
-      (echo-timer-set! e
-        (run-with-timer (echo-keystrokes)
-          (lambda ()
-            (echo-timer-set! e #f)
-            (when (in-progress? (echo-client e))
-              (echo-echoing?-set! e #t)))))))
+    (call-as-owner %self
+      (lambda ()
+        (echo-timer-set! e
+          (timers:run-after (echo-keystrokes)
+            (lambda ()
+              (echo-timer-set! e #f)
+              (when (in-progress? (echo-client e))
+                (echo-echoing?-set! e #t))))))))
 
   ;; Under a temporary keymap's prompt, a key that finishes no sequence of
   ;; its own is the keymap's to show, through the prompt.
@@ -339,7 +342,7 @@
   ;; message that raises cannot show reports without end.
   (define flushing? #f)
 
-  ;; A raise or a quit while the queue shows puts back the reports not
+  ;; A raise or a cancel while the queue shows puts back the reports not
   ;; yet shown. The one showing is dropped, so a report whose showing
   ;; raises is not shown again without end. Reports are logged by the
   ;; setting, not by a binding where they were raised or where they show,
@@ -351,25 +354,26 @@
           (dynamic-wind
             void
             (lambda ()
-              (with-interrupts-disabled (set! left (take-reports!)))
+              (call-with-cancellation-masked (lambda (restore) (set! left (take-reports!))))
               (let loop ()
                 (unless (null? left)
                   (let ([entry (car left)])
                     (set! left (cdr left))
-                    (with-options ([log-max (option-setting log-max)])
+                    (options:with ([log-max (options:setting log-max)])
                       (parameterize ([face (queued-report-face entry)] [spans '()] [%log-prefix (queued-report-who entry)])
                         (message! "~a" (queued-report-text entry))))
                     (loop)))))
             (lambda ()
-              (with-interrupts-disabled
-                (put-back-reports! left)
-                (set! left '()))))))))
+              (call-with-cancellation-masked
+                (lambda (restore)
+                  (put-back-reports! left)
+                  (set! left '())))))))))
 
   (define (message-text c)
     (let ([message (condition-message c)]
           [irritants (if (irritants-condition? c) (condition-irritants c) '())])
       (or (and (format-condition? c)
-               (guard (e [(not (quit-condition? e)) #f]) (apply format message irritants)))
+               (guard (e [(not (cancelled? e)) #f]) (apply format message irritants)))
           (case (and (list? irritants) (length irritants))
             [(0) (format "~a" message)]
             [(1) (format "~a with irritant ~s" message (car irritants))]
@@ -390,7 +394,7 @@
   ;; form, which belongs to standard error rather than the user's screen.
   ;; A condition's irritants or a record's writer can raise.
   (define (report-text c)
-    (guard (e [(not (quit-condition? e)) (values "" "condition that cannot be printed")])
+    (guard (e [(not (cancelled? e)) (values "" "condition that cannot be printed")])
       (cond
         [(not (condition? c)) (values "" (format "non-condition value ~s" c))]
         [else
@@ -482,7 +486,7 @@
 ;; A quit is not reported: keyboard-quit's advice says it once.
 (define (%queue-report report c)
   (report c)
-  (unless (quit-condition? c)
+  (unless (cancelled? c)
     (let-values ([(who text) (report-text c)])
       (queue-report! (make-queued-report who text (if (and (warning? c) (not (serious-condition? c))) faces:warning faces:error))))))
 
@@ -590,7 +594,7 @@
 ;; draw. A raise here must not skip the advice it encloses.
 (define (%show-reports ended)
   (guard (c [#t (report c)])
-    (as-module (this-module) (flush-reports!)))
+    (call-as-owner %self (lambda () (flush-reports!))))
   (ended))
 
 (define (%keep-echo-area b) (not (eq? b echo-buffer)))
@@ -600,19 +604,19 @@
 ;; message, as repeat's does, finds them shown.
 (define (%show-command-reports command) (flush-reports!))
 
-(define (%follow-messages) (set-option-local! views:point-after-insertion? #t))
+(define (%follow-messages) (options:set-local! views:point-after-insertion? #t))
 
-(add-hook! messages-mode-hook %follow-messages)
+(hooks:add! messages-mode-hook %follow-messages)
 (keys:bind! messages-keymap "g" keys:undefined)
 (messages-buffer)
 (layout:display-buffer echo-buffer (layout-split:display-at-side (layout:direction down) 90 'content '((locked . #t))))
 (keys:bind! keymap "<mouse-1>" show-messages)
 (keys:bind! keymap "<down-mouse-1>" keys:ignore)
 (keys:bind! keys:global "C-h e" show-messages)
-(table-set! web:stylesheets 'echo-area "echo-area/echo-area.css")
-(set-option! ask:message-writer (lambda (text) (message! "~a" text)))
-(add-hook! buffers:kill-queries %keep-echo-area)
-(add-hook! commands:after-command %show-command-reports -100)
+(tables:set! web:stylesheets 'echo-area "echo-area/echo-area.css")
+(options:set! ask:message-writer (lambda (text) (message! "~a" text)))
+(hooks:add! buffers:kill-queries %keep-echo-area)
+(hooks:add! commands:after-command %show-command-reports -100)
 (advice-add! report %queue-report)
 (advice-add! keys:keyboard-quit %say-quit)
 (advice-add! keys:press! %clear-on-key)
@@ -623,5 +627,5 @@
 (advice-add! layout:draw-view-atom %draw-client-echo)
 (advice-add! batch-ended %show-reports)
 (advice-add! batch-ended %follow-echoes)
-(add-hook! web:client-removed %forget-echo)
+(hooks:add! web:client-removed %forget-echo)
 (on-unload (lambda () (let ([v (layout:find-view echo-buffer)]) (when v (layout:delete-part! (layout:view-node v))))))

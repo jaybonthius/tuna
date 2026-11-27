@@ -1,11 +1,13 @@
 #!tuna
-(import (git-mode) (git) (with-editor) (transient) (keys) (commands) (ask))
+(import (git-mode) (git) (with-editor) (transient) (keys) (commands) (ask) (options))
+
+(define %self (current-owner))
 
 (define (%strings? v) (and (list? v) (for-all string? v)))
 
-(define-option push-arguments '() %strings? "The arguments the push menu starts with.")
+(options:define-option push-arguments '() %strings? "The arguments the push menu starts with.")
 
-(define-option pull-arguments '() %strings? "The arguments the pull menu starts with.")
+(options:define-option pull-arguments '() %strings? "The arguments the pull menu starts with.")
 
 ;; A menu's descriptions are drawn after every batch and must not wait
 ;; for git, so they read the branch and its remotes from what a task
@@ -200,7 +202,7 @@
     (set! %state #f)
     (set! %menu-repository repository)
     (transient:show! menu)
-    (as-module (this-module) (spawn-task (lambda () (%read-state! repository))))))
+    (call-as-owner %self (lambda () (spawn-task (lambda (restore) (%read-state! repository)))))))
 
 (commands:define-command (push) "Shows the push menu." (%show-menu! push-menu))
 

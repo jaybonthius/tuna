@@ -1,7 +1,7 @@
 #!tuna
-(import (ui) (buffers) (document) (commands))
+(import (ui) (buffers) (document) (commands) (saved))
 
-(define-saved todos '("Buy milk" "Write the plan") list?)
+(saved:define-saved todos '("Buy milk" "Write the plan") list?)
 
 (buffers:define-kind todo (content nodes))
 (buffers:define-kind item)
@@ -18,7 +18,7 @@
 
 (commands:define-command (mark-done [button (ui:pushed-button)])
   "Removes the todo whose Done button was pushed."
-  (set-saved! todos (remove (document:node-attribute button 'title) (todos)))
+  (saved:set! todos (remove (document:node-attribute button 'title) (todos)))
   (show-todos!))
 
 (ui:define-button done mark-done)

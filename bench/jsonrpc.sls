@@ -1,5 +1,5 @@
 #!tuna
-(import (jsonrpc) (processes))
+(import (jsonrpc) (processes) (options) (timers))
 
 (define (now-ns)
   (let ([t (current-time 'time-utc)])
@@ -37,11 +37,11 @@
          [latest 0.0] [done? #f])
     (jsonrpc:request c "echo" '#(1))
     (spawn-task
-      (lambda ()
+      (lambda (restore)
         (let loop ()
           (unless done?
             (let ([asked (now-ms)])
-              (sleep-for 0.01)
+              (timers:sleep 0.01)
               (set! latest (max latest (- (now-ms) asked 10.0)))
               (loop))))))
     (jsonrpc:request c "big" '(("size" . 2000000)))
@@ -52,7 +52,7 @@
     (jsonrpc:stop! c)))
 
 (define (run)
-  (set-option! jsonrpc:events-log-size 0)
+  (options:set! jsonrpc:events-log-size 0)
   (measure "log-off")
-  (remove-option! jsonrpc:events-log-size)
+  (options:unset! jsonrpc:events-log-size)
   (measure "log-default"))

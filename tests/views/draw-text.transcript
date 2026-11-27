@@ -17,9 +17,9 @@
 "<span>a<span data-face=\"escape-glyph\">^G</span>b</span>"
 ; A span value is drawn with the view's buffer and options current, so a
 ; buffer's local values decide how it looks, as when the buffer is drawn.
-> (define-option shade "light" string?)
-> (table-set! views:span-properties 'shade (lambda (v) (list (cons "data-shade" (shade)))))
-> (buffers:with-buffer b (set-option-local! shade "dark"))
+> (options:define-option shade "light" string?)
+> (tables:set! views:span-properties 'shade (lambda (v) (list (cons "data-shade" (shade)))))
+> (buffers:with-buffer b (options:set-local! shade "dark"))
 > (text-html "ab" '((0 1 ((shade . #t)))))
 "<span><span data-shade=\"dark\">a</span>b</span>"
 > (views:draw-text v "ab" '((0 3 ((face . keyword)))))

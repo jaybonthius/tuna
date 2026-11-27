@@ -3,8 +3,10 @@
 
 (buffers:define-kind block)
 
-(define yanks '())
+(define %yanks '())
+
+(define (yanks) %yanks)
 
 (define (yank-block buffer position piece)
-  (set! yanks (cons position yanks))
+  (set! %yanks (cons position %yanks))
   (buffers:insert! buffer position (buffers:piece-text piece)))

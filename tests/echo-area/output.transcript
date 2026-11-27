@@ -66,7 +66,7 @@
 ; With echo-area:log-max 0 nothing is logged; the echo area shows it.
 > (echo-area:message! "")
 > (define before (messages))
-> (with-options ([echo-area:log-max 0]) (display "quiet" port))
+> (options:with ([echo-area:log-max 0]) (display "quiet" port))
 > (list (echo-area:current-message) (string=? before (messages)))
 ("quiet" #t)
 ; Text written on another thread goes to Tuna's standard output.

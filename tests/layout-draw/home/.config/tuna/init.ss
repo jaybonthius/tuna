@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins))
+(import (timers))
+(import (tuna))
 (use-plugin layout)
 (import (haml) (console))
 

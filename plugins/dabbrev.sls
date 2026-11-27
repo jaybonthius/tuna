@@ -1,5 +1,7 @@
 #!tuna
-(import (completion) (buffers) (document) (views) (syntax) (syntax characters) (modes) (commands) (keys) (jobs) (ask))
+(import (completion) (buffers) (document) (views) (syntax) (syntax characters) (modes) (commands) (keys) (jobs) (ask) (hooks) (options))
+
+(define %self (current-owner))
 
 (completion:define-category word-category "Words already written in buffers, valued by the word.")
 
@@ -12,34 +14,34 @@
 
 (define (%no-buffer? buffer) #f)
 
-(define-option check-other-buffers #t boolean?
+(options:define-option check-other-buffers #t boolean?
   "Whether dabbrev:expand also looks in buffers other than the current one: the friend buffers, then, with dabbrev:check-all-buffers, the rest.")
 
-(define-option check-all-buffers #t boolean?
+(options:define-option check-all-buffers #t boolean?
   "Whether dabbrev:expand looks in every buffer dabbrev:ignored-buffer-predicate does not ignore, after the friend buffers.")
 
-(define-option friend-buffer-predicate %same-major-mode? procedure?
+(options:define-option friend-buffer-predicate %same-major-mode? procedure?
   "A procedure of a buffer that returns true when dabbrev looks in it right after the current buffer; by default, when its major mode is the current buffer's.")
 
-(define-option ignored-buffer-predicate %internal-or-messages? procedure?
+(options:define-option ignored-buffer-predicate %internal-or-messages? procedure?
   "A procedure of a buffer that returns true when dabbrev never looks in it; by default, for internal buffers and *Messages*.")
 
-(define-option region-buffer-predicate %no-buffer? procedure?
+(options:define-option region-buffer-predicate %no-buffer? procedure?
   "A procedure of a buffer that returns true when dabbrev:word-region also offers its words; by default, for none, so only the current buffer's.")
 
-(define-option case-fold-search #t boolean?
+(options:define-option case-fold-search #t boolean?
   "Whether dabbrev finds words whatever their case.")
 
-(define-option upcase-means-case-search #f boolean?
+(options:define-option upcase-means-case-search #f boolean?
   "Whether an abbreviation with a capital letter finds only words in its case, even while dabbrev:case-fold-search is true.")
 
-(define-option backward-only #f boolean?
+(options:define-option backward-only #f boolean?
   "Whether dabbrev:expand looks only before point in the current buffer, before it looks in other buffers.")
 
-(define-option case-replace #t boolean?
+(options:define-option case-replace #t boolean?
   "Whether, while dabbrev:case-fold-search is true, an expansion takes the case of the text it replaces.")
 
-(define-option case-distinction #t boolean?
+(options:define-option case-distinction #t boolean?
   "Whether, while dabbrev:case-fold-search is true, words that differ only in case count as one expansion.")
 
 (jobs:define-worker (%expansions input emit receive)
@@ -181,17 +183,18 @@
       (%resume-all! e))))
 
 (define (%start-job! e input)
-  (as-module (this-module)
-    (%expansion-job-set! e
-      (jobs:start %expansions input
-        (lambda (found)
-          (when (eq? %last e)
-            (%expansion-words-set! e (map (lambda (word) (cons (car found) word)) (vector->list (cdr found))))
-            (%expansion-asked?-set! e #f)
-            (%resume-all! e)))
-        (lambda (ended)
-          (%expansion-done?-set! e #t)
-          (%resume-all! e))))))
+  (call-as-owner %self
+    (lambda ()
+      (%expansion-job-set! e
+        (jobs:start %expansions input
+          (lambda (found)
+            (when (eq? %last e)
+              (%expansion-words-set! e (map (lambda (word) (cons (car found) word)) (vector->list (cdr found))))
+              (%expansion-asked?-set! e #f)
+              (%resume-all! e)))
+          (lambda (ended)
+            (%expansion-done?-set! e #t)
+            (%resume-all! e)))))))
 
 (define (%next-word! e)
   (let loop ()
@@ -333,5 +336,5 @@
 
 (keys:bind! keys:global "M-/" expand)
 (keys:bind! keys:global "C-M-/" completion)
-(add-hook! commands:after-command %forget-after)
+(hooks:add! commands:after-command %forget-after)
 (on-unload %forget!)

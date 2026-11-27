@@ -1,5 +1,6 @@
 #!tuna
-(import (search) (buffers) (document) (jobs))
+(import (search) (buffers) (document) (jobs) (timers)
+  (rename (only (chezscheme) collect-request-handler) (collect-request-handler chez:collect-request-handler)))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -44,11 +45,17 @@
               (put-string out line)
               (loop (+ written (bytevector-length (string->utf8 line)))))))))))
 
-(define made 0)
+;; Every thread stops for a full collection, since collect alone refuses
+;; while other threads run.
+(define (collect-fully)
+  (parameterize ([chez:collect-request-handler (lambda () (collect (collect-maximum-generation)))])
+    (collect-rendezvous)))
+
+(define %made 0)
 (define (buffer-of text)
-  (set! made (+ made 1))
-  (let ([b (buffers:make (format "search-bench-~a" made) text)])
-    (collect (collect-maximum-generation))
+  (set! %made (+ %made 1))
+  (let ([b (buffers:make (format "search-bench-~a" %made) text)])
+    (collect-fully)
     b))
 
 (define (end-of b) (document:length (buffers:document b)))
@@ -64,7 +71,7 @@
       (let* ([done #f]
              [q (if filter? (search:query-with-filter q (lambda (b s e) #t)) q)]
              [s (search:scan b q 0 (end-of b) 0 (lambda (s) (when (search:scan-done? s) (set! done #t))))])
-        (let wait () (unless done (sleep-for 0.001) (wait)))))))
+        (let wait () (unless done (timers:sleep 0.001) (wait)))))))
 
 (define word-class "[\\p{Alphabetic}\\x{24}\\x{25}\\p{N}]")
 

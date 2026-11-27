@@ -1,7 +1,7 @@
 #!tuna
-(import (diff) (ui) (buffers) (document) (views) (faces) (web) (haml))
+(import (diff) (ui) (buffers) (document) (views) (faces) (web) (haml) (options) (tables))
 
-(define-option line-numbers? #f boolean?
+(options:define-option line-numbers? #f boolean?
   "Whether each hunk line is drawn with its old and new line numbers in a gutter, which is drawing, not text.")
 
 (module %internals (decoded padded-word line-face check-file)
@@ -199,4 +199,4 @@
                   (values hunk first last)
                   (values #f #f #f))))))))
 
-(table-set! web:stylesheets 'diff-sections "diff-sections/diff-sections.css")
+(tables:set! web:stylesheets 'diff-sections "diff-sections/diff-sections.css")

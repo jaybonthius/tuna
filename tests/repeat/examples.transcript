@@ -37,7 +37,7 @@
 > (weights)
 (9/5 1/5)
 ; Taken out of the table, the keymap no longer repeats.
-> (table-remove! keys:repeat-keymaps layout-split:resize-keymap)
+> (tables:remove! keys:repeat-keymaps layout-split:resize-keymap)
 > (press! c1 "C-x" "}" "}")
 ! } is undefined
 > (weights)
@@ -46,12 +46,12 @@
 (layout:keymap keys:global)
 ; Overridden to do nothing, the hint shows nothing, and the keymap still
 ; repeats.
-> (table-set! keys:repeat-keymaps layout-split:resize-keymap)
-> (set! repeat:show-hint (lambda (keymap) (void)))
+> (tables:set! keys:repeat-keymaps layout-split:resize-keymap)
+> (define repeat:show-hint (lambda (keymap) (void)))
 > (press! c1 "C-x" "}" "}")
 > (list (weights) (keymap-names c1) (echo-area:current-message))
 ((6/5 4/5) (layout-split:resize-keymap layout:keymap keys:global) #f)
-> (remove-override! repeat:show-hint)
+> (override-remove! repeat:show-hint)
 > (raised (lambda () (repeat:show-hint 'resize)))
 (repeat:show-hint "neither a keymap nor #f")
 ; A key sequence found in the repeating keymap goes on repeating, and
@@ -77,6 +77,6 @@
 > (list (weights) (keymap-names c1) (echo-area:current-message))
 ((2/5 8/5) (layout-split:resize-keymap layout:keymap keys:global) "Repeat with }, {, v, C-c m, <mouse-1>")
 ; Unloading the plugin ends the repetition and takes the hint back.
-> (unload-module! '(repeat))
+> (unload-owner! (module-owner '(repeat)))
 > (list (keymap-names c1) (echo-area:current-message))
 ((layout:keymap keys:global) #f)

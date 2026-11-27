@@ -1,18 +1,20 @@
 #!tuna
 (import (pi) (chat) (processes) (ask) (buffers) (document) (views) (keys) (commands) (modes) (ui) (kill-ring) (files)
-        (web) (haml))
+        (web) (haml) (hooks) (tables) (saved))
 
-(define-saved prompt-history '() (lambda (v) (and (list? v) (for-all string? v))))
+(define %self (current-owner))
 
-(define-saved drafts '()
+(saved:define-saved prompt-history '() (lambda (v) (and (list? v) (for-all string? v))))
+
+(saved:define-saved drafts '()
   (lambda (v) (and (list? v) (for-all (lambda (d) (and (pair? d) (string? (car d)) (string? (cdr d)))) v))))
 
-(define-table slash-commands
+(tables:define-table slash-commands
   "Pi's own terminal commands typed at the prompt's start: each name, such as \"/compact\", to a procedure of the chat and the text after the name.")
 
-(define-table keymap "Keys anywhere in a Pi chat.")
+(tables:define-table keymap "Keys anywhere in a Pi chat.")
 
-(define-hook %mode-hook)
+(hooks:define-hook %mode-hook)
 
 (modes:define-major-mode mode (parent chat:mode) (lighter "Pi") (keymap keymap) (hook %mode-hook) (plugin-only #t))
 
@@ -316,7 +318,7 @@
             (map (lambda (name) (cons (substring name 1 (string-length name)) #f))
                  (list-sort string<?
                    (remp (lambda (name) (assoc (substring name 1 (string-length name)) pi-commands))
-                         (map car (table-entries slash-commands))))))))
+                         (map car (tables:entries slash-commands))))))))
 
 (define (%trimmed s)
   (let loop ([i 0])
@@ -344,7 +346,7 @@
 (define (%deliver chat text tell!)
   (let-values ([(name argument) (%slash-name text)])
     (cond
-      [(and name (table-ref slash-commands name #f)) => (lambda (run) (run chat argument))]
+      [(and name (tables:ref slash-commands name #f)) => (lambda (run) (run chat argument))]
       [(and name (member name %terminal-commands)
             (not (exists (lambda (c) (string=? (string-append "/" (pi:slash-command-name c)) name))
                          (pi:chat-commands chat))))
@@ -516,36 +518,36 @@
   (chat:set-prompt! chat text)
   (chat:changed! chat))
 
-(table-set! slash-commands "/new" (lambda (chat argument) (%new-session chat)))
-(table-set! slash-commands "/name"
+(tables:set! slash-commands "/new" (lambda (chat argument) (%new-session chat)))
+(tables:set! slash-commands "/name"
   (lambda (chat argument)
     (if (string=? argument "")
         (%tell (or (pi:chat-session-name chat) "The session has no name"))
         (pi:set-session-name! chat argument))))
-(table-set! slash-commands "/compact" (lambda (chat argument) (pi:compact! chat argument)))
-(table-set! slash-commands "/clone" (lambda (chat argument) (pi:clone! chat)))
-(table-set! slash-commands "/copy" (lambda (chat argument) (chat:copy-last-reply)))
-(table-set! slash-commands "/export"
+(tables:set! slash-commands "/compact" (lambda (chat argument) (pi:compact! chat argument)))
+(tables:set! slash-commands "/clone" (lambda (chat argument) (pi:clone! chat)))
+(tables:set! slash-commands "/copy" (lambda (chat argument) (chat:copy-last-reply)))
+(tables:set! slash-commands "/export"
   (lambda (chat argument) (%export chat (if (string=? argument "") #f argument))))
 
 (keys:bind! keymap "C-c C-n" new-session)
 
-(for-each (lambda (command) (table-set! commands:command-modes command (list mode)))
+(for-each (lambda (command) (tables:set! commands:command-modes command (list mode)))
   (list new-session rename-session clone compact toggle-auto-compaction export-html restart stop))
 
-(table-set! chat:block-kinds summary)
-(table-set! chat:block-kinds extension-message)
-(table-set! web:stylesheets 'pi-chat "pi-chat/pi-chat.css")
+(tables:set! chat:block-kinds summary)
+(tables:set! chat:block-kinds extension-message)
+(tables:set! web:stylesheets 'pi-chat "pi-chat/pi-chat.css")
 
 (for-each %link-process! (pi:chats))
 
-(add-hook! pi:chat-changed %chat-changed)
-(add-hook! pi:editor-text-requested %editor-text)
+(hooks:add! pi:chat-changed %chat-changed)
+(hooks:add! pi:editor-text-requested %editor-text)
 
 ;; Added after chat's advice, so it wraps it: a notice of an edit is drawn
 ;; in the batch that found it.
 (advice-add! batch-ended
   (lambda (ended)
     (guard (c [#t (report c)])
-      (as-module (this-module) (%revert-edits!)))
+      (call-as-owner %self (lambda () (%revert-edits!))))
     (ended)))

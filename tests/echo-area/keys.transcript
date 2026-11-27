@@ -2,14 +2,14 @@
 ; echo-area:echo-keystrokes seconds, 1 by default.
 > (echo-area:echo-keystrokes)
 1
-> (set-option! echo-area:echo-keystrokes 0.2)
+> (options:set! echo-area:echo-keystrokes 0.2)
 > (commands:define-command (nothing) "Does nothing." (void))
 > (keys:bind! keys:global "C-x n" nothing)
 > (keys:bind! keys:global "C-x 4 n" nothing)
 > (press! "C-x")
 > (echo)
 #f
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (echo)
 "C-x-"
 ; Once it shows, each next key shows at once. A key that finishes the
@@ -22,7 +22,7 @@
 > (press! "C-x")
 > (echo)
 #f
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (press! "n")
 > (echo)
 "C-x n"
@@ -35,7 +35,7 @@
 > (commands:define-command (pausing) "Pauses until resumed." (suspend (lambda (resume) (set! waiting resume))))
 > (keys:bind! keys:global "C-x p" pausing)
 > (press! "C-x")
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (start! "p")
 > (echo)
 "C-x p"
@@ -43,29 +43,29 @@
 > (echo)
 #f
 > (waiting (lambda () (void)))
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (echo)
 #f
 ; A sequence finished before the pause shows nothing.
 > (press! "C-x" "n")
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (echo)
 #f
 ; Each key before the pause starts it again.
 > (press! "C-x")
-> (sleep-for 0.12)
+> (timers:sleep 0.12)
 > (press! "4")
-> (sleep-for 0.12)
+> (timers:sleep 0.12)
 > (echo)
 #f
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (echo)
 "C-x 4-"
 > (press! "C-g")
 ! C-x 4 C-g is undefined
 ; A message covers the keys, and the next typed key shows them again.
 > (press! "C-x")
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (echo-area:message! "Saved")
 > (echo)
 "Saved"
@@ -78,7 +78,7 @@
 "C-x 4 C-g is undefined"
 ; A pending prefix argument shows as the keys that give it.
 > (press! "C-u")
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (echo)
 "C-u-"
 > (press! "C-u" "5")
@@ -91,7 +91,7 @@
 > (echo)
 "C-u 5 C-x n"
 > (press! "M--")
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (echo)
 "C-u --"
 > (press! "C-g")
@@ -102,7 +102,7 @@
 > (start! "C-q")
 > (echo)
 #f
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (echo)
 "C-q-"
 > (press! "b")
@@ -126,7 +126,7 @@
 > (echo)
 "Key: C-x 4-"
 > (press! "n")
-> (sleep-for 0.02)
+> (timers:sleep 0.02)
 > (echo)
 "Read C-x 4 n"
 ; A read whose command shows nothing leaves the prompt and the keys
@@ -135,7 +135,7 @@
 > (keys:bind! keys:global "C-c q" read-quietly)
 > (start! "C-c" "q")
 > (press! "z")
-> (sleep-for 0.02)
+> (timers:sleep 0.02)
 > (echo)
 "Press a key: z"
 > (press! "a")
@@ -151,17 +151,17 @@
 > (start! "C-c" "h")
 > (echo)
 "Press a key: "
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (echo)
 "Press a key: "
 > (echo-area:message! "Saved")
 > (echo)
 "Saved"
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (echo)
 "Saved"
 > (press! "z")
-> (sleep-for 0.02)
+> (timers:sleep 0.02)
 > (echo)
 "Press a key: z"
 > (press! "a")
@@ -180,8 +180,8 @@
 > (views:set-buffer! (view) notes)
 > (keys:bind! keys:global "<mouse-1>" read-quietly)
 > (echo-area:message! "Hello")
-> (define clicking (spawn-task (lambda () (click-at! (view) 2))))
-> (sleep-for 0.02)
+> (define clicking (spawn-task (lambda (restore) (click-at! (view) 2))))
+> (timers:sleep 0.02)
 > (echo)
 "Press a key: "
 > (press! "z")
@@ -191,11 +191,11 @@
 ; while it shows. A typed key clears the message for every client, and
 ; each client's keys in progress show again.
 > (press-in! other-client "C-x")
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (list (echo) (echo-for other-client))
 (#f "C-x-")
 > (press! "C-x")
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (list (echo) (echo-for other-client))
 ("C-x-" "C-x-")
 > (echo-area:message! "Both")
@@ -214,11 +214,11 @@
 > (press-in! other-client "a")
 > (list (echo-area:current-message) (echo))
 (#f "Press a key: ")
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (echo)
 "Press a key: "
 > (press! "q")
-> (sleep-for 0.02)
+> (timers:sleep 0.02)
 > (echo)
 "Press a key: q"
 > (press! "a")
@@ -227,7 +227,7 @@
     (let ([text (keys-text c)]) (and text (string-append text " (C-h for help)"))))
 > (advice-add! echo-area:keys-text with-hint)
 > (press! "C-x")
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (list (echo-area:keys-text client) (echo))
 ("C-x- (C-h for help)" "C-x- (C-h for help)")
 > (advice-remove! echo-area:keys-text with-hint)
@@ -240,7 +240,7 @@
 > (define (hide hidden?) #t)
 > (advice-add! echo-area:hidden? hide)
 > (press! "C-x")
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (echo)
 #f
 > (advice-remove! echo-area:hidden? hide)
@@ -248,9 +248,9 @@
 "C-x-"
 > (press! "n")
 ; At 0, no keys show, but a prompt still does.
-> (set-option! echo-area:echo-keystrokes 0)
+> (options:set! echo-area:echo-keystrokes 0)
 > (press! "C-x")
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (echo)
 #f
 > (press! "n")
@@ -259,12 +259,12 @@
 > (echo)
 "Key: "
 > (press! "n")
-> (raised (lambda () (set-option! echo-area:echo-keystrokes -1)))
-(set-option! "-1 is not a valid value for echo-area:echo-keystrokes")
+> (raised (lambda () (options:set! echo-area:echo-keystrokes -1)))
+(options:set! "-1 is not a valid value for echo-area:echo-keystrokes")
 ; A client removed takes its echo with it.
-> (set-option! echo-area:echo-keystrokes 0.2)
+> (options:set! echo-area:echo-keystrokes 0.2)
 > (press-in! other-client "C-x")
 > (web:client-removed other-client)
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (echo-for other-client)
 #f

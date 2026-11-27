@@ -1,7 +1,7 @@
 ; The configuration's settings.
 > (which-key:delay)
 0.5
-> (table-ref which-key:labels "C-c l" #f)
+> (tables:ref which-key:labels "C-c l" #f)
 "language"
 ; After C-c and the delay, the popup labels C-c l.
 > (press! "C-c")

@@ -1,7 +1,7 @@
 #!tuna
-(import (files))
+(import (files) (hooks))
 (define (mode) 'text)
 (define (handler path)
   (let ([n (string-length path)])
     (and (> n 4) (string=? (substring path (- n 4) n) ".txt") mode)))
-(add-hook! files:find-handlers handler)
+(hooks:add! files:find-handlers handler)

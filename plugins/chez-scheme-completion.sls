@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (chez-scheme) (syntax) (buffers) (document) (views) (modes) (prog))
+(import (completion) (chez-scheme) (syntax) (buffers) (document) (views) (modes) (prog) (hooks))
 
 ;; The entry runs after every command while its session lives, so the
 ;; candidates of a names vector are made once and kept while it lives.
@@ -62,7 +62,7 @@
                          (completion:region start end
                            (%sources-for buffer (%head? (buffers:document buffer) start)))))))))))
 
-(define (%add-name-region) (add-local-hook! completion:find-region name-region))
+(define (%add-name-region) (hooks:add-local! completion:find-region name-region))
 
 ;; Any buffer may mention a Tuna name, as *Help* or a chat does, but in
 ;; another language's program a symbol is that language's, as Embark
@@ -78,5 +78,5 @@
                   (and name (member (chez-scheme:name-library name) (chez-scheme:tuna-libraries))
                        (completion:make-target completion:name-category (chez-scheme:name-export name) text start end))))))))
 
-(add-hook! chez-scheme:mode-hook %add-name-region)
-(add-hook! completion:target-finders name-target 10)
+(hooks:add! chez-scheme:mode-hook %add-name-region)
+(hooks:add! completion:target-finders name-target 10)

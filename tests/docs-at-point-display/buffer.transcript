@@ -5,11 +5,11 @@
 ; heading, its Markdown drawn, and shows it in another view.
 > (define (described view)
     (docs-at-point:make-doc (string-append "Takes **" (word-at view) "**.") (docs-at-point:doc-options [markdown] [thing (word-at view)])))
-> (add-hook! docs-at-point:sources described 1)
-> (set-option! docs-at-point:strategy docs-at-point:all)
+> (hooks:add! docs-at-point:sources described 1)
+> (options:set! docs-at-point:strategy docs-at-point:all)
 > (press! "C-h" ".")
 > (testing:wait-until (lambda () (buffers:find "*Docs*")))
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (define docs (buffers:find "*Docs*"))
 > (document:datums (buffers:document docs))
 ((docs-at-point-display:%page () (markdown:heading ((level . 2)) "alpha\n") (markdown:code-block ((language . "")) "(alpha x)\n") (markdown:heading ((level . 2)) "alpha\n") (markdown:paragraph ((key . 0)) "Takes " (markdown:strong () "alpha") ".\n")))
@@ -19,14 +19,14 @@
 docs-at-point-display:docs-mode
 ; With the mode off nothing follows point, and g in *Docs* asks again for
 ; the view the docs are about, at its point now.
-> (set-option! docs-at-point:mode #f)
+> (options:set! docs-at-point:mode #f)
 > (press! "M-f" "M-f")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (document:text (buffers:document docs))
 "alpha\n(alpha x)\nalpha\nTakes alpha.\n"
 > (layout:select! other-view)
 > (press! "g")
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (document:text (buffers:document docs))
 "beta\n(beta x)\nbeta\nTakes beta.\n"
 ; q quits the view of *Docs*.
@@ -38,7 +38,7 @@ docs-at-point-display:docs-mode
 > (define third (layout-split:split-view! notes-view (layout-split:direction column)))
 > (layout:select! third)
 > (press! "C-h" ".")
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (layout:delete-part! (layout:view-node third))
 > (layout:select! notes-view)
 > (raised docs-at-point-display:refresh)
@@ -46,15 +46,15 @@ docs-at-point-display:docs-mode
 ; A doc's thing shows in its face, and a plain doc shows in the code font
 ; with its ranges in their faces, in the echo area and in *Docs*.
 > (layout:select! notes-view)
-> (set-option! docs-at-point:mode #t)
-> (remove-hook! docs-at-point:sources signature)
-> (remove-hook! docs-at-point:sources described)
+> (options:set! docs-at-point:mode #t)
+> (hooks:remove! docs-at-point:sources signature)
+> (hooks:remove! docs-at-point:sources described)
 > (define (faced view)
     (docs-at-point:make-doc "(total items)"
       (docs-at-point:doc-options [thing "total"] [face faces:function] [spans (list (list 7 12 faces:highlight))])))
-> (add-hook! docs-at-point:sources faced)
+> (hooks:add! docs-at-point:sources faced)
 > (press! "C-h" ".")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (list (echo-area:current-message) (echo-area:current-spans))
 ("total: (total items)" ((0 5 function) (14 19 highlight)))
 > (define (holds? text piece)
@@ -66,12 +66,12 @@ docs-at-point-display:docs-mode
 (#t #t #t)
 ; Where no source answers, C-h . shows *Docs* empty; making *Docs* again
 ; calls docs-mode-hook in it.
-> (remove-hook! docs-at-point:sources faced)
+> (hooks:remove! docs-at-point:sources faced)
 > (define made '())
-> (add-hook! docs-at-point-display:docs-mode-hook (lambda () (set! made (cons (buffers:name (buffers:current)) made))))
+> (hooks:add! docs-at-point-display:docs-mode-hook (lambda () (set! made (cons (buffers:name (buffers:current)) made))))
 > (buffers:kill! (buffers:find "*Docs*"))
 #t
 > (press! "C-h" ".")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (list made (and (buffers:find "*Docs*") (pair? (views:showing (buffers:find "*Docs*")))) (and (buffers:find "*Docs*") (text (buffers:find "*Docs*"))))
 (("*Docs*") #t "")

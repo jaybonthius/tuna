@@ -5,7 +5,7 @@
 (#t #t #f #f)
 > (map commands:command-name (list demo:hello demo:ordered))
 (demo:hello demo:ordered)
-> (documentation demo:hello)
+> (definition-documentation demo:hello)
 "Says hello to NAME."
 > (commands:command-names)
 (open-notes demo:hello demo:add demo:ordered demo:slow demo:which-task)
@@ -33,7 +33,7 @@
 "Hello, Harpo!"
 > (commands:run demo:ordered)
 (a b c)
-> demo:order
+> (demo:order)
 (c b a)
 > (commands:run demo:slow)
 slept
@@ -60,37 +60,32 @@ slept
 ; A command is a changeable definition: it can be overridden, and the
 ; procedure its name gives calls what is in effect.
 > (define hello demo:hello)
-> (set! demo:hello (lambda args "overridden"))
+> (define demo:hello (lambda args "overridden"))
 > (list (hello) (commands:run demo:hello) (commands:command? hello))
 ("overridden" "overridden" #t)
 > (map (lambda (c) (list (car c) (cadr c))) (definition-changes demo:hello))
-(((repl) override) ((demo) define))
-> (remove-override! demo:hello)
+((#<owner (repl) 1> override) (#<owner (demo) 1> define))
+> (override-remove! demo:hello)
 > (hello "Chico")
 "Hello, Chico!"
 ; The configuration and the REPL define commands without a prefix, and
 ; defining one again replaces it.
 > (list (commands:command? open-notes) (commands:command-name open-notes) (commands:run open-notes))
 (#t open-notes notes)
-; Outside a module, define-public is Chez's define, which keeps no
-; documentation.
-> (documentation open-notes)
-#f
 > (define old-notes open-notes)
 > (commands:define-command (open-notes) "Opens other notes." 'other)
 > (list (commands:command? old-notes) (commands:command? open-notes) (commands:run (commands:command-named 'open-notes)))
 (#f #t other)
 ; Reloading the module keeps the procedure its name gives, so a key bound
 ; to it keeps working; a command added to the file is registered.
-> (define-table keymap)
-> (table-set! keymap "C-h" demo:hello)
+> (tables:define-table keymap)
+> (tables:set! keymap "C-h" demo:hello)
 > (let ([p (open-file-output-port (string-append (getenv "HOME") "/.config/tuna/lib/demo.sls")
                                   (file-options no-fail no-truncate append) (buffer-mode block) (native-transcoder))])
     (put-string p "\n(commands:define-command (later) \"Added later.\" 'later)\n")
     (close-port p))
-> (import (tuna eval))
-> (eval-file "~/.config/tuna/lib/demo.sls")
-> (list (eq? hello demo:hello) (commands:command? hello) (commands:run (table-ref keymap "C-h")))
+> (reload-modules! '((demo)))
+> (list (eq? hello demo:hello) (commands:command? hello) (commands:run (tables:ref keymap "C-h")))
 (#t #t "Hello, you!")
 > (commands:command-names)
 (open-notes demo:hello demo:add demo:ordered demo:slow demo:which-task demo:later)
@@ -98,16 +93,17 @@ slept
 later
 ; Unloading the module unregisters its commands; loading it again
 ; registers the same procedures.
-> (unload-module! '(demo))
+> (unload-owner! (module-owner '(demo)))
 > (list (commands:command? hello) (commands:command-named 'demo:hello) (commands:command-names))
 (#f #f (open-notes))
 > (commands:run hello)
 ! commands:run: not a command with irritant #<procedure>
 > (load-module! '(demo))
+#<owner (demo) 3>
 > (list (eq? hello (commands:command-named 'demo:hello)) (commands:command? hello) (commands:run hello))
 (#t #t "Hello, you!")
-> (module-changes '(demo))
-((table-entry commands:registry demo:later) (define demo:later #f) (table-entry commands:registry demo:which-task) (define demo:which-task #f) (table-entry commands:registry demo:slow) (define demo:slow #f) (table-entry commands:registry demo:ordered) (define demo:ordered #f) (table-entry commands:registry demo:add) (define demo:add #f) (table-entry commands:registry demo:hello) (define demo:hello #f) (define demo:note! #f) (define demo:order #f))
+> (owner-changes (module-owner '(demo)))
+((define #<procedure demo:later> demo:later) (define #<procedure demo:which-task> demo:which-task) (define #<procedure demo:slow> demo:slow) (define #<procedure demo:ordered> demo:ordered) (define #<procedure demo:add> demo:add) (define #<procedure demo:hello> demo:hello) (define #<procedure demo:note!> demo:note!) (define #<procedure demo:order> demo:order))
 ; public-command-names leaves out the commands whose names have a % after
 ; the module's prefix, as a plugin's interface leaves out its % names.
 > (commands:define-command (%hidden) "A private command." 'hidden)

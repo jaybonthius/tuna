@@ -1,12 +1,16 @@
 #!tuna
 (define m (make-mutex))
-(define evaluated 0)
-(define log '())
+(define %evaluated 0)
 
-(define (note! e) (set! log (cons e log)))
+(define (evaluated) %evaluated)
+(define %log '())
+
+(define (log) %log)
+
+(define (note! e) (set! %log (cons e %log)))
 
 (define (guarded thunk)
-  (with-mutex (begin (set! evaluated (+ evaluated 1)) m)
+  (with-mutex (begin (set! %evaluated (+ %evaluated 1)) m)
     (thunk)))
 
 (define (wound thunk)

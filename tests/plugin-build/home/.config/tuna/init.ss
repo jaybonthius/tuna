@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins))
+(import (tuna))
 (use-plugin wrap (git "https://github.com/bob/wrap") (commit "64d7a81"))
 (use-plugin loc (local "~/src/loc"))
 

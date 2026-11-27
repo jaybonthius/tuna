@@ -1,21 +1,20 @@
 ; Reports raised on four threads at once, while the main thread shows
 ; messages, all reach the log once each, in the order each thread raised
 ; them. Chez's console-error-port is one value for every thread, so the
-; core's writer is silenced beneath the plugin's advice, which a reload
-; puts outside it, rather than four threads writing standard error.
+; core's writer is silenced beneath the plugin's advice rather than four
+; threads writing standard error.
 > (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
-> (load-module! '(quiet))
-> (unload-module! '(echo-area))
-> (load-module! '(echo-area))
-> (set-option! echo-area:log-max 16384)
+> (quiet:silence! #t)
+> (options:set! echo-area:log-max 16384)
 > (define done 0)
+> (define done-mutex (make-mutex))
 > (define (raiser i)
     (lambda ()
       (do ([k 0 (+ k 1)]) ((= k 250))
         (report (condition (make-error) (make-message-condition (format "t~a-~a" i k)))))
-      (with-interrupts-disabled (set! done (+ done 1)))))
+      (with-mutex done-mutex (set! done (+ done 1)))))
 > (begin
-    (for-each (lambda (i) (fork-thread (raiser i))) '(0 1 2 3))
+    (for-each (lambda (i) (fork-task (lambda (restore) ((raiser i))))) '(0 1 2 3))
     (let loop ()
       (unless (= done 4)
         (echo-area:message! "Working")
@@ -39,14 +38,14 @@
 ; Quits requested every millisecond land in messages, the flush of
 ; reports, clearing by keys and the log's trimming. Afterwards both
 ; buffers are well formed, and a message shows and is logged as before.
-> (set-option! echo-area:log-max 50)
+> (options:set! echo-area:log-max 50)
 > (define quitting #t)
 > (define stopped #f)
 > (define (quitter)
     (let loop ()
       (if quitting
           (begin
-            (request-quit!)
+            (testing:request-quit!)
             (chez:sleep (make-time 'time-duration 1000000 0))
             (loop))
           (set! stopped #t))))
@@ -61,10 +60,10 @@
 ; before it enters the guard again.
 > (define (stress until)
     (let again ()
-      (guard (c [(quit-condition? c) (set! quits-caught (+ quits-caught 1)) (again)])
+      (guard (c [(cancelled? c) (set! quits-caught (+ quits-caught 1)) (again)])
         (unless forked
           (set! forked #t)
-          (fork-thread quitter))
+          (fork-task (lambda (restore) (quitter))))
         (let loop ([k 0])
           (when (< (real-time) until)
             (case (mod k 5)
@@ -82,7 +81,7 @@
     (stress (+ (real-time) 2000))
     (list (> quits-caught 100) (> rounds 1000)))
 (#t #t)
-> (unload-module! '(quiet))
+> (unload-owner! (module-owner '(quiet)))
 > (define (shape b)
     (let ([d (car (document:datums (buffers:document b)))])
       (list (car d) (length (cddr d)))))

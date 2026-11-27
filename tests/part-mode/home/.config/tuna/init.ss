@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins) (document) (haml) (web) (layout-split))
+(import (tables))
+(import (tuna) (document) (haml) (web) (layout-split))
 (use-plugin layout-split)
 (use-plugin layout-tabs)
 (use-plugin layout-scroll)
@@ -43,7 +44,7 @@
 (define (press! client . keys)
   (for-each
     (lambda (key)
-      ((table-ref web:input-handlers "key") client
+      ((tables:ref web:input-handlers "key") client
        (list (cons "type" "key") (cons "key" (car key)) (cons "code" "") (cons "modifiers" (list->vector (cdr key))))))
     keys)
   (batch-ended))

@@ -1,11 +1,13 @@
 #!tuna
 (import (prog) (modes) (auto-mode) (buffers) (document) (files) (jobs) (faces) (syntax)
-        (syntax-highlighting) (indentation) (chez-scheme highlight))
+        (syntax-highlighting) (indentation) (chez-scheme highlight) (hooks) (options) (tables))
 
-(define-table keymap
+(define %self (current-owner))
+
+(tables:define-table keymap
   "Keys in Scheme buffers.")
 
-(define-hook mode-hook
+(hooks:define-hook mode-hook
   "Called in each buffer that turns on chez-scheme:mode, after prog:mode-hook.")
 
 (modes:define-major-mode mode
@@ -15,7 +17,7 @@
   (hook mode-hook)
   (language "scheme"))
 
-(define-table indent-rules
+(tables:define-table indent-rules
   "Maps a symbol to how a form with that head indents: the number of arguments it takes before its body; (indent-method defun), which puts the next line 2 columns past the opening bracket while the last argument before it is on the bracket's line; or a procedure of the buffer and the position of the form's opening bracket that returns that number.")
 
 (define-enumeration indent-method (defun) %indent-methods)
@@ -87,17 +89,13 @@
           (substring s (string-length prefix) (string-length s))
           s)))
 
-  ;; Chez calls every changeable definition a keyword, so the module's own
-  ;; record of its definitions tells them from syntax. The kernel adds
-  ;; %scope to every module's exports, and no module defines it.
+  ;; The kernel adds %scope to every module's exports, and no module
+  ;; defines it. A module's % procedures are not exported; its owner's
+  ;; definitions name them.
   (define (classify name)
     (let* ([module? (module-name? name)]
            [prefix (and module? (module-prefix name))]
            [scope-export (and module? (string->symbol (string-append prefix "%scope")))]
-           [definitions (if module?
-                            (fold-left (lambda (acc change) (if (eq? (car change) 'define) (cons (cadr change) acc) acc))
-                                       '() (module-changes name))
-                            '())]
            [env (environment name)]
            [kind-of (lambda (v) (if (procedure? v) 'procedure 'variable))])
       (fold-left
@@ -105,15 +103,25 @@
           (cond
             [(eq? export scope-export) acc]
             [(top-level-bound? export env) (cons (cons export (kind-of (top-level-value export env))) acc)]
-            [(memq export definitions)
-             (cons (cons export (kind-of (eval-in-module (string->symbol (without-prefix export prefix)) name))) acc)]
             [else (cons (cons export 'syntax) acc)]))
-        '() (library-exports name))))
+        (if module? (helpers name) '())
+        (library-exports name))))
+
+  (define (helpers name)
+    (let ([owner (module-owner name)])
+      (if owner
+          (fold-left
+            (lambda (acc change)
+              (if (and (eq? (car change) 'define) (private-export? (caddr change) name))
+                  (cons (cons (caddr change) 'procedure) acc)
+                  acc))
+            '() (owner-changes owner))
+          '())))
 
   (define (library-classes name)
     (if (if (module-name? name) (member name (loaded-modules)) (member name (library-list)))
         (or (hashtable-ref classes name #f)
-            (let ([found (guard (c [(not (quit-condition? c)) (report c) '()]) (classify name))])
+            (let ([found (guard (c [(not (cancelled? c)) (report c) '()]) (classify name))])
               (hashtable-set! classes name found)
               found))
         '()))
@@ -205,7 +213,7 @@
                                                 (split (substring path (string-length folder) (fx- n m))))])
                                  (and (member name (loaded-modules))
                                       (let-values ([(source object found?)
-                                                    ((library-search-handler) 'import name (library-directories) (library-extensions))])
+                                                    (default-library-search-handler 'import name (library-directories) (library-extensions))])
                                         (and (equal? source path) name)))))))
                       (library-extensions)))))
            (library-directories))))
@@ -230,7 +238,7 @@
 
   (define (repl-libraries)
     (filter (lambda (name) (member name (library-list)))
-            (append '((tuna core replaced) (chezscheme) (tuna) (tuna base) (tuna plugins) (tuna eval))
+            (append '((tuna core replaced) (chezscheme) (tuna))
                     (loaded-modules))))
 
   ;; The first name for a spelling is the one Chez resolves, so the
@@ -379,15 +387,16 @@
 (define (%highlight-input buffer scope)
   (list %face-roles (syntax:brackets-used? buffer) (and scope (name-pairs buffer scope))))
 
-(define (%note-module-loaded loaded name)
-  (loaded name)
-  (note-changed! name))
+(define (%note-module-loaded loaded instance)
+  (loaded instance)
+  (note-changed! (owner-name instance)))
 
 (define (%update-names ended)
   (ended)
-  (as-module (this-module)
-    (when (drop-stale-names!)
-      (syntax-highlighting:update!))))
+  (call-as-owner %self
+    (lambda ()
+      (when (drop-stale-names!)
+        (syntax-highlighting:update!)))))
 
 ;; Emacs's Scheme mode puts a line holding only a one-semicolon comment
 ;; at this column.
@@ -446,8 +455,8 @@
 
 (define (%rule buffer name bracket)
   (let* ([plain (%after-last-colon name)]
-         [rule (or (table-ref indent-rules (string->symbol name) #f)
-                   (and plain (table-ref indent-rules (string->symbol plain) #f))
+         [rule (or (tables:ref indent-rules (string->symbol name) #f)
+                   (and plain (tables:ref indent-rules (string->symbol plain) #f))
                    (and (or (%def-name? name) (and plain (%def-name? plain))) (indent-method defun)))])
     (if (procedure? rule)
         (let ([n (rule buffer bracket)])
@@ -525,16 +534,16 @@
          [ls (syntax:lexemes buffer (fx+ bracket 1) (%line-end doc (document:line doc bracket)))])
     (if (and (pair? ls) (pair? (cdr ls)) (%class? (cadr ls) (syntax:class atom))) 2 1)))
 
-(table-set! syntax:lexers mode lexer)
-(table-set! syntax:symbol-characters mode "!$%&*/:<=>?^_~+-.@")
-(for-each (lambda (name) (table-set! auto-mode:file-names name mode))
+(tables:set! syntax:lexers mode lexer)
+(tables:set! syntax:symbol-characters mode "!$%&*/:<=>?^_~+-.@")
+(for-each (lambda (name) (tables:set! auto-mode:file-names name mode))
           '("sls" "ss" "sps" "scm" "sch" "sld"))
-(for-each (lambda (name) (table-set! auto-mode:interpreters name mode))
+(for-each (lambda (name) (tables:set! auto-mode:interpreters name mode))
           '("tuna" "scheme" "petite" "scheme-script" "r6rs" "chezscheme"))
-(table-set! syntax-highlighting:highlighters mode
+(tables:set! syntax-highlighting:highlighters mode
   (syntax-highlighting:make-highlighter %highlighter (list syntax-highlighting:faces syntax:brackets)
     %highlight-input))
-(for-each (lambda (rule) (table-set! indent-rules (car rule) (cdr rule)))
+(for-each (lambda (rule) (tables:set! indent-rules (car rule) (cdr rule)))
   `((begin . 0) (delay . 0) (sequence . 0) (case . 1) (lambda . 1) (let* . 1) (letrec . 1) (let-values . 1)
     (let*-values . 1) (and-let* . 1) (let-syntax . 1) (letrec-syntax . 1) (with-syntax . 1) (library . 1)
     (eval-when . 1) (when . 1) (unless . 1) (letrec* . 1) (parameterize . 1) (define-values . 1)
@@ -552,9 +561,9 @@
     (top-level-program . 1) (fluid-let-syntax . 1) (with-implicit . 1) (module . 1) (with-mutex . 1)
     (extend-syntax . 1) (with . 1) (trace-case-lambda . 1) (trace-define . 1) (trace-define-syntax . 1)
     (trace-do . 2) (trace-lambda . 2) (trace-let . 2) (use-plugin . 1) (plugin . 1) (config . 0)
-    (when-installed . 1) (as-module . 1) (with-options . 1) (buffers:with-buffer . 1)
+    (call-as-owner . 1) (call-with-cancellation-masked . 0) (options:with . 1) (buffers:with-buffer . 1)
     (buffers:call-with-buffer . 1) (undo:with-edit-group . 1) (undo:call-with-edit-group . 1)
     (views:with-view . 1) (views:call-with-view . 1) (minibuffer:call-with-setup . 1)))
-(table-set! indentation:indenters mode indenter)
+(tables:set! indentation:indenters mode indenter)
 (advice-add! module-loaded %note-module-loaded)
 (advice-add! batch-ended %update-names)

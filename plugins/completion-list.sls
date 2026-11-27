@@ -1,15 +1,15 @@
 #!tuna
-(import (completion) (completion rows) (minibuffer) (buffers) (document) (views) (keys) (editing) (modes) (faces) (web) (haml))
+(import (completion) (completion rows) (minibuffer) (buffers) (document) (views) (keys) (editing) (modes) (faces) (web) (haml) (hooks) (options) (tables))
 
-(define-option lines 10 (lambda (v) (and (fixnum? v) (fx> v 0)))
+(options:define-option lines 10 (lambda (v) (and (fixnum? v) (fx> v 0)))
   "How many lines a read's list shows at most, its rows and their group titles.")
 
-(define-option fixed-height? #f boolean?
+(options:define-option fixed-height? #f boolean?
   "When true, a read's list is completion-list:lines tall from its first draw; otherwise it grows as rows arrive and keeps its height until the read ends.")
 
-(define-table mode-keymap "Keys in a read's rows' buffer: none, as in completion/rows:mode-keymap.")
+(tables:define-table mode-keymap "Keys in a read's rows' buffer: none, as in completion/rows:mode-keymap.")
 
-(define-hook mode-hook
+(hooks:define-hook mode-hook
   "Called with a read's rows' buffer current when its mode is set, after completion/rows:mode-hook; it changes a read's list and not the popup.")
 
 (modes:define-major-mode mode (parent completion/rows:mode) (keymap mode-keymap) (hook mode-hook) (plugin-only #t))
@@ -93,8 +93,8 @@
 ;; paragraph motions to remap.
 (keys:bind! completion:keymap "M-}" completion:next-group)
 (keys:bind! completion:keymap "M-{" completion:previous-group)
-(table-set! web:stylesheets 'completion-list "completion-list/completion-list.css")
-(add-hook! completion:started %started)
-(add-hook! completion:updated %updated)
-(add-hook! completion:ended %ended)
+(tables:set! web:stylesheets 'completion-list "completion-list/completion-list.css")
+(hooks:add! completion:started %started)
+(hooks:add! completion:updated %updated)
+(hooks:add! completion:ended %ended)
 (on-unload %unload)

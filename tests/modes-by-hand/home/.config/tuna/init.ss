@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (document) (haml) (web) (disk) (layout-split) (syntax))
+(import (hooks) (options) (tables) (timers) (plugins))
+(import (tuna) (testing) (document) (haml) (web) (disk) (layout-split) (syntax))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -60,18 +61,18 @@
 ;; A command's prompt pauses its task, so tests run it in a task of its
 ;; own and wait for the prompt.
 (define (start! . keys)
-  (let ([t (spawn-task (lambda () (in-client (lambda () (apply press! keys)))))])
-    (sleep-for 0.05)
+  (let ([t (spawn-task (lambda (restore) (in-client (lambda () (apply press! keys)))))])
+    (timers:sleep 0.05)
     t))
 
 (define (result t)
-  (testing:wait-until (lambda () (task-done? t)))
-  (if (task-done? t)
+  (testing:wait-until (lambda () (eq? (task-state t) 'done)))
+  (if (eq? (task-state t) 'done)
       (guard (c [#t (list 'raised (if (message-condition? c) (condition-message c) c))])
-        (join-task t))
+        (testing:join t))
       'waiting))
 
-(define (result-now t) (if (task-done? t) (result t) 'waiting))
+(define (result-now t) (if (eq? (task-state t) 'done) (result t) 'waiting))
 
 (define (view) (layout:selected-view))
 
@@ -148,7 +149,7 @@
   (let loop ([n 0] [same 0] [last #f])
     (let ([now (list (spans-of b syntax-highlighting:faces) (spans-of b syntax:brackets))])
       (unless (or (= same 15) (= n 500))
-        (sleep-for 0.02)
+        (timers:sleep 0.02)
         (loop (+ n 1) (if (equal? now last) (+ same 1) 0) now)))))
 
 (define (strip-tags s)

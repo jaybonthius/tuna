@@ -132,11 +132,11 @@
 ; Options: a view's value wins over the buffer's local value, and is
 ; checked.
 > (import (fill))
-> (buffers:with-buffer notes (set-option-local! fill:column 60))
+> (buffers:with-buffer notes (options:set-local! fill:column 60))
 > (views:set-option! v fill:column 72)
 > (list (views:with-view v (fill:column)) (views:with-view w (fill:column)) (fill:column))
 (72 60 70)
-> (views:with-view v (buffers:with-buffer notes (set-option-local! fill:column 50)) (fill:column))
+> (views:with-view v (buffers:with-buffer notes (options:set-local! fill:column 50)) (fill:column))
 72
 > (views:with-view w (fill:column))
 50
@@ -154,10 +154,10 @@
 ! views:call-with-view: not a procedure with irritant 5
 ; A module's values go when it unloads.
 > (import (wide))
-> (as-module '(wide) (wide:widen-view! v))
+> (call-as-owner (module-owner '(wide)) (lambda () (wide:widen-view! v)))
 > (views:with-view v (views:drawn-screens))
 3
-> (unload-module! '(wide))
+> (unload-owner! (module-owner '(wide)))
 > (views:with-view v (views:drawn-screens))
 2
 ; Node state is per view, and goes with its node.
@@ -196,7 +196,7 @@ gone
 (field-keys box-keys)
 ; A span's own keymap comes before its layer type's; a span of the same
 ; layer without one leaves the key to the layer's.
-> (define-table own-keys)
+> (tables:define-table own-keys)
 > (buffers:add-span! (buffers:layer k keyed:links) 2 3 (list (cons 'keymap own-keys)))
 > (views:set-point! kv 2)
 > (let ([ks (views:keymaps kv)]) (list (eq? (car ks) own-keys) (cdr ks)))
@@ -220,11 +220,9 @@ gone
 ; Only the main thread uses views.
 > (define from-thread #f)
 > (begin
-    (fork-thread
-      (lambda ()
-        (guard (c [#t (set! from-thread (list (condition-who c) (condition-message c)))])
+    (fork-task (lambda (restore) (guard (c [#t (set! from-thread (list (condition-who c) (condition-message c)))])
           (views:set-point! v 1))))
-    (let loop () (unless from-thread (sleep-for 0.01) (loop)))
+    (let loop () (unless from-thread (timers:sleep 0.01) (loop)))
     from-thread)
 (views:set-point! "not on the main thread")
 ; Names a view keeps to itself are not offered.
@@ -247,8 +245,8 @@ gone
 ! views:set-cursor!: not a cursor of the view with irritant #<cursor>
 ; Numbers that are not finite are refused; a huge margin draws every
 ; line.
-> (set-option! views:drawn-screens +inf.0)
-! set-option!: +inf.0 is not a valid value for views:drawn-screens
+> (options:set! views:drawn-screens +inf.0)
+! options:set!: +inf.0 is not a valid value for views:drawn-screens
 > (views:set-option! v views:drawn-screens 1e300)
 > (html? (views:draw v #f))
 #t

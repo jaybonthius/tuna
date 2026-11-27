@@ -5,14 +5,14 @@
 ! ask:message: Copied 2 files
 went-on
 > (define told '())
-> (set-option! ask:message-writer (lambda (text) (set! told (cons text told))))
+> (options:set! ask:message-writer (lambda (text) (set! told (cons text told))))
 > (ask:message "Deleted 1 file")
 > told
 ("Deleted 1 file")
 > (raised (lambda () (ask:message 'text)))
 (ask:message "not a string")
 ; ask:file-name passes a starting folder to its reader when given one.
-> (set-option! ask:file-name-reader (lambda (question . folder) (cons question folder)))
+> (options:set! ask:file-name-reader (lambda (question . folder) (cons question folder)))
 > (ask:file-name "Copy notes.txt to: " "/home/ada/archive/")
 ("Copy notes.txt to: " "/home/ada/archive/")
 > (ask:file-name "Find file: ")

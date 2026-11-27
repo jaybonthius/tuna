@@ -1,9 +1,9 @@
 ; Mouse items across threads, quits and reloads.
-> (import (rename (only (chezscheme) sleep) (sleep chez:sleep)) (tuna eval))
+> (import (rename (only (chezscheme) sleep) (sleep chez:sleep)) (plugins))
 > (define (mouse! action at . fields)
     (let ([v (view)])
       (parameterize ([web:current-client client])
-        ((table-ref web:input-handlers "mouse") client
+        ((tables:ref web:input-handlers "mouse") client
          (append fields
                  `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
                    ("view" . ,(views:id v)) ("version" . ,(buffers:version (views:buffer v)))
@@ -11,7 +11,7 @@
                    ,@(if at `(("at" . ,at) ("count" . 0)) '())))))))
 > (define (on-thread thunk)
     (let ([result #f])
-      (fork-thread (lambda () (set! result (raised thunk))))
+      (fork-task (lambda (restore) (set! result (raised thunk))))
       (testing:wait-until (lambda () result))
       result))
 > (start! "alpha beta gamma\ndelta epsilon\n" 1)
@@ -22,10 +22,9 @@
 ; Reloading editing in the middle of a drag ends the drag: the moves
 ; that follow find no binding and are dropped, and the next press starts
 ; afresh.
-> (define library (getenv "TUNA_LIBRARY"))
 > (mouse! "down" 2)
 > (mouse! "move" 5)
-> (eval-file (string-append library "/editing.sls"))
+> (reload-modules! '((editing)))
 > (mouse! "move" 9)
 > (state)
 ("alpha beta gamma\ndelta epsilon\n" ((5 2)))
@@ -41,13 +40,13 @@
 ; or a stale click. Typing and DEL do not replace a region here, so the
 ; text only grows and every place stays in it.
 > (buffers:with-buffer (views:buffer (view))
-    (set-option-local! undo:limit (greatest-fixnum))
-    (set-option-local! editing:delete-selection #f)
-    (set-option-local! editing:delete-active-region #f))
+    (options:set-local! undo:limit (greatest-fixnum))
+    (options:set-local! editing:delete-selection #f)
+    (options:set-local! editing:delete-active-region #f))
 > (define quits 0)
 > (define others '())
 > (define (count-quits report c)
-    (if (quit-condition? c)
+    (if (cancelled? c)
         (set! quits (+ quits 1))
         (let ([m (condition-message c)])
           (unless (member m others) (set! others (cons m others))))))
@@ -60,7 +59,7 @@
       (when (unbox quitting)
         (chez:sleep (make-time 'time-duration 100000 0))
         (when (box-cas! armed #t #f)
-          (request-quit!)
+          (testing:request-quit!)
           (set! requests (+ requests 1)))
         (loop))))
 > (define steps 0)
@@ -73,17 +72,17 @@
           (lambda () (mouse! "down" 2) (press! "C-g") (mouse! "move" 8) (mouse! "click" 8))))
 > (define (stress until)
     (let again ()
-      (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (again)])
+      (guard (c [(cancelled? c) (set! quits (+ quits 1)) (again)])
         (let loop ()
           (when (< (real-time) until)
             (for-each (lambda (g) (set-box! armed #t) (g)) gestures)
-            (sleep-for 0)
+            (timers:sleep 0)
             (set! steps (+ steps 1))
             (loop)))
         (set-box! armed #f)
-        (sleep-for 0.05))))
+        (timers:sleep 0.05))))
 > (begin
-    (fork-thread quitter)
+    (fork-task (lambda (restore) (quitter)))
     (stress (+ (real-time) 1500))
     (set-box! quitting #f)
     (list (> steps 10) (> requests 30) (> quits 30)))

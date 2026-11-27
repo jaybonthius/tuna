@@ -17,7 +17,7 @@
 ; Docs never cover a message.
 > (echo-area:message! "Saved")
 > (docs-at-point:ask-sources (view))
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (echo-area:current-message)
 "Saved"
 ; A doc whose echo is not its text shows no ranges, and one with no echo
@@ -26,29 +26,31 @@
     (list (docs-at-point:make-doc "first line" (docs-at-point:doc-options [thing "one"] [echo "short"] [spans '((0 5 highlight))]))
           (docs-at-point:make-doc "unseen" (docs-at-point:doc-options [echo #f]))
           (docs-at-point:make-doc "second")))
-> (remove-hook! docs-at-point:sources signature)
-> (add-hook! docs-at-point:sources two)
+> (hooks:remove! docs-at-point:sources signature)
+> (hooks:add! docs-at-point:sources two)
 > (press! "C-a")
 > (testing:wait-until (lambda () (equal? (echo-area:current-message) "one: short\nsecond")))
 > (list (echo-area:current-message) (echo-area:current-spans))
 ("one: short\nsecond" ())
 ; echo-lines 1 cuts the rest with an ellipsis.
-> (set-option! docs-at-point-display:echo-lines 1)
+> (options:set! docs-at-point-display:echo-lines 1)
 > (press! "C-e")
 > (testing:wait-until (lambda () (equal? (echo-area:current-message) "one: short…")))
 > (echo-area:current-message)
 "one: short…"
 ; When the sources answer with no docs, the echo area's docs go.
-> (remove-hook! docs-at-point:sources two)
+> (hooks:remove! docs-at-point:sources two)
 > (define (none view) #f)
-> (add-hook! docs-at-point:sources none)
+> (hooks:add! docs-at-point:sources none)
 > (press! "C-a")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (echo-area:current-message)
 #f
-; Unloading the display plugin takes its displays back.
-> (length (hook-entries docs-at-point:displays))
+; Unloading the display plugin takes its displays back; the configuration,
+; which imports it, loads a new instance that adds its own.
+> (define before (hooks:entries docs-at-point:displays))
+> (length before)
 2
-> (unload-module! '(docs-at-point-display))
-> (length (hook-entries docs-at-point:displays))
-0
+> (unload-owner! (module-owner '(docs-at-point-display)))
+> (let ([after (hooks:entries docs-at-point:displays)]) (list (length after) (exists (lambda (d) (memq d before)) after)))
+(2 #f)

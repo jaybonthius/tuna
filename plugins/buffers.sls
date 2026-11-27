@@ -1,13 +1,13 @@
 #!tuna
-(import (document) (jobs) (commands) (buffers spans) (buffers records))
+(import (document) (jobs) (commands) (buffers spans) (buffers records) (hooks) (options) (tables) (timers) (scopes) (saved))
 
-(define-hook kill-queries)
-(define-hook killed)
-(define-hook after-edit)
+(hooks:define-hook kill-queries)
+(hooks:define-hook killed)
+(hooks:define-hook after-edit)
 
-(define-option stop-inside-clusters #f boolean?
+(options:define-option stop-inside-clusters #f boolean?
   "Whether point also stops between the code points of a grapheme cluster, so that one of its marks can be edited alone.")
-(define-option revert-function #f (lambda (v) (or (not v) (commands:command? v)))
+(options:define-option revert-function #f (lambda (v) (or (not v) (commands:command? v)))
   "The command buffers:revert-buffer runs to make the current buffer again from its source, or #f when nothing does; a buffer's mode or maker sets it locally.")
 
 (module %internals
@@ -32,9 +32,9 @@
     (make-edit-record b version start (make-piece-record removed removed-spans) (make-piece-record inserted inserted-spans)
       (document:length removed) (document:length inserted) (not (eq? removed inserted)) silent?))
 
-  (define-table kinds)
-  (define-table constructor-kinds)
-  (define-table layer-types)
+  (tables:define-table kinds)
+  (tables:define-table constructor-kinds)
+  (tables:define-table layer-types)
 
   (define by-name (make-hashtable string-hash string=?))
 
@@ -43,7 +43,7 @@
   ;; place among the buffers not used since, so the order outlasts a
   ;; restart.
   (define made '())
-  (define-saved saved-order '() (lambda (v) (and (list? v) (for-all string? v))))
+  (saved:define-saved saved-order '() (lambda (v) (and (list? v) (for-all string? v))))
   (define ranks
     (let ([t (make-hashtable string-hash string=?)])
       (let loop ([names (saved-order)] [i 0])
@@ -70,7 +70,7 @@
     (let* ([live (fold-right (lambda (b acc) (if (internal? (buffer-name b)) acc (cons (buffer-name b) acc))) '() made)]
            [now (append live (remp (lambda (n) (member n live)) unmade))])
       (unless (equal? now (saved-order))
-        (set-saved! saved-order now))))
+        (saved:set! saved-order now))))
 
   ;; A start makes its buffers again before it first idles, so a saved
   ;; name no buffer has taken back by then names a buffer that is gone,
@@ -82,9 +82,10 @@
 
   (define (move-buffer! b front?)
     (let ([others (remq b made)])
-      (with-interrupts-disabled
-        (eq-hashtable-set! used b #t)
-        (set! made (if front? (cons b others) (append others (list b)))))
+      (call-with-cancellation-masked
+        (lambda (restore)
+          (eq-hashtable-set! used b #t)
+          (set! made (if front? (cons b others) (append others (list b))))))
       (unless (internal? (buffer-name b))
         (save-order!))))
 
@@ -202,11 +203,12 @@
                  [else (document:from-datum content)])])
       (unless (one-node? doc)
         (assertion-violation who "not one node" (if (document? content) (document:datums content) content)))
-      (let ([b (make-buffer-record (string->immutable-string name) doc (make-scope) (internal? name))])
-        (with-interrupts-disabled
-          (hashtable-set! by-name (buffer-name b) b)
-          (set! made (placed-among made b))
-          (set! unmade (remp (lambda (n) (string=? n name)) unmade)))
+      (let ([b (make-buffer-record (string->immutable-string name) doc (scopes:make) (internal? name))])
+        (call-with-cancellation-masked
+          (lambda (restore)
+            (hashtable-set! by-name (buffer-name b) b)
+            (set! made (placed-among made b))
+            (set! unmade (remp (lambda (n) (string=? n name)) unmade))))
         (unless (internal? name)
           (save-order!))
         b)))
@@ -222,24 +224,26 @@
       (when (and other (not (eq? other b)))
         (assertion-violation who "a live buffer has the name" name)))
     (let ([name (string->immutable-string name)])
-      (with-interrupts-disabled
-        (hashtable-delete! by-name (buffer-name b))
-        (buffer-name-set! b name)
-        (hashtable-set! by-name name b))
+      (call-with-cancellation-masked
+        (lambda (restore)
+          (hashtable-delete! by-name (buffer-name b))
+          (buffer-name-set! b name)
+          (hashtable-set! by-name name b)))
       (save-order!)))
 
   (define (forget-buffer! b)
-    (with-interrupts-disabled
-      (hashtable-delete! by-name (buffer-name b))
-      (set! made (remq b made))
-      (buffer-scope-set! b #f))
+    (call-with-cancellation-masked
+      (lambda (restore)
+        (hashtable-delete! by-name (buffer-name b))
+        (set! made (remq b made))
+        (buffer-scope-set! b #f)))
     (unless (internal? (buffer-name b))
       (save-order!)))
 
   (define (with-current b thunk)
-    (if (and (eq? (current-buffer) b) (eq? (current-scope) (buffer-scope b)))
+    (if (and (eq? (current-buffer) b) (eq? (scopes:current) (buffer-scope b)))
         (thunk)
-        (parameterize ([current-buffer b] [current-scope (buffer-scope b)])
+        (parameterize ([current-buffer b] [scopes:current (buffer-scope b)])
           (thunk))))
 
   ;; A frozen document replaces the buffer's own, so the next freeze
@@ -248,17 +252,18 @@
     (if (buffer-frozen? b)
         (buffer-doc b)
         (let ([frozen (document:freeze (buffer-doc b) jobs:freeze)])
-          (with-interrupts-disabled
-            (buffer-doc-set! b frozen)
-            (buffer-frozen?-set! b #t))
+          (call-with-cancellation-masked
+            (lambda (restore)
+              (buffer-doc-set! b frozen)
+              (buffer-frozen?-set! b #t)))
           frozen)))
 
-  (define (find-kind name) (table-ref kinds name #f))
+  (define (find-kind name) (tables:ref kinds name #f))
 
   (define (find-constructor-kind constructor)
-    (let ([name (table-ref constructor-kinds constructor #f)]) (and name (find-kind name))))
+    (let ([name (tables:ref constructor-kinds constructor #f)]) (and name (find-kind name))))
 
-  (define (kind-of node) (table-ref kinds (document:node-kind node) #f))
+  (define (kind-of node) (tables:ref kinds (document:node-kind node) #f))
 
   (define (node-content node)
     (let ([k (kind-of node)]) (if k (kind-entry-content k) 'text)))
@@ -267,7 +272,7 @@
     (let ([k (kind-of node)]) (if k (kind-entry-stops k) 'all)))
 
   (define (exported-symbol id)
-    (let ([owner (current-owner)])
+    (let ([owner (owner-name (current-owner))])
       (if (member owner '((init) (repl)))
           id
           (string->symbol
@@ -292,7 +297,7 @@
     (let ([name (exported-symbol id)])
       ;; The isolating children kept for a document are a fact about kinds.
       (set! walked (cons #f #f))
-      (table-set! kinds name
+      (tables:set! kinds name
         (make-kind-entry name content inline? sticky stops draw keymap consent (or whole? (eq? content 'atom))
           isolating? text (current-owner)))
       (if (eq? content 'atom)
@@ -302,7 +307,7 @@
   ;; A plugin's name for its constructor gives a procedure that forwards
   ;; to it, which is what other code holds, so that is the one noted.
   (define (note-constructor! constructor id)
-    (table-set! constructor-kinds constructor (exported-symbol id)))
+    (tables:set! constructor-kinds constructor (exported-symbol id)))
 
   ;; A document whose only node is its root, as a file's is, needs no
   ;; search for the nodes around a position: inside, there is the root
@@ -365,7 +370,7 @@
       [(string? d) (eq? content 'text)]
       [(vector? d) (not (eq? content 'atom))]
       [else
-       (let ([k (table-ref kinds (car d) #f)])
+       (let ([k (tables:ref kinds (car d) #f)])
          (and (case content
                 [(text) (and k (kind-entry-inline? k))]
                 [(nodes) (not (and k (kind-entry-inline? k)))]
@@ -378,7 +383,7 @@
   (define (inline-datums? ds)
     (for-all (lambda (d)
                (or (string? d) (vector? d)
-                   (let ([k (table-ref kinds (car d) #f)])
+                   (let ([k (tables:ref kinds (car d) #f)])
                      (and k (kind-entry-inline? k) (inline-datums? (cddr d))))))
              ds))
 
@@ -848,7 +853,7 @@
       (and (fx> k 0) (pair? ds)
            (let ([d (pick ds)])
              (and (pair? d)
-                  (let ([kind (table-ref kinds (car d) #f)])
+                  (let ([kind (tables:ref kinds (car d) #f)])
                     (or (and kind (kind-entry-isolating? kind) #t)
                         (loop (cddr d) (fx- k 1)))))))))
 
@@ -873,7 +878,7 @@
   (define (datums-fit-closed? ds)
     (for-all (lambda (d)
                (or (string? d) (vector? d)
-                   (let ([k (table-ref kinds (car d) #f)])
+                   (let ([k (tables:ref kinds (car d) #f)])
                      (datums-fit? (if k (kind-entry-content k) 'text) (cddr d)))))
              ds))
 
@@ -921,13 +926,13 @@
     (unless (real? priority)
       (assertion-violation 'buffers:define-layer "not a real number" priority))
     (let ([name (exported-symbol id)])
-      (table-set! layer-types name (make-layer-type name priority sticky evaporate? travels? read-only? keymap))
+      (tables:set! layer-types name (make-layer-type name priority sticky evaporate? travels? read-only? keymap))
       name))
 
   ;; A layer keeps the last definition of its type it saw, so its spans
   ;; move the same way while the type's module is unloaded.
   (define (layer-clauses l)
-    (let ([t (table-ref layer-types (buffer-layer-type l) #f)])
+    (let ([t (tables:ref layer-types (buffer-layer-type l) #f)])
       (when (and t (not (eq? t (buffer-layer-seen l))))
         (buffer-layer-seen-set! l t))
       (buffer-layer-seen l)))
@@ -935,7 +940,7 @@
   (define (layer-priority-of l) (layer-type-priority (layer-clauses l)))
 
   (define (layer-type-keymap-of l)
-    (let ([t (table-ref layer-types (buffer-layer-type l) #f)])
+    (let ([t (tables:ref layer-types (buffer-layer-type l) #f)])
       (and t (layer-type-keymap t))))
 
   ;; Travelling spans are the buffer's content; a layer limited to a key
@@ -955,7 +960,7 @@
 
   (define (find-layer! who b type key)
     (or (find-layer b type key)
-        (let ([t (table-ref layer-types type #f)])
+        (let ([t (tables:ref layer-types type #f)])
           (unless t (assertion-violation who "not a defined layer type" type))
           (add-layer! b type key t))))
 
@@ -1101,7 +1106,7 @@
                (assertion-violation who "not a position in the buffer at the version" p version))
              (fold-left (lambda (p e) (map-one e p)) p edits)))))
 
-  ;; The edit is made whole or not at all: a quit landing in it would
+  ;; The edit is made whole or not at all: a cancel landing in it would
   ;; leave the document, the version and the layers out of step.
   (define (commit! b doc start old-end new-end removed inserted carried)
     (let* ([silent? (silent-now? b)]
@@ -1110,29 +1115,30 @@
            [travels? (or carried (exists travelling? (buffer-layers b)))]
            [removed-spans (if travels? (travelling-spans-of b start old-end) '())]
            [r (fx- old-end start)] [i (fx- new-end start)]
-           [edit (with-interrupts-disabled
-                   (when carried
+           [edit (call-with-cancellation-masked
+                   (lambda (restore)
+                     (when carried
+                       (for-each
+                         (lambda (entry)
+                           (unless (find-layer b (car entry) #f)
+                             (add-layer! b (car entry) #f
+                               (or (tables:ref layer-types (car entry) #f)
+                                   (make-layer-type (car entry) 0 'neither #f #t #f #f)))))
+                         carried))
                      (for-each
-                       (lambda (entry)
-                         (unless (find-layer b (car entry) #f)
-                           (add-layer! b (car entry) #f
-                             (or (table-ref layer-types (car entry) #f)
-                                 (make-layer-type (car entry) 0 'neither #f #t #f #f)))))
-                       carried))
-                   (for-each
-                     (lambda (l)
-                       (move-layer! l start r i moves?
-                         (and carried (travelling? l)
-                              (let ([entry (assq (buffer-layer-type l) carried)])
-                                (if entry (cdr entry) '())))))
-                     (buffer-layers b))
-                   (let ([e (make-edit b (fx+ (buffer-version b) 1) start removed inserted removed-spans
-                                       (if travels? (travelling-spans-of b start new-end) '()) silent?)])
-                     (buffer-doc-set! b doc)
-                     (buffer-frozen?-set! b #f)
-                     (log-append! b e)
-                     (advance-version! b silent?)
-                     e))])
+                       (lambda (l)
+                         (move-layer! l start r i moves?
+                           (and carried (travelling? l)
+                                (let ([entry (assq (buffer-layer-type l) carried)])
+                                  (if entry (cdr entry) '())))))
+                       (buffer-layers b))
+                     (let ([e (make-edit b (fx+ (buffer-version b) 1) start removed inserted removed-spans
+                                         (if travels? (travelling-spans-of b start new-end) '()) silent?)])
+                       (buffer-doc-set! b doc)
+                       (buffer-frozen?-set! b #f)
+                       (log-append! b e)
+                       (advance-version! b silent?)
+                       e)))])
       (with-current b (lambda () (after-edit b edit)))
       edit))
 
@@ -1579,60 +1585,59 @@
                (or stop (loop a)))))))
 
   (define (make-anchor! b p after?)
-    (let ([a (make-anchor b after? p (buffer-version b) #f)])
-      (with-interrupts-disabled (hashtable-set! (buffer-anchors b) a #t))
+    (let ([a (make-anchor b after? (make-anchor-place (buffer-version b) p #f))])
+      (call-with-cancellation-masked (lambda (restore) (hashtable-set! (buffer-anchors b) a #t)))
       a))
+
+  (define (anchor-current-position a)
+    (anchor-place-position (anchor-current-place a)))
 
   ;; The trim moves every live anchor through up to the whole log, so the
   ;; loop reads the log's vector itself.
-  (define (anchor-current-position a)
-    (let* ([b (buffer-anchor-buffer a)] [now (buffer-version b)])
-      (unless (fx= (buffer-anchor-version a) now)
-        (let ([after? (buffer-anchor-after? a)] [log (buffer-log b)] [first (fx- now (buffer-logged b))])
-          (let loop ([v (buffer-anchor-version a)] [p (buffer-anchor-position a)] [deleted? (buffer-anchor-deleted? a)])
-            (if (fx= v now)
-                (with-interrupts-disabled
-                  (buffer-anchor-position-set! a p)
-                  (buffer-anchor-deleted?-set! a deleted?)
-                  (buffer-anchor-version-set! a now))
-                (let* ([e (vector-ref log (fx- v first))] [s (edit-record-start e)])
-                  (if (or (fx< p s) (not (edit-record-moves? e)))
-                      (loop (fx+ v 1) p deleted?)
-                      (let ([end (fx+ s (edit-record-removed-length e))] [i (edit-record-inserted-length e)])
-                        (loop (fx+ v 1)
-                              (cond
-                                [(fx< p end) (if after? (fx+ s i) (if (fx= p s) p s))]
-                                [(and (fx= p s) (not after?)) p]
-                                [else (fx+ p (fx- (fx+ s i) end))])
-                              (or deleted? (and (fx< s p) (fx<= p end)))))))))))
-      (buffer-anchor-position a)))
+  (define (anchor-current-place a)
+    (let* ([b (buffer-anchor-buffer a)] [now (buffer-version b)] [place (buffer-anchor-place a)])
+      (if (fx= (anchor-place-version place) now)
+          place
+          (let ([after? (buffer-anchor-after? a)] [log (buffer-log b)] [first (fx- now (buffer-logged b))])
+            (let loop ([v (anchor-place-version place)] [p (anchor-place-position place)]
+                       [deleted? (anchor-place-deleted? place)])
+              (if (fx= v now)
+                  (let ([place (make-anchor-place now p deleted?)])
+                    (buffer-anchor-place-set! a place)
+                    place)
+                  (let* ([e (vector-ref log (fx- v first))] [s (edit-record-start e)])
+                    (if (or (fx< p s) (not (edit-record-moves? e)))
+                        (loop (fx+ v 1) p deleted?)
+                        (let ([end (fx+ s (edit-record-removed-length e))] [i (edit-record-inserted-length e)])
+                          (loop (fx+ v 1)
+                                (cond
+                                  [(fx< p end) (if after? (fx+ s i) (if (fx= p s) p s))]
+                                  [(and (fx= p s) (not after?)) p]
+                                  [else (fx+ p (fx- (fx+ s i) end))])
+                                (or deleted? (and (fx< s p) (fx<= p end)))))))))))))
 
   (define (anchor-deleted-now? a)
-    (anchor-current-position a)
-    (buffer-anchor-deleted? a))
+    (anchor-place-deleted? (anchor-current-place a)))
 
   (define (move-anchor! a p)
-    (let ([b (buffer-anchor-buffer a)])
-      (with-interrupts-disabled
-        (buffer-anchor-position-set! a p)
-        (buffer-anchor-deleted?-set! a #f)
-        (buffer-anchor-version-set! a (buffer-version b)))))
+    (buffer-anchor-place-set! a (make-anchor-place (buffer-version (buffer-anchor-buffer a)) p #f)))
 
   (define (change-spans! who l lo hi change!)
     (let ([b (buffer-layer-buffer l)])
       (if (travelling? l)
           (let* ([doc (buffer-doc b)] [same (document:slice doc lo hi)] [before (travelling-spans-of b lo hi)]
                  [silent? (silent-now? b)])
-            (let ([edit (with-interrupts-disabled
-                          (change! (buffer-layer-store l))
-                          (coalesce! (buffer-layer-store l) lo hi)
-                          (let ([e (make-edit b (fx+ (buffer-version b) 1) lo same same before
-                                              (travelling-spans-of b lo hi) silent?)])
-                            (log-append! b e)
-                            (advance-version! b silent?)
-                            e))])
+            (let ([edit (call-with-cancellation-masked
+                          (lambda (restore)
+                            (change! (buffer-layer-store l))
+                            (coalesce! (buffer-layer-store l) lo hi)
+                            (let ([e (make-edit b (fx+ (buffer-version b) 1) lo same same before
+                                                (travelling-spans-of b lo hi) silent?)])
+                              (log-append! b e)
+                              (advance-version! b silent?)
+                              e)))])
               (with-current b (lambda () (after-edit b edit)))))
-          (with-interrupts-disabled (change! (buffer-layer-store l))))
+          (call-with-cancellation-masked (lambda (restore) (change! (buffer-layer-store l)))))
       (void)))
 
   (define (spans-at-version l spans version)
@@ -1690,9 +1695,10 @@
             (let ([kept (make-vector (fx* 2 log-limit) #f)])
               (do ([j 0 (fx+ j 1)]) ((fx= j log-limit))
                 (vector-set! kept j (vector-ref (buffer-log b) (fx+ (fx- n log-limit) j))))
-              (with-interrupts-disabled
-                (buffer-log-set! b kept)
-                (buffer-logged-set! b log-limit))))))
+              (call-with-cancellation-masked
+                (lambda (restore)
+                  (buffer-log-set! b kept)
+                  (buffer-logged-set! b log-limit)))))))
       made))
 
   (define (atoms-between doc start end)
@@ -1705,7 +1711,7 @@
   (define (atom-text atom)
     (let* ([k (kind-of atom)] [text (and k (kind-entry-text k))])
       (if text
-          (guard (c [(not (quit-condition? c)) (report-for k c) ""])
+          (guard (c [(not (cancelled? c)) (report-for k c) ""])
             (let ([s (text atom)])
               (unless (string? s)
                 (assertion-violation (kind-entry-name k) "a text procedure returned what is not a string" s))
@@ -1714,8 +1720,8 @@
 
   (define (report-for k c)
     (let ([owner (kind-entry-owner k)])
-      (if (member owner (loaded-modules))
-          (as-module owner (report c))
+      (if (owner-live? owner)
+          (call-as-owner owner (lambda () (report c)))
           (report c))))
 
   (define (range-atom-texts doc start end)
@@ -1724,11 +1730,11 @@
   (define (range-text doc start end)
     (document:text doc start end (range-atom-texts doc start end)))
 
-  (table-set! kinds 'document:raw-byte
+  (tables:set! kinds 'document:raw-byte
     (make-kind-entry 'document:raw-byte 'atom #f 'both 'all #f #f #f #t #f (lambda (atom) "\xFFFD;") '(buffers)))
 
-  (run-with-idle-timer 1 trim-logs!)
-  (run-with-idle-timer 1 forget-unmade!))
+  (timers:run-when-idle 1 trim-logs!)
+  (timers:run-when-idle 1 forget-unmade!))
 
 (import %internals)
 
@@ -1775,7 +1781,7 @@
 (define (kill! buffer)
   (check-change 'buffers:kill! buffer)
   (and (with-current buffer
-         (lambda () (for-all (lambda (entry) (entry buffer)) (hook-entries kill-queries))))
+         (lambda () (for-all (lambda (entry) (entry buffer)) (hooks:entries kill-queries))))
        (begin
          (when (buffer-live? buffer)
            (with-current buffer (lambda () (killed buffer)))
@@ -1797,11 +1803,12 @@
 ;; the innermost binding moves to the new one.
 (define (reset-scope! buffer)
   (check-change 'buffers:reset-scope! buffer)
-  (let ([old (buffer-scope buffer)] [new (make-scope)])
-    (with-interrupts-disabled
-      (buffer-scope-set! buffer new)
-      (when (eq? (current-scope) old)
-        (current-scope new)))))
+  (let ([old (buffer-scope buffer)] [new (scopes:make)])
+    (call-with-cancellation-masked
+      (lambda (restore)
+        (buffer-scope-set! buffer new)
+        (when (eq? (scopes:current) old)
+          (scopes:current new))))))
 
 (define (buffer? v) (buffer-record? v))
 

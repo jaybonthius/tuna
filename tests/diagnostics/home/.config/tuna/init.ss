@@ -1,8 +1,9 @@
-(import (tuna) (testing) (tuna plugins) (document) (web) (haml))
+(import (hooks) (options) (tables) (timers))
+(import (tuna) (testing) (document) (web) (haml))
 (define said '())
 (use-plugin ask
   (config
-    (set-option! ask:message-writer (lambda (text) (set! said (cons text said))))))
+    (options:set! ask:message-writer (lambda (text) (set! said (cons text said))))))
 (define (take-said!) (let ([s (reverse said)]) (set! said '()) s))
 (use-plugin layout)
 (use-plugin layout-split)
@@ -13,11 +14,11 @@
 (use-plugin markdown)
 (use-plugin docs-at-point
   (config
-    (set-option! docs-at-point:delay 0.05)))
+    (options:set! docs-at-point:delay 0.05)))
 (use-plugin docs-at-point-display)
 (use-plugin diagnostics
   (config
-    (set-option! diagnostics:check-delay 0.05)))
+    (options:set! diagnostics:check-delay 0.05)))
 
 (define client (web:add-client! 1))
 
@@ -30,7 +31,7 @@
 
 (define (mouse! view . fields)
   (parameterize ([web:current-client client])
-    ((table-ref web:input-handlers "mouse") client
+    ((tables:ref web:input-handlers "mouse") client
      (append fields
              `(("type" . "mouse") ("button" . 1) ("clicks" . 1) ("modifiers" . #())
                ("view" . ,(views:id view)) ("version" . ,(buffers:version (views:buffer view)))
@@ -38,7 +39,7 @@
 
 (define (view) (layout:selected-view))
 
-(define (mode! b on?) (buffers:with-buffer b (set-option-local! diagnostics:mode on?)))
+(define (mode! b on?) (buffers:with-buffer b (options:set-local! diagnostics:mode on?)))
 
 
 (define (raised thunk)
@@ -91,7 +92,7 @@
     (unless (file-exists? f) (mkdir f))
     f))
 
-(define notes (buffers:make "notes" "alpha beta gamma\ndelta epsilon\n\nzeta eta\n"))
+(define notes (or (buffers:find "notes") (buffers:make "notes" "alpha beta gamma\ndelta epsilon\n\nzeta eta\n")))
 (layout:switch-to-buffer notes)
-(set-idle! #t)
+(timers:set-idle! #t)
 (import (console))

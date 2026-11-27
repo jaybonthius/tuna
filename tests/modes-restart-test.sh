@@ -35,7 +35,7 @@ expect() {
 wait='(define (wait-until done?)
   (let loop ([n 0])
     (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
+      (timers:sleep 0.01)
       (loop (+ n 1)))))
 (wait-until (lambda () (= (length (files:buffers)) 2)))'
 

@@ -3,7 +3,7 @@
 ; the file completes its visit.
 > (import (xref-picker))
 > (define visits '())
-> (add-hook! files:after-visit (lambda (b) (set! visits (cons (buffers:name b) visits))))
+> (hooks:add! files:after-visit (lambda (b) (set! visits (cons (buffers:name b) visits))))
 > (define uses (files:visit (string-append code "/uses.txt")))
 > (in-client (lambda () (layout:switch-to-buffer uses)))
 > (views:set-point! (view) 6)
@@ -13,11 +13,11 @@
 > (wait-matches s)
 > (press! "C-n")
 > (testing:wait-until (lambda () (buffers:find "twice.txt")))
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (list visits (map (lambda (n) (let ([b (buffers:find n)]) (and b (files:temporary? b)))) '("defs.txt" "twice.txt")))
 (() (#t #t))
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (list visits (map (lambda (n) (and (buffers:find n) #t)) '("defs.txt" "twice.txt")))
 (() (#f #f))
@@ -35,7 +35,7 @@
 ; quit kills the temporary buffer the preview opened, which never took
 ; them.
 > (define source (diagnostics:make-source))
-> (buffers:with-buffer uses (set-option-local! diagnostics:mode #t))
+> (buffers:with-buffer uses (options:set-local! diagnostics:mode #t))
 > (diagnostics:report! source uses (list (diagnostics:make-diagnostic '(2 . 4) #f (diagnostics:severity warning) "average is slow")))
 #t
 > (diagnostics:report! source (string-append code "/defs.txt") (list (diagnostics:make-diagnostic '(3 . 4) #f (diagnostics:severity error) "tally unused")))
@@ -47,32 +47,32 @@
 > (define s (session))
 > (wait-matches s)
 > (testing:wait-until (lambda () (buffers:find "defs.txt")))
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (list (and (buffers:find "defs.txt") #t) (listed))
 (#t ("tally unused" "average is slow"))
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (list (and (buffers:find "defs.txt") #t) (listed))
 (#f ("tally unused" "average is slow"))
 ; xref-picker:preview-delay holds a preview back until the item has stayed
 ; selected that long.
-> (set-option! xref-picker:preview-delay 0.3)
+> (options:set! xref-picker:preview-delay 0.3)
 > (views:set-point! (view) 6)
 > (define the-view (view))
 > (define t (start! (lambda () (press! "M-."))))
 > (define s (session))
 > (wait-matches s)
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (buffers:name (views:buffer the-view))
 "uses.txt"
 > (testing:wait-until (lambda () (equal? (buffers:name (views:buffer the-view)) "defs.txt")))
 > (buffers:name (views:buffer the-view))
 "defs.txt"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
-> (set-option! xref-picker:preview-delay 0)
+> (options:set! xref-picker:preview-delay 0)
 ; A report to a previewed file's path stays the file's: a temporary
 ; buffer is no buffer visiting it, so a quit loses nothing.
 > (define twice (string-append code "/sub/twice.txt"))
@@ -92,7 +92,7 @@
 > (twice-listed)
 ("total twice")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (list (and (buffers:find "twice.txt") #t) (twice-listed))
 (#f ("total twice"))
@@ -103,12 +103,12 @@
 > (wait-matches s)
 > (press! "C-n")
 > (testing:wait-until (lambda () (buffers:find "twice.txt")))
-> (define opened (spawn-task (lambda () (files:visit twice))))
-> (testing:wait-until (lambda () (task-done? opened)))
+> (define opened (spawn-task (lambda (restore) (files:visit twice))))
+> (testing:wait-until (lambda () (eq? (task-state opened) 'done)))
 > (list (files:temporary? (buffers:find "twice.txt")) (eq? (files:buffer-visiting twice) (buffers:find "twice.txt")) (twice-listed))
 (#f #t ("total twice"))
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (list (and (buffers:find "twice.txt") #t) (twice-listed))
 (#t ("total twice"))

@@ -1,5 +1,5 @@
 #!tuna
-(import (echo-area) (status-line) (layout) (layout-split) (views) (buffers) (keys) (commands) (web) (haml))
+(import (echo-area) (status-line) (layout) (layout-split) (views) (buffers) (keys) (commands) (web) (haml) (options))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -65,7 +65,7 @@
                  (batch-ended))))
            2)
         "ns")
-      (set-option! status-line:visible #f)
+      (options:set! status-line:visible #f)
       (show "screen-one-client-without-status-lines" (ns-per-op 200 (lambda () (html->bytevector (layout:screen client)))) "ns")
       (show "screen-four-clients-without-status-lines"
         (ns-per-op 200 (lambda () (for-each (lambda (c) (html->bytevector (layout:screen c))) clients))) "ns"))))

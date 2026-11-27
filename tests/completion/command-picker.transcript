@@ -18,25 +18,25 @@ editing:forward-char
 > (texts (session))
 ()
 > (press! "C-g")
-! &quit
+! &cancelled
 ; M-x offers the commands for the modes on in the view and those marked
 ; for no mode not at all; M-X offers the commands for those modes only.
 > (commands:define-command (py-run) "Runs Python." (void))
 > (commands:define-command (anywhere) "Runs anywhere." (void))
-> (table-set! commands:command-modes py-run (list python:mode))
-> (define-table python-keys)
+> (tables:set! commands:command-modes py-run (list python:mode))
+> (tables:define-table python-keys)
 > (keys:bind! python-keys "C-c C-c" anywhere)
-> (table-set! modes:keymaps python:mode python-keys)
+> (tables:set! modes:keymaps python:mode python-keys)
 > (define (offered keys text) (let ([t (start! (lambda () (apply press! keys)))]) (type! text) (let ([r (texts (session))]) (press! "C-g") r)))
 > (offered '("M-x") "py-run")
 ()
-! &quit
+! &cancelled
 > (offered '("M-x") "keys:ignore")
 ()
-! &quit
+! &cancelled
 > (offered '("M-x") "keys:undefined")
 ()
-! &quit
+! &cancelled
 > (define code (buffers:make "code.py" ""))
 > (modes:set-major-mode python:mode code)
 > (views:set-buffer! (view) code)
@@ -46,48 +46,48 @@ editing:forward-char
 #f
 > (offered '("M-x") "py-run")
 ("py-run")
-! &quit
+! &cancelled
 > (offered '("M-X") "")
 ("py-run" "anywhere")
-! &quit
-> (set-option! command-picker:command-predicate (lambda (command view) #t))
+! &cancelled
+> (options:set! command-picker:command-predicate (lambda (command view) #t))
 > (offered '("M-x") "keys:ignore")
 ("keys:ignore")
-! &quit
-> (set-option! command-picker:command-predicate modes:command-for-view?)
+! &cancelled
+> (options:set! command-picker:command-predicate modes:command-for-view?)
 > (raised (lambda () (modes:on? 3 (view))))
 (modes:on? "not a mode")
 ; M-x offers a prompt's own commands only in a prompt, and exit, complete
 ; and the moves everywhere.
 > (offered '("M-x") "minibuffer:exit")
 ()
-! &quit
+! &cancelled
 > (offered '("M-x") "completion:exit-input")
 ()
-! &quit
+! &cancelled
 > (offered '("M-x") "completion:next")
 ("completion:next" "completion:next-group")
-! &quit
+! &cancelled
 > (offered '("M-x") "minibuffer:select-prompt")
 ("minibuffer:select-prompt")
-! &quit
+! &cancelled
 > (define t (start! (lambda () (minibuffer:read "Word: " #f))))
 > (offered '("M-x") "minibuffer:exit")
 ("minibuffer:exit")
-! &quit
+! &cancelled
 > (offered '("M-x") "completion:search-history")
 ("completion:search-history")
-! &quit
+! &cancelled
 > (press! "C-g")
-! &quit
+! &cancelled
 ; M-x offers the answers of a y-or-n question only while point is in one.
 > (offered '("M-x") "minibuffer:answer-")
 ()
-! &quit
+! &cancelled
 > (define t (start! (lambda () (minibuffer:ask-y-or-n "Save it? "))))
 > (offered '("M-x") "minibuffer:answer-")
 ("minibuffer:answer-no" "minibuffer:answer-yes")
-! &quit
+! &cancelled
 > (press! "y")
 > (result t)
 #t
@@ -118,7 +118,7 @@ editing:forward-char
 > (define t (start! (lambda () (press! "C-u" "2" "M-x"))))
 > (type! "editing:quoted-insert")
 > (press! "RET")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (list (keys:reading client) (keys:reading other-client))
 ("M-x" #f)
 > (press-in! other-client "a")
@@ -128,10 +128,10 @@ editing:forward-char
 "a\t\t"
 ; With the default styles, M-x matches inside a command's name, which
 ; starts with its plugin's name.
-> (set-option! completion:styles (list completion:prefix completion:partial))
+> (options:set! completion:styles (list completion:prefix completion:partial))
 > (define t (start! (lambda () (press! "M-x"))))
 > (type! "forward-char")
 > (texts (session))
 ("editing:forward-char" "editing:delete-forward-char")
 > (press! "C-g")
-! &quit
+! &cancelled

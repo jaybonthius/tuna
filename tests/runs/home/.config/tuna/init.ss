@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (web) (keys) (commands) (document) (buffers) (views) (modes) (processes))
+(import (hooks) (options) (tables) (plugins))
+(import (tuna) (testing) (web) (keys) (commands) (document) (buffers) (views) (modes) (processes))
 (use-plugin layout)
 (use-plugin editing)
 (use-plugin echo-area)
@@ -6,9 +7,9 @@
 (use-plugin files)
 (use-plugin undo)
 (use-plugin buffer-picker)
-(use-plugin runs
-  (config
-    (set-option! runs:shell '("/bin/sh" "-c"))))
+;; Loaded, not imported, so its unload in a test stays an unload.
+(load-module! '(runs))
+(options:set! runs:shell '("/bin/sh" "-c"))
 
 (define client (web:add-client! 1))
 
@@ -64,15 +65,14 @@
 
 (define home (processes:options [directory "~/"]))
 
-(define ends '())
-(add-hook! runs:ended (lambda (b end) (set! ends (cons (list (buffers:name b) end (runs:status b)) ends))))
+(define ends (if (top-level-bound? 'ends) ends '()))
+(hooks:add! runs:ended (lambda (b end) (set! ends (cons (list (buffers:name b) end (runs:status b)) ends))))
 (define (taken-ends) (let ([e (reverse ends)]) (set! ends '()) e))
 
 (define (message) (echo-area:current-message))
 
 (define (spans b)
-  (buffers:spans (buffers:layer b runs:%styles) 0 (document:length (buffers:document b))))
-(import (tuna eval))
-(define library (getenv "TUNA_LIBRARY"))
-(define (reload! name) (eval-file (string-append library "/" name ".sls")))
+  (buffers:spans (buffers:layer b (eval-in-module '%styles '(runs))) 0 (document:length (buffers:document b))))
+(import)
+(define (reload! name) (reload-modules! (list (list (string->symbol name)))))
 (import (console))

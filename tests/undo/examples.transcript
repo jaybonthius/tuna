@@ -1,8 +1,8 @@
 ; The configuration binds C-z and C-Z, a shifted letter being its
 ; capital.
-> (map (lambda (k) (commands:command-name (table-ref keys:global k))) '("C-z" "C-Z"))
+> (map (lambda (k) (commands:command-name (tables:ref keys:global k))) '("C-z" "C-Z"))
 (undo:undo undo:redo)
-> (map (lambda (k) (commands:command-name (table-ref keys:global k))) '("C-/" "C-_" "C-x u" "C-?" "C-M-_"))
+> (map (lambda (k) (commands:command-name (tables:ref keys:global k))) '("C-/" "C-_" "C-x u" "C-?" "C-M-_"))
 (undo:undo undo:undo undo:undo undo:redo undo:redo)
 > (define notes (buffers:make "notes" "Buy milk.\n"))
 > (buffers:with-buffer notes
@@ -25,7 +25,7 @@
 > (define h (buffers:with-buffer notes (undo:history (buffers:current))))
 > (list (car h) (cadr h) (map (lambda (s) (list (car s) (cadr s) (and (integer? (caddr s)) (> (caddr s) 1700000000)))) (cddr h)))
 (1 0 ((0 #f #t) (1 0 #t)))
-> (buffers:with-buffer notes (set-option-local! undo:limit 0))
+> (buffers:with-buffer notes (options:set-local! undo:limit 0))
 > (buffers:with-buffer notes (undo:limit))
 0
 > (undo:limit)
@@ -34,7 +34,7 @@
 > (define w (buffers:make "word" "\n"))
 > (for-each (lambda (s) (buffers:with-buffer w (commands:run checks:type s))) '("w" "o" "r" "d"))
 #<edit 4>
-> (buffers:with-buffer w (commands:run (table-ref keys:global "C-/") 1))
+> (buffers:with-buffer w (commands:run (tables:ref keys:global "C-/") 1))
 > (text w)
 "\n"
 ; A history's records, taken after each change, and the flag undo marks.

@@ -107,7 +107,9 @@
 ;; The tests' own libraries are on the path only here, so that the program
 ;; cannot import them.
 (parameterize ([library-directories
-                (append (library-directories) (list (cons "tests/lib" (string-append object-root "/tests/lib"))))]
+                (append (library-directories)
+                        (list (cons "start" (string-append object-root "/start"))
+                              (cons "tests/lib" (string-append object-root "/tests/lib"))))]
                [generate-inspector-information #t])
   (build-each maybe-compile-program
     (map (lambda (f) (string-append "tests/" f))

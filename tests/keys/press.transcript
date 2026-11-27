@@ -1,6 +1,6 @@
 ; ESC is the Meta prefix here, as for a user who takes it out of the quit
 ; keys and unbinds it.
-> (set-option! keys:quit-keys '("C-g"))
+> (options:set! keys:quit-keys '("C-g"))
 > (keys:unbind! keys:global "ESC")
 ; Each frame has its own pending keys.
 > (define one (layout:current-frame))
@@ -14,7 +14,7 @@
 ("C-x" "C-c g")
 > (keys:press! one "o")
 > (keys:press! two "o")
-> (list (keys:pending one) (keys:pending two) layout:switches groucho:browsed)
+> (list (keys:pending one) (keys:pending two) (layout:switches) (groucho:browsed))
 (#f #f 1 1)
 ; What a command sees of the keys that ran it.
 > (define seen '())
@@ -36,9 +36,7 @@
 > (define forked #f)
 > (commands:define-command (forker)
     "Forks a thread that reads the keys."
-    (fork-thread
-      (lambda ()
-        (set! forked (list (keys:command-keys) (keys:typed-char) (keys:shift-translated?))))))
+    (fork-task (lambda (restore) (set! forked (list (keys:command-keys) (keys:typed-char) (keys:shift-translated?))))))
 > (keys:bind! keys:global "C-c y" forker)
 > (press-all! one "C-c" "y")
 > (testing:wait-until (lambda () forked))
@@ -51,8 +49,8 @@
 > (define tasks '())
 > (commands:define-command (note-task) "Notes its task." (set! tasks (cons (current-task) tasks)))
 > (keys:bind! keys:global "C-c t" note-task)
-> (define pressing (spawn-task (lambda () (press-all! one "C-c" "t") (current-task))))
-> (eq? (join-task pressing) (car tasks))
+> (define pressing (spawn-task (lambda (restore) (press-all! one "C-c" "t") (current-task))))
+> (eq? (testing:join pressing) (car tasks))
 #t
 ; Prefix arguments.
 > (define (with-prefix . keys)
@@ -104,17 +102,18 @@
 ; A binding whose module is not loaded is reported.
 > (keys:bind! keys:global "C-c f" file-picker:find-file)
 > (keys:bind! keys:global "C-c v" (commands:command-named 'vertico:next))
-> (unload-module! '(file-picker))
+> (unload-owner! (module-owner '(file-picker)))
 > (press-all! one "C-c" "f")
 ! C-c f runs file-picker:find-file, which is not loaded
 > (press-all! one "C-c" "v")
-> vertico:moves
+> (vertico:moves)
 1
 > (load-module! '(file-picker))
+#<owner (file-picker) 2>
 > (press-all! one "C-c" "f")
 > (file-picker:take!)
 (("notes.txt" #f))
-> (table-set! keys:global "C-c s" 'posted)
+> (tables:set! keys:global "C-c s" 'posted)
 > (press-all! one "C-c" "s")
 ! C-c s runs posted, which is not loaded
 ; Advice on keys:press! sees every key.
@@ -130,8 +129,8 @@
 ; Temporary keymaps: before each command, and when a key finds nothing,
 ; the newest is tested with the keymap the key was found in and the
 ; command; one that is not kept ends, and the next is tested.
-> (define-table first)
-> (define-table second)
+> (tables:define-table first)
+> (tables:define-table second)
 > (keys:bind! first "a" record)
 > (keys:bind! second "b" layout:other-view)
 > (define tests '())
@@ -162,10 +161,10 @@
 > (import (sticky))
 > (keys:bind! keys:global "C-c o" sticky:other-view-repeat)
 > (press-all! one "C-c" "o" "o" "o")
-> (list layout:switches sticky:ended)
+> (list (layout:switches) (sticky:ended))
 (5 0)
 > (press-all! one "C-n")
-> (list layout:switches sticky:ended (editing:take!))
+> (list (layout:switches) (sticky:ended) (editing:take!))
 (5 1 ((next-line 1)))
 ; A keep or on-exit that raises is reported, and the keymap ends.
 > (define end-a (keys:push-keymap! one first (lambda (found command) (car '())) (exit-of 'a)))
@@ -182,20 +181,22 @@
 ; A temporary keymap ends with the module that pushed it.
 > (call-with-output-file (string-append (getenv "HOME") "/.config/tuna/lib/pusher.sls")
     (lambda (p)
-      (display "#!tuna\n(import (keys) (layout))\n(define-table keymap)\n(define ended 0)\n" p)
-      (display "(keys:push-keymap! (layout:current-frame) keymap (lambda (f c) #t) (lambda () (set! ended (+ ended 1))))\n" p)))
+      (display "#!tuna\n(import (keys) (layout) (tables))\n(tables:define-table keymap)\n(define %ended 0)\n(define (ended) %ended)\n" p)
+      (display "(keys:push-keymap! (layout:current-frame) keymap (lambda (f c) #t) (lambda () (set! %ended (+ %ended 1))))\n" p)))
 > (load-module! '(pusher))
+#<owner (pusher) 1>
 > (length (keys:active-keymaps one))
 2
 > (define pusher-ended (eval-in-module '(lambda () ended) '(pusher)))
-> (unload-module! '(pusher))
+> (unload-owner! (module-owner '(pusher)))
 > (length (keys:active-keymaps one))
 1
 > (load-module! '(pusher))
+#<owner (pusher) 2>
 > (define end-repl (keys:push-keymap! one first (lambda (f c) #t) (exit-of 'repl)))
 > (length (keys:active-keymaps one))
 3
-> (unload-module! '(pusher))
+> (unload-owner! (module-owner '(pusher)))
 > (list (length (keys:active-keymaps one)) exits)
 (2 (a))
 > (end-repl)
@@ -207,7 +208,8 @@
       (weak-cons frame '())))
 ; Other threads, such as the saved-data writer, may be running, and an
 ; explicit collect refuses then; a rendezvous pauses them first.
-> (parameterize ([collect-request-handler (lambda () (collect (collect-maximum-generation)))])
+> (import (rename (only (chezscheme) collect-request-handler) (collect-request-handler chez:collect-request-handler)))
+> (parameterize ([chez:collect-request-handler (lambda () (collect (collect-maximum-generation)))])
     (collect-rendezvous))
 > (bwp-object? (car gone))
 #t
@@ -229,34 +231,34 @@
 > (define quitted '())
 > (commands:define-command (wait [name 'waiting])
     "Waits until resumed or quit."
-    (guard (c [(quit-condition? c) (set! quitted (cons name quitted))])
+    (guard (c [(cancelled? c) (set! quitted (cons name quitted))])
       (suspend (lambda (resume) #f))))
 > (keys:bind! keys:global "C-c w" wait)
-> (define (wait-in frame) (spawn-task (lambda () (press-all! frame "C-c" "w"))))
+> (define (wait-in frame) (spawn-task (lambda (restore) (press-all! frame "C-c" "w"))))
 > (define waits (list (wait-in one) (wait-in one) (wait-in two)))
-> (sleep-for 0.1)
-> (map task-done? waits)
+> (timers:sleep 0.1)
+> (map testing:done? waits)
 (#f #f #f)
 > (keys:press! one "C-g")
-> (testing:wait-until (lambda () (task-done? (cadr waits))))
-> (list (map task-done? waits) quitted)
+> (testing:wait-until (lambda () (eq? (task-state (cadr waits)) 'done)))
+> (list (map testing:done? waits) quitted)
 ((#f #t #f) (waiting))
 > (keys:press! one "C-g")
-> (testing:wait-until (lambda () (task-done? (car waits))))
+> (testing:wait-until (lambda () (eq? (task-state (car waits)) 'done)))
 > (keys:press! one "C-g")
-> (list (map task-done? waits) quitted)
+> (list (map testing:done? waits) quitted)
 ((#t #t #f) (waiting waiting))
 > (keys:press! two "C-g")
-> (testing:wait-until (lambda () (task-done? (caddr waits))))
-> (map task-done? waits)
+> (testing:wait-until (lambda () (eq? (task-state (caddr waits)) 'done)))
+> (map testing:done? waits)
 (#t #t #t)
 ; Two C-g taken before the first quit lands quit two paused commands.
 > (set! waits (list (wait-in one) (wait-in one)))
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (set! quitted '())
 > (begin (keys:press! one "C-g") (keys:press! one "C-g"))
-> (testing:wait-until (lambda () (for-all task-done? waits)))
-> (list (map task-done? waits) quitted)
+> (testing:wait-until (lambda () (for-all testing:done? waits)))
+> (list (map testing:done? waits) quitted)
 ((#t #t) (waiting waiting))
 > (commands:run keys:keyboard-quit)
 ; A key pressed outside any input item, as from a task of its own, runs
@@ -264,8 +266,8 @@
 > (define seen-client 'none)
 > (commands:define-command (note-client) "Notes the current client." (set! seen-client (web:current-client)))
 > (keys:bind! keys:global "C-c 1" note-client)
-> (define pressing (spawn-task (lambda () (press-all! two "C-c" "1"))))
-> (testing:wait-until (lambda () (task-done? pressing)))
+> (define pressing (spawn-task (lambda (restore) (press-all! two "C-c" "1"))))
+> (testing:wait-until (lambda () (eq? (task-state pressing) 'done)))
 > (list (eq? seen-client two) (web:current-client))
 (#t #f)
 ; The client must be a client.

@@ -14,7 +14,7 @@
 > (views:point (view))
 21
 > (press! "C-g")
-! &quit
+! &cancelled
 > (views:point (view))
 1
 > (define t (start! (lambda () (press! "M-s" "l"))))
@@ -71,7 +71,7 @@ waiting
 > (input)
 ""
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 ; A number that is not whole is read, and goto-line refuses it, as
 ; Emacs's forward-line does.

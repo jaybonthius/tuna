@@ -1,3 +1,3 @@
 #!tuna
 (import (spell))
-(set! spell:language (lambda () "prog"))
+(override-set! spell:language (lambda () "prog"))

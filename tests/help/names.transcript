@@ -37,8 +37,8 @@ No documentation.
 An option in (harpo).
 Its value here is 3; its setting is 3 and its default 3.
 How loud a honk is.
-> (set-option! harpo:volume 7)
-> (buffers:with-buffer notes (set-option-local! harpo:volume 9))
+> (options:set! harpo:volume 7)
+> (buffers:with-buffer notes (options:set-local! harpo:volume 9))
 > (describe 'harpo:volume)
 # harpo:volume
 An option in (harpo).
@@ -47,9 +47,9 @@ Its value here is 9; its setting is 7 and its default 3.
 (repl) sets it to 7.
 How loud a honk is.
 ; A hook or a table: its documentation and how many entries it has.
-> (add-hook! harpo:after-honk (lambda () 1))
-> (table-set! harpo:horns "bulb" "honk")
-> (table-set! harpo:horns "bell" "ding")
+> (hooks:add! harpo:after-honk (lambda () 1))
+> (tables:set! harpo:horns "bulb" "honk")
+> (tables:set! harpo:horns "bell" "ding")
 > (describe 'harpo:after-honk)
 # harpo:after-honk
 A hook in (harpo) with 1 entry.
@@ -59,7 +59,7 @@ Called after each honk.
 A table in (harpo) with 2 entries.
 Maps a horn's name to its sound.
 ; Saved data: its value.
-> (set-saved! harpo:honks 4)
+> (saved:set! harpo:honks 4)
 > (describe 'harpo:honks)
 # harpo:honks
 Saved data in (harpo).
@@ -78,16 +78,15 @@ Its value is harpo:mode.
 # harpo:with-horn
 Syntax in (harpo), which keeps no documentation.
 ; Tuna's own libraries' names.
-> (describe 'set-option!)
-# set-option!
-A procedure in (tuna).
+> (describe 'options:set!)
+# options:set!
+A procedure in (options).
 No documentation.
 > (describe 'use-plugin)
-# use-plugin
-Syntax in (tuna plugins), which keeps no documentation.
-> (describe 'eval-text)
-# eval-text
-A procedure in (tuna eval).
+! help:describe-name: not an exported name with irritant use-plugin
+> (describe 'plugins:eval-form)
+# plugins:eval-form
+A procedure in (plugins).
 No documentation.
 ; The overrides and advice on a changeable definition follow, newest
 ; first, with the module that made each.
@@ -97,7 +96,7 @@ A procedure in (tuna).
 No documentation.
 ## Changes
 Advice by (echo-area)
-> (set! harpo:squeeze (lambda (n) 0))
+> (define harpo:squeeze (lambda (n) 0))
 > (advice-add! harpo:squeeze (lambda (s n) (s n)))
 > (describe 'harpo:squeeze)
 # harpo:squeeze
@@ -194,7 +193,7 @@ Override by (repl)
 > (press! "RET")
 > (settle)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (settle)
 > (start! "C-h" "x")
 > (type! "help:%fol")
@@ -202,7 +201,7 @@ Override by (repl)
 > (press! "RET")
 > (settle)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (settle)
 > (title)
 "help:%read-name"

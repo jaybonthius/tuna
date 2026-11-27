@@ -1,5 +1,5 @@
 #!tuna
-(import (files) (buffers) (document) (views))
+(import (files) (buffers) (document) (views) (hooks) (options) (saved))
 
 (define (%ends-with? s suffix)
   (let ([n (string-length s)] [k (string-length suffix)])
@@ -18,13 +18,13 @@
         (and (%starts-with? name "hg-editor-") (%ends-with? name ".txt"))
         (%starts-with? name "bzr_log."))))
 
-(define-option limit 400 (lambda (v) (or (not v) (and (fixnum? v) (fx>= v 0))))
+(options:define-option limit 400 (lambda (v) (or (not v) (and (fixnum? v) (fx>= v 0))))
   "How many files' places save-place keeps, the most recently left; #f keeps every one.")
 
-(define-option ignored-file-predicate %version-control-file? procedure?
+(options:define-option ignored-file-predicate %version-control-file? procedure?
   "A procedure of a file's path that returns true for a file whose place save-place does not keep.")
 
-(define-saved places '()
+(saved:define-saved places '()
   (lambda (v) (and (list? v) (for-all (lambda (p) (and (pair? p) (string? (car p)) (fixnum? (cdr p)) (fx>= (cdr p) 0))) v))))
 
 (define (%keep-place! buffer)
@@ -34,7 +34,7 @@
              [others (remp (lambda (place) (string=? (car place) path)) (places))]
              [kept (if (and point (> point 1)) (cons (cons path point) others) others)]
              [n (limit)])
-        (set-saved! places (if (and n (> (length kept) n)) (list-head kept n) kept))))))
+        (saved:set! places (if (and n (> (length kept) n)) (list-head kept n) kept))))))
 
 (define (%restore-place! buffer)
   (let* ([path (files:path buffer)] [place (and path (assoc path (places)))])
@@ -43,5 +43,5 @@
 
 ;; Views forget a killed buffer's last point in their own entry, so this
 ;; one runs first.
-(add-hook! buffers:killed %keep-place! -10)
-(add-hook! files:after-visit %restore-place!)
+(hooks:add! buffers:killed %keep-place! -10)
+(hooks:add! files:after-visit %restore-place!)

@@ -1,7 +1,7 @@
 #!tuna
-(import (completion) (buffers) (commands) (editing) (keys) (views) (layout) (files))
+(import (completion) (buffers) (commands) (editing) (keys) (views) (layout) (files) (options) (saved))
 
-(define-saved buffer-history '() (lambda (v) (and (list? v) (for-all string? v))))
+(saved:define-saved buffer-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
 (define (%current-buffer)
   (let ([v (views:current)]) (and v (views:buffer v))))
@@ -29,7 +29,7 @@
       (category completion:buffer-category)
       (preview (and view (%buffer-preview view)) (and view (lambda (chosen) (views:end-preview! view)))))))
 
-(define-option sources (list (lambda (view) (buffers #f))) (lambda (v) (and (list? v) (for-all procedure? v)))
+(options:define-option sources (list (lambda (view) (buffers #f))) (lambda (v) (and (list? v) (for-all procedure? v)))
   "Procedures of a view, called by buffer-picker:switch-to-buffer with the view it switches, each returning a source; buffer-picker:buffers given that view previews in it.")
 
 (define read-buffer

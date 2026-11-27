@@ -21,7 +21,7 @@ home=$dir/home
 mkdir -p "$home/.config/tuna" "$dir/library" "$dir/work"
 cp -R plugins/. "$dir/library/"
 cat > "$home/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins))
+(import (tuna))
 (use-plugin buffers)
 (define (names) (map buffers:name (buffers:all)))
 (import (console))
@@ -49,17 +49,17 @@ expect "after a restart" "$output" '("b" "a" "c" "d")'
 # gone after two restarts.
 saved=$home/.local/share/tuna/saved/tuna/buffers/saved-order.ss
 output=$(run '(define made (fold-left (lambda (acc n) (cons (buffers:make n "") acc)) (quote ()) (list "a" "b")))
-(set-idle! #t)
-(sleep-for 1.5)
-(set-idle! #f)
+(timers:set-idle! #t)
+(timers:sleep 1.5)
+(timers:set-idle! #f)
 (names)')
 expect "a restart that makes only a and b" "$output" '("b" "a")'
 expect "the saved order after it" "$(cat "$saved")" '("b" "a")'
 
 output=$(run '(define made (fold-left (lambda (acc n) (cons (buffers:make n "") acc)) (quote ()) (list "a")))
-(set-idle! #t)
-(sleep-for 1.5)
-(set-idle! #f)
+(timers:set-idle! #t)
+(timers:sleep 1.5)
+(timers:set-idle! #f)
 (names)')
 expect "a restart that makes only a" "$output" '("a")'
 expect "the saved order after two restarts" "$(cat "$saved")" '("a")'

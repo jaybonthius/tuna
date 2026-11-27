@@ -1,13 +1,13 @@
 #!tuna
-(import (buffers) (document) (modes) (syntax characters))
+(import (buffers) (document) (modes) (syntax characters) (hooks) (tables))
 
-(define-table lexers
+(tables:define-table lexers
   "Maps a major mode to its lexer, a procedure of a document that returns the document's lexemes.")
 
-(define-table word-characters
+(tables:define-table word-characters
   "Maps a major mode to the characters besides letters and digits that are part of its words, as a string.")
 
-(define-table symbol-characters
+(tables:define-table symbol-characters
   "Maps a major mode to the characters besides letters, digits and its word characters that are part of its symbols, as a string.")
 
 (define-enumeration class (open close prefix atom string comment) %classes)
@@ -16,7 +16,7 @@
 
 (buffers:define-layer brackets (priority -5) (evaporate))
 
-(define-table bracket-users
+(tables:define-table bracket-users
   "Maps a key to a procedure of a buffer that returns true while its plugin draws that buffer's bracket spans.")
 
 (module %internals
@@ -45,7 +45,7 @@
     (let loop ([modes (modes:ancestry mode)])
       (cond
         [(null? modes) #f]
-        [(table-ref lexers (car modes) #f)]
+        [(tables:ref lexers (car modes) #f)]
         [else (loop (cdr modes))])))
 
   ;; A list with no match ends with the last lexeme, so the end of that
@@ -75,7 +75,7 @@
 
   ;; A lexer's result is checked once, so the questions trust it.
   (define (run-lexer who mode lexer doc)
-    (let ([v (guard (c [(not (quit-condition? c))
+    (let ([v (guard (c [(not (cancelled? c))
                         (assertion-violation who
                           (format "the lexer of ~s raised: ~a" mode
                             (if (condition? c) (condition-text c) c))
@@ -692,8 +692,8 @@
     (assertion-violation who "not a mode" mode))
   (let ([characters (let loop ([modes (modes:ancestry mode)])
                       (cond
-                        [(null? modes) (table-ref table modes:fundamental "")]
-                        [(table-ref table (car modes) #f)]
+                        [(null? modes) (tables:ref table modes:fundamental "")]
+                        [(tables:ref table (car modes) #f)]
                         [else (loop (cdr modes))]))])
     (unless (string? characters)
       (assertion-violation who "the mode's entry is not a string" mode characters))
@@ -745,9 +745,9 @@
 (define (brackets-used? buffer)
   (unless (buffers:buffer? buffer)
     (assertion-violation 'syntax:brackets-used? "not a buffer" buffer))
-  (and (exists (lambda (entry) ((cdr entry) buffer)) (table-entries bracket-users)) #t))
+  (and (exists (lambda (entry) ((cdr entry) buffer)) (tables:entries bracket-users)) #t))
 
 ;; Emacs's standard syntax table, which every other table inherits.
-(table-set! word-characters modes:fundamental "$%")
-(table-set! symbol-characters modes:fundamental "_-+*/&|<>=")
-(add-hook! buffers:after-edit follow-edit!)
+(tables:set! word-characters modes:fundamental "$%")
+(tables:set! symbol-characters modes:fundamental "_-+*/&|<>=")
+(hooks:add! buffers:after-edit follow-edit!)

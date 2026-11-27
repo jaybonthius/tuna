@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins))
+(import (options))
+(import (tuna))
 (use-plugin nothere (local "~/src/nothere")
   (config
     (display "[nothere config]\n")))
@@ -7,11 +8,11 @@
     (display "[dict config]\n")))
 (use-plugin broken
   (config
-    (set-option! broken:level 3)
+    (options:set! broken:level 3)
     (display "[broken config]\n")))
 (use-plugin spell
   (config
-    (set-option! spell:language 42)
+    (options:set! spell:language 42)
     (display "[second form]\n")
     (let ((x)) x)
     (spell:check)

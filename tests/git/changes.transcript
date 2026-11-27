@@ -7,10 +7,10 @@
 > (map diff:file-path (git:diff repo '("--cached")))
 ("b.txt")
 ; git:diff-arguments are added to every diff.
-> (set-option! git:diff-arguments '("-U0"))
+> (options:set! git:diff-arguments '("-U0"))
 > (map (lambda (h) (utf8->string (diff:hunk-heading h))) (diff:file-hunks (car (git:diff repo '()))))
 ("@@ -2 +2 @@ one" "@@ -9 +9 @@ eight")
-> (remove-option! git:diff-arguments)
+> (options:unset! git:diff-arguments)
 ; A textconv driver does not change the diff: it holds the file's bytes.
 > (write-file! "repo/.gitattributes" "*.up diff=upper\n")
 > (sh "cd repo && git config diff.upper.textconv 'tr a-z A-Z <' && git add .gitattributes && printf 'one\\n' > t.up && git add t.up && git commit -qm t && printf 'one\\ntwo\\n' > t.up")

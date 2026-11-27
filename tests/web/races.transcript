@@ -4,7 +4,7 @@ Tuna is at http://127.0.0.1:PORT/
 ; order; each client's items run in the order it numbered them.
 > (define pages (list (http:page) (http:page) (http:page) (http:page)))
 > (define runs (make-eq-hashtable))
-> (table-set! web:input-handlers "flood"
+> (tables:set! web:input-handlers "flood"
     (lambda (client item)
       (hashtable-update! runs client (lambda (ns) (cons (cdr (assoc "n" item)) ns)) '())))
 > (http:flood! pages 300)
@@ -21,7 +21,7 @@ Tuna is at http://127.0.0.1:PORT/
 > (define seen (http:auto-confirm! p))
 > (do ([i 1 (+ i 1)]) ((> i 2000))
     (web:send-screen! c (string->utf8 (number->string i)) "Tuna")
-    (when (zero? (mod i 50)) (sleep-for 0)))
+    (when (zero? (mod i 50)) (timers:sleep 0)))
 > (testing:wait-until (lambda () (let ([s (seen)]) (and (pair? s) (equal? (cdr (car (last-pair s))) "2000")))))
 > (let ([s (seen)])
     (list (equal? (map car s) (map 1+ (iota (length s))))
@@ -40,7 +40,7 @@ Tuna is at http://127.0.0.1:PORT/
     (let loop ()
       (if quitting
           (begin
-            (request-quit!)
+            (testing:request-quit!)
             (chez:sleep (make-time 'time-duration 1000000 0))
             (loop))
           (set! stopped #t))))
@@ -53,10 +53,10 @@ Tuna is at http://127.0.0.1:PORT/
 ; before it enters the guard again.
 > (define (stress until)
     (let again ()
-      (guard (e [(quit-condition? e) (set! quits (+ quits 1)) (again)])
+      (guard (e [(cancelled? e) (set! quits (+ quits 1)) (again)])
         (unless forked
           (set! forked #t)
-          (fork-thread quitter))
+          (fork-task (lambda (restore) (quitter))))
         (let loop ([i 0])
           (when (< (real-time) until)
             (web:send-screen! c (string->utf8 (string-append "q" (number->string i))) "Tuna")

@@ -12,8 +12,8 @@
                                    ("textDocument/codeAction" . #((("title" . "Use sum") ("kind" . "quickfix") ("isPreferred" . #t)
                                                                    ("edit" ("changes" ,(edit-at a-path 1 6 11 "sum")))))))
                        '(name . "types"))
-> (table-set! lsp:language-servers "fakelang" (list types))
-> (add-hook! fake-mode-hook lsp:ensure)
+> (tables:set! lsp:language-servers "fakelang" (list types))
+> (hooks:add! fake-mode-hook lsp:ensure)
 > (define a (visit! a-path))
 > (wait-for "types" "textDocument/didOpen")
 ; Rename asks with the server's text as the default, and changes an open
@@ -44,13 +44,13 @@
 > (result t)
 > (text a)
 "total = 1\nprint(total)\n"
-> (with-options ([lsp:confirm-edits (lsp:confirmation never)])
+> (options:with ([lsp:confirm-edits (lsp:confirmation never)])
     (in-client (lambda () (commands:run lsp:rename "sum"))))
 > (list (text a) (text (files:buffer-visiting b-path)))
 ("sum = 1\nprint(total)\n" "from a import sum\n")
 ; A format answered after the user typed is refused, and nothing changes.
 > (define t (start! (lambda () (lsp:format-buffer a))))
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (buffers:replace! a 1 1 "x")
 #<edit 2>
 > (result t)
@@ -59,11 +59,11 @@
 > (text a)
 "xsum = 1\nprint(total)\n"
 ; As a files:before-save entry, it formats each save, which waits for it.
-> (buffers:with-buffer a (add-local-hook! files:before-save lsp:format-buffer))
+> (buffers:with-buffer a (hooks:add-local! files:before-save lsp:format-buffer))
 > (in-client (lambda () (files:save-buffer a)))
 > (call-with-input-file a-path get-string-all)
 "# formatted\nxsum = 1\nprint(total)\n"
-> (buffers:with-buffer a (remove-local-hook! files:before-save lsp:format-buffer))
+> (buffers:with-buffer a (hooks:remove-local! files:before-save lsp:format-buffer))
 ; A character a server names for on-type formatting asks it for edits,
 ; applied at once, once on-type formatting is on.
 > (configure! "types" `(capabilities ("textDocumentSync" . 2) ("documentOnTypeFormattingProvider" ("firstTriggerCharacter" . ":")) ("codeActionProvider" . #t))
@@ -74,7 +74,7 @@
                        '(name . "types"))
 > (lsp:reconnect (car (lsp:connections)))
 > (wait-for "types" "textDocument/didOpen" 4)
-> (set-option! lsp:on-type-formatting? #t)
+> (options:set! lsp:on-type-formatting? #t)
 > (in-client (lambda () (views:set-point! (view) 1)))
 > (press! ":")
 > (wait-for "types" "textDocument/onTypeFormatting")
@@ -99,7 +99,7 @@
 > (diagnostics:report! checker-source a (list (diagnostics:make-diagnostic 2 4 (diagnostics:severity info) "a checker's")))
 #t
 > (mouse! (view) '("action" . "click") '("button" . 2) '("at" . 2) '("count" . 0))
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (length (of-method "types" "textDocument/codeAction"))
 1
 ; The hint names the one action at a diagnostic and the key that runs it,
@@ -124,7 +124,7 @@
 (1 2)
 ; With lsp:code-action-hint? off, the hint asks nothing.
 > (define asked (length (of-method "types" "textDocument/codeAction")))
-> (with-options ([lsp:code-action-hint? #f]) (lsp:code-action-hint (view)))
+> (options:with ([lsp:code-action-hint? #f]) (lsp:code-action-hint (view)))
 #f
 > (- (length (of-method "types" "textDocument/codeAction")) asked)
 0

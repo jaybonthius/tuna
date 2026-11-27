@@ -1,4 +1,4 @@
 #!tuna
-(import (web))
+(import (web) (tables))
 
-(table-set! web:stylesheets 'styler "styler.css")
+(tables:set! web:stylesheets 'styler "styler.css")

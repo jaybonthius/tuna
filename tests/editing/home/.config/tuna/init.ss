@@ -1,15 +1,16 @@
-(import (tuna) (testing) (tuna plugins) (document) (web) (md) (layout-split))
+(import (options) (tables) (timers) (plugins))
+(import (tuna) (testing) (document) (web) (md) (layout-split))
 ;; ask's own writer raises each message as a warning, whose handler runs
 ;; outside the guards of the code that said it; the tests keep the
 ;; messages to read them.
 (define said '())
 (use-plugin ask
   (config
-    (set-option! ask:message-writer (lambda (text) (set! said (cons text said))))))
+    (options:set! ask:message-writer (lambda (text) (set! said (cons text said))))))
 (define (take-said!) (let ([s (reverse said)]) (set! said '()) s))
 (use-plugin editing
   (config
-    (set-option! editing:delete-selection #t)))
+    (options:set! editing:delete-selection #t)))
 (use-plugin layout)
 
 (define client (web:add-client! 1))
@@ -37,10 +38,11 @@
 
 (define (state) (list (text) (cursors)))
 
+;; The configuration is read again when a plugin it imports reloads, so
+;; the next name is found among the buffers rather than counted.
 (define start!
-  (let ([n 0])
-    (lambda (content . points)
-      (set! n (+ n 1))
+  (lambda (content . points)
+    (let ([n (let next ([n 1]) (if (buffers:find (format "t~a" n)) (next (+ n 1)) n))])
       (let ([b (buffers:make (format "t~a" n) content)] [v (view)])
         (views:set-buffer! v b)
         (views:set-point! v (car points))

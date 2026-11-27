@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (document) (haml) (web))
+(import (hooks) (options) (timers))
+(import (tuna) (testing) (document) (haml) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -14,7 +15,7 @@
 (use-plugin dired)
 (use-plugin projects
   (config
-    (set-option! projects:extra-root-markers '(".project"))))
+    (options:set! projects:extra-root-markers '(".project"))))
 (use-plugin jump-history)
 (use-plugin diagnostics)
 (use-plugin diagnostic-picker)
@@ -39,16 +40,16 @@
 ;; A command's prompt pauses its task, so tests run it in a task of its
 ;; own and wait for the prompt.
 (define (start! thunk)
-  (let ([t (spawn-task (lambda () (in-client thunk)))])
-    (sleep-for 0.05)
+  (let ([t (spawn-task (lambda (restore) (in-client thunk)))])
+    (timers:sleep 0.05)
     t))
 
 
 (define (result t)
-  (testing:wait-until (lambda () (task-done? t)))
-  (if (task-done? t)
+  (testing:wait-until (lambda () (eq? (task-state t) 'done)))
+  (if (eq? (task-state t) 'done)
       (guard (c [#t (list 'raised (if (message-condition? c) (condition-message c) c))])
-        (join-task t))
+        (testing:join t))
       'waiting))
 
 (define (raised thunk)
@@ -118,18 +119,18 @@
     [apropos
      (lambda (pattern)
        (set! asked (cons pattern asked))
-       (sleep-for 0.05)
+       (timers:sleep 0.05)
        (set! answered (cons pattern answered))
        (items-where (lambda (line) (and (contains? line "def ") (contains? line pattern)))))]))
 
 (define (code-backend view) words-backend)
 
-(add-hook! files:after-visit
+(hooks:add! files:after-visit
   (lambda (b)
     (when (contains? (or (files:path b) "") "/code/")
-      (buffers:with-buffer b (add-local-hook! xref:backends code-backend)))))
+      (buffers:with-buffer b (hooks:add-local! xref:backends code-backend)))))
 
 (define notes (files:visit (string-append (getenv "HOME") "/notes/a.txt")))
 (layout:switch-to-buffer notes)
-(set-idle! #t)
+(timers:set-idle! #t)
 (import (console))

@@ -26,7 +26,7 @@
 > (result (start! (lambda () (pi:restart! chat))))
 > (define g (fake-of chat))
 > (testing:wait-until (lambda () (= 5 (length (fake-requests g)))))
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (list (eq? (pi:chat-process chat) first-process) (pi:chat-activity chat) (equal? (list-ref (fake-args g) 3) session))
 (#f idle #t)
 > (transcript chat)
@@ -62,8 +62,8 @@
 ((("pool" . "1 pool(s)")) ("Trust?"))
 ; A chat whose Pi is gone when pi loads, as after Tuna restarts, starts
 ; Pi again on its session.
-> (set-saved! pi:%chats (list (vector "gone" "s-42" (getenv "HOME") '() '() '() '() '() '())))
-> (eval-file (library-file "pi.sls"))
+> (saved:set! pi:%chats (list (vector "gone" "s-42" (getenv "HOME") '() '() '() '() '() '())))
+> (reload-modules! '((pi)))
 > (define chat (car (pi:chats)))
 > (testing:wait-until (lambda () (eq? (pi:chat-activity chat) 'idle)))
 > (list (pi:chat-session-id chat) (list-tail (fake-args (fake-of chat)) 2))
@@ -77,7 +77,7 @@
 ; When Pi cannot start, the chat says so, naming pi:command.
 > (define reported '())
 > (advice-add! report (lambda (report c) (set! reported (cons c reported)) (report c)))
-> (begin (set-option! pi:command '("no-such-pi")) (testing:wait-until (lambda () (pair? reported))))
+> (begin (options:set! pi:command '("no-such-pi")) (testing:wait-until (lambda () (pair? reported))))
 ! (pi) Pi's version could not be read: cannot run no-such-pi: No such file or directory
 > (begin (define lost (pi:start "/tmp" "lost-session")) (testing:wait-until (lambda () (eq? (pi:chat-activity lost) 'exited))))
 ! (processes) spawn-process: cannot run no-such-pi: No such file or directory with irritants ("no-such-pi" ("--mode" "rpc" "--session-id" "lost-session"))

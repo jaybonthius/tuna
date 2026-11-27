@@ -33,5 +33,6 @@ if [ -n "$output" ]; then
   echo "$output"
   exit 1
 fi
-rm -rf "$(dirname "$tuna")/plugins-cache"
+rm -rf "$(dirname "$tuna")/plugins-cache" "$(dirname "$tuna")/start-cache"
 cp -R "$home/.cache/tuna/library" "$(dirname "$tuna")/plugins-cache"
+cp -R "$home/.cache/tuna/start$(cd "$(dirname "$tuna")" && pwd)/start" "$(dirname "$tuna")/start-cache"

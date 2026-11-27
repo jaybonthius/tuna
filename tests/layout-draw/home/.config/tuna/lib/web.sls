@@ -1,29 +1,29 @@
 #!tuna
-(import (haml))
+(import (haml) (hooks) (tables))
 
 ;; Stands in for the web plugin, so no server starts.
 (define-record-type client (fields name (mutable given) (mutable title)))
 
-(define-table input-handlers)
-(define-table scripts)
-(define-table stylesheets)
-(define-table early-scripts)
+(tables:define-table input-handlers)
+(tables:define-table scripts)
+(tables:define-table stylesheets)
+(tables:define-table early-scripts)
 
-(define-hook client-added)
-(define-hook client-removed)
+(hooks:define-hook client-added)
+(hooks:define-hook client-removed)
 
 (define current-client (make-thread-parameter #f))
 
-(define connected '())
+(define %connected '())
 
-(define (clients) connected)
+(define (clients) %connected)
 
 (define (connect! name)
   (let ([c (make-client name '() #f)])
-    (set! connected (append connected (list c)))
+    (set! %connected (append %connected (list c)))
     c))
 
-(define (disconnect! c) (set! connected (remq c connected)))
+(define (disconnect! c) (set! %connected (remq c %connected)))
 
 (define (send-screen! client screen title)
   (client-given-set! client (cons (html->string screen) (client-given client)))
@@ -41,9 +41,11 @@
 (define (ask-page client name value) #f)
 
 ;; Layout imports web, so this advice is beneath layout's.
-(define batches 0)
+(define %batches 0)
 
-(define (count-batch!) (set! batches (+ batches 1)))
+(define (batches) %batches)
+
+(define (count-batch!) (set! %batches (+ %batches 1)))
 
 (advice-add! batch-ended
   (lambda (ended)

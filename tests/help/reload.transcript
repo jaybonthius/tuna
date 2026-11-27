@@ -16,20 +16,18 @@
 > (let ([html (html->string (views:draw (help-view) client))])
     (map (lambda (s) (contains? html s)) (quote ("<div class=\"help-heading\" role=\"heading\" aria-level=\"2\">" "<div class=\"help-bindings\">"))))
 (#t #t)
-> (assq 'help (table-entries web:stylesheets))
+> (assq 'help (tables:entries web:stylesheets))
 (help . "help/help.css")
-; Unloading help takes back its keys, its advice and its stylesheet, and
-; leaves *Help*; loading it again finds *Help* and starts with no
-; history.
-> (unload-module! '(help))
-> (list (commands:command? (keys:lookup client "C-h k")) (assq 'help (table-entries web:stylesheets))
-        (map car (definition-changes keys:undefined)))
-(#f #f ((keys)))
-> (press! "C-x" "C-h")
-! C-x C-h is undefined
+; Unloading help takes back its instance's keys, advice and stylesheet,
+; and leaves *Help*; the configuration, which imports help, loads a new
+; instance at once, which finds *Help* and starts with no history.
+> (define old (module-owner '(help)))
+> (unload-owner! old)
+> (list (owner-live? old) (eq? (tables:owner web:stylesheets 'help) (module-owner '(help)))
+        (exists (lambda (c) (eq? (car c) old)) (definition-changes keys:undefined)))
+(#f #t #f)
 > (buffers:live? (buffers:find "*Help*"))
 #t
-> (load-module! '(help))
 > (press! "C-x" "C-h")
 > (title)
 "Key bindings starting with C-x"

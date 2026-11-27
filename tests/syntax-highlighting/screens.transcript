@@ -11,11 +11,17 @@
         [(> (+ i 19) (string-length s)) n]
         [(string=? (substring s i (+ i 19)) "data-face=\"comment\"") (loop (+ i 1) (+ n 1))]
         [else (loop (+ i 1) n)])))
+; A batch may end with nothing new to draw, and the screen sent again is
+; the same one, so a screen repeated in a row counts once.
 > (define (logged thunk)
     (set! log '())
     (thunk)
-    (sleep-for 0.3)
-    (reverse log))
+    (timers:sleep 0.3)
+    (let squeeze ([l (reverse log)])
+      (cond
+        [(or (null? l) (null? (cdr l))) l]
+        [(and (equal? (car l) (cadr l)) (eq? (caar l) 'screen)) (squeeze (cdr l))]
+        [else (cons (car l) (squeeze (cdr l)))])))
 ; Layout loaded after syntax-highlighting: its end of batch is outermost.
 > (import (layout))
 > (define c (web:add-client! 1))
@@ -27,22 +33,22 @@
 (("#a" comment))
 > (count-faces (web:client-screen c))
 1
-> (logged (lambda () (buffers:with-buffer b (set-option-local! syntax-highlighting:mode #f))))
+> (logged (lambda () (buffers:with-buffer b (options:set-local! syntax-highlighting:mode #f))))
 ((spans 0) (screen 0))
-> (logged (lambda () (buffers:with-buffer b (set-option-local! syntax-highlighting:mode #t))))
+> (logged (lambda () (buffers:with-buffer b (options:set-local! syntax-highlighting:mode #t))))
 ((screen 0) (spans 1) (screen 1))
 > (logged (lambda () (modes:set-major-mode modes:fundamental b)))
-((spans 0) (spans 0) (screen 0) (screen 0))
+((spans 0) (spans 0) (screen 0))
 ; syntax-highlighting loaded again after layout: its end of batch is
 ; outermost.
-> (unload-module! '(syntax-highlighting))
+> (unload-owner! (module-owner '(syntax-highlighting)))
 > (import (marks))
 > (modes:set-major-mode marks:mode b)
 > (faces b)
 (("#a" comment))
 > (count-faces (web:client-screen c))
 1
-> (logged (lambda () (buffers:with-buffer b (set-option-local! syntax-highlighting:mode #f))))
+> (logged (lambda () (buffers:with-buffer b (options:set-local! syntax-highlighting:mode #f))))
 ((spans 0) (screen 0))
 > (logged (lambda () (modes:set-major-mode modes:fundamental b)))
-((spans 0) (spans 0) (screen 0) (screen 0))
+((spans 0) (spans 0) (screen 0))

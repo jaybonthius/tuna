@@ -98,7 +98,7 @@
 > (end! t)
 > (selected)
 "b"
-> (table-remove! layout:display-rules minibuffer:buffer?)
+> (tables:remove! layout:display-rules minibuffer:buffer?)
 ; From a prompt opened while the echo area was selected, C-M-v scrolls
 ; the view the user worked in, not the echo area, and C-x o lists that
 ; view's level.
@@ -131,7 +131,7 @@
 > (press! "C-x" "3")
 > (define b (made-beside a "b"))
 > (press! "C-x" "o")
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (define t (ask!))
 > (press! "s-o")
 > (selected)
@@ -152,7 +152,7 @@
 ; A prompt shown in the selected view, by a display rule, sets
 ; other-view on it, so that view stops being the one the user works in:
 ; its successor takes its place, and the selection stays.
-> (table-set! layout:display-rules minibuffer:buffer? layout:display-in-selected-view)
+> (tables:set! layout:display-rules minibuffer:buffer? layout:display-in-selected-view)
 > (define a (begin! "a"))
 > (press! "C-x" "3")
 > (define b (made-beside a "b"))
@@ -165,11 +165,12 @@
 > (selected)
 "b"
 > (end! t)
-> (table-remove! layout:display-rules minibuffer:buffer?)
+> (tables:remove! layout:display-rules minibuffer:buffer?)
 ; Reloading layout while a prompt waits keeps the prompt selected.
 > (define a (begin! "a"))
 > (define t (ask!))
 > (load-module! '(layout))
+#<owner (layout) 1>
 > (selected)
 " *Minibuf*"
 > (end! t)

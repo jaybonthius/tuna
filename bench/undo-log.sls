@@ -1,5 +1,5 @@
 #!tuna
-(import (undo-log) (undo-log disk) (undo) (files) (buffers) (document))
+(import (undo-log) (undo-log disk) (undo) (files) (buffers) (document) (options) (timers))
 
 ;; The main thread's own processor time, so the writer's work on its
 ;; thread, which shares the one CPU, is left out.
@@ -43,10 +43,12 @@
   (let loop ([n 0])
     (unless (or (and (file-exists? file) (>= (call-with-port (open-file-input-port file) port-length) size))
                 (= n 3000))
-      (sleep-for 0.01)
+      (timers:sleep 0.01)
       (loop (+ n 1)))))
 
-(define (log-of file) (string-append (undo-log:%log-folder) file ".ss"))
+;; undo-log keeps its log folder private, so a benchmark reads it in
+;; undo-log's scope.
+(define (log-of file) (string-append ((eval-in-module '%log-folder '(undo-log))) file ".ss"))
 
 (define (cpu-ns-difference n with without)
   (define (sample thunk)
@@ -75,14 +77,14 @@
       (unless (and (file-exists? (log-of file))
                    (>= (call-with-port (open-file-input-port (log-of file)) port-length) 1000000))
         (buffers:replace! b 1 1 (string (integer->char (+ 97 (mod i 26)))))
-        (sleep-for 0)
+        (timers:sleep 0)
         (loop (+ i 1))))
     (buffers:kill! b)
-    (sleep-for 0.5)))
+    (timers:sleep 0.5)))
 
 (define (run)
   (mkdir folder)
-  (set-option! undo-log:keep-log? (lambda (path) #t))
+  (options:set! undo-log:keep-log? (lambda (path) #t))
   (show "log-batch-end-ns" (batch-end-cost))
   (let ([file (path "typing.txt")])
     (typing-log file)
@@ -98,13 +100,13 @@
                                          (- (thread-cpu-ns) start)))
                                      (iota 5)))]
                  [plain (begin
-                          (set-option! undo-log:keep-log? (lambda (path) #f))
+                          (options:set! undo-log:keep-log? (lambda (path) #f))
                           (median (map (lambda (i)
                                          (let ([start (thread-cpu-ns)])
                                            (buffers:kill! (files:visit file))
                                            (- (thread-cpu-ns) start)))
                                        (iota 5))))])
-            (set-option! undo-log:keep-log? (lambda (path) #t))
+            (options:set! undo-log:keep-log? (lambda (path) #t))
             (show "replay-ns-per-record" (/ (- visit plain) n)))))))
   (let ([file (path "round.txt")] [bytes (records->bytes (list '(at 1)))])
     (show "writer-round-ms"

@@ -23,7 +23,7 @@ error
 > (echo-area:hidden?)
 #f
 ; echo-area:log-max
-> (with-options ([echo-area:log-max 0]) (echo-area:message! "Not logged"))
+> (options:with ([echo-area:log-max 0]) (echo-area:message! "Not logged"))
 > (echo-area:current-message)
 "Not logged"
 > (messages)

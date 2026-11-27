@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (document) (haml) (web))
+(import (hooks) (options) (tables) (timers) (plugins))
+(import (tuna) (testing) (document) (haml) (web))
 (use-plugin ui)
 (use-plugin editing)
 (use-plugin layout)
@@ -23,7 +24,7 @@
 
 (define (mouse-in! v action place . fields)
   (parameterize ([web:current-client client])
-    ((table-ref web:input-handlers "mouse") client
+    ((tables:ref web:input-handlers "mouse") client
      (append fields
              `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
                ("view" . ,(views:id v)) ("version" . ,(buffers:version (views:buffer v)))

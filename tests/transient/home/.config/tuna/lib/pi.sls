@@ -1,5 +1,5 @@
 #!tuna
-(import (transient) (commands) (keys))
+(import (transient) (commands) (keys) (tables))
 
 (define-record-type chat (fields name (mutable model)))
 
@@ -7,9 +7,9 @@
 
 (define (current-chat) the-chat)
 
-(define auto-compact #f)
+(define %auto-compact #f)
 
-(define (auto-compact?) auto-compact)
+(define (auto-compact?) %auto-compact)
 
 (define-record-type template (fields name))
 
@@ -17,18 +17,20 @@
 
 (define (chat-templates) templates)
 
-(define ran '())
+(define %ran '())
 
-(define (note! what) (set! ran (cons what ran)))
+(define (ran) %ran)
+
+(define (note! what) (set! %ran (cons what %ran)))
 
 (commands:define-command (new-session) "Starts a session." (note! 'new))
 (commands:define-command (resume-session) "Resumes a session." (note! 'resume))
 (commands:define-command (rename-session) "Renames the session." (note! 'rename))
 (commands:define-command (select-model) "Selects a model." (chat-model-set! the-chat "opus") (note! 'model))
-(commands:define-command (toggle-auto-compact) "Toggles auto-compaction." (set! auto-compact (not auto-compact)))
+(commands:define-command (toggle-auto-compact) "Toggles auto-compaction." (set! %auto-compact (not %auto-compact)))
 (commands:define-command (run-template [t #f]) "Runs a template." (note! (template-name t)))
 
-(define-table keymap "The chat's keys.")
+(tables:define-table keymap "The chat's keys.")
 
 (transient:define-menu menu "The chat menu."
   (title (lambda () (string-append "Pi, " (chat-name (current-chat))))))

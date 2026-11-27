@@ -31,7 +31,7 @@ output=$(run '(define chat (pi:start (getenv "HOME") "kept-session"))
 (testing:wait-until (lambda () (eq? (pi:chat-activity chat) (quote idle))))
 (in-client (lambda () (chat:show! chat)))
 (type! "unsent words")
-(sleep-for 0.2)
+(timers:sleep 0.2)
 (pi:chat-session-id chat)')
 expect "first run" "$output" '"kept-session"'
 

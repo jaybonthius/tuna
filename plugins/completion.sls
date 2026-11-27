@@ -1,48 +1,51 @@
 #!tuna
+(import (hooks) (options) (tables) (timers) (saved))
 ;; This plugin's substring is a style, so Chez's goes by another name.
 (import (minibuffer) (buffers) (document) (views) (layout) (keys) (commands) (jobs) (web) (ask) (editing) (kill-ring) (faces)
         (modes) (syntax) (browse-url) (files)
         (completion matcher)
         (rename (only (chezscheme) substring) (substring string-part)))
 
-(define-hook started "Called with a session when it starts, before its first matches.")
+(define %self (current-owner))
 
-(define-hook updated "Called with a session after its matches or its selection change.")
+(hooks:define-hook started "Called with a session when it starts, before its first matches.")
 
-(define-hook ended "Called with a session after it ends.")
+(hooks:define-hook updated "Called with a session after its matches or its selection change.")
 
-(define-hook find-region
+(hooks:define-hook ended "Called with a session after it ends.")
+
+(hooks:define-hook find-region
   "Its entries take no arguments and return a region for point in the current view, or #f.")
 
-(define-hook target-finders
+(hooks:define-hook target-finders
   "Its entries take a view and return a completion:target for what is at its point, or #f.")
 
-(define-table category-styles
+(tables:define-table category-styles
   "Maps a category to the styles tried before its default styles: its completion:category-default-styles entry while completion:styles holds its default, else completion:styles.")
 
-(define-table category-default-styles
+(tables:define-table category-default-styles
   "Maps a category to the styles used in place of completion:styles while that option holds its default.")
 
-(define-table annotators "Maps a category to a procedure of a session that returns its annotator, a procedure of a candidate's value and details.")
+(tables:define-table annotators "Maps a category to a procedure of a session that returns its annotator, a procedure of a candidate's value and details.")
 
-(define-table action-keymaps "Maps a category to the list of keymaps of the actions on its candidates, searched in order.")
+(tables:define-table action-keymaps "Maps a category to the list of keymaps of the actions on its candidates, searched in order.")
 
-(define-table any-order-dispatch
+(tables:define-table any-order-dispatch
   "Maps a character to a procedure of the rest of a component that returns a term.")
 
-(define-table keymap "Added to the prompt of each read.")
+(tables:define-table keymap "Added to the prompt of each read.")
 
-(define-table region-keymap "The temporary keymap of a session at point.")
+(tables:define-table region-keymap "The temporary keymap of a session at point.")
 
-(define-table region-selected-keymap "The temporary keymap of a session at point while a match is selected.")
+(tables:define-table region-selected-keymap "The temporary keymap of a session at point while a match is selected.")
 
-(define-table narrowing-keymap "Added to the prompt of each read whose sources have narrow characters.")
+(tables:define-table narrowing-keymap "Added to the prompt of each read whose sources have narrow characters.")
 
-(define-table narrow-key-keymap "Narrows by the character typed; a prefix key in completion:narrowing-keymap leads to it.")
+(tables:define-table narrow-key-keymap "Narrows by the character typed; a prefix key in completion:narrowing-keymap leads to it.")
 
-(define-table narrow-keymap "Searched in a read while its input is one of its sources' narrow characters.")
+(tables:define-table narrow-keymap "Searched in a read while its input is one of its sources' narrow characters.")
 
-(define-table widen-keymap "Searched in a narrowed read while its input is empty.")
+(tables:define-table widen-keymap "Searched in a narrowed read while its input is empty.")
 
 (define-syntax define-category
   (lambda (x)
@@ -52,7 +55,7 @@
       [_ (syntax-violation 'completion:define-category "expected (completion:define-category id doc-string)" x)])))
 
 (define (%category-name id)
-  (let ([owner (current-owner)])
+  (let ([owner (owner-name (current-owner))])
     (if (member owner '((init) (repl)))
         id
         (string->symbol
@@ -90,25 +93,25 @@
 
 ;; Several plugins bind actions on the shared categories, so their
 ;; keymaps are defined beside them.
-(define-table buffer-action-keymap "The actions on buffers.")
+(tables:define-table buffer-action-keymap "The actions on buffers.")
 
-(define-table command-action-keymap "The actions on commands.")
+(tables:define-table command-action-keymap "The actions on commands.")
 
-(define-table file-action-keymap "The actions on file names.")
+(tables:define-table file-action-keymap "The actions on file names.")
 
-(define-table location-action-keymap "The actions on locations.")
+(tables:define-table location-action-keymap "The actions on locations.")
 
-(define-table name-action-keymap "The actions on Scheme names.")
+(tables:define-table name-action-keymap "The actions on Scheme names.")
 
-(define-table identifier-action-keymap "The actions on identifiers.")
+(tables:define-table identifier-action-keymap "The actions on identifiers.")
 
-(define-table url-action-keymap "The actions on web addresses.")
+(tables:define-table url-action-keymap "The actions on web addresses.")
 
-(define-table region-action-keymap "The actions on the active region.")
+(tables:define-table region-action-keymap "The actions on the active region.")
 
-(define-table expression-action-keymap "The actions on expressions.")
+(tables:define-table expression-action-keymap "The actions on expressions.")
 
-(define-table top-level-form-action-keymap "The actions on top-level forms.")
+(tables:define-table top-level-form-action-keymap "The actions on top-level forms.")
 
 ;; A target lives here, not with the actions on it, so that a plugin
 ;; finding what is at point makes one without importing them.
@@ -240,11 +243,12 @@
           [else
            (unless job
              (set! job
-               (as-module (this-module)
-                 (jobs:start worker input emit
-                   (lambda (how)
-                     (set! job #f)
-                     (emit 'done))))))
+               (call-as-owner %self
+                 (lambda ()
+                   (jobs:start worker input emit
+                     (lambda (how)
+                       (set! job #f)
+                       (emit 'done)))))))
            (jobs:send! job prefix)])))))
 
 (define (prefix query) (if (string=? query "") '() (list (list 'starts query))))
@@ -273,13 +277,13 @@
 (define match-2 'completion.match-2)
 (define match-3 'completion.match-3)
 
-(define-option any-order-faces (list match-0 match-1 match-2 match-3) (lambda (v) (and (list? v) (for-all symbol? v)))
+(options:define-option any-order-faces (list match-0 match-1 match-2 match-3) (lambda (v) (and (list? v) (for-all symbol? v)))
   "The faces completion:any-order draws its components' matches in, in turn; with none, as other styles' matches.")
 
 (define (%component-term component)
   (let* ([n (string-length component)]
-         [at-start (table-ref any-order-dispatch (string-ref component 0) #f)]
-         [at-end (and (fx> n 1) (table-ref any-order-dispatch (string-ref component (fx- n 1)) #f))])
+         [at-start (tables:ref any-order-dispatch (string-ref component 0) #f)]
+         [at-end (and (fx> n 1) (tables:ref any-order-dispatch (string-ref component (fx- n 1)) #f))])
     (cond
       [(and at-start (fx> n 1)) (at-start (string-part component 1 n))]
       [at-end (at-end (string-part component 0 (fx- n 1)))]
@@ -306,7 +310,7 @@
 (define (%dispatch-flex rest) (cons 'contains (map string (string->list rest))))
 (define (%dispatch-ends rest) (list 'ends rest))
 
-(define-option styles (list prefix partial) (lambda (v) (and (list? v) (for-all procedure? v)))
+(options:define-option styles (list prefix partial) (lambda (v) (and (list? v) (for-all procedure? v)))
   "The styles a source tries, in order.")
 
 (define-record-type (%matcher make-matcher matcher?)
@@ -342,19 +346,19 @@
 
 (define default-matcher (make-matcher %default-match %default-spans %match-worker))
 
-(define-option matcher default-matcher matcher?
+(options:define-option matcher default-matcher matcher?
   "The matcher sessions use.")
 
-(define-option read-preselect 'first (lambda (v) (memq v '(first none)))
+(options:define-option read-preselect 'first (lambda (v) (memq v '(first none)))
   "What a read selects when its matches change: first or none.")
 
-(define-option point-preselect 'none (lambda (v) (memq v '(first none)))
+(options:define-option point-preselect 'none (lambda (v) (memq v '(first none)))
   "What a session at point selects when its matches change: none or first.")
 
-(define-option async-min-input 3 (lambda (v) (and (fixnum? v) (fx>= v 0)))
+(options:define-option async-min-input 3 (lambda (v) (and (fixnum? v) (fx>= v 0)))
   "How many characters a search that asks as you type, such as grep:grep, waits for before it asks.")
 
-(define-option async-delay 0.2 (lambda (v) (and (real? v) (>= v 0)))
+(options:define-option async-delay 0.2 (lambda (v) (and (real? v) (>= v 0)))
   "Seconds without typing before a search that asks as you type asks again.")
 
 (define %inline-candidates 1000)
@@ -495,8 +499,8 @@
 
   (define (styles-for source)
     (let* ([c (%source-category source)]
-           [chosen (append (or (%source-styles source) '()) (if c (table-ref category-styles c '()) '()))]
-           [defaults (or (and c (equal? (styles) (option-default styles)) (table-ref category-default-styles c #f))
+           [chosen (append (or (%source-styles source) '()) (if c (tables:ref category-styles c '()) '()))]
+           [defaults (or (and c (equal? (styles) (options:default styles)) (tables:ref category-default-styles c #f))
                          (styles))])
       (let loop ([all (append chosen defaults)] [kept '()])
         (cond
@@ -621,9 +625,10 @@
 
   (define (match-job-of s st)
     (or (state-match-job st)
-        (let ([job (as-module (this-module)
-                     (jobs:start (%matcher-worker (matcher)) #f
-                       (lambda (result) (match-arrived! s st result))))])
+        (let ([job (call-as-owner %self
+                     (lambda ()
+                       (jobs:start (%matcher-worker (matcher)) #f
+                         (lambda (result) (match-arrived! s st result)))))])
           (state-match-job-set! st job)
           (state-job-dropped-set! st (state-dropped st))
           (state-sorted?-set! st #f)
@@ -914,7 +919,7 @@
     (let ([t (session-record-preview-timer s)])
       (when t
         (session-record-preview-timer-set! s #f)
-        (cancel-timer! t))))
+        (timers:cancel! t))))
 
   (define (preview! s st v)
     (let* ([source (state-source st)] [show (%source-preview source)] [delay (%source-preview-delay source)])
@@ -922,11 +927,12 @@
         (stop-preview-timer! s)
         (if (and v delay (> delay 0))
             (session-record-preview-timer-set! s
-              (as-module (this-module)
-                (run-with-timer delay
-                  (lambda ()
-                    (session-record-preview-timer-set! s #f)
-                    (unless (session-record-ended? s) (show v))))))
+              (call-as-owner %self
+                (lambda ()
+                  (timers:run-after delay
+                    (lambda ()
+                      (session-record-preview-timer-set! s #f)
+                      (unless (session-record-ended? s) (show v)))))))
             (show v)))))
 
   ;; A preview's end learns which candidate was chosen, so a picker keeps
@@ -1063,9 +1069,9 @@
             (let ([c (%source-category (state-source st))])
               (if (or (not c) (assq c acc))
                   acc
-                  (let ([make (table-ref annotators c #f)])
+                  (let ([make (tables:ref annotators c #f)])
                     (if make
-                        (cons (cons c (guard (e [(not (quit-condition? e)) (report e) #f]) (make s))) acc)
+                        (cons (cons c (guard (e [(not (cancelled? e)) (report e) #f]) (make s))) acc)
                         acc)))))
           '()
           (session-record-states s)))
@@ -1090,7 +1096,7 @@
           (let ([receiver (state-receiver st)])
             (when receiver
               (state-receiver-set! st #f)
-              (guard (e [(not (quit-condition? e)) (report e)]) (receiver (eof-object))))))
+              (guard (e [(not (cancelled? e)) (report e)]) (receiver (eof-object))))))
         (session-record-states s))
       (stop-preview-timer! s)
       (ended s)
@@ -1099,7 +1105,7 @@
           (lambda (st)
             (let ([end (%source-preview-end (state-source st))])
               (when end
-                (guard (e [(not (quit-condition? e)) (report e)])
+                (guard (e [(not (cancelled? e)) (report e)])
                   (end (and chosen (eq? (car chosen) st) (cdr chosen)))))))
           (session-record-states s)))))
 
@@ -1121,7 +1127,7 @@
     (let ([p (clause (state-source (owner-of s m)))])
       (if (or (not p) (eq-hashtable-contains? failed-procedures p))
           #f
-          (guard (c [(not (quit-condition? c)) (eq-hashtable-set! failed-procedures p #t) (report c) #f])
+          (guard (c [(not (cancelled? c)) (eq-hashtable-set! failed-procedures p #t) (report c) #f])
             (let ([v (p (match-text s m) (match-value s m))])
               (unless (check v)
                 (assertion-violation who "a source's procedure returned what its clause does not take" v))
@@ -1177,7 +1183,7 @@
           (let* ([c (%source-category (state-source st))]
                  [a (and c (assq c (session-record-annotators s)))]
                  [columns (if (and a (cdr a))
-                              (guard (e [(not (quit-condition? e)) (report e) '()])
+                              (guard (e [(not (cancelled? e)) (report e) '()])
                                 ((cdr a) (match-value s m) (match-details s m)))
                               '())])
             (hashtable-set! cache m columns)
@@ -1495,10 +1501,10 @@
           (restore!)
           (let ([n newest])
             (spawn-task
-              (lambda ()
+              (lambda (restore)
                 (when (fx= n newest)
                   (let* ([path (car location)] [existing (files:buffer-visiting path)]
-                         [b (or existing (guard (c [(not (quit-condition? c)) (report c) #f]) (files:visit-temporarily path)))])
+                         [b (or existing (guard (c [(not (cancelled? c)) (report c) #f]) (files:visit-temporarily path)))])
                     (when (and b (not existing))
                       (if (and ended? (not (equal? path chosen-path)))
                           (when (and (buffers:live? b) (files:temporary? b)) (buffers:kill! b))
@@ -1589,7 +1595,7 @@
   (unless (string? question)
     (assertion-violation who "not a string" question))
   (%check-sources who sources)
-  (unless (or (not h) (saved? h))
+  (unless (or (not h) (saved:saved? h))
     (assertion-violation who "neither saved data nor #f" h))
   (unless (or (not default) (string? default))
     (assertion-violation who "neither a string nor #f" default))
@@ -1704,28 +1710,29 @@
            (for-each (lambda (p) (when (eq? (session-record-view (%point-state-session p)) view)
                                    (end-session! (%point-state-session p))))
                      %points)
-           (as-module (this-module)
-             (let* ([b (views:buffer view)] [start (buffers:anchor b (region-start r))]
-                    [end (buffers:anchor-after b (region-end r))]
-                    [s (start-session! view (region-sources r)
-                         (lambda () (values (buffers:anchor-position start) (buffers:anchor-position end)))
-                         (lambda (s m) (end-session! s))
-                         (point-preselect))]
-                    [give-way (and (not (%region-exclusive? r))
-                                   (lambda (found-nothing)
-                                     (unless (%start-from-entries view client rest minimum found-nothing)
-                                       (found-nothing))))])
-               (if (and give-way (%found-nothing? s))
-                   (begin (end-session! s) (give-way found-nothing))
-                   (let ([p (make-%point-state s entry client start end give-way found-nothing #f #f #f)])
-                     (set! %points (cons p %points))
-                     (%point-state-end-keymap-set! p
-                       (keys:push-keymap! client region-keymap (lambda (found command) #t)
-                                          (lambda () (end-session! s))))
-                     (%sync-keymaps! s)
-                     (%report-first-answer! p)
-                     (when (session-record-ended? s) (%point-ended s))))
-               #t))))))
+           (call-as-owner %self
+             (lambda ()
+               (let* ([b (views:buffer view)] [start (buffers:anchor b (region-start r))]
+                      [end (buffers:anchor-after b (region-end r))]
+                      [s (start-session! view (region-sources r)
+                           (lambda () (values (buffers:anchor-position start) (buffers:anchor-position end)))
+                           (lambda (s m) (end-session! s))
+                           (point-preselect))]
+                      [give-way (and (not (%region-exclusive? r))
+                                     (lambda (found-nothing)
+                                       (unless (%start-from-entries view client rest minimum found-nothing)
+                                         (found-nothing))))])
+                 (if (and give-way (%found-nothing? s))
+                     (begin (end-session! s) (give-way found-nothing))
+                     (let ([p (make-%point-state s entry client start end give-way found-nothing #f #f #f)])
+                       (set! %points (cons p %points))
+                       (%point-state-end-keymap-set! p
+                         (keys:push-keymap! client region-keymap (lambda (found command) #t)
+                                            (lambda () (end-session! s))))
+                       (%sync-keymaps! s)
+                       (%report-first-answer! p)
+                       (when (session-record-ended? s) (%point-ended s))))
+                 #t)))))))
 
 (define start-at-point
   (case-lambda
@@ -1737,7 +1744,7 @@
      (unless (procedure? found-nothing)
        (assertion-violation 'completion:start-at-point "not a procedure" found-nothing))
      (let ([view (views:current)] [client (web:current-client)])
-       (and view client (%start-from-entries view client (hook-entries find-region) minimum found-nothing)))]))
+       (and view client (%start-from-entries view client (hooks:entries find-region) minimum found-nothing)))]))
 
 (define start-from-entry
   (case-lambda
@@ -1770,8 +1777,9 @@
         (cond
           [(and (session-record-selected s) (not pushed))
            (%point-state-end-selected-keymap-set! p
-             (as-module (this-module)
-               (keys:push-keymap! (%point-state-client p) region-selected-keymap (lambda (found command) #t))))]
+             (call-as-owner %self
+               (lambda ()
+                 (keys:push-keymap! (%point-state-client p) region-selected-keymap (lambda (found command) #t)))))]
           [(and (not (session-record-selected s)) pushed)
            (%point-state-end-selected-keymap-set! p #f)
            (pushed)])))))
@@ -1815,7 +1823,7 @@
       (let* ([s (%point-state-session p)] [view (session-record-view s)])
         (unless (session-record-ended? s)
           (let ([r (and (eq? (layout:selected-view) view)
-                        (guard (c [(not (quit-condition? c)) (report c) #f])
+                        (guard (c [(not (cancelled? c)) (report c) #f])
                           (views:call-with-view view (%point-state-entry p))))])
             (if (and (%region? r)
                      (fx= (region-start r) (buffers:anchor-position (%point-state-start p)))
@@ -2032,7 +2040,7 @@
                        #f)))])
       (minibuffer:recall! p k))))
 
-(define %quit (record-constructor (record-constructor-descriptor &quit)))
+(define (%quit) (make-cancelled #f))
 
 (define-category choice-category "The choices of ask:choice, valued by the choice's value; an annotated choice's annotation is its details.")
 
@@ -2050,7 +2058,7 @@
     (let ([asking #f])
       (define (stop!)
         (when asking
-          (unless (task-done? asking) (signal-task asking (%quit)))
+          (unless (eq? (task-state asking) 'done) (cancel-task asking))
           (set! asking #f)))
       (lambda (input)
         (stop!)
@@ -2058,8 +2066,8 @@
           (let ([task #f])
             (set! task
               (spawn-task
-                (lambda ()
-                  (let ([found (guard (c [(quit-condition? c) #f] [else (report c) '()])
+                (lambda (restore)
+                  (let ([found (guard (c [(cancelled? c) #f] [else (report c) '()])
                                  (let ([found (ask input)])
                                    (unless (and (list? found) (for-all string? found))
                                      (assertion-violation 'ask:line-with-candidates "not a list of strings" found))
@@ -2170,36 +2178,36 @@
            (and form (%text-target top-level-form-category buffer (car form) (cdr form)))))))
 
 (define (%unload)
-  (for-each (lambda (r) (signal-task (%read-state-task r) (%quit))) %reads)
+  (for-each (lambda (r) (cancel-task (%read-state-task r))) %reads)
   (for-each end-session! sessions)
   (end-preview-place))
 
-(table-set! any-order-dispatch #\! %dispatch-not)
-(table-set! any-order-dispatch #\= %dispatch-literal)
-(table-set! any-order-dispatch #\^ %dispatch-starts)
-(table-set! any-order-dispatch #\~ %dispatch-flex)
-(table-set! any-order-dispatch #\$ %dispatch-ends)
-(table-set! category-default-styles buffer-category (list prefix substring))
-(table-set! category-default-styles location-category (list substring))
-(table-set! category-default-styles name-category (list prefix substring))
-(table-set! category-default-styles identifier-category (list prefix substring))
+(tables:set! any-order-dispatch #\! %dispatch-not)
+(tables:set! any-order-dispatch #\= %dispatch-literal)
+(tables:set! any-order-dispatch #\^ %dispatch-starts)
+(tables:set! any-order-dispatch #\~ %dispatch-flex)
+(tables:set! any-order-dispatch #\$ %dispatch-ends)
+(tables:set! category-default-styles buffer-category (list prefix substring))
+(tables:set! category-default-styles location-category (list substring))
+(tables:set! category-default-styles name-category (list prefix substring))
+(tables:set! category-default-styles identifier-category (list prefix substring))
 ;; Every command's name starts with its plugin's name, so matching only at
 ;; the start would not find a command by the word it is known by.
-(table-set! category-default-styles command-category (list prefix substring))
-(table-set! action-keymaps buffer-category (list buffer-action-keymap))
-(table-set! action-keymaps command-category (list command-action-keymap))
-(table-set! action-keymaps file-category (list file-action-keymap))
-(table-set! action-keymaps location-category (list location-action-keymap))
-(table-set! action-keymaps name-category (list name-action-keymap identifier-action-keymap))
-(table-set! action-keymaps identifier-category (list identifier-action-keymap))
-(table-set! action-keymaps url-category (list url-action-keymap))
-(table-set! action-keymaps region-category (list region-action-keymap))
-(table-set! action-keymaps expression-category (list expression-action-keymap))
-(table-set! action-keymaps top-level-form-category (list top-level-form-action-keymap expression-action-keymap))
-(table-set! web:stylesheets 'completion "completion/completion.css")
-(set-option! ask:choice-reader %read-choice)
-(table-set! annotators choice-category %choice-annotator)
-(set-option! ask:line-with-candidates-reader %read-line-with-candidates)
+(tables:set! category-default-styles command-category (list prefix substring))
+(tables:set! action-keymaps buffer-category (list buffer-action-keymap))
+(tables:set! action-keymaps command-category (list command-action-keymap))
+(tables:set! action-keymaps file-category (list file-action-keymap))
+(tables:set! action-keymaps location-category (list location-action-keymap))
+(tables:set! action-keymaps name-category (list name-action-keymap identifier-action-keymap))
+(tables:set! action-keymaps identifier-category (list identifier-action-keymap))
+(tables:set! action-keymaps url-category (list url-action-keymap))
+(tables:set! action-keymaps region-category (list region-action-keymap))
+(tables:set! action-keymaps expression-category (list expression-action-keymap))
+(tables:set! action-keymaps top-level-form-category (list top-level-form-action-keymap expression-action-keymap))
+(tables:set! web:stylesheets 'completion "completion/completion.css")
+(options:set! ask:choice-reader %read-choice)
+(tables:set! annotators choice-category %choice-annotator)
+(options:set! ask:line-with-candidates-reader %read-line-with-candidates)
 (keys:bind! minibuffer:keymap "M-r" search-history)
 (keys:bind! minibuffer:keymap "M-s" search-history)
 (keys:bind! keymap "RET" exit)
@@ -2215,24 +2223,24 @@
 ;; Exit, complete and the moves stay offered everywhere: they also act on
 ;; a session that start runs over a field in any view. M-x cannot reach a
 ;; session at point, since its own prompt ends that session.
-(table-set! commands:command-modes exit-input (list minibuffer:mode))
-(table-set! commands:command-modes search-history (list minibuffer:mode))
-(table-set! commands:command-modes narrow (list minibuffer:mode))
-(table-set! commands:command-modes narrow-by-input (list minibuffer:mode))
-(table-set! commands:command-modes widen (list minibuffer:mode))
-(table-set! commands:region-commands kill-ring-save #t)
-(add-hook! minibuffer:input-changed %prompt-input-changed)
-(add-hook! minibuffer:prompt-started %prompt-input-changed)
-(add-hook! minibuffer:prompt-ended %prompt-ended)
-(add-hook! updated %sync-keymaps!)
-(add-hook! updated %after-update)
+(tables:set! commands:command-modes exit-input (list minibuffer:mode))
+(tables:set! commands:command-modes search-history (list minibuffer:mode))
+(tables:set! commands:command-modes narrow (list minibuffer:mode))
+(tables:set! commands:command-modes narrow-by-input (list minibuffer:mode))
+(tables:set! commands:command-modes widen (list minibuffer:mode))
+(tables:set! commands:region-commands kill-ring-save #t)
+(hooks:add! minibuffer:input-changed %prompt-input-changed)
+(hooks:add! minibuffer:prompt-started %prompt-input-changed)
+(hooks:add! minibuffer:prompt-ended %prompt-ended)
+(hooks:add! updated %sync-keymaps!)
+(hooks:add! updated %after-update)
 ;; Ahead of the prompt's own keymaps, which hold completion:keymap.
-(add-hook! keys:find-keymaps %narrowing-keymaps 30)
-(add-hook! ended %point-ended)
-(add-hook! commands:after-command %continue-at-point)
-(add-hook! target-finders %region-target -40)
-(add-hook! target-finders %url-target -30)
-(add-hook! target-finders %identifier-target 20)
-(add-hook! target-finders %expression-target 30)
-(add-hook! target-finders %top-level-form-target 60)
+(hooks:add! keys:find-keymaps %narrowing-keymaps 30)
+(hooks:add! ended %point-ended)
+(hooks:add! commands:after-command %continue-at-point)
+(hooks:add! target-finders %region-target -40)
+(hooks:add! target-finders %url-target -30)
+(hooks:add! target-finders %identifier-target 20)
+(hooks:add! target-finders %expression-target 30)
+(hooks:add! target-finders %top-level-form-target 60)
 (on-unload %unload)

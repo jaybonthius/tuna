@@ -129,7 +129,7 @@
           ("wanted" . (("aboveLines" . 41) ("aboveChars" . 3280) ("belowLines" . 41) ("belowChars" . 3280) ("side" . 160))) ("hand" . ,hand?) ("edge" . "top")))))
 > (define (send! c r settled?)
     (set! reports (+ reports 1))
-    ((table-ref web:input-handlers "scroll") c (append r `(("report" . ,reports) ("settled" . ,settled?)))))
+    ((tables:ref web:input-handlers "scroll") c (append r `(("report" . ,reports) ("settled" . ,settled?)))))
 > (define (settle-reports! v c hand?)
     (let loop ([k 0] [last #f])
       (let ([r (measure v c (show! v c) hand?)])

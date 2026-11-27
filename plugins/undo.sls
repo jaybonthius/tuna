@@ -1,11 +1,13 @@
 #!tuna
-(import (buffers) (document) (views) (commands) (keys) (ask))
+(import (buffers) (document) (views) (commands) (keys) (ask) (hooks) (options))
 
-(define-option limit 4000000 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
+(define %self (current-owner))
+
+(options:define-option limit 4000000 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
   "How large a buffer's history may grow: the characters its edits removed and inserted, plus 32 per edit. 0 keeps no history.")
 
 (module %internals
-  (check-main-thread check-buffer check-count current-buffer without-quits history-of buffer-history
+  (check-main-thread check-buffer check-count current-buffer without-cancels history-of buffer-history
    state-id state-parent state-time state-cursors state-of states-by-id history? history-buffer
    history-current history-holds saved-state close-group! take-hold! release-hold! leave-hold!
    forget-escape! cancel-group! move! redo-child group-end restore-cursors! place-cursors! path-moves
@@ -47,9 +49,9 @@
     (report (condition (make-warning) (make-who-condition who) (make-message-condition message)
                        (make-irritants-condition irritants))))
 
-  ;; Tuna's dynamic-wind holds quits off while its in runs, so the tree,
+  ;; Tuna's dynamic-wind holds cancels off while its in runs, so the tree,
   ;; the buffer and the records queued never part company halfway.
-  (define (without-quits thunk)
+  (define (without-cancels thunk)
     (let ([result #f])
       (dynamic-wind (lambda () (set! result (thunk))) void void)
       result))
@@ -329,7 +331,7 @@
               [else (next (and (live? h s) (state-written-count s) (list kind (state-id s))))])))))
 
   (define (take-buffer-records! b whole?)
-    (without-quits
+    (without-cancels
       (lambda ()
         (let ([h (buffer-history b)])
           (and h
@@ -368,7 +370,7 @@
       (and b (eq? (eq-hashtable-ref histories b #f) h))))
 
   (define (close-group! h)
-    (without-quits
+    (without-cancels
       (lambda ()
         (catch-up! h)
         (let ([o (history-open h)])
@@ -382,7 +384,7 @@
     (fields history task open edits))
 
   (define (take-hold! h)
-    (without-quits
+    (without-cancels
       (lambda ()
         (when (null? (history-holds h)) (close-group! h))
         (let* ([o (history-open h)]
@@ -391,7 +393,7 @@
           hold))))
 
   (define (release-hold! hold)
-    (without-quits
+    (without-cancels
       (lambda ()
         (let ([h (hold-history hold)])
           (when (memq hold (history-holds h))
@@ -419,7 +421,7 @@
       (let ([task (current-task)])
         (for-each
           (lambda (hold)
-            (when (or (eq? (hold-task hold) task) (task-done? (hold-task hold)))
+            (when (or (eq? (hold-task hold) task) (eq? (task-state (hold-task hold)) 'done))
               (forget-escape! hold)
               (release-hold! hold)))
           escaped))))
@@ -460,7 +462,7 @@
 
   (define (note-command-start! command)
     (let* ([v (views:current)] [b (and v (views:buffer v))] [points (if b (cursor-points v) '())])
-      (without-quits
+      (without-cancels
         (lambda ()
           (release-escaped!)
           (set! run (fx+ run 1))
@@ -627,7 +629,7 @@
   (define applying #f)
 
   (define (record-edit! b e)
-    (without-quits (lambda () (note-edit! b e))))
+    (without-cancels (lambda () (note-edit! b e))))
 
   (define (note-edit! b e)
     (unless (eq? b applying)
@@ -651,7 +653,7 @@
   (define (add-edits! h b edits)
     (for-each (lambda (e) (note-edit-of! h b e (buffers:edit-version e))) edits))
 
-  ;; A quit that lands as the buffer calls its after-edit entries, before
+  ;; A cancel that lands as the buffer calls its after-edit entries, before
   ;; this module's starts, skips the record; the buffer keeps its recent
   ;; edits, so the next edit or step of undo records what was missed.
   (define (catch-up! h)
@@ -731,12 +733,12 @@
       (lambda (doc step)
         (let ([start (step-start step)] [out (content-document (step-out step))])
           (unless (holds? doc start out) (stale who))
-          (guard (c [(and (assertion-violation? c) (not (quit-condition? c))) (stale who)])
+          (guard (c [(and (assertion-violation? c) (not (cancelled? c))) (stale who)])
             (document:replace doc start (fx+ start (document:length out)) (content-document (step-in step))))))
       doc steps))
 
-  ;; A quit can leave the buffer's hook call after the splice is made,
-  ;; though quits are held off here, so the splices made are counted by
+  ;; A cancel can leave the buffer's hook call after the splice is made,
+  ;; though cancels are held off here, so the splices made are counted by
   ;; version. Another after-edit entry's edit during a splice stops the
   ;; steps, since those after it would no longer fit.
   (define (splice-steps! h b steps)
@@ -813,7 +815,7 @@
         (let retry ([rest moves])
           (play (buffers:document b) (moves-steps rest) who)
           (let ([raised #f] [others '()])
-            (unless (without-quits
+            (unless (without-cancels
                       (lambda ()
                         (unless (buffers:modified? b) (stamp! h b))
                         (let-values ([(whole? c edits split) (apply-moves! h b rest)])
@@ -830,7 +832,7 @@
                    (unless (null? rest) (retry rest)))]
                 [else (stale who)]))))
         (unless (null? parts)
-          (without-quits
+          (without-cancels
             (lambda ()
               (for-each (lambda (move) (when (live? h (cdr move)) (rejoin! h (cdr move) parts))) moves)
               (take-whole! h)))))
@@ -909,7 +911,7 @@
                     (queue! h (list 'at p))
                     (queue! h (list 'prune o)))]))
           (unless (null? (cancelled))
-            (without-quits
+            (without-cancels
               (lambda ()
                 (let splice ([edits (cancelled)])
                   (let-values ([(spliced raised others) (splice-steps! h b (undo-steps edits))])
@@ -934,7 +936,7 @@
       (when (and (installed? h) (history-open h)) (mark-dirty! h))))
 
   (define (end-batch!)
-    (without-quits
+    (without-cancels
       (lambda ()
         (release-escaped!)
         (set! command-buffer #f)
@@ -943,7 +945,7 @@
           (for-each (lambda (h) (history-dirty?-set! h #f) (end-history-batch! h)) hs)))))
 
   (define (note-command-end! command)
-    (without-quits
+    (without-cancels
       (lambda ()
         (set! command-buffer #f)
         (for-each close-group! dirty))))
@@ -954,7 +956,7 @@
   (define (forget-history! b)
     (let ([h (eq-hashtable-ref histories b #f)])
       (when h
-        (without-quits
+        (without-cancels
           (lambda ()
             (history-holds-set! h '())
             (drop! h))))))
@@ -1059,7 +1061,7 @@
                  [at (if at-saved? saved target)])
             (and (fx= (state-length at) (length-at b edits))
                  (begin
-                   (without-quits
+                   (without-cancels
                      (lambda ()
                        (unless (eq? at target)
                          (history-current-set! h at)
@@ -1093,7 +1095,7 @@
     (when (and command b (eq? command (commands:last-command)))
       (let ([h (buffer-history b)])
         (when (and h (null? (history-holds h)))
-          (without-quits (lambda () (amalgamate-history! h command))))))))
+          (without-cancels (lambda () (amalgamate-history! h command))))))))
 
 (define-syntax with-edit-group
   (syntax-rules ()
@@ -1210,14 +1212,13 @@
        (assertion-violation 'undo:install! "not a version of the buffer" version))
      (install-history! buffer history version saved-id)]))
 
-(add-hook! buffers:after-edit record-edit!)
-(add-hook! buffers:killed forget-history!)
-(add-hook! commands:before-command note-command-start!)
-(add-hook! commands:after-command note-command-end!)
+(hooks:add! buffers:after-edit record-edit!)
+(hooks:add! buffers:killed forget-history!)
+(hooks:add! commands:before-command note-command-start!)
+(hooks:add! commands:after-command note-command-end!)
 (advice-add! batch-ended
   (lambda (ended)
-    (as-module (this-module)
-      (guard (c [(not (quit-condition? c)) (report c)]) (end-batch!)))
+    (call-as-owner %self (lambda () (guard (c [(not (cancelled? c)) (report c)]) (end-batch!))))
     (ended)))
 (keys:bind! keys:global "C-/" undo)
 (keys:bind! keys:global "C-_" undo)

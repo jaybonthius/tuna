@@ -8,7 +8,7 @@
 literal
 > (search:make-query "(define|lambda)\\b" search:regexp (search:case exact))
 #<query regexp "(define|lambda)\\b">
-> (with-options ([search:case-fold (search:case fold)]) (search:query-case (search:make-query "x")))
+> (options:with ([search:case-fold (search:case fold)]) (search:query-case (search:make-query "x")))
 fold
 > (search:make-query "x" search:literal 'loud)
 ! search:make-query: not a case rule with irritant loud
@@ -42,7 +42,7 @@ fold
 ((7 9 " v") (18 21 "  v"))
 > (all-in b (search:make-query "ref +v" search:regexp (search:case smart) (search:spaces lax)))
 ((15 21 "ref  v"))
-> (with-options ([search:regexp-lax-whitespace #t]) (search:query-spaces (search:make-query "a b" search:regexp)))
+> (options:with ([search:regexp-lax-whitespace #t]) (search:query-spaces (search:make-query "a b" search:regexp)))
 lax
 ; A query's own filter, and one added keeping the query's rules.
 > (define (after-10? buffer start end) (> start 10))
@@ -89,7 +89,7 @@ lax
 > (search:regexp-quote "a.b*(c)")
 "a\\.b\\*\\(c\\)"
 ; History: newest first, no copies, cut to its length, regexps apart.
-> (with-options ([search:history-length 2])
+> (options:with ([search:history-length 2])
     (for-each (lambda (t) (search:add-to-history! (search:make-query t))) '("one" "two" "one" "three"))
     (search:add-to-history! (search:make-query "a+" search:regexp))
     (list (search:history) (search:regexp-history) (search:prompt-regexp-history)))

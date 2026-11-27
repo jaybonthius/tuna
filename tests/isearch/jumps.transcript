@@ -11,9 +11,9 @@
 ; C-g and ESC record nothing.
 > (define before (length (jump-history:places)))
 > (press! "C-s" "f" "o" "o" "C-s" "C-g")
-! &quit
+! &cancelled
 > (press! "C-s" "b" "a" "r" "ESC")
-! &quit
+! &cancelled
 > (list (point) (= before (length (jump-history:places))))
 (5 #t)
 ; A key that ends the search records as RET does.

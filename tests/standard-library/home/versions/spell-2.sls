@@ -1,7 +1,7 @@
 #!tuna
-(import (files))
+(import (files) (hooks) (options))
 
-(define-option language "en" string? "Dictionary used for checking.")
+(options:define-option language "en" string? "Dictionary used for checking.")
 
 (define (dictionary-path)
   "The file of words for the current language."
@@ -13,4 +13,4 @@
 
 (define-syntax with-words (syntax-rules () [(_ e) (list 'v2 e)]))
 
-(add-hook! files:after-save check)
+(hooks:add! files:after-save check)

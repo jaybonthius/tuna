@@ -1,7 +1,9 @@
 #!tuna
-(import (buffers) (files) (undo) (undo-log disk))
+(import (buffers) (files) (undo) (undo-log disk) (hooks) (options) (scopes) (saved))
 
-(define-option keep-log?
+(define %self (current-owner))
+
+(options:define-option keep-log?
   (lambda (path)
     (not (exists (lambda (folder)
                    (let ([n (string-length folder)])
@@ -12,7 +14,7 @@
 
 ;; Saved data is kept by the plugin's source, so a fork names a folder of
 ;; its own and never reads the original's logs.
-(define-saved %log-folder "" string?)
+(saved:define-saved %log-folder "" string?)
 
 (module %internals
   (read-with-log note-visit! note-saved! note-killed! note-silent-edit! note-rename! flush-logs! logged?
@@ -22,7 +24,7 @@
     (report (condition (make-warning) (make-who-condition who) (make-message-condition message)
                        (make-irritants-condition irritants))))
 
-  (define (without-quits thunk)
+  (define (without-cancels thunk)
     (let ([result #f])
       (dynamic-wind (lambda () (set! result (thunk))) void void)
       result))
@@ -70,7 +72,7 @@
              (and saved (or (assv saved (entry-saves entry)) (entry-save entry)) #t)))))
 
   (define (keeps-log? path)
-    (guard (c [(not (quit-condition? c)) (report c) #f])
+    (guard (c [(not (cancelled? c)) (report c) #f])
       (and ((keep-log?) path) #t)))
 
   (define (log-name path)
@@ -157,7 +159,7 @@
   ;; A buffer that went without the killed hook, as when buffers reloads,
   ;; has no history left to take, which must not delete its log.
   (define (flush-logs!)
-    (without-quits
+    (without-cancels
       (lambda ()
         (vector-for-each
           (lambda (entry)
@@ -202,7 +204,7 @@
   ;; views restore their cursors on the text they were on.
   (define (read-with-log read path)
     (let-values ([(doc length hash) (read path)])
-      (let ([file (and (string? path) (current-task) (fx> (parameterize ([current-scope #f]) (undo:limit)) 0)
+      (let ([file (and (string? path) (current-task) (fx> (parameterize ([scopes:current #f]) (undo:limit)) 0)
                        (keeps-log? path) (log-file path))])
         (if (not file)
             (values doc length hash)
@@ -297,14 +299,14 @@
            (set! attaching (remp (lambda (a) (eq? (car a) b)) attaching))
            #t)))
 
-  ;; A quit ends the task quietly: the one that stops it at unload comes
+  ;; A cancel ends the task quietly: the stop an unload sends comes
   ;; after the unload actions have ended its attach.
   (define (finish-attach! b snapshot)
     (let* ([version (snapshot-version snapshot)] [path (snapshot-path snapshot)]
            [file (and (buffers:live? b) (equal? (logged-path b) path) (log-file path))])
       (let-values ([(records torn?)
                     (guard (c [#t (when (end-attach! b) (undo:install! b #f version))
-                                  (if (quit-condition? c) (values 'stopped #f) (raise c))])
+                                  (if (cancelled? c) (values 'stopped #f) (raise c))])
                       (if file (read-records file) (values #f #f)))])
         (end-attach! b)
         (cond
@@ -342,7 +344,7 @@
       (lambda ()
         (for-each
           (lambda (finish)
-            (guard (c [(not (quit-condition? c)) (report c)])
+            (guard (c [(not (cancelled? c)) (report c)])
               (finish)))
           started))))
 
@@ -367,7 +369,7 @@
   ;; next visit.
   (define (note-killed! b)
     (let ([entry (entry-of b)])
-      (without-quits
+      (without-cancels
         (lambda ()
           (when entry
             (flush-log! entry)
@@ -380,7 +382,7 @@
   ;; The move goes through the writer's queue, so the log's earlier
   ;; writes land before it and its later ones after, at the new path.
   (define (note-rename! from to)
-    (without-quits
+    (without-cancels
       (lambda ()
         (vector-for-each
           (lambda (entry)
@@ -404,7 +406,7 @@
   (define (ensure-log-folder!)
     (when (string=? (%log-folder) "")
       (let ([t (current-time 'time-utc)])
-        (set-saved! %log-folder
+        (saved:set! %log-folder
           (format "~a/.local/share/tuna/undo-log/~a" (getenv "HOME")
                   (+ (* (time-second t) 1000000000) (time-nanosecond t)))))))
 
@@ -426,7 +428,7 @@
       items))
 
   (define (send! items)
-    (unless (without-quits
+    (unless (without-cancels
               (lambda ()
                 (with-mutex writer-mutex
                   (and (not writer-stopping?)
@@ -457,7 +459,7 @@
   ;; The 64 KB more spares small logs the fixed cost of three flushes.
   (define sizes (make-hashtable string-hash string=?))
 
-  (define (report-later c) (post! (lambda () (report c))))
+  (define (report-later c) (spawn-task (lambda (restore) (report c))))
 
   (define (attempt thunk)
     (guard (c [#t (report-later c)]) (thunk)))
@@ -474,7 +476,7 @@
         (if (> size (+ (* 2 (car entry)) 65536))
             (begin
               (note-size! file size)
-              (post! (lambda () (compact! file))))
+              (spawn-task (lambda (restore) (compact! file))))
             (set-cdr! entry size)))))
 
   (define (replace-records! file records)
@@ -528,7 +530,7 @@
           (write-round! items)
           (loop)))))
 
-  (define (start-writer!) (fork-thread run-writer))
+  (define (start-writer!) (fork-task (lambda (restore) (run-writer))))
 
   ;; Exit unloads this module too, so the wait is bounded: a round that
   ;; prints a huge edit could otherwise hold exit for seconds. A round
@@ -568,19 +570,18 @@
 (start-writer!)
 ;; Ahead of other entries, whose edits would otherwise start a history of
 ;; their own in place of the log's.
-(add-hook! files:after-visit note-visit! -100)
-(add-hook! files:after-save note-saved!)
-(add-hook! files:after-revert note-saved!)
-(add-hook! files:unsaved-kept logged?)
-(add-hook! files:after-rename note-rename!)
-(add-hook! buffers:after-edit note-silent-edit!)
+(hooks:add! files:after-visit note-visit! -100)
+(hooks:add! files:after-save note-saved!)
+(hooks:add! files:after-revert note-saved!)
+(hooks:add! files:unsaved-kept logged?)
+(hooks:add! files:after-rename note-rename!)
+(hooks:add! buffers:after-edit note-silent-edit!)
 ;; Ahead of undo's entry, which drops the history.
-(add-hook! buffers:killed note-killed! -100)
+(hooks:add! buffers:killed note-killed! -100)
 (advice-add! files:read-document read-with-log)
 (advice-add! batch-ended
   (lambda (ended)
     (ended)
-    (as-module (this-module)
-      (guard (c [(not (quit-condition? c)) (report c)]) (flush-logs!)))))
+    (call-as-owner %self (lambda () (guard (c [(not (cancelled? c)) (report c)]) (flush-logs!))))))
 (on-unload stop!)
-(spawn-task (attach-open-buffers))
+(spawn-task (lambda (restore) ((attach-open-buffers))))

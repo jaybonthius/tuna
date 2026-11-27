@@ -1,9 +1,10 @@
-(import (tuna) (testing) (tuna plugins))
+(import (hooks) (tables) (timers) (plugins))
+(import (tuna) (testing))
 (define recent-commands '())
 
 (use-plugin commands
   (config
-    (add-hook! commands:after-command
+    (hooks:add! commands:after-command
       (lambda (command) (set! recent-commands (cons command recent-commands))))))
 
 (commands:define-command (open-notes) "Opens the notes." 'notes)

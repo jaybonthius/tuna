@@ -3,16 +3,16 @@
 > (define b0 (scheme-buffer "zero.ss" "(a)\n"))
 > (length (brackets b0))
 2
-> (unload-module! '(rainbow-delimiters))
+> (unload-owner! (module-owner '(rainbow-delimiters)))
 > (brackets b0)
 ()
 > (import (rainbow-delimiters))
 > (length (brackets b0))
 2
-> (buffers:with-buffer b0 (set-option-local! rainbow-delimiters:mode #f))
+> (buffers:with-buffer b0 (options:set-local! rainbow-delimiters:mode #f))
 > (brackets b0)
 ()
-> (buffers:with-buffer b0 (set-option-local! rainbow-delimiters:mode #t))
+> (buffers:with-buffer b0 (options:set-local! rainbow-delimiters:mode #t))
 > (length (brackets b0))
 2
 > (buffers:kill! b0)
@@ -32,9 +32,9 @@
 > (syntax:brackets-used? b)
 #t
 ; A minor mode with no keymap and no lighter.
-> (table-ref modes:minor-modes rainbow-delimiters:mode #f)
+> (tables:ref modes:minor-modes rainbow-delimiters:mode #f)
 0
-> (table-ref modes:keymaps rainbow-delimiters:mode #f)
+> (tables:ref modes:keymaps rainbow-delimiters:mode #f)
 #f
 > (modes:lighter rainbow-delimiters:mode)
 #f
@@ -56,10 +56,10 @@
 (depth-1 depth-2 depth-3 depth-4 depth-5 depth-6 depth-7 depth-8 depth-9 depth-1 depth-2 depth-3 depth-3 depth-2 depth-1 depth-9 depth-8 depth-7 depth-6 depth-5 depth-4 depth-3 depth-2 depth-1 unmatched depth-1 mismatched)
 ; With one outermost-only face, the faces start again at depth-2, so
 ; depth-1 marks only the outermost list.
-> (set-option! rainbow-delimiters:outermost-only-face-count 1)
+> (options:set! rainbow-delimiters:outermost-only-face-count 1)
 > (bracket-faces deep-view)
 (depth-1 depth-2 depth-3 depth-4 depth-5 depth-6 depth-7 depth-8 depth-9 depth-2 depth-3 depth-4 depth-4 depth-3 depth-2 depth-9 depth-8 depth-7 depth-6 depth-5 depth-4 depth-3 depth-2 depth-1 unmatched depth-1 mismatched)
-> (remove-option! rainbow-delimiters:outermost-only-face-count)
+> (options:unset! rainbow-delimiters:outermost-only-face-count)
 > (map caddr (brackets deep))
 (((bracket . 1)) ((bracket . 2)) ((bracket . 3)) ((bracket . 4)) ((bracket . 5)) ((bracket . 6)) ((bracket . 7)) ((bracket . 8)) ((bracket . 9)) ((bracket . 10)) ((bracket . 11)) ((bracket . 12)) ((bracket . 12)) ((bracket . 11)) ((bracket . 10)) ((bracket . 9)) ((bracket . 8)) ((bracket . 7)) ((bracket . 6)) ((bracket . 5)) ((bracket . 4)) ((bracket . 3)) ((bracket . 2)) ((bracket . 1)) ((bracket . unmatched)) ((bracket . 1)) ((bracket . mismatched)))
 ; A view's own value turns the colours off in that view only.
@@ -74,30 +74,30 @@
 (depth-1 depth-2 depth-2 depth-2 depth-3 depth-3 depth-2 depth-1)
 ; Turning the mode off in a buffer stops its bracket spans, so a view's
 ; own value cannot turn the colours on there.
-> (buffers:with-buffer b (set-option-local! rainbow-delimiters:mode #f))
+> (buffers:with-buffer b (options:set-local! rainbow-delimiters:mode #f))
 > (syntax:brackets-used? b)
 #f
 > (brackets b)
 ()
 > (bracket-faces v)
 ()
-> (buffers:with-buffer b (set-option-local! rainbow-delimiters:mode #t))
+> (buffers:with-buffer b (options:set-local! rainbow-delimiters:mode #t))
 > (bracket-faces v)
 (depth-1 depth-2 depth-2 depth-2 depth-3 depth-3 depth-2 depth-1)
 ; A mode with a lexer and no highlighting job gets no bracket spans, so
 ; no colours.
-> (define-table data-keymap "Keys.")
-> (define-hook data-hook "Setup.")
+> (tables:define-table data-keymap "Keys.")
+> (hooks:define-hook data-hook "Setup.")
 > (modes:define-major-mode data-mode (keymap data-keymap) (hook data-hook))
-> (table-set! syntax:lexers data-mode chez-scheme:lexer)
+> (tables:set! syntax:lexers data-mode chez-scheme:lexer)
 > (define data (buffers:make "data" "(a (b))"))
 > (modes:set-major-mode data-mode data)
-> (buffers:with-buffer data (set-option-local! rainbow-delimiters:mode #t))
+> (buffers:with-buffer data (options:set-local! rainbow-delimiters:mode #t))
 > (syntax:brackets-used? data)
 #t
 > (brackets data)
 ()
-> (table-ref web:stylesheets 'rainbow-delimiters #f)
+> (tables:ref web:stylesheets 'rainbow-delimiters #f)
 "rainbow-delimiters/rainbow-delimiters.css"
 ; A known defect: a command runs with its view's own values, and they
 ; apply to every buffer, not only the view's. Here v's own #f hides b's
@@ -124,10 +124,10 @@
 8
 ; Unloading the plugin takes away its entry and stylesheet and stops the
 ; bracket spans; loading it again brings them back.
-> (unload-module! '(rainbow-delimiters))
-> (table-ref syntax:bracket-users 'rainbow-delimiters #f)
+> (unload-owner! (module-owner '(rainbow-delimiters)))
+> (tables:ref syntax:bracket-users 'rainbow-delimiters #f)
 #f
-> (table-ref web:stylesheets 'rainbow-delimiters #f)
+> (tables:ref web:stylesheets 'rainbow-delimiters #f)
 #f
 > (brackets b)
 ()
@@ -135,10 +135,9 @@
 #<edit 1>
 > (brackets b)
 ()
-; While the plugin is off, the configuration's hook entry names its
-; mode, so each Scheme buffer reports it.
+; While the plugin is off, the configuration's hook entry, which names its
+; mode, is skipped quietly, as the entry of a module that is gone.
 > (define z (scheme-buffer "z.ss" "(q)\n"))
-! rainbow-delimiters:mode: module (rainbow-delimiters) is unloaded
 > (brackets z)
 ()
 > (import (rainbow-delimiters))

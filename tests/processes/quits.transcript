@@ -5,17 +5,15 @@
 > (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 > (define landed 0)
 > (define (count-quits report c)
-    (if (quit-condition? c) (set! landed (+ landed 1)) (report c)))
+    (if (cancelled? c) (set! landed (+ landed 1)) (report c)))
 > (advice-add! report count-quits)
 > (define (quits-for seconds)
     (suspend
       (lambda (resume)
-        (fork-thread
-          (lambda ()
-            (let ([until (+ (real-time) (* seconds 1000))])
+        (fork-task (lambda (restore) (let ([until (+ (real-time) (* seconds 1000))])
               (let loop ()
                 (when (< (real-time) until)
-                  (request-quit!)
+                  (testing:request-quit!)
                   (chez:sleep (make-time 'time-duration 200000 0))
                   (loop))))
             (resume void))))))
@@ -42,7 +40,7 @@
 ((exit -1))
 ; A user process that pauses, with a small log, followed as a terminal
 ; follows its program.
-> (set-option! processes:log-size 4096)
+> (options:set! processes:log-size 4096)
 > (set! last-end 0)
 > (define user
     (processes:start-for-user "cat" '("/dev/zero") (processes:options [full-log (processes:full-log pause)])))
@@ -55,5 +53,5 @@
 > (testing:wait-until exited?)
 > (list (taken!) (memq user (processes:all)))
 (((exit -1)) #f)
-> (remove-option! processes:log-size)
+> (options:unset! processes:log-size)
 > (advice-remove! report count-quits)

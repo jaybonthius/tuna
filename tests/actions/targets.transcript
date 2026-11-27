@@ -104,14 +104,14 @@
 > (keys:reading-prompt client)
 "Act on (buffers:insert! b piece): "
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result a)
 ; C-; runs the target's default action: its category's entry in
 ; actions:default-actions, else its RET binding; a numeric argument
 ; takes the target that many on.
 > (define noted #f)
 > (commands:define-command (note [text (ask:line "Note: ")]) "Notes TEXT." (set! noted text))
-> (table-set! actions:default-actions completion:expression-category note)
+> (tables:set! actions:default-actions completion:expression-category note)
 > (define a (act! "C-u" "1" "C-;"))
 > (result a)
 > noted
@@ -121,7 +121,7 @@
 > (result a)
 > noted
 "(buffers)"
-> (table-remove! actions:default-actions completion:expression-category)
+> (tables:remove! actions:default-actions completion:expression-category)
 > (define a (act! "C-;"))
 ! actions:act-default: No default action for (buffers)
 > (result a)
@@ -147,7 +147,7 @@
 > (buffers:insert! code (position-of code "  )" 2) "(list 1 2)")
 54
 > (commands:define-command (pause-then-kill [line (ask:line "Then: ")]) "Kills the region after asking." (editing:kill-region))
-> (table-set! commands:region-commands pause-then-kill #t)
+> (tables:set! commands:region-commands pause-then-kill #t)
 > (keys:bind! completion:expression-action-keymap "p" pause-then-kill)
 > (at! code "(list 1 2)" 0)
 > (define before (cursor-places))
@@ -197,8 +197,8 @@
 > (define (same-bounds view)
     (let-values ([(start end) (syntax:symbol-bounds (views:buffer view) (views:point view))])
       (and start (completion:make-target 'test 'same "same" start end))))
-> (add-hook! completion:target-finders test-target -20)
-> (add-hook! completion:target-finders same-bounds 25)
+> (hooks:add! completion:target-finders test-target -20)
+> (hooks:add! completion:target-finders same-bounds 25)
 > (define paths (show! (buffers:make "paths" "see src/notes.txt and https://tuna.example/a\n")))
 > (at! paths "notes" 0)
 > (define (prompts . count)
@@ -211,20 +211,20 @@
               (testing:wait-until (lambda () (keys:reading client)))
               (loop (- n 1) (cons p acc)))))))
 > (prompts 4)
-! &quit
+! &cancelled
 ("Act on tested: " "Act on ~/src/notes.txt: " "Act on src/notes: " "Act on tested: ")
 > (at! paths "tuna.example" 0)
 > (prompts 3)
-! &quit
+! &cancelled
 ("Act on https://tuna.example/a: " "Act on tested: " "Act on //tuna: ")
-> (remove-hook! completion:target-finders test-target)
-> (remove-hook! completion:target-finders same-bounds)
+> (hooks:remove! completion:target-finders test-target)
+> (hooks:remove! completion:target-finders same-bounds)
 > (define list-only (show! (buffers:make "l.ss" "(f (g x))\n")))
 > (modes:set-major-mode chez-scheme:mode list-only)
 > (views:set-point! (view) (position-of list-only "(g x)" 0))
 > (views:set-mark! (view) (position-of list-only "(g x)" 5))
 > (prompts 3)
-! &quit
+! &cancelled
 ("Act on (g x): " "Act on (g x): " "Act on (f (g x)): ")
 ; A file name holding a slash is a whole path, joined to the buffer's
 ; folder, and f visits it.
@@ -257,31 +257,31 @@
 > (prompt-text)
 "Shell command on region: \n"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result a)
 > (views:set-mark! (view) #f)
 ; A region command on a target with no place in a buffer, such as a
 ; read's candidate, runs on the selected view's own region and asks its
 ; questions.
-> (define-table test-keymap)
-> (table-set! completion:action-keymaps 'test (list test-keymap))
+> (tables:define-table test-keymap)
+> (tables:set! completion:action-keymaps 'test (list test-keymap))
 > (keys:bind! test-keymap "p" pause-then-kill)
 > (define t (start! (lambda () (completion:read "Pick: " (list (completion:source (candidates (vector "one")) (category 'test)))))))
 > (define a (act! "C-."))
 > (press! "p")
-! &quit
+! &cancelled
 > (testing:wait-until (lambda () (and (prompt) (string=? (prompt-text) "Then: \n"))))
 > (prompt-text)
 "Then: \n"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result a)
 > (result t)
 quit
 ; Every command that acts on the region when there is one is marked by
 ; its owner, so a command bound as an action acts on the target, not on
 ; the line: d duplicates the list in place.
-> (map (lambda (c) (table-ref commands:region-commands c #f))
+> (map (lambda (c) (tables:ref commands:region-commands c #f))
        (list editing:duplicate-dwim editing:move-line-down editing:move-line-up editing:delete-trailing-whitespace
              editing:delete-backward-char editing:delete-forward-char completion:kill-ring-save
              dired:mark dired:unmark dired:flag-deletion dired:toggle-marks))
@@ -308,13 +308,13 @@ quit
 > (keys:reading-prompt client)
 "Act on (let ()\n(define x 1)\nx): "
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result a)
 ; With no lexer, nothing is an expression or a form.
 > (define plain (show! (buffers:make "plain" "(f (g x))\n")))
 > (at! plain "x" 0)
 > (prompts 2)
-! &quit
+! &cancelled
 ("Act on x: " "Act on x: ")
 ; A listing's line is its file.
 > (system "mkdir -p \"$HOME/listed\" && echo listed > \"$HOME/listed/a.txt\"")
@@ -329,8 +329,10 @@ quit
 > (result a)
 > (text (views:buffer (view)))
 "listed\n"
-; actions imports no plugin whose targets it offers: turning
-; dired off leaves it on.
-> (unload-module! '(dired))
-> (list (and (member '(actions) (loaded-modules)) #t) (length (hook-entries files:folder-visitors)))
-(#t 0)
+; actions imports no plugin whose targets it offers: unloading dired
+; leaves it on, and the configuration loads a new dired.
+> (define old (module-owner '(dired)))
+> (define actions (module-owner '(actions)))
+> (unload-owner! old)
+> (list (owner-live? actions) (owner-live? old) (length (hooks:entries files:folder-visitors)))
+(#t #f 1)

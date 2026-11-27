@@ -1,7 +1,9 @@
 #!tuna
-(import (buffers) (document) (jobs) (modes))
+(import (buffers) (document) (jobs) (modes) (hooks) (tables))
 
-(define-table highlighters
+(define %self (current-owner))
+
+(tables:define-table highlighters
   "Maps a major mode, or a language as modes:language names it, to a highlighter. A buffer's highlighter is the entry of the first mode in its mode's ancestry that has one, else the entry of its mode's language.")
 
 (buffers:define-layer faces (priority -10) (sticky after) (evaporate))
@@ -28,7 +30,7 @@
 
   (define-record-type state
     (sealed #t)
-    (fields buffer highlighter (mutable job) (mutable input) (mutable data) (mutable faces?)))
+    (fields buffer highlighter (mutable job) (mutable input) (mutable data) (mutable faces?) layers))
 
   (define running (make-eq-hashtable))
 
@@ -62,9 +64,9 @@
 
   (define (highlighter-of buffer)
     (let ([mode (modes:major-mode buffer)])
-      (or (exists (lambda (m) (table-ref highlighters m #f)) (modes:ancestry mode))
+      (or (exists (lambda (m) (tables:ref highlighters m #f)) (modes:ancestry mode))
           (let ([language (modes:language mode)])
-            (and language (table-ref highlighters language #f))))))
+            (and language (tables:ref highlighters language #f))))))
 
   (define (faces-on? buffer)
     (and (buffers:with-buffer buffer (mode)) #t))
@@ -72,14 +74,14 @@
   (define (current? s)
     (eq? (eq-hashtable-ref running (state-buffer s) #f) s))
 
-  (define (clear! buffer type)
-    (buffers:set-spans! (buffers:layer buffer type) 0 (document:length (buffers:document buffer)) '()))
+  (define (clear! buffer layer)
+    (buffers:set-spans! layer 0 (document:length (buffers:document buffer)) '()))
 
   (define (forget! s)
     (let ([buffer (state-buffer s)])
       (eq-hashtable-delete! running buffer)
       (when (buffers:live? buffer)
-        (for-each (lambda (type) (clear! buffer type)) (highlighter-record-layers (state-highlighter s))))))
+        (for-each (lambda (layer) (clear! buffer layer)) (state-layers s)))))
 
   (define (stop! buffer)
     (let ([s (eq-hashtable-ref running buffer #f)])
@@ -98,7 +100,7 @@
         ((highlighter-record-input (state-highlighter s)) buffer (state-data s)))))
 
   (define (send-input! s)
-    (guard (c [(not (quit-condition? c)) (report c) (fail! s)])
+    (guard (c [(not (cancelled? c)) (report c) (fail! s)])
       (let ([input (input-of s)])
         (unless (equal? input (state-input s))
           (state-input-set! s input)
@@ -130,10 +132,14 @@
 
   (define (start! buffer h)
     (eq-hashtable-delete! failed buffer)
-    (guard (c [(not (quit-condition? c)) (report c) (eq-hashtable-set! failed buffer h)])
+    (guard (c [(not (cancelled? c)) (report c) (eq-hashtable-set! failed buffer h)])
       (unless (highlighter-record? h)
         (assertion-violation 'syntax-highlighting:highlighters "not a highlighter" h))
-      (let* ([s (make-state buffer h #f #f #f (faces-on? buffer))]
+      ;; The layers are taken at the start: from the first step of this
+      ;; plugin's unload its layer types are out of effect, and the unload
+      ;; still clears them.
+      (let* ([s (make-state buffer h #f #f #f (faces-on? buffer)
+                            (map (lambda (type) (buffers:layer buffer type)) (highlighter-record-layers h)))]
              [input (input-of s)])
         (state-input-set! s input)
         (state-job-set! s
@@ -163,7 +169,7 @@
       (unless (eq? on? (state-faces? s))
         (state-faces?-set! s on?)
         (when (highlighter-record-faces-index (state-highlighter s))
-          (unless on? (clear! (state-buffer s) faces))
+          (unless on? (clear! (state-buffer s) (buffers:layer (state-buffer s) faces)))
           (jobs:send! (state-job s) (cons 'faces on?))))))
 
   ;; Spans go before the rest of the batch's end, where screens are drawn
@@ -294,14 +300,14 @@
   (note-module-loaded!))
 
 (define (%reconcile ended)
-  (as-module (this-module) (stop-stale!))
+  (call-as-owner %self (lambda () (stop-stale!)))
   (ended)
-  (as-module (this-module) (start-pending!)))
+  (call-as-owner %self (lambda () (start-pending!))))
 
-(add-hook! modes:major-mode-changed %mode-set)
-(add-hook! modes:delayed-mode-changed %mode-set-delaying-hooks)
-(add-hook! buffers:killed forget-buffer!)
-(add-hook! buffers:after-edit %send-edit)
+(hooks:add! modes:major-mode-changed %mode-set)
+(hooks:add! modes:delayed-mode-changed %mode-set-delaying-hooks)
+(hooks:add! buffers:killed forget-buffer!)
+(hooks:add! buffers:after-edit %send-edit)
 (advice-add! module-loaded %note-module-loaded)
 (advice-add! batch-ended %reconcile)
 (on-unload stop-all!)

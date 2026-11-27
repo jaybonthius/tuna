@@ -10,11 +10,11 @@ cpu=${BENCH_CPU:-$(($(nproc) - 1))}
 dir=$(mktemp -d "${TMPDIR:-/tmp}/tuna-bench-saved.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
 lib=$dir/home/.config/tuna/lib
-mkdir -p "$lib" "$dir/library"
+mkdir -p "$lib"
 cp bench/saved.sls "$lib/saved-bench.sls"
 printf '(import (tuna) (saved-bench))\n(saved-bench:run)\n(exit)\n' > "$dir/home/.config/tuna/init.ss"
 
-output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$dir/library" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
+output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
 # Main-thread time per batch that sets one datum: a ring of 120 entries
 # of 4,096 characters, and a history of 10,000 short strings.
 echo "$output" | awk '

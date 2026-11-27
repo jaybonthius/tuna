@@ -12,25 +12,25 @@
 ((1 "keys-settings" (("quitKeys" . #("C-g" "ESC")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #f))))
 > (calls)
 ()
-> (set-option! keys:quit-keys '("C-g") keys:left-option-meta? #f)
+> (options:set! keys:quit-keys '("C-g") keys:left-option-meta? #f)
 > (web:connect! c2)
 > (calls)
 ((1 "keys-settings" (("quitKeys" . #("C-g")) ("leftOptionMeta" . #f) ("rightOptionMeta" . #f))) (2 "keys-settings" (("quitKeys" . #("C-g")) ("leftOptionMeta" . #f) ("rightOptionMeta" . #f))))
 ; A client whose stream closed may have missed them, so it gets them again
 ; once connected.
 > (web:disconnect! c1)
-> (sleep-for 0)
+> (timers:sleep 0)
 > (web:connect! c1)
 > (calls)
 ((1 "keys-settings" (("quitKeys" . #("C-g")) ("leftOptionMeta" . #f) ("rightOptionMeta" . #f))))
 ; Each quit key is one valid key.
-> (raised (lambda () (set-option! keys:quit-keys '("C-x C-g"))))
-(set-option! "(\"C-x C-g\") is not a valid value for keys:quit-keys")
-> (raised (lambda () (set-option! keys:quit-keys "C-g")))
-(set-option! "\"C-g\" is not a valid value for keys:quit-keys")
-> (raised (lambda () (set-option! keys:quit-keys '("S-a"))))
-(set-option! "(\"S-a\") is not a valid value for keys:quit-keys")
-> (remove-option! keys:quit-keys keys:left-option-meta?)
+> (raised (lambda () (options:set! keys:quit-keys '("C-x C-g"))))
+(options:set! "(\"C-x C-g\") is not a valid value for keys:quit-keys")
+> (raised (lambda () (options:set! keys:quit-keys "C-g")))
+(options:set! "\"C-g\" is not a valid value for keys:quit-keys")
+> (raised (lambda () (options:set! keys:quit-keys '("S-a"))))
+(options:set! "(\"S-a\") is not a valid value for keys:quit-keys")
+> (options:unset! keys:quit-keys keys:left-option-meta?)
 > (calls)
 ((2 "keys-settings" (("quitKeys" . #("C-g" "ESC")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #f))) (1 "keys-settings" (("quitKeys" . #("C-g" "ESC")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #f))))
 ; What a quit key runs is its binding: the global keymap binds ESC, as it
@@ -51,7 +51,7 @@
 > (list (keys:pending frame) (keys:lookup frame "ESC x"))
 (#f #f)
 ; Taken out of the quit keys and unbound, ESC is the Meta prefix.
-> (set-option! keys:quit-keys '("C-g"))
+> (options:set! keys:quit-keys '("C-g"))
 > (name-of (keys:lookup frame "ESC x"))
 editing:next-line
 > (press-all! frame "C-x" "ESC")

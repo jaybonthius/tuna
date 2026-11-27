@@ -26,11 +26,11 @@ Honks once.
 ; binder. ESC makes the next key Meta only while it is neither a quit
 ; key nor bound.
 > (define (title-of keys) (in-client (lambda () (help:describe-key keys (view)))) (title))
-> (set-option! keys:quit-keys '("C-g"))
+> (options:set! keys:quit-keys '("C-g"))
 > (keys:unbind! keys:global "ESC")
 > (map title-of '("x" "S-<right>" "ESC x" "M-x" "C-x C-f"))
 ("x runs the command editing:self-insert" "S-<right> runs the command editing:forward-char" "ESC x runs the command command-picker:execute-extended-command" "M-x runs the command command-picker:execute-extended-command, bound by (command-picker)" "C-x C-f runs the command file-picker:find-file, bound by (file-picker)")
-> (set-option! keys:quit-keys '("C-g" "ESC"))
+> (options:set! keys:quit-keys '("C-g" "ESC"))
 > (keys:bind! keys:global "ESC" keys:keyboard-quit)
 ; A prefix lists the bindings after it, as C-h b lists them: one section
 ; per keymap, a sequence an earlier keymap decides left out of a later.
@@ -81,7 +81,7 @@ Honks once.
 "<mouse-1> at that spot runs the command harpo:honk, bound by (repl)"
 ; A keymap marked on the element clicked, as a tab's close button carries
 ; one, answers first, and C-h k says who bound the key there.
-> (define-table close-keys "A close button's keys.")
+> (tables:define-table close-keys "A close button's keys.")
 > (keys:bind! close-keys "<mouse-1>" keys:ignore)
 > (in-client (lambda () (help:describe-key (list "<mouse-1>" (views:%make-posn (view) 2 #f (list close-keys) #f #f)) (view))))
 > (title)
@@ -104,19 +104,19 @@ Honks once.
 ; A quit key cancels C-h k, describing nothing.
 > (start! "C-h" "k")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (settle)
 > (title)
 "<mouse-1> at that spot runs the command harpo:honk, bound by (repl)"
 > (start! "C-h" "k")
 > (press! "C-x" "C-g")
-! &quit
+! &cancelled
 > (settle)
 > (title)
 "<mouse-1> at that spot runs the command harpo:honk, bound by (repl)"
 > (start! "C-h" "k")
 > (press! "ESC")
-! &quit
+! &cancelled
 > (settle)
 > (title)
 "<mouse-1> at that spot runs the command harpo:honk, bound by (repl)"
@@ -129,7 +129,7 @@ Honks once.
 > (echo)
 "Describe the following key or mouse click: C-x-"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (settle)
 > (echo)
 "Quit"

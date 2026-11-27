@@ -10,14 +10,14 @@
 > (list (terminal:directory t) (files:directory t))
 ("$HOME/proj/" "$HOME/proj/")
 > (in-client (lambda () (layout:switch-to-buffer t)))
-> (define (start! thunk) (spawn-task (lambda () (in-client thunk))))
-> (define (result task) (testing:wait-until (lambda () (task-done? task))) (guard (c [#t (condition-message c)]) (join-task task)))
+> (define (start! thunk) (spawn-task (lambda (restore) (in-client thunk))))
+> (define (result task) (testing:wait-until (lambda () (eq? (task-state task) 'done))) (guard (c [#t (condition-message c)]) (testing:join task)))
 > (define task (start! (lambda () (press! "C-x" "C-f"))))
 > (testing:wait-until (lambda () (minibuffer:current-prompt)))
 > (minibuffer:input (minibuffer:current-prompt))
 "~/proj/"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result task)
 > (define task (start! (lambda () (commands:run shell-commands:shell-command "pwd" #f))))
 > (result task)
@@ -34,7 +34,7 @@
 > (texts s)
 ("src/notes.txt:1:a needle in proj")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result task)
 > (define task (start! (lambda () (commands:run shell-commands:compile "pwd"))))
 > (result task)
@@ -51,7 +51,7 @@
 ; A report of a folder that is not here is refused and the terminal keeps
 ; its folder; each folder taken runs terminal:directory-changed.
 > (define changes '())
-> (add-hook! terminal:directory-changed (lambda (t) (set! changes (cons (terminal:directory t) changes))))
+> (hooks:add! terminal:directory-changed (lambda (t) (set! changes (cons (terminal:directory t) changes))))
 > (define v (terminal:start (list "sh" "-c" (string-append "printf '\\033]7;file://localhost/no/such/folder\\007reported\\n'; read x; printf '\\033]7;file://localhost" (at "proj/src") "\\007'; sleep 30")) (processes:options [directory "~/"])))
 > (wait-for v "reported")
 > (list changes (terminal:directory v))

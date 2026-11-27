@@ -1,22 +1,22 @@
 #!tuna
 (import (runs) (processes) (minibuffer) (ask) (files) (layout) (views) (editing) (kill-ring) (buffers) (document)
-        (modes) (commands) (keys) (completion))
+        (modes) (commands) (keys) (completion) (hooks) (options) (tables) (saved))
 
-(define-option compile-command "make -k " string?
+(options:define-option compile-command "make -k " string?
   "The command line shell-commands:compile starts from, and the one shell-commands:recompile runs outside compile's buffers.")
 
-(define-option compile-buffer-name (lambda () "*compilation*") procedure?
+(options:define-option compile-buffer-name (lambda () "*compilation*") procedure?
   "A procedure of no arguments that returns the name of the buffer builds run in.")
 
 (define (%strings? v) (and (list? v) (for-all string? v)))
 
-(define-saved compile-history '() %strings?)
+(saved:define-saved compile-history '() %strings?)
 
-(define-saved shell-command-history '() %strings?)
+(saved:define-saved shell-command-history '() %strings?)
 
-(define-table compilation-keymap "Keys in the buffers builds run in.")
+(tables:define-table compilation-keymap "Keys in the buffers builds run in.")
 
-(define-hook compilation-mode-hook
+(hooks:define-hook compilation-mode-hook
   "Called in each buffer that turns on shell-commands:compilation-mode or a mode derived from it.")
 
 (modes:define-major-mode compilation-mode
@@ -61,12 +61,12 @@
   (%check-line 'shell-commands:compile line)
   (save-buffers)
   ;; A value that is neither the scope's own nor the setting is bound by
-  ;; with-options, which would drop a new value at its end, as Emacs's
+  ;; options:with, which would drop a new value at its end, as Emacs's
   ;; let drops what setq gives its binding; so it is left as it is.
   (unless (string=? line (compile-command))
     (cond
-      [(option-local? compile-command) (set-option-local! compile-command line)]
-      [(equal? (compile-command) (option-setting compile-command)) (set-option! compile-command line)]))
+      [(options:local? compile-command) (options:set-local! compile-command line)]
+      [(equal? (compile-command) (options:setting compile-command)) (options:set! compile-command line)]))
   (%show-run (runs:start-for-user ((compile-buffer-name)) line (%here) compilation-mode)))
 
 (define (%compile-buffer? b)
@@ -102,7 +102,7 @@
        (document:node-attribute (document:token (buffers:document b) 0) 'directory #f)))
 
 (define (%set-revert! b)
-  (buffers:with-buffer b (set-option-local! buffers:revert-function shell-command-again)))
+  (buffers:with-buffer b (options:set-local! buffers:revert-function shell-command-again)))
 
 (define (%write-output! line directory text)
   (let ([datum (buffers:text (list (cons 'shell-command line) (cons 'directory directory)) text)]
@@ -259,16 +259,16 @@
       (error 'shell-commands:shell-command-again "the buffer holds no command line"))
     (shell-command line #f)))
 
-(define (%set-recompile) (set-option-local! buffers:revert-function recompile))
+(define (%set-recompile) (options:set-local! buffers:revert-function recompile))
 
-(add-hook! compilation-mode-hook %set-recompile)
-(add-hook! files:directory-finders %output-directory)
-(table-set! commands:command-modes shell-command-again '())
+(hooks:add! compilation-mode-hook %set-recompile)
+(hooks:add! files:directory-finders %output-directory)
+(tables:set! commands:command-modes shell-command-again '())
 (keys:bind! keys:global "M-!" shell-command)
 (keys:bind! keys:global "M-|" shell-command-on-region)
 (keys:bind! keys:global "M-&" async-shell-command)
 (keys:bind! completion:region-action-keymap "|" shell-command-on-region)
-(table-set! commands:region-commands shell-command-on-region #t)
+(tables:set! commands:region-commands shell-command-on-region #t)
 ;; Loading a module takes back its local values in every scope, and the
 ;; output buffer has no mode whose hook would set them again.
 (for-each (lambda (b) (when (%output-root-line b) (%set-revert! b))) (buffers:all))

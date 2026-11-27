@@ -41,13 +41,13 @@
 ; views:fold-opened is told when a draw opens the folds holding a cursor,
 ; inner ones first, with the buffer current, after the draw.
 > (define opened '())
-> (add-hook! views:fold-opened (lambda (view start end) (set! opened (cons (list (views:id view) start end (buffers:name (buffers:current))) opened))))
+> (hooks:add! views:fold-opened (lambda (view start end) (set! opened (cons (list (views:id view) start end (buffers:name (buffers:current))) opened))))
 > (views:set-point! nest 7)
 > (string? (html-of nest desktop))
 #t
 > (map (lambda (p) (views:folds-at nest p)) '(7 22))
 (() ((20 . 24)))
-> (let loop ([n 0]) (when (and (null? opened) (< n 100)) (sleep-for 0.01) (loop (+ n 1))))
+> (let loop ([n 0]) (when (and (null? opened) (< n 100)) (timers:sleep 0.01) (loop (+ n 1))))
 > (map (lambda (o) (cdr o)) (reverse opened))
 ((5 10 "nest") (2 20 "nest"))
 ; views:reveal! opens the folds hiding any of a range and tells at once;

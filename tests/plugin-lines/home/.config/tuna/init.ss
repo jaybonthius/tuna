@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins))
+(import (tuna))
 (use-plugin other (local "~/src/other"))
 (use-plugin sources (git "https://github.com/groucho/tuna-sources"))
 (use-plugin compat)

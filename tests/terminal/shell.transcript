@@ -2,7 +2,7 @@
 ; which reports the folder (OSC 7) and marks prompts and commands (OSC
 ; 133), without changes to its startup files.
 > (define marks '())
-> (add-hook! terminal:semantic-prompt
+> (hooks:add! terminal:semantic-prompt
     (lambda (t mark code command) (set! marks (cons (list mark code command) marks))))
 > (define t (shell!))
 > (terminal:send! t "cd /tmp && ls -d /tmp && false\r")
@@ -16,7 +16,7 @@
 ((prompt #f #f) (prompt #f #f) (input #f #f) (command-start #f "cd /tmp && ls -d /tmp && false") (command-end 1 #f) (prompt #f #f) (prompt #f #f) (input #f #f))
 ; A program sets its title (OSC 2).
 > (define titles '())
-> (add-hook! terminal:title-changed (lambda (t) (set! titles (cons (terminal:title t) titles))))
+> (hooks:add! terminal:title-changed (lambda (t) (set! titles (cons (terminal:title t) titles))))
 > (terminal:send! t "printf '\\e]2;building\\a'\r")
 > (testing:wait-until (lambda () (pair? titles)))
 > (list titles (terminal:title t))

@@ -1,6 +1,6 @@
 #!tuna
-(import (modes))
+(import (modes) (hooks) (tables))
 
-(define-table keymap "Keys.")
-(define-hook mode-hook "Setup.")
+(tables:define-table keymap "Keys.")
+(hooks:define-hook mode-hook "Setup.")
 (modes:define-major-mode mode (keymap keymap) (hook mode-hook) (language "python"))

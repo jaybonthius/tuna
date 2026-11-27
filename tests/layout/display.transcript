@@ -29,10 +29,10 @@
 > (define tried '())
 > (define (declining name) (lambda (b) (set! tried (cons name tried)) #f))
 > (define (always b) #t)
-> (table-set! layout:display-rules always (declining 'older))
+> (tables:set! layout:display-rules always (declining 'older))
 > (define (also-always b) #t)
-> (table-set! layout:display-rules also-always (declining 'newer))
-> (set-option! layout:display-action (declining 'option))
+> (tables:set! layout:display-rules also-always (declining 'newer))
+> (options:set! layout:display-action (declining 'option))
 > (layout:display-buffer mail (declining 'caller))
 #<view 1>
 > (reverse tried)
@@ -43,14 +43,14 @@
 (layout:display-buffer "an action returned what is not a view or #f")
 > (raised (lambda () (layout:display-buffer 'mail)))
 (layout:display-buffer "not a buffer")
-> (table-remove! layout:display-rules always)
-> (table-remove! layout:display-rules also-always)
+> (tables:remove! layout:display-rules always)
+> (tables:remove! layout:display-rules also-always)
 ; use-other-view reuses a view showing the buffer, else the view selected
 ; least recently, never the selected one or a locked one.
-> (remove-option! layout:display-action)
+> (options:unset! layout:display-action)
 > (eq? (layout:display-action) layout-split:display-right)
 #t
-> (set-option! layout:display-action layout:use-other-view)
+> (options:set! layout:display-action layout:use-other-view)
 > (map (lambda (v) (cons (views:id v) (buffers:name (views:buffer v)))) (layout:views))
 ((1 . "mail") (4 . "*Pager*") (3 . "notes"))
 > (layout:select! (views:find 4))
@@ -83,7 +83,7 @@
 ; The documented example of a rule.
 > (define (compilation-buffer? buffer)
     (string=? (buffers:name buffer) "*compilation*"))
-> (table-set! layout:display-rules compilation-buffer? layout-split:display-below)
+> (tables:set! layout:display-rules compilation-buffer? layout-split:display-below)
 > (define compilation (buffers:make "*compilation*" "make\n"))
 > (layout:select! (layout:display-buffer compilation))
 > (cons (selected) (buffers:name (views:buffer (layout:selected-view))))

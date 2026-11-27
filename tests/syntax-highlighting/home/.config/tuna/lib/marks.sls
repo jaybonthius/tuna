@@ -1,41 +1,41 @@
 #!tuna
-(import (modes) (auto-mode) (buffers) (views) (jobs) (syntax-highlighting) (marks highlight))
+(import (modes) (auto-mode) (buffers) (views) (jobs) (syntax-highlighting) (marks highlight) (hooks) (options) (tables))
 
-(define-option mark "#" string? "The character that starts a marked word.")
-(define-option input-raises? #f boolean? "Whether the input procedure raises.")
+(options:define-option mark "#" string? "The character that starts a marked word.")
+(options:define-option input-raises? #f boolean? "Whether the input procedure raises.")
 
-(define-table keymap "Keys.")
-(define-hook mode-hook "Setup.")
+(tables:define-table keymap "Keys.")
+(hooks:define-hook mode-hook "Setup.")
 (modes:define-major-mode mode (keymap keymap) (hook mode-hook) (language "marks"))
 
-(define-table derived-keymap "Keys.")
-(define-hook derived-hook "Setup.")
+(tables:define-table derived-keymap "Keys.")
+(hooks:define-hook derived-hook "Setup.")
 (modes:define-major-mode derived (parent mode) (keymap derived-keymap) (hook derived-hook))
 
-(define-table own-keymap "Keys.")
-(define-hook own-hook "Setup.")
+(tables:define-table own-keymap "Keys.")
+(hooks:define-hook own-hook "Setup.")
 (modes:define-major-mode own (keymap own-keymap) (hook own-hook) (language "marks"))
 
-(define-table raising-keymap "Keys.")
-(define-hook raising-hook "Setup.")
+(tables:define-table raising-keymap "Keys.")
+(hooks:define-hook raising-hook "Setup.")
 (modes:define-major-mode raising (keymap raising-keymap) (hook raising-hook))
 
-(define-table ranged-keymap "Keys.")
-(define-hook ranged-hook "Setup.")
+(tables:define-table ranged-keymap "Keys.")
+(hooks:define-hook ranged-hook "Setup.")
 (modes:define-major-mode ranged (keymap ranged-keymap) (hook ranged-hook))
 
-(define-option range '(0 0) list? "The range the ranged highlighter answers for.")
+(options:define-option range '(0 0) list? "The range the ranged highlighter answers for.")
 
-(define-table pieces-keymap "Keys.")
-(define-hook pieces-hook "Setup.")
+(tables:define-table pieces-keymap "Keys.")
+(hooks:define-hook pieces-hook "Setup.")
 (modes:define-major-mode pieces (keymap pieces-keymap) (hook pieces-hook))
 
-(define-table unnamed-keymap "Keys.")
-(define-hook unnamed-hook "Setup.")
+(tables:define-table unnamed-keymap "Keys.")
+(hooks:define-hook unnamed-hook "Setup.")
 (modes:define-major-mode unnamed (keymap unnamed-keymap) (hook unnamed-hook))
 
-(define-table unknown-keymap "Keys.")
-(define-hook unknown-hook "Setup.")
+(tables:define-table unknown-keymap "Keys.")
+(hooks:define-hook unknown-hook "Setup.")
 (modes:define-major-mode unknown (keymap unknown-keymap) (hook unknown-hook) (language "nothing"))
 
 (buffers:define-layer parens (priority -5) (evaporate))
@@ -58,6 +58,8 @@
 
 (define %inputs '())
 
+(define (inputs-count) (length %inputs))
+
 (define (inputs)
   (let ([found (reverse %inputs)])
     (set! %inputs '())
@@ -77,14 +79,14 @@
   (set! %inputs (cons (list (buffers:name buffer) data) %inputs))
   (list (string-append (getenv "HOME") "/gates/" (buffers:name buffer))))
 
-(table-set! syntax-highlighting:highlighters "marks"
+(tables:set! syntax-highlighting:highlighters "marks"
   (syntax-highlighting:make-highlighter %marks (list syntax-highlighting:faces parens) %input))
-(table-set! syntax-highlighting:highlighters own
+(tables:set! syntax-highlighting:highlighters own
   (syntax-highlighting:make-highlighter %marks (list syntax-highlighting:faces parens) %own-input))
-(table-set! syntax-highlighting:highlighters raising
+(tables:set! syntax-highlighting:highlighters raising
   (syntax-highlighting:make-highlighter %raising (list syntax-highlighting:faces) %input))
-(table-set! syntax-highlighting:highlighters ranged
+(tables:set! syntax-highlighting:highlighters ranged
   (syntax-highlighting:make-highlighter %ranged (list syntax-highlighting:faces) (lambda (buffer data) (range))))
-(table-set! syntax-highlighting:highlighters pieces
+(tables:set! syntax-highlighting:highlighters pieces
   (syntax-highlighting:make-highlighter %pieces (list syntax-highlighting:faces) %pieces-input))
-(table-set! auto-mode:file-names "mk" mode)
+(tables:set! auto-mode:file-names "mk" mode)

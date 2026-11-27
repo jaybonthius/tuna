@@ -35,18 +35,18 @@
     "Notes where a click on the segment ran."
     (set! clicked (list (eq? (views:current) layout:screen-view)
                         (eq? (layout:part-view (views:posn-node (keys:event-end event))) (cadr windows)))))
-> (define-table name-keys "Clicks on the name.")
+> (tables:define-table name-keys "Clicks on the name.")
 > (define (show-name view) (buffers:name (views:buffer view)))
 > (status-line:define-segment name (show show-name) (keymap name-keys))
 > (keys:bind! name-keys "<mouse-1>" note-click)
-> (table-set! status-line:segments name (status-line:left 25))
+> (tables:set! status-line:segments name (status-line:left 25))
 > (click-status! (cadr windows) 1 name-keys)
 > clicked
 (#t #t)
 ; A segment whose keymap binds the left button is marked clickable; one
 ; that binds only the right button, and the line, whose keymap binds no
 ; left click, carry no state.
-> (define-table menu-keys "Right clicks on a segment.")
+> (tables:define-table menu-keys "Right clicks on a segment.")
 > (keys:bind! menu-keys "<mouse-3>" note-click)
 > (map (lambda (k) (let ([m (views:keymap-mark k)]) (substring m (string-length (number->string (mark-number k))) (string-length m))))
        (list name-keys menu-keys status-line:keymap))
@@ -58,7 +58,7 @@
 > (click-status! (cadr windows) 2 name-keys)
 > (list (length (layout:views)) (eq? (view) (cadr windows)))
 (1 #t)
-> (table-remove! status-line:segments name)
+> (tables:remove! status-line:segments name)
 ; A click whose window was deleted since its line was drawn is stale.
 > (layout-split:split-view! (view) (layout-split:direction row))
 #<view 4>
@@ -68,7 +68,7 @@
 > (buffers:replace! layout:buffer at (document:node-end (layout:view-node (cadr two))) "")
 #<edit 6>
 > (parameterize ([web:current-client client])
-    ((table-ref web:input-handlers "mouse") client
+    ((tables:ref web:input-handlers "mouse") client
      `(("type" . "mouse") ("action" . "click") ("button" . 3) ("clicks" . 1) ("modifiers" . #())
        ("view" . ,(views:id layout:screen-view)) ("version" . ,drawn)
        ("showing" . ,(views:shown-count layout:screen-view)) ("token" . ,at)

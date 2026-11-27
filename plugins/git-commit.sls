@@ -1,6 +1,6 @@
 #!tuna
 (import (git-mode) (git) (with-editor) (transient) (modes) (auto-mode) (keys) (commands) (buffers) (document) (views)
-        (layout) (files) (faces) (ask) (web))
+        (layout) (files) (faces) (ask) (web) (hooks) (options) (tables) (saved))
 
 (define-enumeration committer-date (now keep) %committer-dates)
 
@@ -12,34 +12,34 @@
 
 (define (%strings? v) (and (list? v) (for-all string? v)))
 
-(define-option arguments '("--verbose") %strings? "The arguments the commit menu starts with.")
+(options:define-option arguments '("--verbose") %strings? "The arguments the commit menu starts with.")
 
-(define-option published-branches '("origin/master") %strings?
+(options:define-option published-branches '("origin/master") %strings?
   "The branches whose commits are published; amending one of their commits asks first.")
 
-(define-option ask-to-stage (staging ask) (%one-of (%stagings))
+(options:define-option ask-to-stage (staging ask) (%one-of (%stagings))
   "What git-commit:create does with nothing staged: ask asks, stage commits everything without asking, refuse raises Nothing staged.")
 
-(define-option extend-override-date? #t boolean? "Whether extending sets the committer date to now; #f keeps HEAD's.")
+(options:define-option extend-override-date? #t boolean? "Whether extending sets the committer date to now; #f keeps HEAD's.")
 
-(define-option reword-override-date? #t boolean? "Whether rewording sets the committer date to now; #f keeps HEAD's.")
+(options:define-option reword-override-date? #t boolean? "Whether rewording sets the committer date to now; #f keeps HEAD's.")
 
-(define-option major-mode modes:fundamental symbol? "The major mode of message buffers.")
+(options:define-option major-mode modes:fundamental symbol? "The major mode of message buffers.")
 
-(define-option style-checks (list (style-check non-empty-second-line))
+(options:define-option style-checks (list (style-check non-empty-second-line))
   (lambda (v) (and (list? v) (for-all (%one-of (%style-checks)) v)))
   "The checks made on C-c C-c, values of git-commit:style-check.")
 
-(define-option summary-max-length 68 (lambda (v) (and (fixnum? v) (fx> v 0)))
+(options:define-option summary-max-length 68 (lambda (v) (and (fixnum? v) (fx> v 0)))
   "The summary length past which characters show in git-commit.overlong-summary.")
 
-(define-saved messages '() %strings?)
+(saved:define-saved messages '() %strings?)
 
 (define %history-size 32)
 
-(define-table keymap "Keys in a commit message buffer.")
+(tables:define-table keymap "Keys in a commit message buffer.")
 
-(define-hook mode-hook "Called in each message buffer as git-commit:mode turns on.")
+(hooks:define-hook mode-hook "Called in each message buffer as git-commit:mode turns on.")
 
 (modes:define-minor-mode mode
   "Whether the buffer holds a message git asked for: its history keys, trailers and faces."
@@ -210,7 +210,7 @@
   (let ([text (%message-text b)])
     (unless (or (string=? text "") (and (pair? (messages)) (string=? (car (messages)) text)))
       (let ([all (cons text (messages))])
-        (set-saved! messages (if (> (length all) %history-size) (list-head all %history-size) all))))))
+        (saved:set! messages (if (> (length all) %history-size) (list-head all %history-size) all))))))
 
 (commands:define-command (save-message)
   "Puts the message on git-commit:messages unless it is empty or already the newest."
@@ -372,7 +372,7 @@
 (define (%setup)
   (let ([b (buffers:current)])
     (eq-hashtable-set! %message-buffers b #t)
-    (add-local-hook! with-editor:finish-checks check-style)
+    (hooks:add-local! with-editor:finish-checks check-style)
     (%paint! b (document:length (buffers:document b)))
     (for-each %fold-diff (views:showing b))
     (ask:message "Type C-c C-c to finish, C-c C-k to cancel, and M-p and M-n to recover older messages")))
@@ -380,7 +380,7 @@
 (define (%after-visit b)
   (when (%message-file? (files:path b))
     (buffers:with-buffer b
-      (set-option-local! mode #t)
+      (options:set-local! mode #t)
       (mode-hook))))
 
 (define (%killed b)
@@ -422,11 +422,11 @@
 (transient:add! git-mode:dispatch-menu #f
   (transient:command "c" "Commit" show-menu))
 (keys:bind! git-mode:keymap "c" show-menu)
-(add-hook! mode-hook %setup)
-(add-hook! auto-mode:choosers %choose-mode -20)
-(add-hook! files:after-visit %after-visit)
-(add-hook! buffers:after-edit %after-edit)
-(add-hook! buffers:killed %killed)
-(add-hook! with-editor:canceled %canceled)
-(add-hook! layout:after-switch-to-buffer %after-switch)
-(table-set! web:stylesheets 'git-commit "git-commit/git-commit.css")
+(hooks:add! mode-hook %setup)
+(hooks:add! auto-mode:choosers %choose-mode -20)
+(hooks:add! files:after-visit %after-visit)
+(hooks:add! buffers:after-edit %after-edit)
+(hooks:add! buffers:killed %killed)
+(hooks:add! with-editor:canceled %canceled)
+(hooks:add! layout:after-switch-to-buffer %after-switch)
+(tables:set! web:stylesheets 'git-commit "git-commit/git-commit.css")

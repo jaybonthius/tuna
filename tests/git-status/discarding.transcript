@@ -136,7 +136,7 @@
 > (settle!)
 > (list (take-asked!) (file-exists? (at "repo/n1.txt")))
 (("Delete \"n1.txt\"? ") #f)
-> (set-option! files:delete-by-moving-to-trash? #t)
+> (options:set! files:delete-by-moving-to-trash? #t)
 > (go-to-section! '(file . "n2.txt") '(untracked . #f))
 > (answer! #t)
 > (press! "k")
@@ -150,7 +150,7 @@
 > (settle!)
 > (list (take-asked!) (file-exists? (at "repo/n3.txt")) (file-exists? (at "repo/new.txt")))
 (("n1.txt\nn2.txt\nn3.txt\nnew.txt\nTrash 4 files? ") #f #f)
-> (set-option! files:delete-by-moving-to-trash? #f)
+> (options:set! files:delete-by-moving-to-trash? #f)
 ; k on a staged rename asks to undo it.
 > (sh "cd repo && git mv b.txt moved.txt")
 > (git-mode:refresh-repository repo)
@@ -201,13 +201,13 @@
 > (press! "k")
 ! git-status:discard: Cannot apply this, it's not a change
 ; an action named in git-mode:no-confirm runs without its question.
-> (set-option! git-mode:no-confirm (list (git-mode:confirmation discard)))
+> (options:set! git-mode:no-confirm (list (git-mode:confirmation discard)))
 > (go-to-section! '(file . "a.py") '(unstaged . #f))
 > (press! "k")
 > (settle!)
 > (list (take-asked!) (git-out "repo" "status" "--short" "a.py"))
 (() "")
-> (set-option! git-mode:no-confirm (list (git-mode:confirmation set-and-push)))
+> (options:set! git-mode:no-confirm (list (git-mode:confirmation set-and-push)))
 ; a path starting with ~ is refused.
 > (sh "cd repo && echo t > '~tilde'")
 > (git-mode:refresh-repository repo)

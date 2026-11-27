@@ -3,46 +3,43 @@
 ; (repl) or (tuna).
 > (car '())
 ! car: () is not a pair
-> (as-module '(good) (car '()))
+> (call-as-owner (module-owner '(good)) (lambda () (car '())))
 ! (good) car: () is not a pair
-; Advice written at the top level learns the module from current-owner.
+; Advice on report runs as its own owner.
 > (define events '())
 > (define (note! . e) (set! events (cons e events)))
-> (define (note-report report c) (note! 'report (current-owner)) (report c))
+> (define (note-report report c) (note! 'report (owner-name (current-owner))) (report c))
 > (advice-add! report note-report)
-> (as-module '(good) (vector-ref (vector) 1))
+> (call-as-owner (module-owner '(good)) (lambda () (vector-ref (vector) 1)))
 ! (good) vector-ref: 1 is not a valid index for #()
 > (reverse events)
-((report (good)))
-; module-failed is called with a module's name when its load raises, after
-; Tuna has undone it, on behalf of the code that loaded it. A module whose
-; import raised counts too: Chez may run the import before the module's
-; own body starts.
+((report (repl)))
+; A load that raises is reported; module-loaded hears of each instance
+; that loads.
 > (set! events '())
-> (advice-add! module-failed (lambda (failed name) (note! 'failed name (current-owner)) (failed name)))
-> (advice-add! module-loaded (lambda (loaded name) (note! 'loaded name) (loaded name)))
+> (advice-add! module-loaded (lambda (loaded instance) (note! 'loaded (owner-name instance)) (loaded instance)))
 > (import (dict))
 ! (dict) car: () is not a pair
 > (import (usesbad))
 ! (dict) car: () is not a pair
 > (reverse events)
-((report (dict)) (failed (dict) (repl)) (report (dict)) (failed (usesbad) (repl)) (failed (dict) (repl)))
-; After a failed reload, it is called once the previous version is back.
+((report (repl)) (report (repl)))
+; After a failed reload, the previous version loads again.
 > (set! events '())
 > (define good (string-append (getenv "HOME") "/.config/tuna/lib/good.sls"))
 > (write-module! good "#!tuna\n(define (hello) 1)\n(error 'good \"broken\")\n")
-> (eval-file good)
-! (good) good: broken
+> (reload-modules! '((good)))
 [good body]
+! good: broken
 > (good:hello)
 "hello"
 > (reverse events)
-((report (good)) (loaded (good)) (failed (good) (repl)))
+((loaded (good)) (report (repl)))
 ; A module that fails to compile has no body that raised.
 > (set! events '())
 > (write-module! good "#!tuna\n(define (hello) (let ((y)) y))\n")
-> (eval-file good)
-! invalid syntax (let ((y)) y) at line 2, char 17 of $HOME/.config/tuna/lib/good.sls
+> (reload-modules! '((good)))
 [good body]
+! invalid syntax (let ((y)) y) at line 2, char 17 of $HOME/.config/tuna/lib/good.sls
 > (reverse events)
-((report (repl)) (loaded (good)))
+((loaded (good)) (report (repl)))

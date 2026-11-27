@@ -27,12 +27,12 @@
 > (replace! "M-%" "foo" "x")
 > (start! "e")
 > (press! "DEL" "y" "n" "!" "RET")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (list (text) (asked))
 ("yn! Foo FOO foo\n" (8 "Query replacing foo with Yn!: (? for help) " "Foo"))
 > (start! "E")
 > (press! "DEL" "DEL" "DEL" "z" "RET")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (list (text) (asked))
 ("yn! z FOO foo\n" (10 "Query replacing foo with z: (? for help) " "FOO"))
 > (press! "!")
@@ -43,7 +43,7 @@
 > (replace! "M-%" "foo" "x")
 > (start! "e")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (list (session) (text))
 (#f "foo foo\n")
 ; With C-u only whole words match; with -, the session runs backward.
@@ -51,10 +51,10 @@
 > (start! "C-u" "M-%")
 > (type! "foo")
 > (press! "RET")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (type! "x")
 > (press! "RET")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (press! "!")
 > (text)
 "x foobar x\n"
@@ -63,10 +63,10 @@
 > (start! "M--" "M-%")
 > (type! "foo")
 > (press! "RET")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (type! "y")
 > (press! "RET")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (asked)
 (5 "Query replacing foo with y: (? for help) " "foo")
 > (press! "y")
@@ -83,7 +83,7 @@
 > (text)
 "Query replace (default foo → y): \n"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (start! "M-%")
 > (press! "M-p")
 > (minibuffer:input (minibuffer:current-prompt))
@@ -92,7 +92,7 @@
 > (minibuffer:input (minibuffer:current-prompt))
 "foo → x"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (replace:prompt-history)
 ("y" "foo" "x" "Bar" "bar baz" "\\2-\\1 [\\&] \\#" "(\\w+)-(\\w+)")
 > (replace! "M-%" "x → y" "z")
@@ -104,7 +104,7 @@
 > (views:set-point! (view) 1)
 > (start! "M-%")
 > (press! "M-p" "M-p" "RET")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (asked)
 (7 "Query replacing foo with y: (? for help) " "foo")
 > (press! "q")
@@ -113,18 +113,18 @@
 > (define v (view))
 > (start! "M-%")
 > (type! "ab")
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (faced (html->string (views:draw v client)))
 (("match.other" "ab") ("match.other" "ab") ("match.other" "ab"))
 > (press! "C-g")
-! &quit
+! &cancelled
 > (faced (html->string (views:draw v client)))
 ()
 ; The pairs are never saved in replace:prompt-history, which keeps what
 ; was typed; replace:history keeps as many pairs as
 ; minibuffer:history-length.
-> (set-saved! replace:history (map (lambda (k) (cons (format "f~a" k) (format "t~a" k))) (iota 100)))
-> (set-saved! replace:prompt-history '("typed-a" "typed-b"))
+> (saved:set! replace:history (map (lambda (k) (cons (format "f~a" k) (format "t~a" k))) (iota 100)))
+> (saved:set! replace:prompt-history '("typed-a" "typed-b"))
 > (define pb (show "pb" "foo foo\n"))
 > (replace! "M-%" "foo" "baz")
 > (press! "q")
@@ -140,15 +140,15 @@
 "Z\n"
 ; M-r in the first prompt lists the pairs too, and a pair chosen there
 ; gives both strings.
-> (set-saved! replace:history '(("bb" . "BB")))
+> (saved:set! replace:history '(("bb" . "BB")))
 > (define mr (show "mr" "aa bb cc\n"))
 > (start! "M-%")
 > (start! "M-r")
 > (type! "bb →")
 > (press! "RET")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (press! "RET")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (asked)
 (6 "Query replacing bb with BB: (? for help) " "bb")
 > (press! "!")

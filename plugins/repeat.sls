@@ -1,7 +1,9 @@
 #!tuna
-(import (commands) (keys) (web) (echo-area))
+(import (commands) (keys) (web) (echo-area) (hooks) (options) (tables))
 
-;; A quit can cut a keymap's on-exit short, so each client's newest
+(define %self (current-owner))
+
+;; A cancel can cut a keymap's on-exit short, so each client's newest
 ;; repetition is ended through the procedure that ends it, which does
 ;; nothing once the keymap has ended.
 (define %repetitions (make-ephemeron-eq-hashtable))
@@ -23,17 +25,17 @@
 (define (%keymap-for command key)
   (exists (lambda (entry)
             (let ([keymap (car entry)])
-              (and (eq? (table-ref keymap key #f) command) keymap)))
-          (table-entries keys:repeat-keymaps)))
+              (and (eq? (tables:ref keymap key #f) command) keymap)))
+          (tables:entries keys:repeat-keymaps)))
 
 ;; Not logged, as in Emacs: it shows at every repeated key.
 (define (%show! text face)
-  (with-options ([echo-area:log-max 0])
+  (options:with ([echo-area:log-max 0])
     (parameterize ([echo-area:face face])
       (echo-area:message! "~a" text))))
 
 (define (show-hint keymap)
-  (unless (or (not keymap) (table? keymap))
+  (unless (or (not keymap) (tables:table? keymap))
     (assertion-violation 'repeat:show-hint "neither a keymap nor #f" keymap))
   (let* ([current (echo-area:current-message)]
          [ours? (and %shown current (string=? current (car %shown)))]
@@ -52,16 +54,19 @@
 (define (%enter! client keymap)
   (let ([repetition (eq-hashtable-ref %repetitions client #f)])
     (when repetition ((cdr repetition))))
+  ;; The repetition is this plugin's, so its unload ends it.
   (eq-hashtable-set! %repetitions client
     (cons keymap
-          (keys:push-keymap! client keymap (lambda (found next) (eq? found keymap))
-            (lambda () (show-hint #f)))))
+          (call-as-owner %self
+            (lambda ()
+              (keys:push-keymap! client keymap (lambda (found next) (eq? found keymap))
+                (lambda () (show-hint #f)))))))
   (show-hint keymap))
 
 (define (%repeating-keymap client sequence command)
   (let ([repetition (eq-hashtable-ref %repetitions client #f)])
     (and repetition
-         (eq? (table-ref (car repetition) sequence #f) command)
+         (eq? (tables:ref (car repetition) sequence #f) command)
          (memq (car repetition) (keys:active-keymaps client))
          (car repetition))))
 
@@ -73,4 +78,4 @@
           [keymap (%enter! client keymap)]
           [(%repeating-keymap client sequence command) => show-hint])))))
 
-(add-hook! commands:after-command %after-command)
+(hooks:add! commands:after-command %after-command)

@@ -1,9 +1,11 @@
 #!tuna
-(import (ask))
+(import (ask) (timers))
 
-;; The reader ends its question on any raise, as on a quit, so the time
-;; running out is a raise in the asking task.
-(define %no-answer (make-message-condition "no answer"))
+(define %self (current-owner))
+
+;; The reader ends its question on any raise, as on a cancel, so the time
+;; running out cancels the asking task, with this reason.
+(define %no-answer (list 'no-answer))
 
 (define (%question c)
   (format "~a; exit anyway? " (call-with-string-output-port (lambda (p) (display-condition c p)))))
@@ -15,13 +17,14 @@
 ;; fires at a task that has ended, which does nothing.
 (define (%ask-to-exit exit-anyway? c)
   (and (exit-anyway? c)
-       (as-module (this-module)
-         (let* ([task (current-task)]
-                [timer (run-with-timer 5 (lambda () (signal-task task %no-answer)))]
-                [answer (guard (e [(eq? e %no-answer) #t]
-                                  [(not (quit-condition? e)) (report e) #t])
-                          (ask:y-or-n? (%question c)))])
-           (cancel-timer! timer)
-           answer))))
+       (call-as-owner %self
+         (lambda ()
+           (let* ([task (current-task)]
+                  [timer (timers:run-after 5 (lambda () (cancel-task task %no-answer)))]
+                  [answer (guard (e [(and (cancelled? e) (eq? (cancelled-reason e) %no-answer)) #t]
+                                    [(not (cancelled? e)) (report e) #t])
+                            (ask:y-or-n? (%question c)))])
+             (timers:cancel! timer)
+             answer)))))
 
 (advice-add! exit-anyway? %ask-to-exit)

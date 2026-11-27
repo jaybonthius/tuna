@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (tuna eval))
+(import (hooks) (options) (timers) (saved) (plugins))
+(import (tuna) (testing))
 
 ;; pi starts the chats it saved as it loads, so the fake must be on the
 ;; PATH first.
@@ -12,7 +13,7 @@
 ;; The restart test sets pi:command here, as a user's configuration does:
 ;; after pi has loaded and found the chats it saved.
 (when (equal? (getenv "TRANSCRIPT") "restart")
-  (set-option! pi:command '("pi" "--from-init")))
+  (options:set! pi:command '("pi" "--from-init")))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -32,11 +33,14 @@
 
 (define (ref obj key) (let ([a (and (pair? obj) (assoc key obj))]) (and a (cdr a))))
 
+;; The configuration is read again when a plugin it imports reloads; the
+;; fakes made before must stay what the new definitions read.
 (define-record-type fake
+  (nongenerative tests-pi-fake)
   (fields pid dir (mutable read) (mutable partial) (mutable requests) (mutable state) (mutable entries)
           (mutable leaf) (mutable answers) (mutable held)))
 
-(define fakes (make-eqv-hashtable))
+(define fakes (if (top-level-bound? 'fakes) fakes (make-eqv-hashtable)))
 
 (define (folder pid) (string-append (getenv "PI_FAKE") "/" (number->string pid)))
 
@@ -47,7 +51,7 @@
 
 ;; Each session's entries, which a fake started on it again, as after a
 ;; restart, finds as Pi finds its session file.
-(define sessions (make-hashtable string-hash string=?))
+(define sessions (if (top-level-bound? 'sessions) sessions (make-hashtable string-hash string=?)))
 
 (define (new-fake pid)
   (let ([f (make-fake pid (folder pid) 0 "" '() '() '() 'null '() '())])
@@ -157,9 +161,9 @@
             (poll-fake! f)))))
     (directory-list (getenv "PI_FAKE"))))
 
-(define responder (run-with-timer 0.01 poll-fakes! 0.01))
+(define responder (timers:run-after 0.01 poll-fakes! 0.01))
 
-(define asked-count (make-eqv-hashtable))
+(define asked-count (if (top-level-bound? 'asked-count) asked-count (make-eqv-hashtable)))
 (define (asked f)
   (let* ([all (map (lambda (r) (ref r "type")) (fake-requests f))]
          [seen (hashtable-ref asked-count (fake-pid f) 0)])
@@ -243,18 +247,18 @@
 (define (transcript chat) (map describe (pi:chat-transcript chat)))
 
 (define (raised thunk)
-  (guard (c [(not (quit-condition? c))
+  (guard (c [(not (cancelled? c))
              (list (if (pi:refused? c) 'refused 'raised)
                    (if (message-condition? c) (condition-message c) c))])
     (thunk)))
 
-(define changes 0)
-(add-hook! pi:chat-changed (lambda (chat) (set! changes (+ changes 1))))
-(define activities '())
-(add-hook! pi:activity-changed (lambda (chat old new) (set! activities (cons new activities))))
+(define changes (if (top-level-bound? 'changes) changes 0))
+(hooks:add! pi:chat-changed (lambda (chat) (set! changes (+ changes 1))))
+(define activities (if (top-level-bound? 'activities) activities '()))
+(hooks:add! pi:activity-changed (lambda (chat old new) (set! activities (cons new activities))))
 (define (activities!) (let ([a (reverse activities)]) (set! activities '()) a))
-(define editor-texts '())
-(add-hook! pi:editor-text-requested (lambda (chat text) (set! editor-texts (cons text editor-texts))))
+(define editor-texts (if (top-level-bound? 'editor-texts) editor-texts '()))
+(hooks:add! pi:editor-text-requested (lambda (chat text) (set! editor-texts (cons text editor-texts))))
 (define client (web:add-client! 1))
 
 (define (in-client thunk)
@@ -270,16 +274,16 @@
 ;; A command that asks or waits for Pi pauses its task, so tests run it
 ;; in a task of its own.
 (define (start! thunk)
-  (let ([t (spawn-task (lambda () (in-client thunk)))])
-    (sleep-for 0.05)
+  (let ([t (spawn-task (lambda (restore) (in-client thunk)))])
+    (timers:sleep 0.05)
     t))
 
 (define (result t)
-  (testing:wait-until (lambda () (task-done? t)))
-  (if (task-done? t)
-      (guard (c [(not (quit-condition? c))
+  (testing:wait-until (lambda () (eq? (task-state t) 'done)))
+  (if (eq? (task-state t) 'done)
+      (guard (c [(not (cancelled? c))
                  (list (if (pi:refused? c) 'refused 'raised) (if (message-condition? c) (condition-message c) c))])
-        (join-task t))
+        (testing:join t))
       'waiting))
 
 (define (view) (layout:selected-view))

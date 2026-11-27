@@ -1,6 +1,6 @@
 #!tuna
 ;; Its own module, so unloading it can be tested.
-(import (buffers) (document) (diagnostics))
+(import (buffers) (document) (diagnostics) (hooks))
 
 (define (check b)
   (let ([t (document:text (buffers:document b))])
@@ -11,4 +11,4 @@
          (loop (+ i 3) (cons (diagnostics:make-diagnostic (+ i 1) (+ i 4) (diagnostics:severity error) "bad word") found))]
         [else (loop (+ i 1) found)]))))
 
-(add-hook! diagnostics:checkers check)
+(hooks:add! diagnostics:checkers check)

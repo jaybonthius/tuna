@@ -1,5 +1,5 @@
 #!tuna
-(import (document) (buffers) (kill-ring))
+(import (document) (buffers) (kill-ring) (hooks) (options))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -33,7 +33,7 @@
 (define (show name value)
   (printf "~a ~,2f\n" name value))
 
-(define copies 0)
+(define %copies 0)
 
 (define line (make-string 80 #\k))
 
@@ -69,13 +69,13 @@
              (do ([i 0 (fx+ i 1)]) ((fx= i 20))
                (kill-ring:push! (list (make-string size #\z)))
                (batch-ended)
-               (join-task (spawn-task void)))
+               (join-task (spawn-task (lambda (restore) (void)))))
              (/ (- (thread-ns) start) 20.)))
          (iota 9))))
 
 (define (run)
   ;; An after-push entry, as a clipboard adds.
-  (add-hook! kill-ring:after-push (lambda (entry) (set! copies (fx+ copies 1))))
+  (hooks:add! kill-ring:after-push (lambda (entry) (set! %copies (fx+ %copies 1))))
   (fill-ring! 20)
   ;; A fresh line before each append and prepend, so the newest entry
   ;; stays a line long, as after one kill.
@@ -86,7 +86,7 @@
   (show "rotate" (ns-per-op 2000 (lambda () (kill-ring:rotate! 1))))
   (let* ([b (buffers:make "large" (make-string 1000000 #\l))]
          [p (buffers:piece b 1 (- (document:length (buffers:document b)) 1))])
-    (with-options ([kill-ring:skip-duplicates #t])
+    (options:with ([kill-ring:skip-duplicates #t])
       (show "push-large"
         (/ (ns-per-op 200 (lambda () (kill-ring:push! (list p)) (kill-ring:push! (list "small")))) 2))))
   (let* ([b (line-buffer)]

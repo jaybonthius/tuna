@@ -1,21 +1,23 @@
 #!tuna
-(import (syntax-highlighting) (buffers) (document) (jobs) (modes) (views) (ask) (treesit highlight))
+(import (syntax-highlighting) (buffers) (document) (jobs) (modes) (views) (ask) (treesit highlight) (hooks) (options) (tables))
+
+(define %self (current-owner))
 
 (define-record-type (grammar %make-grammar grammar?)
   (sealed #t)
   (fields name source commit file))
 
-(define-table grammars
+(tables:define-table grammars
   "Maps a language, as modes:language names it, to its grammar.")
 
-(define-option excluded-captures
+(options:define-option excluded-captures
   '(variable variable.member function.call function.method.call constructor module operator
     punctuation.bracket punctuation.delimiter)
   (lambda (v) (and (list? v) (for-all symbol? v)))
   "Capture names drawn plain, each naming exactly one capture. Read in each buffer."
   (lambda (v) (syntax-highlighting:update!)))
 
-(define-option query-folders '("~/.config/tuna/queries/")
+(options:define-option query-folders '("~/.config/tuna/queries/")
   (lambda (v) (and (list? v) (for-all string? v)))
   "Folders searched first for a language's query files, before those of the plugins that declare the language and nvim-treesitter's."
   (lambda (v) (syntax-highlighting:update!)))
@@ -37,7 +39,7 @@
   ;; finds the module's source.
   (define (plugin-folder module)
     (let-values ([(source object found?)
-                  ((library-search-handler) 'treesit module (library-directories) (library-extensions))])
+                  (default-library-search-handler 'treesit module (library-directories) (library-extensions))])
       (and source (string-append (path-parent source) "/" (symbol->string (car (last-pair module)))))))
 
   (define nvim-treesitter-queries
@@ -50,11 +52,11 @@
   (define (language-query-folders language)
     (fold-left
       (lambda (folders entry)
-        (let* ([owner (and (equal? (cdr entry) language) (table-owner modes:languages (car entry)))]
-               [folder (and owner (member owner (loaded-modules)) (plugin-folder owner))]
+        (let* ([owner (and (equal? (cdr entry) language) (tables:owner modes:languages (car entry)))]
+               [folder (and owner (eq? (module-owner (owner-name owner)) owner) (plugin-folder (owner-name owner)))]
                [queries (and folder (string-append folder "/queries"))])
           (if (and queries (not (member queries folders))) (append folders (list queries)) folders)))
-      '() (table-entries modes:languages)))
+      '() (tables:entries modes:languages)))
 
   ;; A job compiles its query files again only when what it is sent
   ;; changes, so a file edited in place must change the input. A file gone
@@ -82,7 +84,7 @@
   ;; A message told while a batch ends would show only when another
   ;; batch comes, so it goes in a task of its own.
   (define (tell! text)
-    (as-module (this-module) (post! (lambda () (ask:message text)))))
+    (call-as-owner %self (lambda () (spawn-task (lambda (restore) (ask:message text))))))
 
   (define told (make-hashtable equal-hash equal?))
 
@@ -147,7 +149,7 @@
 
 (define (%highlight-input buffer problems)
   (let* ([language (modes:language (modes:major-mode buffer))]
-         [grammar (and language (table-ref grammars language #f))])
+         [grammar (and language (tables:ref grammars language #f))])
     (when (and grammar (not (grammar? grammar)))
       (assertion-violation 'treesit:grammars "not a grammar" grammar))
     (when problems
@@ -182,7 +184,7 @@
 
 (define (%input-changed! buffer)
   (let ([language (modes:language (modes:major-mode buffer))])
-    (when (and language (table-ref grammars language #f))
+    (when (and language (tables:ref grammars language #f))
       (syntax-highlighting:input-changed! buffer))))
 
 ;; A scroll needs only the input read again; update! would also start
@@ -195,9 +197,9 @@
   (loaded name)
   (for-each %input-changed! (buffers:all)))
 
-(table-set! grammars "python"
+(tables:set! grammars "python"
   (make-grammar "python" "https://github.com/tree-sitter/tree-sitter-python"
                 "293fdc02038ee2bf0e2e206711b69c90ac0d413f"))
-(table-set! syntax-highlighting:highlighters "python" highlighter)
-(add-hook! views:drawn-ranges-changed %drawn-ranges-changed)
+(tables:set! syntax-highlighting:highlighters "python" highlighter)
+(hooks:add! views:drawn-ranges-changed %drawn-ranges-changed)
 (advice-add! module-loaded %module-loaded)

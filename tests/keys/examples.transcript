@@ -3,30 +3,30 @@
 #f
 > (define frame (layout:current-frame))
 > (press-all! frame "C-c" "g" "o")
-> groucho:browsed
+> (groucho:browsed)
 1
 ; Binding a command and a prefix keymap.
 > (keys:bind! keys:global "C-x C-f" file-picker:find-file)
 > (keys:bind! keys:global "C-c p" cape:prefix-map)
 > (press-all! frame "C-x" "C-f")
-> file-picker:visits
+> (file-picker:visits)
 (("notes.txt" #f))
 > (map name-of (list (keys:lookup frame "C-c p") (keys:lookup frame "C-c p f")))
 (keymap cape:file)
 ; Remapping in a keymap that is searched.
 > (keys:remap! vertico:keymap editing:next-line vertico:next)
-> (add-hook! keys:find-keymaps (lambda (client posn) (list vertico:keymap)))
+> (hooks:add! keys:find-keymaps (lambda (client posn) (list vertico:keymap)))
 > (keys:press! frame "C-n")
-> (list vertico:moves (editing:take!))
+> (list (vertico:moves) (editing:take!))
 (1 ())
 > (keys:lookup (layout:current-frame) "C-x C-f")
-#<procedure>
+#<procedure file-picker:find-file>
 > (eq? (keys:lookup (layout:current-frame) "C-x C-f") file-picker:find-file)
 #t
 > (keys:where-is (layout:current-frame) layout:other-view)
 ("C-x o")
 > (assoc "C-x o" (cdr (assq keys:global (keys:active-bindings (layout:current-frame)))))
-("C-x o" . #<procedure>)
+("C-x o" . #<procedure layout:other-view>)
 ; Pressing keys.
 > (keys:press! frame "C-x")
 > (keys:pending frame)
@@ -34,7 +34,7 @@
 > (keys:press! frame "o")
 > (keys:pending frame)
 #f
-> layout:switches
+> (layout:switches)
 1
 ; A command reading the character typed.
 > (import (views) (buffers) (document))
@@ -53,21 +53,21 @@
     (keys:push-keymap! (layout:current-frame) sticky:keymap
       (lambda (found command) (eq? found sticky:keymap))))
 > (press-all! frame "o" "o")
-> (list layout:switches (map name-of (keys:active-keymaps frame)))
+> (list (layout:switches) (map name-of (keys:active-keymaps frame)))
 (3 (keymap keymap keys:global))
 > (keys:press! frame "C-n")
-> (list layout:switches (map name-of (keys:active-keymaps frame)))
+> (list (layout:switches) (map name-of (keys:active-keymaps frame)))
 (3 (keymap keys:global))
 > (end-repeat)
 ; Given a mouse key's position, the active keymaps are those a click
 ; there searches.
-> (define-table clicked-keys "Keys for clicks.")
+> (tables:define-table clicked-keys "Keys for clicks.")
 > (define (at-click client posn) (if posn (list clicked-keys) '()))
-> (add-hook! keys:find-keymaps at-click)
+> (hooks:add! keys:find-keymaps at-click)
 > (list (and (memq clicked-keys (keys:active-keymaps frame)) #t)
         (and (memq clicked-keys (keys:active-keymaps frame 'posn)) #t))
 (#f #t)
-> (remove-hook! keys:find-keymaps at-click)
+> (hooks:remove! keys:find-keymaps at-click)
 ; Browser keys.
 > (keys:item-key '(("type" . "key") ("key" . "x") ("code" . "KeyX") ("modifiers" . #("control"))))
 "C-x"
@@ -79,11 +79,11 @@
     "Binds the next key sequence typed to layout:other-view."
     (keys:bind! keys:global (if (keys:event? keys) (keys:event-key keys) keys) layout:other-view))
 > (keys:bind! keys:global "C-c b" bind-other-view)
-> (define binding (spawn-task (lambda () (press-all! frame "C-c" "b"))))
-> (sleep-for 0.02)
+> (define binding (spawn-task (lambda (restore) (press-all! frame "C-c" "b"))))
+> (timers:sleep 0.02)
 > (keys:reading frame)
 "C-c b"
 > (press-all! frame "C-c" "v")
-> (join-task binding)
+> (testing:join binding)
 > (name-of (keys:lookup frame "C-c v"))
 layout:other-view

@@ -35,17 +35,17 @@
 ; with dabbrev:check-all-buffers.
 > (show! (buffers:make "here 2" "apricot apple ap"))
 #<buffer here 2>
-> (set-option! dabbrev:check-all-buffers #f)
+> (options:set! dabbrev:check-all-buffers #f)
 > (expansions "M-/" "M-/" "M-/" "M-/")
 ("apple" "apricot" "application" "apex")
 > (press! "M-/")
 ! dabbrev:expand: No further dynamic expansion for ‘ap’ found
-> (set-option! dabbrev:check-other-buffers #f)
+> (options:set! dabbrev:check-other-buffers #f)
 > (expansions "M-/" "M-/")
 ("apple" "apricot")
 > (press! "M-/")
 ! dabbrev:expand: No further dynamic expansion for ‘ap’ found
-> (remove-option! dabbrev:check-all-buffers)
+> (options:unset! dabbrev:check-all-buffers)
 ; Case: the expansion takes the case of the text it replaces, unless its
 ; own case is mixed and it starts as typed; with case-fold-search off,
 ; only words in the typed case are found.
@@ -63,7 +63,7 @@
 #<buffer cased ap>
 > (expansions "M-/" "M-/")
 ("apTitude" "apple")
-> (set-option! dabbrev:case-fold-search #f)
+> (options:set! dabbrev:case-fold-search #f)
 > (cased "ap ")
 #<buffer cased ap >
 > (press! "DEL")
@@ -71,14 +71,14 @@
 ("apTitude")
 > (press! "M-/")
 ! dabbrev:expand: No further dynamic expansion for ‘ap’ found
-> (remove-option! dabbrev:case-fold-search)
-> (set-option! dabbrev:case-replace #f)
+> (options:unset! dabbrev:case-fold-search)
+> (options:set! dabbrev:case-replace #f)
 > (cased "AP ")
 #<buffer cased AP >
 > (press! "DEL")
 > (expansions "M-/" "M-/")
 ("apTitude" "Apple")
-> (remove-option! dabbrev:case-replace)
+> (options:unset! dabbrev:case-replace)
 ; In a Scheme buffer the text before point is a Scheme symbol, : and all.
 > (define code (buffers:make "code.ss" "(buffers:insert! b)\n(buffers:ins"))
 > (modes:set-major-mode chez-scheme:mode code)
@@ -91,7 +91,7 @@
 > (type! " ")
 > (press! "M-/")
 ! dabbrev:expand: No possible abbreviation preceding point
-> (remove-option! dabbrev:check-other-buffers)
+> (options:unset! dabbrev:check-other-buffers)
 ; C-M-/ completes from this buffer's words; with C-u, from the friend
 ; buffers' too.
 > (define words (buffers:make "words" "alpha almond\n"))
@@ -136,8 +136,8 @@
 > (define (zeds)
     (let* ([v (views:current)] [p (views:point v)])
       (completion:region (- p 2) p (list (completion:source (candidates (vector "zeta" "zero")))))))
-> (add-hook! completion:find-region dabbrev:word-region -2)
-> (add-hook! completion:find-region zeds -1)
+> (hooks:add! completion:find-region dabbrev:word-region -2)
+> (hooks:add! completion:find-region zeds -1)
 > (type! "alm")
 > (press! "C-M-i")
 > (settled-texts)
@@ -149,16 +149,16 @@
 > (texts (session))
 ("zero" "zeta")
 > (press! "C-g")
-> (set-option! dabbrev:region-buffer-predicate (lambda (b) (eq? b more)))
+> (options:set! dabbrev:region-buffer-predicate (lambda (b) (eq? b more)))
 > (press! "SPC")
 > (type! "alpi")
 > (press! "C-M-i")
 > (settled-texts)
 ("alpine")
 > (press! "C-g")
-> (remove-option! dabbrev:region-buffer-predicate)
-> (remove-hook! completion:find-region zeds)
-> (remove-hook! completion:find-region dabbrev:word-region)
+> (options:unset! dabbrev:region-buffer-predicate)
+> (hooks:remove! completion:find-region zeds)
+> (hooks:remove! completion:find-region dabbrev:word-region)
 ; A numeric prefix of 16 reads every buffer not ignored, as C-u C-u does.
 > (define faraway (buffers:make "faraway" "alfalfa"))
 > (modes:set-major-mode chez-scheme:mode faraway)
@@ -191,7 +191,7 @@
 ; With dabbrev:backward-only, M-/ looks only before point in the current
 ; buffer; with dabbrev:upcase-means-case-search, a capital in the
 ; abbreviation keeps case.
-> (set-option! dabbrev:check-other-buffers #f)
+> (options:set! dabbrev:check-other-buffers #f)
 > (show! (buffers:make "directions" "Before before  after"))
 #<buffer directions>
 > (views:set-point! (view) (+ 1 (string-length "Before before ")))
@@ -205,33 +205,33 @@
 > (expansions "M-/")
 ("after")
 > (press! "C-/" "C-g")
-> (set-option! dabbrev:backward-only #t)
+> (options:set! dabbrev:backward-only #t)
 > (press! "M-/")
 ! dabbrev:expand: No dynamic expansion for ‘a’ found
-> (remove-option! dabbrev:backward-only)
+> (options:unset! dabbrev:backward-only)
 > (press! "DEL")
 > (type! "B")
 > (expansions "M-/")
 ("BEFORE")
 > (press! "M-/")
 ! dabbrev:expand: No further dynamic expansion for ‘B’ found
-> (set-option! dabbrev:upcase-means-case-search #t)
+> (options:set! dabbrev:upcase-means-case-search #t)
 > (press! "C-g")
 > (expansions "M-/")
 ("Before")
 > (press! "M-/")
 ! dabbrev:expand: No further dynamic expansion for ‘B’ found
-> (remove-option! dabbrev:upcase-means-case-search)
-> (remove-option! dabbrev:check-other-buffers)
+> (options:unset! dabbrev:upcase-means-case-search)
+> (options:unset! dabbrev:check-other-buffers)
 ; An expansion that arrives after keys typed while M-/ waited for it is
 ; dropped, so it never lands in the middle of what was typed.
 > (define far (buffers:make "far" (string-append (apply string-append (make-list 2000000 "zz ")) "zyzzyva")))
 > (show! (buffers:make "waiting" "zyz"))
 #<buffer waiting>
 > (define tasks
-    (list (spawn-task (lambda () (press! "M-/")))
-          (spawn-task (lambda () (sleep-for 0.02) (press! "x")))))
-> (testing:wait-until (lambda () (for-all task-done? tasks)))
+    (list (spawn-task (lambda (restore) (press! "M-/")))
+          (spawn-task (lambda (restore) (timers:sleep 0.02) (press! "x")))))
+> (testing:wait-until (lambda () (for-all testing:done? tasks)))
 > (list (text (views:buffer (view))) (point))
 ("zyzx" 5)
 > (press! "DEL" "M-/")
@@ -257,19 +257,19 @@
 > (advice-remove! jobs:send! count-asks)
 ; While case is ignored, words differing only in case count as one unless
 ; dabbrev:case-distinction is false.
-> (set-option! dabbrev:check-other-buffers #f)
+> (options:set! dabbrev:check-other-buffers #f)
 > (show! (buffers:make "cases" "Apple apple ap"))
 #<buffer cases>
 > (expansions "M-/")
 ("apple")
 > (press! "M-/")
 ! dabbrev:expand: No further dynamic expansion for ‘ap’ found
-> (set-option! dabbrev:case-distinction #f)
+> (options:set! dabbrev:case-distinction #f)
 > (press! "C-g")
 > (expansions "M-/" "M-/")
 ("apple" "apple")
-> (remove-option! dabbrev:case-distinction)
-> (remove-option! dabbrev:check-other-buffers)
+> (options:unset! dabbrev:case-distinction)
+> (options:unset! dabbrev:check-other-buffers)
 ; An expansion's job holds the documents of the buffers it searches until
 ; a command other than M-/ ends; then they go.
 > (define held (buffers:make "held" "zebra zebrafish"))
@@ -289,7 +289,7 @@
 > (released?)
 #f
 > (press! "C-b")
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (released?)
 #t
 ; Other buffers are searched in the order of buffers:all, the buffer

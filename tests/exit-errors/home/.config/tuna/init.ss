@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins) (document) (web) (ask))
+(import (options) (timers))
+(import (tuna) (document) (web) (ask))
 (use-plugin layout)
 (use-plugin minibuffer)
 (use-plugin exit-errors)

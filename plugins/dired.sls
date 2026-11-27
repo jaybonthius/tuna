@@ -1,6 +1,8 @@
 #!tuna
 (import (buffers) (document) (views) (keys) (commands) (modes) (editing) (kill-ring) (layout) (ui)
-        (files) (jobs) (ask) (web) (haml) (completion) (files attributes) (dired reading))
+        (files) (jobs) (ask) (web) (haml) (completion) (files attributes) (dired reading) (hooks) (options) (tables) (saved))
+
+(define %self (current-owner))
 
 (define-enumeration sorting (name time size extension) %sortings)
 
@@ -18,46 +20,46 @@
        (for-all (lambda (c) (memq c (%names-of (%columns)))) v)
        (let loop ([v v]) (or (null? v) (and (not (memq (car v) (cdr v))) (loop (cdr v)))))))
 
-(define-option sort (sorting name) (%one-of (%sortings))
+(options:define-option sort (sorting name) (%one-of (%sortings))
   "How entries are ordered: name, time, size or extension, given with dired:sorting.")
 
-(define-option reverse-sort? #f boolean?
+(options:define-option reverse-sort? #f boolean?
   "When true, entries are in the reverse of dired:sort's order.")
 
-(define-option folders-first? #f boolean?
+(options:define-option folders-first? #f boolean?
   "When true, folders come before other entries.")
 
-(define-option columns (list (column mode) (column links) (column owner) (column group) (column size) (column time))
+(options:define-option columns (list (column mode) (column links) (column owner) (column group) (column size) (column time))
   %columns?
   "The columns drawn before each name, in order, each given with dired:column.")
 
-(define-option free-space? #t boolean?
+(options:define-option free-space? #t boolean?
   "When true, the header gives the space available on the folder's file system.")
 
-(define-option deletion-confirmer ask:yes-or-no? procedure?
+(options:define-option deletion-confirmer ask:yes-or-no? procedure?
   "The procedure of a question that asks whether to delete; deletion goes on when it returns true.")
 
-(define-option recursive-deletes (recursion top) (%one-of (%recursions))
+(options:define-option recursive-deletes (recursion top) (%one-of (%recursions))
   "Whether a folder that holds files is deleted: never, top asking for each, or always.")
 
-(define-option recursive-copies (recursion top) (%one-of (%recursions))
+(options:define-option recursive-copies (recursion top) (%one-of (%recursions))
   "Whether a folder is copied with everything in it: never, top asking for each, or always.")
 
-(define-option other-listing-target? #f boolean?
+(options:define-option other-listing-target? #f boolean?
   "When true and another view shows a listing, renaming and copying start in its folder: the first such view after the selected one, in layout:views order, cyclically.")
 
-(define-option refresh-when-revisited? #f boolean?
+(options:define-option refresh-when-revisited? #f boolean?
   "When true, visiting a listing whose folder changed since it was read reads it again.")
 
-(define-hook after-read "Called with a listing, current, after each read of its folder.")
+(hooks:define-hook after-read "Called with a listing, current, after each read of its folder.")
 
-(define-hook mode-hook "Called in each listing when its mode is set.")
+(hooks:define-hook mode-hook "Called in each listing when its mode is set.")
 
-(define-table keymap "Keys in folder listings.")
+(tables:define-table keymap "Keys in folder listings.")
 
-(define-table name-keymap "Keys on an entry's name, for clicks.")
+(tables:define-table name-keymap "Keys on an entry's name, for clicks.")
 
-(define-saved %folders '() (lambda (v) (and (list? v) (for-all string? v))))
+(saved:define-saved %folders '() (lambda (v) (and (list? v) (for-all string? v))))
 
 (modes:define-major-mode mode (parent modes:special) (lighter "Folder") (keymap keymap) (hook mode-hook) (plugin-only #t))
 
@@ -129,19 +131,20 @@
         (suspend
           (lambda (resume)
             (let ([w (cons who resume)])
-              (as-module (this-module)
-                (set! job
-                  (jobs:start worker input
-                    (lambda (v) (set! result v))
-                    (lambda (ended)
-                      (when (take-waiter! w)
-                        (resume
-                          (lambda ()
-                            (cond
-                              [(condition? ended) (raise ended)]
-                              [ended (assertion-violation who "the job was stopped")]
-                              [(failure? result) (raise (failure-condition who result))])
-                            result)))))))
+              (call-as-owner %self
+                (lambda ()
+                  (set! job
+                    (jobs:start worker input
+                      (lambda (v) (set! result v))
+                      (lambda (ended)
+                        (when (take-waiter! w)
+                          (resume
+                            (lambda ()
+                              (cond
+                                [(condition? ended) (raise ended)]
+                                [ended (assertion-violation who "the job was stopped")]
+                                [(failure? result) (raise (failure-condition who result))])
+                              result))))))))
               (set! waiting (cons w waiting))))))))
 
   (define (stop-waiting!)
@@ -196,7 +199,7 @@
     (assertion-violation who "not a listing" b)))
 
 (define (%remember-folders!)
-  (set-saved! %folders (map folder (%listings))))
+  (saved:set! %folders (map folder (%listings))))
 
 (define (%children node)
   (let ([acc '()])
@@ -446,7 +449,7 @@
     (lambda (f)
       (let ([b (%listing-of f)])
         (when b
-          (guard (c [(and (i/o-error? c) (not (quit-condition? c))) (void)])
+          (guard (c [(and (i/o-error? c) (not (cancelled? c))) (void)])
             (%refresh! 'dired:refresh b carried)))))
     (let loop ([fs folders] [acc '()])
       (cond
@@ -744,7 +747,7 @@
   (let ([done 0] [declined '()] [failures '()])
     (for-each
       (lambda (path)
-        (guard (c [(not (quit-condition? c)) (set! failures (cons (cons path c) failures))])
+        (guard (c [(not (cancelled? c)) (set! failures (cons (cons path c) failures))])
           (if (act! path)
               (set! done (fx+ done 1))
               (set! declined (cons path declined)))))
@@ -940,13 +943,13 @@
   (%check-listing 'dired:sort-by buffer)
   (unless ((%one-of (%sortings)) order)
     (assertion-violation 'dired:sort-by "not a dired:sorting name" order))
-  (buffers:with-buffer buffer (set-option-local! sort order))
+  (buffers:with-buffer buffer (options:set-local! sort order))
   (refresh buffer))
 
 (commands:define-command (toggle-details [buffer (buffers:current)])
   "Shows or hides every column but marks and names in the listing BUFFER."
   (%check-listing 'dired:toggle-details buffer)
-  (buffers:with-buffer buffer (set-option-local! hide-details? (not (hide-details?)))))
+  (buffers:with-buffer buffer (options:set-local! hide-details? (not (hide-details?)))))
 
 (define (size-text size)
   (unless (and (integer? size) (exact? size) (>= size 0))
@@ -1089,7 +1092,7 @@
                  (cddr datum))))))
     (%protect! b)
     (when old
-      (spawn-task (lambda () (when (buffers:live? b) (refresh b)))))))
+      (spawn-task (lambda (restore) (when (buffers:live? b) (refresh b)))))))
 
 (define (%follow-rename from to)
   (for-each
@@ -1101,7 +1104,7 @@
 
 (define (%forget-killed b)
   (when (folder b)
-    (set-saved! %folders (map folder (remq b (%listings))))))
+    (saved:set! %folders (map folder (remq b (%listings))))))
 
 ;; A folder gone since the last run is left out, as Emacs's desktop
 ;; leaves out a missing folder.
@@ -1109,7 +1112,7 @@
   (for-each
     (lambda (f)
       (unless (%listing-of f)
-        (guard (c [(and (i/o-error? c) (not (quit-condition? c)))
+        (guard (c [(and (i/o-error? c) (not (cancelled? c)))
                    (ask:message (format "Folder ~a no longer exists" (files:abbreviated-path f)))])
           (visit f))))
     (%folders))
@@ -1123,15 +1126,15 @@
                                    (document:node-start entry) (document:node-end entry))))))
 
 (define (%set-local-options)
-  (set-option-local! files:offer-save? #f buffers:revert-function refresh)
-  (add-local-hook! completion:target-finders %entry-target -20))
+  (options:set-local! files:offer-save? #f buffers:revert-function refresh)
+  (hooks:add-local! completion:target-finders %entry-target -20))
 
-(add-hook! mode-hook %set-local-options)
-(add-hook! files:folder-visitors visit)
-(add-hook! files:directory-finders folder)
-(add-hook! files:after-rename %follow-rename)
-(add-hook! buffers:killed %forget-killed)
-(table-set! web:stylesheets 'dired "dired/dired.css")
+(hooks:add! mode-hook %set-local-options)
+(hooks:add! files:folder-visitors visit)
+(hooks:add! files:directory-finders folder)
+(hooks:add! files:after-rename %follow-rename)
+(hooks:add! buffers:killed %forget-killed)
+(tables:set! web:stylesheets 'dired "dired/dired.css")
 (on-unload stop-waiting!)
 (keys:bind! keys:global "C-x d" open)
 (keys:bind! keys:global "C-x C-j" jump)
@@ -1173,6 +1176,6 @@
 (keys:bind! name-keymap "<mouse-2>" mouse-find-file)
 (keys:bind! name-keymap "<down-mouse-1>" keys:ignore)
 (keys:bind! name-keymap "<drag-mouse-1>" keys:ignore)
-(spawn-task %reopen!)
-(for-each (lambda (command) (table-set! commands:region-commands command #t))
+(spawn-task (lambda (restore) (%reopen!)))
+(for-each (lambda (command) (tables:set! commands:region-commands command #t))
           (list mark unmark flag-deletion toggle-marks))

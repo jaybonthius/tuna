@@ -1,14 +1,14 @@
 #!tuna
 (import (completion) (minibuffer) (keys) (commands) (views) (layout) (editing) (kill-ring) (web) (ask)
-        (buffers) (browse-url))
+        (buffers) (browse-url) (hooks) (options) (tables))
 
-(define-option quit-after-action? #t boolean?
+(options:define-option quit-after-action? #t boolean?
   "Whether an action quits the read whose candidate it acts on; C-u before C-. or C-; reverses it once.")
 
-(define-table default-actions
+(tables:define-table default-actions
   "Maps a category to the command actions:act-default runs on a target of that category, in place of choosing a read's target as RET does, or of the RET binding of the target's keymaps.")
 
-(define-table general-keymap "The actions on every target, searched after the target's category's keymaps.")
+(tables:define-table general-keymap "The actions on every target, searched after the target's category's keymaps.")
 
 (define (%read-session)
   (let ([s (completion:current-session)])
@@ -30,7 +30,7 @@
 ;; hides no later target of the same bounds; any other target hides a
 ;; later one, since an earlier finder read the same text more closely.
 (define (%found-targets view)
-  (let loop ([entries (hook-entries completion:target-finders)] [kept '()])
+  (let loop ([entries (hooks:entries completion:target-finders)] [kept '()])
     (if (null? entries)
         (reverse kept)
         (let ([t ((car entries) view)])
@@ -67,7 +67,7 @@
   (list-ref targets (mod n (length targets))))
 
 (define (%keymaps category)
-  (append (or (and category (table-ref completion:action-keymaps category #f)) '())
+  (append (or (and category (tables:ref completion:action-keymaps category #f)) '())
           (list general-keymap)))
 
 (define (%quit?)
@@ -76,7 +76,7 @@
 (define (%prefix-command? v)
   (and (memq v (list keys:universal-argument keys:digit-argument keys:negative-argument)) #t))
 
-(define %make-quit (record-constructor (record-constructor-descriptor &quit)))
+(define (%make-quit) (make-cancelled #f))
 
 ;; A read returns quit keys as data, so one cancels here, and says so, as
 ;; a quit key does outside a read. Once a prefix argument is begun, a digit
@@ -84,7 +84,7 @@
 ;; Before the first key the client's own keymaps give C-u, M-<digit> and
 ;; M--, which the target's keymaps do not bind.
 (define (read-action keymaps text)
-  (unless (and (list? keymaps) (for-all table? keymaps))
+  (unless (and (list? keymaps) (for-all tables:table? keymaps))
     (assertion-violation 'actions:read-action "not a list of keymaps" keymaps))
   (unless (string? text)
     (assertion-violation 'actions:read-action "not a string" text))
@@ -105,7 +105,7 @@
              (cond
                [prefix-command (loop (keys:prefix-after prefix-command sequence prefix) #t #f)]
                [(commands:command? found) (values (or (keys:command-remapping client found) found) prefix)]
-               [(table? found) (loop prefix begun? sequence)]
+               [(tables:table? found) (loop prefix begun? sequence)]
                [else (errorf 'actions:read-action "~a is not an action" sequence)]))])))))
 
 (define (%check-read who s)
@@ -153,7 +153,7 @@
   (views:call-with-view view
     (lambda ()
       (cond
-        [(not (table-ref commands:region-commands command #f))
+        [(not (tables:ref commands:region-commands command #f))
          (minibuffer:call-with-setup
            (lambda (p) (completion:answer-target! p target))
            (lambda () (%call command prefix)))]
@@ -181,7 +181,7 @@
 
 (define (%default-entry target)
   (let ([category (completion:target-category target)])
-    (and category (table-ref default-actions category #f))))
+    (and category (tables:ref default-actions category #f))))
 
 (define (%act-default-on-read! who s target prefix quit?)
   (let ([command (%default-entry target)])

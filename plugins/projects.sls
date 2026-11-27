@@ -1,13 +1,13 @@
 #!tuna
-(import (processes))
+(import (processes) (hooks) (options))
 
-(define-hook finders
+(hooks:define-hook finders
   "Called with a folder ending in /; each entry returns the project holding it, or #f, and projects:find takes the first project returned.")
 
-(define-option merge-submodules? #t boolean?
+(options:define-option merge-submodules? #t boolean?
   "Whether a git submodule belongs to the project of the repository holding it, for finding and for listing.")
 
-(define-option extra-root-markers '()
+(options:define-option extra-root-markers '()
   (lambda (v)
     (and (list? v)
          (for-all (lambda (name)
@@ -16,7 +16,7 @@
                   v)))
   "File names, beside the version-control ones, whose presence makes a folder a project's root.")
 
-(define-option ignores
+(options:define-option ignores
   (list "SCCS/" "RCS/" "CVS/" "MCVS/" ".src/" ".svn/" ".git/" ".hg/" ".bzr/" "_MTN/" "_darcs/" "{arch}/" ".repo/" ".jj/"
         ".#*" "*.o" "*~" "*.bin" "*.lbin" "*.so" "*.a" "*.ln" "*.blg" "*.bbl" "*.elc" "*.lof" "*.glo" "*.idx" "*.lot"
         "*.fmt" "*.tfm" "*.class" "*.fas" "*.lib" "*.mem" "*.x86f" "*.sparcf" "*.dfsl" "*.pfsl" "*.d64fsl" "*.p64fsl"
@@ -299,7 +299,7 @@
                 (unless (or (not answer) (project? answer))
                   (assertion-violation 'projects:find "a finder answered neither a project nor #f" answer))
                 answer))
-            (hook-entries finders))))
+            (hooks:entries finders))))
 
 (define (find-marked folder names)
   (unless (absolute? folder)
@@ -355,4 +355,4 @@
   (check-lister 'projects:list-with-find folder on-files)
   (find-listing (with-slash folder) (ignores) on-files))
 
-(add-hook! finders try-vc 10)
+(hooks:add! finders try-vc 10)

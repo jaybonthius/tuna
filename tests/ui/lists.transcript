@@ -147,8 +147,7 @@
 (ui:selected-row "not a view")
 ; Reloading ui keeps the rows in the buffer; a list met afresh writes its
 ; rows under a generation past theirs.
-> (import (tuna eval))
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/ui.sls"))
+> (reload-modules! '((ui)))
 > (define (mixed-generations) (map (lambda (a) (cdr (assq 'generation (vector-ref a 1)))) (cddr (mixed-list-datum))))
 > (define (mixed-list-datum) (car (document:datums (document:slice (buffers:document t) 7 11))))
 > (mixed-generations)
@@ -167,11 +166,12 @@
       (write '(define (shout i) (ui:label (string-append (vector-ref names i) "!"))))
       (write '(ui:set-rows! made (document:token (buffers:document made) 0) 2 shout shout))))
 > (load-module! '(maker))
+#<owner (maker) 1>
 > (show! (buffers:find "*made*"))
 > (element (view) "<ul" "ul")
 "<ul class=\"ui-list\" data-keymap=\"3 inert\"><div class=\"node whole at-cursor primary\" id=\"v1-921\" data-at=\"1\" data-to=\"2\" data-line=\"1\" data-before=\"0\"><li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"2 clickable\"><span class=\"ui-label\">p!</span></li></div><div class=\"node whole\" id=\"v1-922\" data-at=\"2\" data-to=\"3\" data-line=\"1\" data-before=\"1\"><li class=\"ui-list-row\" data-keymap=\"2 clickable\"><span class=\"ui-label\">q!</span></li></div></ul>"
-> (unload-module! '(maker))
-! maker:shout: module (maker) is unloaded
+> (unload-owner! (module-owner '(maker)))
+! (layout) maker:shout: module (maker) is unloaded
 > (element (view) "<ul" "ul")
 "<ul class=\"ui-list\" data-keymap=\"3 inert\"><span class=\"cursor primary\"></span><div class=\"node whole\" id=\"v1-921\" data-at=\"1\" data-to=\"2\" data-line=\"1\" data-before=\"0\"></div><div class=\"node whole\" id=\"v1-922\" data-at=\"2\" data-to=\"3\" data-line=\"1\" data-before=\"1\"></div></ul>"
 > (element (view) "<ul" "ul")
@@ -188,12 +188,13 @@
       (write '(commands:define-command (fill-made) "Fills the list."
                 (ui:set-rows! made (document:token (buffers:document made) 0) 2 shout shout)))))
 > (load-module! '(maker2))
+#<owner (maker2) 1>
 > (in-client (lambda () (commands:run maker2:fill-made)))
 > (show! (buffers:find "*made2*"))
 > (element (view) "<li" "li")
 "<li class=\"ui-list-row\" aria-current=\"true\" data-keymap=\"2 clickable\"><span class=\"ui-label\">p!</span></li>"
-> (unload-module! '(maker2))
-! maker2:shout: module (maker2) is unloaded
+> (unload-owner! (module-owner '(maker2)))
+! (layout) maker2:shout: module (maker2) is unloaded
 > (element (view) "<li" "li")
 #f
 > (element (view) "<li" "li")
@@ -205,7 +206,7 @@
 > (show! f)
 > (define (picky n) (if (= n 1) (error 'picky "no row one") (number-row n)))
 > (ui:set-rows! f (failing) 3 picky choose)
-! picky: no row one
+! (layout) picky: no row one
 > (element (view) "<li" "li")
 #f
 > (element (view) "<li" "li")
@@ -299,7 +300,7 @@
 ; A heading procedure that raises, or returns what is neither a string
 ; nor #f, fails the list as a draw procedure does.
 > (ui:set-rows! h (hl) 2 number-row choose (lambda (n) 'x))
-! ui:set-rows!: a heading procedure returned neither a string nor #f with irritant x
+! (layout) ui:set-rows!: a heading procedure returned neither a string nor #f with irritant x
 > (element (view) "<li" "li")
 #f
 > (raised (lambda () (ui:set-rows! h (hl) 0 number-row choose 'x)))

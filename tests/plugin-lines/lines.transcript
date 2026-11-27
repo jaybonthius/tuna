@@ -16,35 +16,36 @@
 ; refused at install, and nothing of it is installed.
 > (use-plugin rival (local "~/src/rival"))
 ! use-plugin: plugin rival and plugin compat both hold the library (compat)
-> (memq 'rival (installed-plugins))
+> (memq 'rival (plugins:installed))
 #f
 ; Names Tuna keeps for itself, chez-lang's among them, are refused too.
 > (use-plugin keeper (local "~/src/keeper"))
 ! use-plugin: plugin keeper holds the library (lang reader), a name Tuna keeps for itself
-> (memq 'keeper (installed-plugins))
+> (memq 'keeper (plugins:installed))
 #f
 ; Lines go only in the configuration and at the REPL; plugin lines only in
 ; an index's main module.
 > (import (uses))
-! use-plugin: a use-plugin line in a module (use-plugin vertico) at line 3, char 1 of $HOME/.config/tuna/lib/uses.sls
+! attempt to reference unbound identifier use-plugin at line 3, char 2 of $HOME/.config/tuna/lib/uses.sls
 > (use-plugin plain (local "~/src/plain"))
-! plugin: a plugin line outside an index's main module (plugin compat (git "https://github.com/bob/compat")) at line 4, char 1 of $HOME/src/plain/plain.sls
+! attempt to reference unbound identifier plugin at line 4, char 2 of $HOME/src/plain/plain.sls
 > (plugin compat (git "https://github.com/bob/compat"))
 ! plugin: a plugin line outside an index's main module (plugin compat (git "https://github.com/bob/compat"))
-> (import (only (tuna plugins) integration))
-! missing import for integration (only (tuna plugins) integration)
+> (import (only integration))
+! unknown module integration
 ; The configuration's lines' plugins in order, then the others by id.
-> (installed-plugins)
+> (plugins:installed)
 (other sources compat consult greet plain vertico)
-; Only greet has no line and was found by no import.
-> (remove-unused-plugins!)
-> (installed-plugins)
-(other sources compat consult plain vertico)
+; greet and plain have no line; neither was loaded since Tuna started, as
+; plain's module never compiled.
+> (plugins:remove-unused!)
+> (plugins:installed)
+(other sources compat consult vertico)
 > (file-exists? "~/.local/share/tuna/plugins/greet")
 #f
 ; Tuna writes init.ss only through its commands.
 > (display (call-with-input-file "~/.config/tuna/init.ss" get-string-all))
-(import (tuna) (tuna plugins))
+(import (tuna))
 (use-plugin other (local "~/src/other"))
 (use-plugin sources (git "https://github.com/groucho/tuna-sources"))
 (use-plugin compat)
@@ -53,13 +54,14 @@
 (import (console))
 ; Removing a local plugin comments out its line and never deletes its
 ; folder.
-> (remove-plugin! 'other)
-> (list (memq 'other (installed-plugins)) (file-exists? "~/src/other/other.sls"))
+> (plugins:remove! 'other)
+! use-plugin: a second line for consult
+> (list (memq 'other (plugins:installed)) (file-exists? "~/src/other/other.sls"))
 (#f #t)
 > (other:name)
 ! other:name: module (other) is unloaded
 > (display (call-with-input-file "~/.config/tuna/init.ss" get-string-all))
-(import (tuna) (tuna plugins))
+(import (tuna))
 #;(use-plugin other (local "~/src/other"))
 (use-plugin sources (git "https://github.com/groucho/tuna-sources"))
 (use-plugin compat)

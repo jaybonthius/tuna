@@ -1,7 +1,7 @@
 #!tuna
-(import (transient) (commands) (keys) (minibuffer))
+(import (transient) (commands) (keys) (minibuffer) (options))
 
-(define-option merge-arguments '() (lambda (v) (and (list? v) (for-all string? v)))
+(options:define-option merge-arguments '() (lambda (v) (and (list? v) (for-all string? v)))
   "The arguments the merge menu starts with.")
 
 (transient:define-menu merge-menu "Git's merge menu."
@@ -9,11 +9,13 @@
   (arguments merge-arguments)
   (incompatible ("--ff-only" "--no-ff")))
 
-(define merges '())
+(define %merges '())
+
+(define (merges) %merges)
 
 (commands:define-command (merge-branch [arguments (transient:arguments merge-menu)])
   "Merges a branch into the current one with ARGUMENTS."
-  (set! merges (cons arguments merges)))
+  (set! %merges (cons arguments %merges)))
 
 (commands:define-command (merge)
   "Shows the merge menu."

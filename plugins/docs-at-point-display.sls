@@ -1,7 +1,7 @@
 #!tuna
-(import (docs-at-point) (echo-area) (layout) (markdown) (buffers) (document) (views) (modes) (commands) (keys) (haml))
+(import (docs-at-point) (echo-area) (layout) (markdown) (buffers) (document) (views) (modes) (commands) (keys) (haml) (hooks) (options) (tables))
 
-(define-option echo-lines #f (lambda (v) (or (not v) (and (fixnum? v) (fx> v 0))))
+(options:define-option echo-lines #f (lambda (v) (or (not v) (and (fixnum? v) (fx> v 0))))
   "How many lines of docs the echo area shows; #f for as many as it holds.")
 
 (define (%thing-spans doc)
@@ -66,7 +66,7 @@
          (set! %echoed #f)]))))
 
 (define (%say! text spans)
-  (with-options ([echo-area:log-max 0])
+  (options:with ([echo-area:log-max 0])
     (parameterize ([echo-area:spans spans])
       (echo-area:message! "~a" text))))
 
@@ -98,9 +98,9 @@
   (when %echo-text
     (if (%at-docs-place?) (%echo!) (%clear-own!))))
 
-(define-table docs-keymap "The keymap of docs-at-point-display:docs-mode.")
+(tables:define-table docs-keymap "The keymap of docs-at-point-display:docs-mode.")
 
-(define-hook docs-mode-hook "Called in each buffer that turns on docs-at-point-display:docs-mode.")
+(hooks:define-hook docs-mode-hook "Called in each buffer that turns on docs-at-point-display:docs-mode.")
 
 (modes:define-major-mode docs-mode
   (parent modes:special)
@@ -182,11 +182,11 @@
         (docs-at-point:ask-sources view))))
 
 (define (%set-up-docs-buffer)
-  (set-option-local! buffers:revert-function refresh)
-  (set-option-local! docs-at-point:mode #f))
+  (options:set-local! buffers:revert-function refresh)
+  (options:set-local! docs-at-point:mode #f))
 
-(add-hook! docs-mode-hook %set-up-docs-buffer)
-(add-hook! docs-at-point:displays show-in-echo-area)
-(add-hook! docs-at-point:displays show-in-buffer)
-(add-hook! commands:after-command %show-again)
+(hooks:add! docs-mode-hook %set-up-docs-buffer)
+(hooks:add! docs-at-point:displays show-in-echo-area)
+(hooks:add! docs-at-point:displays show-in-buffer)
+(hooks:add! commands:after-command %show-again)
 (keys:bind! keys:global "C-h ." show-docs)

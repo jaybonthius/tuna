@@ -6,9 +6,7 @@
 > (keys:bind! keys:global "C-x C-c" leave)
 > (define exiting? #f)
 > (define paused
-    (spawn-task
-      (lambda ()
-        (guard (c [#t (display "handler ran") (newline) (spawn-task (lambda () (display "new work") (newline)))])
+    (spawn-task (lambda (restore) (guard (c [#t (display "handler ran") (newline) (spawn-task (lambda (restore) (display "new work") (newline)))])
           (dynamic-wind
             void
             (lambda () (suspend (lambda (resume) (void))))

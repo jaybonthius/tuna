@@ -21,7 +21,7 @@
                                         (exit (exit-noting 'fruit)))
                      (completion:source (candidates (vector (cons "avocado" 'avocado)))
                                         (exit (exit-noting 'vegetable))))))))
-> (add-hook! completion:find-region fruit -1)
+> (hooks:add! completion:find-region fruit -1)
 > (type! "a")
 > (press! "C-M-i")
 > (texts (session))

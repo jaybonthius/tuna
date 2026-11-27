@@ -267,7 +267,7 @@ refused
 > (selected)
 9
 > (void (buffers:splice! layout:buffer 2 2 (buffers:edit-removed e)))
-! incorrect argument count in call (void (((...) (...)) ((...) (...)) 2 2 ((...) (...))))
+! incorrect argument count in call (void (($top-level-value (...)) ($top-level-value (...)) 2 2 ((...) e)))
 > (map views:id (layout:views))
 (3 9 10)
 > (list (views:find 3) (eq? (views:find 3) a))
@@ -275,7 +275,7 @@ refused
 > (buffers:name (views:buffer (views:find 3)))
 "notes"
 ; Layout's procedures run on the main thread only.
-> (define (on-thread thunk) (let ([result #f]) (fork-thread (lambda () (set! result (raised thunk)))) (let loop ([n 0]) (unless (or result (= n 500)) (sleep-for 0.01) (loop (+ n 1)))) result))
+> (define (on-thread thunk) (let ([result #f]) (fork-task (lambda (restore) (set! result (raised thunk)))) (let loop ([n 0]) (unless (or result (= n 500)) (timers:sleep 0.01) (loop (+ n 1)))) result))
 > (on-thread layout:selected-view)
 (layout:selected-view "not on the main thread")
 > (on-thread (lambda () (layout:screen c1)))

@@ -8,41 +8,50 @@
 (hook B)
 (after found b in en-GB X)
 ; Their changes belong to (init).
-> (module-changes '(init))
-((hook-entry spell:after-check #<procedure proc>) (setting spell:language #f))
+> (options:settings spell:language)
+(((init) "en-GB"))
 ; Evaluating the configuration again takes back its changes and runs the
 ; forms again; the plugin keeps running.
-> (define init (string-append (getenv "HOME") "/.config/tuna/init.ss"))
-> (eval-file init)
+> (plugins:load-configuration!)
 [spell config]
 (internal found a macro word)
 (hook B)
 (after found b in en-GB X)
-> (list (spell:language) (length (module-changes '(init))))
-("en-GB" 2)
-; Evaluating the line alone runs its forms again, adding to the changes.
-> (eval-text "(use-plugin spell (config (set-option! spell:language \"de\") (add-hook! spell:after-check (lambda (w) (display \"[again]\")))))" init)
-> (list (spell:language) (length (module-changes '(init))))
-("de" 3)
-; A reload of the plugin keeps the forms' changes and does not run them.
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/spell.sls"))
+> (options:settings spell:language)
+(((init) "en-GB"))
+; Evaluating the line alone runs its forms again as the configuration's.
+> (call-as-owner (plugins:configuration-owner)
+    (lambda ()
+      (plugins:eval-form
+        '(use-plugin spell (config (options:set! spell:language "de") (hooks:add! spell:after-check (lambda (w) (display "[again]"))))))))
+> (spell:language)
+"de"
+; A reload of the plugin, which the configuration imports, reads the
+; configuration again: the line alone's change goes, and the file's forms
+; run again.
+> (reload-modules! '((spell)))
 [spell body]
-> (list (spell:language) (length (module-changes '(init))))
-("de" 3)
-; Unloading takes back the forms' changes to the plugin's names, and
-; loading it again does not run them.
-> (unload-module! '(spell))
-> (module-changes '(init))
-()
-> (load-module! '(spell))
+[spell config]
+(internal found a macro word)
+(hook B)
+(after found b in en-GB X)
+> (options:settings spell:language)
+(((init) "en-GB"))
+; Unloading the plugin does the same, and a new instance runs its body.
+> (define old (module-owner '(spell)))
+> (unload-owner! old)
 [spell body]
-> (list (spell:language) (length (module-changes '(init))))
-("en" 0)
+[spell config]
+(internal found a macro word)
+(hook B)
+(after found b in en-GB X)
+> (list (owner-live? old) (eq? old (module-owner '(spell))) (options:settings spell:language))
+(#f #f (((init) "en-GB")))
 ; A line typed at the REPL runs its forms as the REPL's.
-> (use-plugin spell (config (set-option! spell:language "fr") (display "[typed]\n")))
+> (use-plugin spell (config (options:set! spell:language "fr") (display "[typed]\n")))
 [typed]
-> (list (spell:language) (module-changes '(repl)))
-("fr" ((setting spell:language #f)))
+> (list (spell:language) (options:settings spell:language))
+("fr" (((repl) "fr") ((init) "en-GB")))
 ; A form that raises is reported, and the next runs.
 > (use-plugin spell (config (car '()) (display "[next]\n")))
 ! car: () is not a pair

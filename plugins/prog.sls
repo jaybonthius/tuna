@@ -1,10 +1,10 @@
 #!tuna
-(import (modes))
+(import (modes) (hooks) (tables))
 
-(define-table keymap
+(tables:define-table keymap
   "Keys in every buffer whose major mode derives from prog:mode, searched after the language's own keymap.")
 
-(define-hook mode-hook
+(hooks:define-hook mode-hook
   "Called in each buffer that turns on a mode derived from prog:mode, before the language's own hook.")
 
 (modes:define-major-mode mode

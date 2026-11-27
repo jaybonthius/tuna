@@ -1,5 +1,5 @@
 #!tuna
-(import (replace) (search) (search-bench) (buffers) (document) (views) (layout) (keys) (web))
+(import (replace) (search) (search-bench) (buffers) (document) (views) (layout) (keys) (web) (timers))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -15,9 +15,9 @@
 ;; where an edited buffer's scans start again, is included.
 (define (answer-ms client key)
   (let ([done #f] [start (now-ns)])
-    (post! (lambda () (press! client key)))
-    (post! (lambda () (set! done (now-ns))))
-    (let wait () (unless done (sleep-for 0.001) (wait)))
+    (spawn-task (lambda (restore) (press! client key)))
+    (spawn-task (lambda (restore) (set! done (now-ns))))
+    (let wait () (unless done (timers:sleep 0.001) (wait)))
     (/ (- done start) 1e6)))
 
 (define (run)
@@ -27,12 +27,12 @@
     (layout:switch-to-buffer b)
     (views:set-point! view 1)
     (spawn-task
-      (lambda ()
+      (lambda (restore)
         (replace:query-replace! view client (search:make-query "lambda") "LAMBDA" 0
                                 (document:length (buffers:document b)) (search:direction forward))))
-    (sleep-for 0.1)
-    (let wait () (unless (search:scan-done? (replace:session-scan (replace:current client))) (sleep-for 0.01) (wait)))
-    (sleep-for 1)
+    (timers:sleep 0.1)
+    (let wait () (unless (search:scan-done? (replace:session-scan (replace:current client))) (timers:sleep 0.01) (wait)))
+    (timers:sleep 1)
     (printf "matches in the session: ~a\n" (search:scan-count (replace:session-scan (replace:current client))))
     (let* ([ys (map (lambda (k) (answer-ms client "y")) (iota 6))]
            [ns (map (lambda (k) (answer-ms client "n")) (iota 4))])

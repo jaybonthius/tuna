@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (document) (web))
+(import (hooks) (options) (tables) (timers))
+(import (tuna) (testing) (document) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -41,8 +42,8 @@
 ;; A command's prompt pauses its task, so tests run it in a task of its
 ;; own and wait for the prompt.
 (define (start! thunk)
-  (let ([t (spawn-task (lambda () (in-client thunk)))])
-    (sleep-for 0.05)
+  (let ([t (spawn-task (lambda (restore) (in-client thunk)))])
+    (timers:sleep 0.05)
     t))
 
 
@@ -50,15 +51,15 @@
 ;; presses the key only once the read waits for it.
 (define (act! . keys)
   (let ([t (start! (lambda () (apply press! keys)))])
-    (testing:wait-until (lambda () (or (task-done? t) (keys:reading client))))
+    (testing:wait-until (lambda () (or (eq? (task-state t) 'done) (keys:reading client))))
     t))
 
 (define (result t)
-  (testing:wait-until (lambda () (task-done? t)))
-  (if (task-done? t)
-      (guard (c [(quit-condition? c) 'quit]
+  (testing:wait-until (lambda () (eq? (task-state t) 'done)))
+  (if (eq? (task-state t) 'done)
+      (guard (c [(cancelled? c) 'quit]
                 [#t (list 'raised (if (message-condition? c) (condition-message c) c))])
-        (join-task t))
+        (testing:join t))
       'waiting))
 
 (define (view) (layout:selected-view))
@@ -101,7 +102,7 @@
 ;; the buffer's names have come.
 (define (settle-names b)
   (testing:wait-until (lambda () (not (eq? (chez-scheme:names b) (chez-scheme:repl-names)))))
-  (sleep-for 0.05))
+  (timers:sleep 0.05))
 
 (define (help-title)
   (let* ([b (buffers:find "*Help*")] [t (and b (text b))])

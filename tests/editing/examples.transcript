@@ -35,5 +35,5 @@
 ; A plugin that counts the characters typed by advising self-insert.
 > (import (typed))
 > (press! "a" "M-3" "b" "SPC")
-> (list typed:typed (text))
+> (list (typed:typed) (text))
 (5 "one twoabbb  three")

@@ -5,21 +5,21 @@
 ; and keymap clauses; its own variable named keymap is the keymap. The
 ; mode is an option, off, with the documentation and boolean values; its
 ; depth, lighter, keymap and name are recorded.
-> (list (option? fill:mode) (fill:mode) (documentation fill:mode) (option-default fill:mode))
+> (list (options:option? fill:mode) (fill:mode) (options:documentation fill:mode) (options:default fill:mode))
 (#t #f "Whether typing past fill:column breaks the line." #f)
-> (list (table-ref modes:minor-modes fill:mode #f) (table-ref modes:lighters fill:mode #f)
-        (eq? (table-ref modes:keymaps fill:mode #f) fill:keymap) (table-ref modes:minor-mode-majors fill:mode #f)
+> (list (tables:ref modes:minor-modes fill:mode #f) (tables:ref modes:lighters fill:mode #f)
+        (eq? (tables:ref modes:keymaps fill:mode #f) fill:keymap) (tables:ref modes:minor-mode-majors fill:mode #f)
         (modes:name fill:mode))
 (0 "Fill" #t #f fill:mode)
-; A default and an on-change, as define-option takes them.
+; A default and an on-change, as options:define-option takes them.
 > (define changes '())
 > (modes:define-minor-mode my-mode
     "Whether mine is on."
     (default #t)
     (on-change (lambda (on?) (set! changes (cons on? changes)))))
-> (list (my-mode) (option-default my-mode))
+> (list (my-mode) (options:default my-mode))
 (#t #t)
-> (set-option! my-mode #f)
+> (options:set! my-mode #f)
 > changes
 (#f)
 ; Defined at the REPL, as in the configuration, a mode is named as
@@ -28,21 +28,21 @@
 my-mode
 ; A state mode is a procedure of its formals and body, with the
 ; documentation; modes calls it with no arguments.
-> (list (procedure? view:mode) (option? view:mode) (documentation view:mode) (view:mode))
+> (list (procedure? view:mode) (options:option? view:mode) (definition-documentation view:mode) (view:mode))
 (#t #f "Whether the current buffer is viewed, not edited." #f)
 > (view:set-viewing! b #t)
-> (list (local view:mode b) (table-ref modes:minor-modes view:mode #f) (modes:lighter view:mode) (modes:name view:mode))
+> (list (local view:mode b) (tables:ref modes:minor-modes view:mode #f) (modes:lighter view:mode) (modes:name view:mode))
 (#t 0 "View" view:mode)
 > (view:set-viewing! b #f)
-> (list (lsp:managed?) (lsp:managed? b) (documentation lsp:managed?) (table-ref modes:minor-modes lsp:managed? #f)
-        (eq? (table-ref modes:keymaps lsp:managed? #f) lsp:keymap) (modes:name lsp:managed?))
+> (list (lsp:managed?) (lsp:managed? b) (definition-documentation lsp:managed?) (tables:ref modes:minor-modes lsp:managed? #f)
+        (eq? (tables:ref modes:keymaps lsp:managed? #f) lsp:keymap) (modes:name lsp:managed?))
 (#f #f "Whether a language server manages the buffer, or the current buffer when none is given." 0 #t lsp:managed?)
-> (list (table-ref modes:minor-modes terminal:copy-mode? #f) (table-ref modes:minor-modes terminal:char-mode? #f)
-        (table-ref modes:minor-modes terminal:semi-char-mode? #f)
+> (list (tables:ref modes:minor-modes terminal:copy-mode? #f) (tables:ref modes:minor-modes terminal:char-mode? #f)
+        (tables:ref modes:minor-modes terminal:semi-char-mode? #f)
         (map modes:lighter (list terminal:copy-mode? terminal:char-mode? terminal:semi-char-mode?)))
 (-30 -20 -10 ("Copy" "Char" #f))
 ; The majors clause sets modes:minor-mode-majors.
-> (table-ref modes:minor-mode-majors dired:hide-details? #f)
+> (tables:ref modes:minor-mode-majors dired:hide-details? #f)
 (dired:mode)
 ; Bad uses are syntax errors naming the form.
 > (modes:define-minor-mode bad-mode (lighter "Bad"))
@@ -64,9 +64,9 @@ my-mode
 > (modes:define-minor-mode "bad-mode" "Bad.")
 ! modes:define-minor-mode: expected (modes:define-minor-mode id doc-string clause ...) (modes:define-minor-mode "bad-mode" "Bad.")
 ; A keymap clause whose expression is a variable named keymap works.
-> (define-table keymap "Keys of a mode defined at the REPL.")
+> (tables:define-table keymap "Keys of a mode defined at the REPL.")
 > (modes:define-minor-mode keyed-mode "Whether keyed is on." (keymap keymap))
-> (eq? (table-ref modes:keymaps keyed-mode #f) keymap)
+> (eq? (tables:ref modes:keymaps keyed-mode #f) keymap)
 #t
 ; Clause values are checked as the mode is defined.
 > (modes:define-minor-mode bad-mode "Bad." (lighter 'bad))
@@ -84,36 +84,36 @@ my-mode
 ! modes:define-minor-mode: invalid clause (majors . python:mode) in (modes:define-minor-mode bad-mode "Bad." (majors . python:mode))
 ; Defined again without a lighter, keymap or majors clause, a mode keeps
 ; none of the ones it had.
-> (define-table again-keymap "Keys of a mode defined twice.")
+> (tables:define-table again-keymap "Keys of a mode defined twice.")
 > (modes:define-minor-mode again-mode "Whether again is on." (lighter "Again") (keymap again-keymap) (majors python:mode))
-> (list (modes:lighter again-mode) (eq? (table-ref modes:keymaps again-mode #f) again-keymap) (table-ref modes:minor-mode-majors again-mode #f))
+> (list (modes:lighter again-mode) (eq? (tables:ref modes:keymaps again-mode #f) again-keymap) (tables:ref modes:minor-mode-majors again-mode #f))
 ("Again" #t (python:mode))
 > (modes:define-minor-mode again-mode "Whether again is on.")
-> (list (modes:lighter again-mode) (table-ref modes:keymaps again-mode #f) (table-ref modes:minor-mode-majors again-mode #f))
+> (list (modes:lighter again-mode) (tables:ref modes:keymaps again-mode #f) (tables:ref modes:minor-mode-majors again-mode #f))
 (#f #f #f)
 ; modes:name: a major mode's own name, a minor mode's recorded name, and
 ; #f for anything else, a procedure put in modes:minor-modes alone
 ; included, which is not offered and which help labels by its lighter.
 > (map modes:name (list python:mode fill:mode lsp:managed? car 'nothing:mode))
 (python:mode fill:mode lsp:managed? #f #f)
-> (define-option plain-mode #f boolean? "Whether plain is on.")
-> (table-set! modes:minor-modes plain-mode 0)
-> (table-set! modes:lighters plain-mode "Plain")
+> (options:define-option plain-mode #f boolean? "Whether plain is on.")
+> (tables:set! modes:minor-modes plain-mode 0)
+> (tables:set! modes:lighters plain-mode "Plain")
 > (modes:name plain-mode)
 #f
 > (define t (start! "M-x"))
 > (type! "modes:toggle-minor-mode")
 > (press! "RET")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (member "plain-mode" (texts (session)))
 #f
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 ; help names each minor mode on by its name, a state mode's too, and
 ; heads a minor mode's keymap with its name.
 > (keys:bind! fill:keymap "C-c f" editing:forward-char)
-> (buffers:with-buffer b (set-option-local! diagnostics:mode #t fill:mode #t plain-mode #t))
+> (buffers:with-buffer b (options:set-local! diagnostics:mode #t fill:mode #t plain-mode #t))
 > (view:set-viewing! b #t)
 > (in-client (lambda () (help:describe-mode v)))
 > (define help-buffer (buffers:find "*Help*"))
@@ -125,24 +125,24 @@ my-mode
 > (has? (text help-buffer) "fill:mode")
 #t
 ; The plugin-only clause marks a major mode.
-> (define-table plain-keymap)
-> (define-hook plain-hook)
+> (tables:define-table plain-keymap)
+> (hooks:define-hook plain-hook)
 > (modes:define-major-mode own-mode (keymap plain-keymap) (hook plain-hook) (plugin-only #t))
-> (list (table-ref modes:plugin-only own-mode #f) (table-ref modes:plugin-only python:mode #f) (table-ref modes:plugin-only help:mode #f))
+> (list (tables:ref modes:plugin-only own-mode #f) (tables:ref modes:plugin-only python:mode #f) (tables:ref modes:plugin-only help:mode #f))
 (#t #f #t)
 > (modes:define-major-mode bad-mode (keymap plain-keymap) (hook plain-hook) (plugin-only 'yes))
 ! modes:define-major-mode: not a boolean with irritant yes
 ; The names and marks are the defining modules' entries, so they stay
 ; through a reload of modes.
-> (import (tuna eval))
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/modes.sls"))
-> (list (modes:name fill:mode) (modes:name view:mode) (table-ref modes:plugin-only help:mode #f)
-        (table-ref modes:minor-mode-majors dired:hide-details? #f))
+> (reload-modules! '((modes)))
+> (list (modes:name fill:mode) (modes:name view:mode) (tables:ref modes:plugin-only help:mode #f)
+        (tables:ref modes:minor-mode-majors dired:hide-details? #f))
 (fill:mode view:mode #t (dired:mode))
-; Unloading the defining module takes the mode, its entries and its name
-; away.
+; Unloading the defining module takes its entries for the mode away; the
+; configuration, which imports it, loads a new instance whose entries
+; come in their place.
 > (define fill-mode fill:mode)
-> (unload-module! '(fill))
-> (list (table-ref modes:minor-modes fill-mode #f) (table-ref modes:lighters fill-mode #f)
-        (table-ref modes:keymaps fill-mode #f) (modes:name fill-mode))
-(#f #f #f #f)
+> (define old (module-owner '(fill)))
+> (unload-owner! old)
+> (list (owner-live? old) (eq? (tables:owner modes:minor-modes fill-mode) (module-owner '(fill))) (modes:name fill-mode))
+(#f #t fill:mode)

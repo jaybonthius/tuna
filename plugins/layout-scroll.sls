@@ -1,12 +1,12 @@
 #!tuna
-(import (layout) (layout-split) (buffers) (document) (views) (keys) (commands) (web) (haml))
+(import (layout) (layout-split) (buffers) (document) (views) (keys) (commands) (web) (haml) (options) (tables))
 
 (define (%size? v) (and (real? v) (exact? v) (< 0 v) (<= v 1)))
 
-(define-option default-size 1/2 %size?
+(options:define-option default-size 1/2 %size?
   "The size of a new column, as an exact fraction of its strip's length.")
 
-(define-option size-presets '(1/3 1/2 2/3) (lambda (v) (and (list? v) (pair? v) (for-all %size? v)))
+(options:define-option size-presets '(1/3 1/2 2/3) (lambda (v) (and (list? v) (pair? v) (for-all %size? v)))
   "The sizes layout-scroll:cycle-size steps through, smallest first.")
 
 (module %internals
@@ -217,7 +217,7 @@
            [else #f])]
         [else (loop (cdr cs) (car cs))]))))
 
-(define-table keymap "The keymap of strips: keys that act on the column holding the selected view.")
+(tables:define-table keymap "The keymap of strips: keys that act on the column holding the selected view.")
 
 (define (%adopt node d)
   (if (assq 'size (if (vector? d) (vector-ref d 1) (cadr d))) d (with-size d (default-size))))
@@ -355,9 +355,9 @@
 
 ;; Layout removes the part, so the column collapses and sheds child
 ;; attributes exactly as its kind declares; the part's views outlive the
-;; removal only because the part comes back in the same batch. A quit
+;; removal only because the part comes back in the same batch. A cancel
 ;; between the two edits would lose the part, and Tuna's dynamic-wind
-;; holds quits off while its in runs.
+;; holds cancels off while its in runs.
 (define (%move-out! who column k toward-end?)
   (let ([cs (parts column)])
     (when (pair? (cdr cs))
@@ -422,5 +422,5 @@
 (keys:bind! keymap "C-s-f" full-size)
 (keys:bind! keymap "s-<home>" first)
 (keys:bind! keymap "s-<end>" last)
-(table-set! web:stylesheets 'layout-scroll "layout-scroll/layout-scroll.css")
+(tables:set! web:stylesheets 'layout-scroll "layout-scroll/layout-scroll.css")
 (on-unload forget-strips!)

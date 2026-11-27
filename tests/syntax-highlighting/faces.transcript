@@ -1,7 +1,7 @@
 ; syntax-highlighting:mode is a minor mode, on by default, with no
 ; keymap and no lighter, named as modes names minor modes.
-> (list (syntax-highlighting:mode) (table-ref modes:minor-modes syntax-highlighting:mode #f)
-        (table-ref modes:keymaps syntax-highlighting:mode #f) (modes:lighter syntax-highlighting:mode)
+> (list (syntax-highlighting:mode) (tables:ref modes:minor-modes syntax-highlighting:mode #f)
+        (tables:ref modes:keymaps syntax-highlighting:mode #f) (modes:lighter syntax-highlighting:mode)
         (modes:name syntax-highlighting:mode))
 (#t 0 #f #f syntax-highlighting:mode)
 > (define f (marked "f.mk" "#a (b)\n" marks:mode))
@@ -11,7 +11,7 @@
 ((start #<job %marks>))
 ; Turned off in a buffer, its faces go at the end of the batch and its
 ; other layers stay. The job goes on: edits still reach it.
-> (begin (buffers:with-buffer f (set-option-local! syntax-highlighting:mode #f)) (length (spans-of f syntax-highlighting:faces)))
+> (begin (buffers:with-buffer f (options:set-local! syntax-highlighting:mode #f)) (length (spans-of f syntax-highlighting:faces)))
 1
 > (list (faces f) (parens f))
 (() ("(" ")"))
@@ -23,7 +23,7 @@
 (("f.mk" #f 0) ("f.mk" (1 ()) 0) ("f.mk" (2 ((0 0 7))) 0))
 ; On again, every face returns from the job's record, without the job
 ; highlighting again.
-> (buffers:with-buffer f (set-option-local! syntax-highlighting:mode #t))
+> (buffers:with-buffer f (options:set-local! syntax-highlighting:mode #t))
 > (faces f)
 (("#n" comment) ("#a" comment))
 > (list (marks:inputs) (job-events))
@@ -32,19 +32,19 @@
 > (define g (marked "g.mk" "#g" marks:mode))
 > (faces g)
 (("#g" comment))
-> (set-option! syntax-highlighting:mode #f)
+> (options:set! syntax-highlighting:mode #f)
 > (list (faces f) (faces g))
 ((("#n" comment) ("#a" comment)) ())
-> (set-option! syntax-highlighting:mode #t)
+> (options:set! syntax-highlighting:mode #t)
 > (faces g)
 (("#g" comment))
 ; A mode hook that turns it off starts the buffer's job without faces.
-> (define (plain!) (set-option-local! syntax-highlighting:mode #f))
-> (add-hook! marks:mode-hook plain!)
+> (define (plain!) (options:set-local! syntax-highlighting:mode #f))
+> (hooks:add! marks:mode-hook plain!)
 > (define h (marked "h.mk" "#h (i)" marks:mode))
 > (list (faces h) (parens h))
 (() ("(" ")"))
-> (buffers:with-buffer h (set-option-local! syntax-highlighting:mode #t))
+> (buffers:with-buffer h (options:set-local! syntax-highlighting:mode #t))
 > (faces h)
 (("#h" comment))
-> (remove-hook! marks:mode-hook plain!)
+> (hooks:remove! marks:mode-hook plain!)

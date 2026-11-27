@@ -35,11 +35,11 @@
 ; It is a text buffer the user may edit, so g types there, and M-x does
 ; not offer the command.
 > (press! "g")
-> (list (text out) (buffers:modified? out) (table-ref commands:command-modes shell-commands:shell-command-again #f))
+> (list (text out) (buffers:modified? out) (tables:ref commands:command-modes shell-commands:shell-command-again #f))
 ("ga.txt\nb.txt\n" #t ())
 ; The entry shell-commands adds to files:directory-finders answers only
 ; for a buffer whose root holds a line, so a file buffer's folder is its
 ; file's.
 > (define file (files:visit "~/listed/a.txt"))
-> (map (lambda (entry) (entry file)) (hook-entries files:directory-finders))
+> (map (lambda (entry) (entry file)) (hooks:entries files:directory-finders))
 ("$HOME/listed/" #f #f #f)

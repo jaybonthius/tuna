@@ -4,8 +4,8 @@
 > alpha
 alpha
 > (configure! "alpha" '(capabilities ("textDocumentSync" . 2) ("hoverProvider" . #t)))
-> (table-set! lsp:language-servers "fakelang" (list alpha))
-> (add-hook! fake-mode-hook lsp:ensure)
+> (tables:set! lsp:language-servers "fakelang" (list alpha))
+> (hooks:add! fake-mode-hook lsp:ensure)
 > (write-file! (string-append project "/a.fk") "one\ntwo\n")
 > (define a (visit! (string-append project "/a.fk")))
 > (wait-for "alpha" "textDocument/didOpen")
@@ -52,7 +52,7 @@ null
 > (encoding-server! "sixteen" "utf-16")
 > (encoding-server! "eight" "utf-8")
 > (encoding-server! "thirtytwo" "utf-32")
-> (table-set! lsp:language-servers "fakelang" (list 'sixteen 'eight 'thirtytwo))
+> (tables:set! lsp:language-servers "fakelang" (list 'sixteen 'eight 'thirtytwo))
 > (write-file! (string-append project "/wide.fk") "a\x1F600;b\n")
 > (define wide (visit! (string-append project "/wide.fk")))
 > (wait-for "thirtytwo" "textDocument/didOpen")
@@ -80,7 +80,7 @@ null
 > (testing:wait-until (lambda () (= 3 (length (of-method "eight" "textDocument/didChange")))))
 > (ref (cadr (list-ref (changes "eight") 2)) 0 "range")
 (("start" ("line" . 0) ("character" . 4)) ("end" ("line" . 0) ("character" . 5)))
-> (table-set! lsp:language-servers "fakelang" (list alpha))
+> (tables:set! lsp:language-servers "fakelang" (list alpha))
 ; An answer is counted on the content of the version its request saw, as
 ; buffers:document-at gives it, however many edits came since.
 > (define asked-at (buffers:version a))
@@ -104,9 +104,9 @@ null
 > (map diagnostics:diagnostic-message (diagnostics:in a))
 ("now")
 > (do ([i 0 (+ i 1)]) ((= i 1100)) (buffers:with-silent-edits a (buffers:replace! a 1 1 "x") (buffers:replace! a 1 2 "")))
-> (set-idle! #t)
-> (sleep-for 1.5)
+> (timers:set-idle! #t)
+> (timers:sleep 1.5)
 > (publish! 0 "too old")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (map diagnostics:diagnostic-message (diagnostics:in a))
 ("now")

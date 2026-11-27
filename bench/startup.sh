@@ -11,11 +11,10 @@ cpu=${BENCH_CPU:-$(($(nproc) - 1))}
 runs=9
 dir=$(mktemp -d "${TMPDIR:-/tmp}/tuna-bench-startup.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
-mkdir "$dir/library"
 
 start() {
   t0=$(date +%s%N)
-  output=$(cd "$dir" && HOME="$dir/$1" TUNA_LIBRARY="$dir/library" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
+  output=$(cd "$dir" && HOME="$dir/$1" TUNA_LIBRARY="$(dirname "$tuna")/plugins" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
   t1=$(date +%s%N)
   case $output in
     configured-ms*) ;;

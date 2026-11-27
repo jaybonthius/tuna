@@ -34,7 +34,7 @@ done
 printf '#!tuna\n(import%s)\n(define (sum) (+%s))\n' "$imports" "$(echo "$imports" | sed 's/(l\([0-9]*\))/ (l\1)/g')" \
   > "$dir/plugin/uses.sls"
 printf '(display "configured-ms ")\n(display (real-time))\n(newline)\n(exit)\n' > "$dir/none/.config/tuna/init.ss"
-printf '(import (tuna plugins))\n(use-plugin uses (local "%s"))\n(display "configured-ms ")\n(display (real-time))\n(newline)\n(exit)\n' \
+printf '(import (plugins))\n(use-plugin uses (local "%s"))\n(display "configured-ms ")\n(display (real-time))\n(newline)\n(exit)\n' \
   "$dir/plugin" > "$dir/some/.config/tuna/init.ss"
 
 start() {

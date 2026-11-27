@@ -1,12 +1,12 @@
 ; The mode: parent prog:mode, its keymap and hook, lighter "Scheme";
 ; its hook runs after prog's.
-> (list (table-ref modes:parents chez-scheme:mode) (modes:lighter chez-scheme:mode)
-        (eq? (table-ref modes:keymaps chez-scheme:mode) chez-scheme:keymap)
-        (eq? (table-ref modes:hooks chez-scheme:mode) chez-scheme:mode-hook))
+> (list (tables:ref modes:parents chez-scheme:mode) (modes:lighter chez-scheme:mode)
+        (eq? (tables:ref modes:keymaps chez-scheme:mode) chez-scheme:keymap)
+        (eq? (tables:ref modes:hooks chez-scheme:mode) chez-scheme:mode-hook))
 (prog:mode "Scheme" #t #t)
 > (define order '())
-> (add-hook! prog:mode-hook (lambda () (set! order (cons 'prog order))))
-> (add-hook! chez-scheme:mode-hook (lambda () (set! order (cons 'scheme order))))
+> (hooks:add! prog:mode-hook (lambda () (set! order (cons 'prog order))))
+> (hooks:add! chez-scheme:mode-hook (lambda () (set! order (cons 'scheme order))))
 > (define first (scheme-buffer "first.ss" ""))
 > (reverse order)
 (prog scheme)
@@ -42,8 +42,8 @@
 (#t)
 ; Highlighting: a buffer whose mode derives from chez-scheme:mode is
 ; highlighted by a job; the faces of each kind of text.
-> (define-table derived-keymap)
-> (define-hook derived-hook)
+> (tables:define-table derived-keymap)
+> (hooks:define-hook derived-hook)
 > (modes:define-major-mode derived (parent chez-scheme:mode) (keymap derived-keymap) (hook derived-hook))
 > (define h (buffers:make "h.ss" "; c\n#| b |# #;(x y) (f \"s\\n\\x3bb;t\" #\\a 1.5 #t #!r6rs #!eof '#0=(a) #0# `(b ,c ,@d) #'e)\n"))
 > (modes:set-major-mode derived h)
@@ -66,14 +66,14 @@
 #t
 ; Bracket spans go with the job too.
 > (define k (scheme-buffer "k.ss" "(a [b])"))
-> (table-set! syntax:bracket-users 'test (lambda (buffer) (eq? buffer k)))
+> (tables:set! syntax:bracket-users 'test (lambda (buffer) (eq? buffer k)))
 > (syntax-highlighting:update!)
 > (length (brackets k))
 4
 > (modes:set-major-mode modes:fundamental k)
 > (brackets k)
 ()
-> (table-remove! syntax:bracket-users 'test)
+> (tables:remove! syntax:bracket-users 'test)
 > (syntax-highlighting:update!)
 ; After an edit the job lexes the newest text, and the faces follow;
 ; text typed right after a lexeme takes its face until then.
@@ -101,7 +101,7 @@
 > (faces sp)
 (("car" function.builtin))
 ; Names: the scope comes from the text. #!tuna gives (chezscheme) and
-; (tuna), #!tuna/base (chezscheme) and (tuna base); import forms give
+; (tuna), #!tuna (chezscheme) and (tuna base); import forms give
 ; their specs, with only, except, prefix, rename, library and for;
 ; use-plugin lines give the plugin's main module, and a configuration,
 ; which loads into the REPL's environment, also has the REPL's scope.
@@ -111,9 +111,9 @@
       (let ([result (map (lambda (word) (face-of b word)) words)])
         (buffers:kill! b)
         result)))
-> (word-faces "#!tuna\n(define-option x 1 number?) (car 1) (buffers:make)" "define-option" "car" "buffers:make")
+> (word-faces "#!tuna\n(import (options))\n(options:define-option x 1 number?) (car 1) (buffers:make)" "options:define-option" "car" "buffers:make")
 (keyword function.builtin #f)
-> (word-faces "#!tuna/base\n(define-option x 1 number?) (define-public (y) (module-changes 1))" "define-option" "define-public" "module-changes")
+> (word-faces "#!tuna\n(options:define-option x 1 number?) (define-public (y) (owner-changes 1))" "options:define-option" "define-public" "owner-changes")
 (#f keyword function.builtin)
 > (word-faces "(import (only (rnrs) car) (prefix (buffers) b/) (rename (chezscheme) (cdr tail)))\n(car cdr tail b/buffers:make b/buffers:with-buffer)" "car" "cdr" "tail" "b/buffers:make" "b/buffers:with-buffer")
 (function.builtin #f function.builtin function.builtin keyword)
@@ -125,7 +125,7 @@
 (function.builtin function.builtin)
 ; A text with use-plugin lines is a configuration, which loads into the
 ; REPL's environment, so it also has (chezscheme) and (tuna).
-> (word-faces "(import (tuna) (tuna plugins))\n(use-plugin modes)\n(define (f x) (car (list x)))\n(define-option o 1 number?)" "define" "car" "define-option")
+> (word-faces "(import (tuna))\n(use-plugin modes)\n(define (f x) (car (list x)))\n(options:define-option o 1 number?)" "define" "car" "options:define-option")
 (keyword function.builtin keyword)
 ; Data the reader makes that is not a spec, such as a box, a special
 ; vector, #!eof or a cycle, is left out of the scope, and the job goes
@@ -145,7 +145,7 @@ function.builtin
 ; module. Changeable definitions and hooks are procedures, tables and
 ; other values are not drawn, macros are syntax, and a helper, a % name,
 ; is a procedure as any other.
-> (word-faces "(car define-option modes:ancestry modes:major-mode-changed syntax:lexers faces:comment buffers:with-buffer chez-scheme:%highlight-input syntax:class)" "car" "define-option" "modes:ancestry" "modes:major-mode-changed" "syntax:lexers" "faces:comment" "buffers:with-buffer" "chez-scheme:%highlight-input" "syntax:class")
+> (word-faces "(car options:define-option modes:ancestry modes:major-mode-changed syntax:lexers faces:comment buffers:with-buffer chez-scheme:%highlight-input syntax:class)" "car" "options:define-option" "modes:ancestry" "modes:major-mode-changed" "syntax:lexers" "faces:comment" "buffers:with-buffer" "chez-scheme:%highlight-input" "syntax:class")
 (function.builtin keyword function.builtin function.builtin #f #f keyword function.builtin keyword)
 ; The file's own module adds its exports without the prefix, found by
 ; its path, or the library a library form defines.
@@ -172,10 +172,11 @@ function.builtin
 > (define hums (scheme-buffer "hums.ss" "(import (tunes))\n(tunes:hum)"))
 > (face-of hums "tunes:hum")
 function.builtin
-> (unload-module! '(tunes))
+> (unload-owner! (module-owner '(tunes)))
 > (face-of hums "tunes:hum")
 #f
 > (load-module! '(tunes))
+#<owner (tunes) 2>
 > (face-of hums "tunes:hum")
 function.builtin
 ; A module's names are classified again when it loads again, and the
@@ -184,19 +185,20 @@ function.builtin
 > (define user (scheme-buffer "user.ss" "(import (shapes))\n(shapes:perimeter 1)"))
 > (face-of user "shapes:perimeter")
 #f
-> (eval-file "~/.config/tuna/lib/shapes.sls")
+> (reload-modules! '((shapes)))
 > (face-of user "shapes:perimeter")
 function.builtin
 ; A library the running Tuna has not loaded adds no names.
 > (word-faces "(import (nowhere))\n(nowhere:thing car)" "nowhere:thing" "car")
 (#f #f)
-; Unloading the plugin stops every job and takes away its spans.
+; Unloading the plugin stops every job and takes away its spans; the
+; configuration, which imports it, loads a new instance that highlights
+; the buffers already open in its mode.
 > (map (lambda (layer) (length (buffers:spans layer 0 30))) (buffers:layers user))
 (1 0)
-> (unload-module! '(chez-scheme))
-> (map (lambda (layer) (buffers:spans layer 0 30)) (buffers:layers user))
-(() ())
-; Loading it again highlights the buffers already open in its mode.
-> (load-module! '(chez-scheme))
+> (define old (module-owner '(chez-scheme)))
+> (unload-owner! old)
+> (owner-live? old)
+#f
 > (face-of user "shapes:perimeter")
 function.builtin

@@ -1,9 +1,11 @@
-(import (tuna) (testing) (tuna plugins) (document) (disk))
+(import (hooks) (options) (tables) (timers))
+(import (tuna) (testing) (document) (disk))
 (use-plugin modes)
 (use-plugin views)
 (use-plugin files)
 (use-plugin auto-mode)
-(import (marks))
+;; Loaded, not imported, so its unload in a test stays an unload.
+(load-module! '(marks))
 
 (define (marked name content mode)
   (let ([b (buffers:make name content)])
@@ -22,7 +24,7 @@
   (let loop ([n 0] [same 0] [last #f])
     (let ([now (list (spans-of b syntax-highlighting:faces) (spans-of b marks:parens))])
       (unless (or (= same 15) (= n 500))
-        (sleep-for 0.02)
+        (timers:sleep 0.02)
         (loop (+ n 1) (if (equal? now last) (+ same 1) 0) now)))))
 
 (define (faces b)

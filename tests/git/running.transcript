@@ -10,7 +10,7 @@
 ; A command is logged with its arguments, without the global ones, and
 ; its exit status; git:command-ended follows it.
 > (define ended '())
-> (add-hook! git:command-ended (lambda (r c) (set! ended (cons (git:command-arguments c) ended))))
+> (hooks:add! git:command-ended (lambda (r c) (set! ended (cons (git:command-arguments c) ended))))
 > (git:run repo '("tag" "v1"))
 #vu8()
 > (log-lines repo)
@@ -41,13 +41,13 @@
 ; Commands of a repository run one at a time, in the order called. Each
 ; is queued before its call pauses.
 > (define updates '())
-> (add-hook! git:command-updated
+> (hooks:add! git:command-updated
     (lambda (r c) (set! updates (cons (list (car (git:command-arguments c)) (git:command-exit c)) updates))))
-> (define first-task (spawn-task (lambda () (git:run repo '("tag" "v2")))))
-> (define second-task (spawn-task (lambda () (git:run repo '("tag" "v3")))))
-> (join-task first-task)
+> (define first-task (spawn-task (lambda (restore) (git:run repo '("tag" "v2")))))
+> (define second-task (spawn-task (lambda (restore) (git:run repo '("tag" "v3")))))
+> (testing:join first-task)
 #vu8()
-> (join-task second-task)
+> (testing:join second-task)
 #vu8()
 > (let ([seen (reverse updates)]) (list (car seen) (cadr seen)))
 (("tag" #f) ("tag" #f))
@@ -59,7 +59,7 @@
 ; git:command-ended.
 > (set! ended '())
 > (define order '())
-> (add-hook! git:command-ended (lambda (r c) (set! order (cons 'hook order))))
+> (hooks:add! git:command-ended (lambda (r c) (set! order (cons 'hook order))))
 > (define started (git:start repo '("tag" "v4") (lambda (c) (set! order (cons 'on-end order)))))
 > (git:command? started)
 #t
@@ -101,7 +101,7 @@
 > (git:command-canceled? sleeper)
 #t
 ; The log keeps the last git:command-log-size commands.
-> (set-option! git:command-log-size 3)
+> (options:set! git:command-log-size 3)
 > (git:run repo '("tag" "v5"))
 #vu8()
 > (log-lines repo)
@@ -110,14 +110,14 @@
 ; output and ends.
 > (define seen '())
 > (define (note-update r c) (when (equal? (git:command-arguments c) '("tag" "--list")) (set! seen (cons (cond [(git:command-exit c) 'ended] [(git:running repo) (if (string=? (git:command-output c) "") 'started 'output)] [else 'queued]) seen))))
-> (add-hook! git:command-updated note-update)
+> (hooks:add! git:command-updated note-update)
 > (git:run repo '("tag" "--list"))
 #vu8(118 49 10 118 50 10 118 51 10 118 52 10 118 53 10)
 > (let ([s (reverse seen)]) (list (car s) (cadr s) (and (memq 'output s) #t) (car (reverse s))))
 (queued started #t ended)
 ; git:program names the program run.
-> (set-option! git:program "no-such-git")
+> (options:set! git:program "no-such-git")
 > (guard (c [#t (condition-message c)]) (git:run repo '("status")))
 ! spawn-process: cannot run no-such-git: No such file or directory with irritants ("no-such-git" ("--no-pager" "--literal-pathspecs" "-c" "core.preloadindex=true" "-c" "log.showSignature=false" "-c" "color.ui=false" "-c" "color.diff=false" "-c" "diff.noPrefix=false" "-c" "diff.mnemonicPrefix=false" "-c" "diff.srcPrefix=a/" "-c" "diff.dstPrefix=b/" "-c" "diff.suppressBlankEmpty=false" "-c" "core.quotePath=false" "status"))
 "cannot run no-such-git: No such file or directory"
-> (remove-option! git:program)
+> (options:unset! git:program)

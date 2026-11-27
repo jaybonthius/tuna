@@ -1,10 +1,11 @@
-(import (tuna) (testing) (tuna plugins) (document) (haml) (web) (layout-split))
+(import (quiet) (hooks) (options) (tables) (timers) (plugins))
+(import (tuna) (testing) (document) (haml) (web) (layout-split))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
 (use-plugin echo-area
   (config
-    (set-option! echo-area:log-max 16384)))
+    (options:set! echo-area:log-max 16384)))
 (use-plugin files)
 (use-plugin undo)
 
@@ -27,7 +28,7 @@
 
 (define (mouse-in! v action place)
   (parameterize ([web:current-client client])
-    ((table-ref web:input-handlers "mouse") client
+    ((tables:ref web:input-handlers "mouse") client
      (append place
              `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
                ("view" . ,(views:id v)) ("version" . ,(buffers:version (views:buffer v)))
@@ -42,8 +43,8 @@
 ;; A command that reads keys pauses the task it runs in, so its keys are
 ;; pressed in a task of their own.
 (define (start-in c . keys)
-  (spawn-task (lambda () (apply press-in! c keys)))
-  (sleep-for 0.02))
+  (spawn-task (lambda (restore) (apply press-in! c keys)))
+  (timers:sleep 0.02))
 
 (define (start! . keys) (apply start-in client keys))
 
@@ -92,7 +93,7 @@
 
 (define (on-thread thunk)
   (let ([result #f] [done #f])
-    (fork-thread (lambda () (set! result (guard (c [#t (list (condition-who c) (condition-message c))]) (thunk))) (set! done #t)))
+    (fork-task (lambda (restore) (set! result (guard (c [#t (list (condition-who c) (condition-message c))]) (thunk))) (set! done #t)))
     (testing:wait-until (lambda () done))
     result))
 

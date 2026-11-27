@@ -74,7 +74,7 @@
 "@@ -1,11 +1,11 @@"
 ; each motion calls ui:section-moved with the section at point.
 > (define moved '())
-> (add-hook! ui:section-moved (lambda (v s) (set! moved (cons (and s (ui:section-value s)) moved))))
+> (hooks:add! ui:section-moved (lambda (v s) (set! moved (cons (and s (ui:section-value s)) moved))))
 > (press! "n" "n")
 > (reverse moved)
 ("b.txt" "gone.txt")
@@ -136,12 +136,13 @@
 > (length (status))
 59
 > (press! "M-2")
+> (define chevron-keys (eval-in-module '%section-chevron-keys '(ui)))
 ; a click on a chevron toggles its section, selects the view and
 ; puts point on the heading.
-> (click-marked! (view) (heading '(file . "a.py") '(unstaged . #f)) ui:%section-chevron-keys)
+> (click-marked! (view) (heading '(file . "a.py") '(unstaged . #f)) chevron-keys)
 > (list (point-line) (ui:section-hidden? (view) (section '(file . "a.py") '(unstaged . #f))))
 ("modified   a.py" #f)
-> (click-marked! (view) (heading '(file . "a.py") '(unstaged . #f)) ui:%section-chevron-keys)
+> (click-marked! (view) (heading '(file . "a.py") '(unstaged . #f)) chevron-keys)
 > (ui:section-hidden? (view) (section '(file . "a.py") '(unstaged . #f)))
 #t
 ; a click on a line, a double click on a file row and a click

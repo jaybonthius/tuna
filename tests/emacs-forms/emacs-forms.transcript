@@ -2,13 +2,13 @@
 ; with no report.
 > (gptel/org:branching-context)
 #t
-> (and (plugin-commit 'vertico) #t)
+> (and (plugins:commit 'vertico) #t)
 #t
 > (compile-angel:verbose)
 #f
 > (recentf:enabled?)
 #t
-> (eq? (table-ref keys:global "C-x m") ghostel:ghostel)
+> (eq? (tables:ref keys:global "C-x m") ghostel:ghostel)
 #t
 > (browse-file-remote)
 "browsing"
@@ -17,9 +17,9 @@
 > exported
 ("cal.org")
 ; A command defined by a plugin's macro in the configuration.
-> (list (open-notes) (eq? (table-ref commands:all 'open-notes) open-notes))
+> (list (open-notes) (eq? (tables:ref commands:all 'open-notes) open-notes))
 ("notes" #t)
-> (table-ref compile-angel:excluded "/init.el")
+> (tables:ref compile-angel:excluded "/init.el")
 #t
 > (line-numbers:width)
 3
@@ -27,25 +27,25 @@
 "~/.local/state/theme"
 > (hel:minibuffer?)
 #f
-> (eq? (table-ref auto-mode:file-names "go") go-ts:mode)
+> (eq? (tables:ref auto-mode:file-names "go") go-ts:mode)
 #t
 ; A plugin's internal module, loaded by its main module.
-> (eq? (table-ref org/mouse:keymap "<mouse-1>") org:open-at-mouse)
+> (eq? (tables:ref org/mouse:keymap "<mouse-1>") org:open-at-mouse)
 #t
 ; Local values set from a mode hook, in the scope the buffer makes current.
 > (buffers-stub:enter!)
 > (prog:mode)
 > (list (corfu:auto) (corfu:auto-delay) (corfu:auto-prefix))
 (#t 0.1 2)
-> (table-owner keys:global "C-x m")
-(init)
+> (tables:owner keys:global "C-x m")
+#<owner (init) 1>
 > (project:root)
 "/home/groucho/src"
 > (gui-presentation:start!)
 presenting
-> (eq? (table-ref keys:global "C-c g o") browse-file-remote)
+> (eq? (tables:ref keys:global "C-c g o") browse-file-remote)
 #t
-> (table-ref geiser/mode:keymap "M-.")
+> (tables:ref geiser/mode:keymap "M-.")
 #f
 > (prompts:yes-or-no? "Quit?")
 y-or-n
@@ -53,7 +53,7 @@ y-or-n
 ((agenda week) 1)
 > (vertico:count)
 15
-> (set-saved! search-ring '("tuna"))
+> (saved:set! search-ring '("tuna"))
 > (search-ring)
 ("tuna")
 ; A command the macro defines in a module is changeable and exported.
@@ -61,14 +61,14 @@ y-or-n
     (lambda (p)
       (put-string p "#!tuna\n(import (commands))\n(commands:define-command (hello) \"hello\")\n")))
 > (import (my-commands))
-> (set! my-commands:hello (lambda () "hi"))
+> (define my-commands:hello (lambda () "hi"))
 > (list (my-commands:hello) (map car (definition-changes my-commands:hello)))
-("hi" ((repl) (my-commands)))
+("hi" (#<owner (repl) 1> #<owner (my-commands) 1>))
 ; A module may define a name #!tuna provides, such as map.
 > (call-with-output-file "~/.config/tuna/lib/mapper.sls"
-    (lambda (p) (put-string p "#!tuna\n(define-table map)\n")))
+    (lambda (p) (put-string p "#!tuna\n(import (tables))\n(tables:define-table map)\n")))
 > (import (mapper))
-> (table? mapper:map)
+> (tables:table? mapper:map)
 #t
 ; A module named like a library built into Chez is Chez's.
 > (call-with-output-file "~/.config/tuna/lib/scheme.sls"

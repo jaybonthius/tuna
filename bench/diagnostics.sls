@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (diagnostics) (diagnostics-list) (status-line) (layout) (web) (haml))
+(import (buffers) (document) (diagnostics) (diagnostics-list) (status-line) (layout) (web) (haml) (options))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -40,7 +40,7 @@
                     (diagnostics:make-diagnostic (cons (fx+ 1 (fx* i (quotient lines n))) 5) (cons (fx+ 1 (fx* i (quotient lines n))) 9)
                       (if (even? i) (diagnostics:severity warning) (diagnostics:severity error)) "a problem"))
                   (iota n))])
-    (buffers:with-buffer b (set-option-local! diagnostics:mode #t))
+    (buffers:with-buffer b (options:set-local! diagnostics:mode #t))
     (values b source ds)))
 
 (define (report-cost n)

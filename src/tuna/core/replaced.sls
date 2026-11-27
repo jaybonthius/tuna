@@ -1,11 +1,16 @@
 (library (tuna core replaced)
-  (export exit fork-thread dynamic-wind with-mutex sleep set-timer timer-interrupt-handler make-engine)
-  (import (only (chezscheme) define define-syntax syntax-rules _ ... lambda let let* set! quote unless if or
-                not case-lambda procedure? syntax-violation assertion-violation)
-          (prefix (only (chezscheme) fork-thread dynamic-wind mutex-acquire mutex-release) chez:)
-          (only (tuna core changes) current-owner-record current-instance current-thread-state make-thread-state
-                this-thread-state on-main-thread? thread-state-quits-allowed thread-state-quits-allowed-set!)
-          (only (tuna core main-thread) exit call-after-thunk))
+  (export exit dynamic-wind with-mutex condition-wait sleep register-signal-handler
+          fork-thread set-timer timer-interrupt-handler make-engine with-interrupts-disabled
+          critical-section disable-interrupts enable-interrupts $primitive generate-interrupt-trap
+          library-search-handler collect-request-handler keyboard-interrupt-handler)
+  (import (only (chezscheme) define define-syntax syntax-rules _ ... lambda let quote syntax-violation case-lambda)
+          (prefix (only (chezscheme) mutex-acquire mutex-release) chez:)
+          (rename (only (tuna core kernel) exit tuna-dynamic-wind tuna-condition-wait tuna-sleep
+                        tuna-register-signal-handler)
+                  (tuna-dynamic-wind dynamic-wind*)
+                  (tuna-condition-wait condition-wait)
+                  (tuna-sleep sleep)
+                  (tuna-register-signal-handler register-signal-handler)))
 
   (define-syntax define-withheld
     (syntax-rules ()
@@ -13,55 +18,32 @@
        (define-syntax name
          (lambda (x) (syntax-violation 'name reason x)))]))
 
-  (define-withheld sleep "withheld because it would block the main thread")
-  (define-withheld set-timer "withheld because the main thread's timer delivers quits and tick")
-  (define-withheld timer-interrupt-handler "withheld because the main thread's timer delivers quits and tick")
-  (define-withheld make-engine "withheld because the main thread's timer delivers quits and tick")
-
-  ;; A thread forked by Chez acts for no module, since nothing tells it
-  ;; which module's code forked it.
-  (define (fork-thread thunk)
-    (unless (procedure? thunk)
-      (assertion-violation 'fork-thread "not a procedure" thunk))
-    (let* ([owner (current-owner-record)] [instance (current-instance owner)])
-      (chez:fork-thread
-        (lambda ()
-          (current-thread-state (make-thread-state owner instance))
-          (thunk)))))
-
-  ;; Chez's dynamic-wind forgets the body's winder before it calls out, so
-  ;; a quit landing as out starts would skip it. The flag changes only in
-  ;; critical winds, which a quit cannot split, while in and out run with
-  ;; interrupts on, so they may wait for a mutex or let a collection run.
-  (define (main-thread-wind in body out)
-    (let ([s (this-thread-state)] [other #f])
-      (define (swap!)
-        (let ([v (thread-state-quits-allowed s)])
-          (thread-state-quits-allowed-set! s other)
-          (set! other v)))
-      (chez:dynamic-wind #t swap!
-        (lambda ()
-          (chez:dynamic-wind in
-            (lambda () (chez:dynamic-wind #t swap! body swap!))
-            (lambda () (call-after-thunk out))))
-        swap!)))
+  (define-withheld fork-thread "withheld because a thread is a task of its owner; use fork-task")
+  (define-withheld set-timer "withheld because each thread's timer delivers cancels and stops")
+  (define-withheld timer-interrupt-handler "withheld because each thread's timer delivers cancels and stops")
+  (define-withheld make-engine "withheld because each thread's timer delivers cancels and stops")
+  (define-withheld with-interrupts-disabled "withheld because nothing could stop the code inside; use call-with-cancellation-masked")
+  (define-withheld critical-section "withheld because nothing could stop the code inside; use call-with-cancellation-masked")
+  (define-withheld disable-interrupts "withheld because nothing could stop the code inside; use call-with-cancellation-masked")
+  (define-withheld enable-interrupts "withheld because nothing could stop the code inside; use call-with-cancellation-masked")
+  (define-withheld $primitive "withheld because a primitive reached this way escapes the names Tuna replaces")
+  (define-withheld generate-interrupt-trap "withheld because code compiled without traps could not be stopped")
+  (define-withheld library-search-handler "withheld because the kernel resolves modules; set library-directories")
+  ;; Both handlers run in whichever task holds the thread when the interrupt
+  ;; comes, so a raise from one lands in code that never asked for it.
+  (define-withheld collect-request-handler "withheld because it runs in whichever task the collection interrupts")
+  (define-withheld keyboard-interrupt-handler "withheld because it runs in whichever task the interrupt lands in")
 
   (define dynamic-wind
     (case-lambda
-      [(in body out)
-       (if (on-main-thread?)
-           (main-thread-wind in body out)
-           (chez:dynamic-wind in body out))]
-      [(critical? in body out)
-       (if (or critical? (not (on-main-thread?)))
-           (chez:dynamic-wind critical? in body out)
-           (main-thread-wind in body out))]))
+      [(in body out) (dynamic-wind* in body out)]
+      [(critical? in body out) (dynamic-wind* in body out)]))
 
   (define-syntax with-mutex
     (syntax-rules ()
       [(_ m-expr e1 e2 ...)
        (let ([m m-expr])
-         (dynamic-wind
+         (dynamic-wind*
            (lambda () (chez:mutex-acquire m))
            (lambda () e1 e2 ...)
            (lambda () (chez:mutex-release m))))])))

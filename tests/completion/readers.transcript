@@ -9,7 +9,7 @@
 ()
 ; M-r and M-s read an entry of the prompt's history with a nested read
 ; that keeps no history, starting from the input.
-> (define-saved h '("gamma" "beta" "alpha") list?)
+> (saved:define-saved h '("gamma" "beta" "alpha") list?)
 > (define t (start! (lambda () (minibuffer:read "Word: " h))))
 > (type! "et")
 > (define nested (start! (lambda () (press! "M-r"))))
@@ -29,10 +29,10 @@
 > (texts (session))
 ("beta" "gamma" "alpha")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result nested)
 > (press! "C-g")
-! &quit
+! &cancelled
 ; A read-entry prompt's own entries come first, and one chosen is given
 ; as chosen, as M-p gives it.
 > (define t (start! (lambda () (call-with-values (lambda () (minibuffer:read-entry "Word: " h '("one" "two"))) list))))
@@ -53,4 +53,4 @@
 > (echo-area:current-message)
 "History is empty"
 > (press! "C-g")
-! &quit
+! &cancelled

@@ -2,19 +2,17 @@
 ; to report with the form and its position, and the next form runs.
 ! (boom) boom: failed (import (boom)) at line 12, char 1 of $HOME/.config/tuna/init.ss
 ! car: () is not a pair (car (quote ())) at line 15, char 1 of $HOME/.config/tuna/init.ss
-! set!: no loaded module exports spell:missing (set! spell:missing 1) at line 17, char 1 of $HOME/.config/tuna/init.ss
-! define: spell:check is (spell)'s definition; override it with (set! spell:check value) (define (spell:check path) "mine") at line 18, char 1 of $HOME/.config/tuna/init.ss
 > (list loaded-by after-error (current-owner))
-((init) ran (repl))
+(#<owner (init) 1> ran #<owner (repl) 1>)
 ; A module whose body raises leaves the owner (init).
 > after-boom
-(init)
+#<owner (init) 1>
 > (definition-changes spell:language)
-(((init) override #f) ((spell) define #f))
-; Its set! overrides a module's definition, which the module's own code
-; then uses, as do the module's own internal modules.
+((#<owner (init) 1> override #f) (#<owner (spell) 1> define #f))
+; Its define of a module's name overrides the definition, which the
+; module's own code then uses, as do the module's own internal modules.
 > (spell:check "a.txt")
-checking a.txt against /home/groucho/words
+"mine"
 > (magit:status)
 mine
 ; The configuration and the REPL see every loaded module's names, an
@@ -26,30 +24,28 @@ mine
 ! variable magit/later:x is not bound
 > magit/later:x
 later-x
-; The REPL checks its definitions as the configuration's are checked.
+; At the REPL too, a define of a module's name is an override.
 > (define (spell:check path) "mine")
-! define: spell:check is (spell)'s definition; override it with (set! spell:check value)
 > (define-record-type files:entry (fields a))
-! define-record-type: files:entry is (files)'s definition and cannot be defined again
-; A definition a macro produces is not checked.
+; A definition a macro produces is an override too, and an override is a
+; procedure.
 > (define-syntax define-quietly (syntax-rules () [(_ n v) (define n v)]))
 > (define-quietly files:save! 'shadowed)
+! override-set!: not a procedure with irritant shadowed
 > files:save!
-shadowed
-; A set! of a prefixed name that no loaded module exports raises, so it
-; cannot silently make a variable; a name defined at the top level is set.
-> (set! nothere:x 1)
-! set!: no loaded module exports nothere:x
+#<procedure>
+; A define of a prefixed name that no loaded module exports makes a
+; variable, which a define sets again.
+> (define nothere:x 1)
 > (define mine:x 1)
-> (set! mine:x 2)
+> (define mine:x 2)
 > mine:x
 2
-; A module load that replaces a top-level definition of one of its names
-; says so.
+; A module loaded after a top-level definition of one of its names
+; replaces it.
 > (define magit/extra:y 'user)
 > (load-module! '(magit extra))
-! import: (magit extra) replaces the top-level definition of magit/extra:y
+#<owner (magit extra) 1>
 > magit/extra:y
 extra-y
 > (define-public (spell:check path) "mine")
-! define-public: spell:check is (spell)'s definition; override it with (set! spell:check value)

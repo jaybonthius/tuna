@@ -8,7 +8,7 @@
 ("$HOME/deep/inner/" #f "$HOME/deep/inner/")
 > (layout:switch-to-buffer listing)
 > (define started '())
-> (set-option! ask:file-name-reader
+> (options:set! ask:file-name-reader
     (lambda (question . folder)
       (set! started (cons (list question (if (pair? folder) (car folder) (files:directory))) started))
       (at (if (string=? question "Folder: ") "deep/inner" "deep/inner/x.txt"))))

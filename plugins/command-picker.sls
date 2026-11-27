@@ -1,9 +1,9 @@
 #!tuna
-(import (completion) (commands) (keys) (modes) (views))
+(import (completion) (commands) (keys) (modes) (views) (options) (tables) (saved))
 
-(define-saved command-history '() (lambda (v) (and (list? v) (for-all string? v))))
+(saved:define-saved command-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
-(define-option command-predicate modes:command-for-view? procedure?
+(options:define-option command-predicate modes:command-for-view? procedure?
   "A procedure of a command and a view that says whether M-x offers the command while that view is selected.")
 
 (define (%offered? command view)
@@ -35,7 +35,7 @@
               (lambda (binding)
                 (let ([v (cdr binding)])
                   (cond
-                    [(table? v) (walk (list v) (cons keymap seen))]
+                    [(tables:table? v) (walk (list v) (cons keymap seen))]
                     [(and (commands:command? v) (not (memq v found))) (set! found (cons v found))])))
               (keys:bindings keymap))))
         keymaps))
@@ -44,7 +44,7 @@
 (define (%mode-commands view)
   (let ([marked (filter (lambda (entry)
                           (and (pair? (cdr entry)) (modes:command-for-view? (car entry) view)))
-                        (table-entries commands:command-modes))])
+                        (tables:entries commands:command-modes))])
     (let loop ([cs (append (map car marked) (%bound-commands (modes:active-keymaps #f #f)))] [acc '()])
       (cond
         [(null? cs) (reverse acc)]

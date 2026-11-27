@@ -31,7 +31,7 @@
 "hello"
 > (web:take-page-calls!)
 ((1 "copy" "hello"))
-> (set-option! terminal:program-copy? #f)
+> (options:set! terminal:program-copy? #f)
 > (terminal:send! t "printf '\\e]52;c;Ynll\\a'; echo sent\r")
 > (wait-for t "\nsent")
 > (list (kill-ring:text (kill-ring:current)) (web:take-page-calls!))

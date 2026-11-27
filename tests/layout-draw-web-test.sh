@@ -10,8 +10,8 @@ lib=$dir/layout-draw-web/home/.config/tuna/lib
 mkdir -p "$lib"
 cp tests/web/home/.config/tuna/lib/http.sls "$lib/"
 cat > "$dir/layout-draw-web/home/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins) (http))
-(use-plugin web (config (set-option! web:port (http:free-port))))
+(import (tuna) (http))
+(use-plugin web (config (options:set! web:port (http:free-port))))
 (use-plugin layout)
 (import (haml) (console))
 (http:use-port! (lambda () (web:port)))
@@ -34,7 +34,7 @@ Tuna is at http://127.0.0.1:PORT/
 ; Keys gives a page its settings when it connects.
 > (car (http:show (http:next p)))
 script
-> (sleep-for 0)
+> (timers:sleep 0)
 > (http:next p 0.2)
 timeout
 > (define greeting "Hello again")
@@ -53,7 +53,7 @@ timeout
 ; <pre>.
 > (define (fail screen client) (car '()))
 > (advice-add! layout:screen fail)
-! car: () is not a pair
+! (layout) car: () is not a pair
 > (let* ([lines (map cdr (cdr (http:next p)))] [opening (car lines)] [n (string-length opening)])
     (list (substring opening (- n 26) n) (substring (cadr lines) 0 40)))
 ("<pre class=\"layout-error\">" "Exception in car: () is not a pair</pre>")

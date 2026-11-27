@@ -37,18 +37,20 @@
 ; builds print, is read by its numbers; one older than 2.31 gets neither
 ; option. Loading projects again forgets the version.
 > (fake-git! "git version 2.30.1 (Apple Git-130)")
-> (unload-module! '(projects))
+> (unload-owner! (module-owner '(projects)))
 > (load-module! '(projects))
+#<owner (projects) 2>
 > (listed-in "src/lib")
 (".gitmodules" "lib.ss" "vendor/inner/inner.ss")
 > (calls)
 ("ls-files -z -c -o --exclude-standard" "ls-files -z -c -o --exclude-standard" "version")
 ; Stopping the listing while git's version is asked stops it all.
 > (sh "rm fake-git/calls")
-> (unload-module! '(projects))
+> (unload-owner! (module-owner '(projects)))
 > (load-module! '(projects))
+#<owner (projects) 3>
 > (define calls-made 0)
 > ((projects:list-files (projects:find (string-append home "/src/lib")) (lambda (files) (set! calls-made (+ calls-made 1)))))
-> (sleep-for 0.5)
+> (timers:sleep 0.5)
 > (list calls-made (remove "version" (calls)))
 (0 ())

@@ -1,10 +1,12 @@
 #!tuna
-(import (keys) (commands) (layout) (web) (haml))
+(import (keys) (commands) (layout) (web) (haml) (hooks) (options) (tables) (timers))
 
-(define-option delay 1.0 (lambda (v) (and (real? v) (finite? v) (not (negative? v))))
+(define %self (current-owner))
+
+(options:define-option delay 1.0 (lambda (v) (and (real? v) (finite? v) (not (negative? v))))
   "Seconds from the key that leaves keys pending to the popup, not negative; 0 shows it with that key's screen.")
 
-(define-table labels
+(tables:define-table labels
   "Maps a prefix, a key sequence such as \"C-c l\", to the label the popup shows for it in its parent's popup.")
 
 (define-record-type (%waiting %make-waiting %waiting?)
@@ -24,7 +26,7 @@
 
 (define (%stop-timer! w)
   (when (%waiting-timer w)
-    (cancel-timer! (%waiting-timer w))
+    (timers:cancel! (%waiting-timer w))
     (%waiting-timer-set! w #f)))
 
 (define (%forget! w)
@@ -68,13 +70,14 @@
   (unless (%mouse-key? (%first-key keys))
     (if (zero? (delay))
         (%waiting-ready-set! w keys)
-        (as-module (this-module)
-          (%waiting-timer-set! w
-            (run-with-timer (delay)
-              (lambda ()
-                (%waiting-timer-set! w #f)
-                (when (equal? (keys:pending client) keys)
-                  (%waiting-ready-set! w keys)))))))))
+        (call-as-owner %self
+          (lambda ()
+            (%waiting-timer-set! w
+              (timers:run-after (delay)
+                (lambda ()
+                  (%waiting-timer-set! w #f)
+                  (when (equal? (keys:pending client) keys)
+                    (%waiting-ready-set! w keys))))))))))
 
 ;; A key that runs a command returns only when the command ends, which
 ;; may be after a pause, so a key counts as leaving keys pending only when
@@ -146,15 +149,15 @@
                  (map cons (vector->list following) (vector->list commands))))))
 
 (define (%label client prefix)
-  (let ([label (table-ref labels prefix #f)])
+  (let ([label (tables:ref labels prefix #f)])
     (cond
       [(string? label) label]
       [label (assertion-violation 'which-key:labels "not a string" label)]
       [else
        (or (let ([keymap (keys:lookup client prefix)])
-             (and (table? keymap)
+             (and (tables:table? keymap)
                   (not (memq keymap (keys:active-keymaps client)))
-                  (documentation keymap)))
+                  (tables:documentation keymap)))
            "prefix")])))
 
 (define-record-type (%entry %make-entry %entry?)
@@ -184,7 +187,7 @@
 (define (%popup client)
   (let ([keys (keys:pending client)] [w (eq-hashtable-ref %clients client #f)])
     (if (and keys w (%waiting-ready w) (%extends? keys (%waiting-ready w))
-             (table? (keys:lookup client keys)))
+             (tables:table? (keys:lookup client keys)))
         (let ([entries (map (lambda (f) (%entry-of client keys f)) (%following client keys))])
           (if (null? entries)
               '()
@@ -201,7 +204,7 @@
 (define (%add-popup screen client)
   (haml (:div.which-key-screen (screen client) (%popup client))))
 
-(table-set! web:stylesheets 'which-key "which-key/which-key.css")
+(tables:set! web:stylesheets 'which-key "which-key/which-key.css")
 (advice-add! keys:press! %follow-keys)
 (advice-add! layout:screen %add-popup)
-(add-hook! web:client-removed %forget-client!)
+(hooks:add! web:client-removed %forget-client!)

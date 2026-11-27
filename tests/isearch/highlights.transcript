@@ -1,6 +1,6 @@
 ; Other matches are highlighted in the search's view for its client only;
 ; the current match in match.
-> (set-option! isearch:lazy-highlight-no-delay-length 1)
+> (options:set! isearch:lazy-highlight-no-delay-length 1)
 > (define b (show "h" "ab ab ab\nab\n"))
 > (press! "C-s" "a" "b")
 > (wait-scan)
@@ -10,7 +10,7 @@
 ()
 ; With the lazy count on, the prompt starts with the match's number and
 ; the total.
-> (set-option! isearch:lazy-count #t)
+> (options:set! isearch:lazy-count #t)
 > (press! "C-s")
 > (wait-scan)
 > (here)
@@ -20,7 +20,7 @@
 ()
 ; With lazy-highlight-cleanup off, the highlights stay after the search
 ; until isearch:clear-highlights.
-> (set-option! isearch:lazy-highlight-cleanup #f)
+> (options:set! isearch:lazy-highlight-cleanup #f)
 > (views:set-point! (view) 1)
 > (press! "C-s" "a" "b" "RET")
 > (wait-drawn client)
@@ -29,20 +29,20 @@
 > (isearch:clear-highlights (view))
 > (drawn client)
 ()
-> (set-option! isearch:lazy-highlight-cleanup #t)
-> (set-option! isearch:lazy-count #f)
+> (options:set! isearch:lazy-highlight-cleanup #t)
+> (options:set! isearch:lazy-count #f)
 ; Under a short text the other matches wait for
 ; isearch:lazy-highlight-delay; the current match is drawn at once.
-> (set-option! isearch:lazy-highlight-no-delay-length 5)
+> (options:set! isearch:lazy-highlight-no-delay-length 5)
 > (views:set-point! (view) 1)
 > (press! "C-s" "a")
 > (drawn client)
 (("match" "a"))
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (drawn client)
 (("match" "a") ("match.other" "a") ("match.other" "a") ("match.other" "a"))
 > (press! "RET")
-> (set-option! isearch:lazy-highlight-no-delay-length 3)
+> (options:set! isearch:lazy-highlight-no-delay-length 3)
 ; A match in a fold opens the fold while it is current, and it closes
 ; again when the search moves on; at the end the current match's fold
 ; stays open.
@@ -69,18 +69,18 @@
 ; The count shows ? for a total the scan has not reached.
 > (define (never-done done? scan) #f)
 > (define c (show "c" "ab ab ab ab\n"))
-> (set-option! isearch:lazy-count #t)
+> (options:set! isearch:lazy-count #t)
 > (advice-add! search:scan-done? never-done)
 > (press! "C-s" "a" "b" "C-s" "C-s")
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (here)
 (9 "3/? I-search: ab" "ab")
 > (press! "RET")
 > (advice-remove! search:scan-done? never-done)
-> (set-option! isearch:lazy-count #f)
+> (options:set! isearch:lazy-count #f)
 ; Highlights left by a search are drawn for every client of the view, and
 ; the next search in the view clears them.
-> (set-option! isearch:lazy-highlight-cleanup #f)
+> (options:set! isearch:lazy-highlight-cleanup #f)
 > (views:set-point! (view) 1)
 > (press! "C-s" "a" "b" "RET")
 > (wait-drawn client)
@@ -89,18 +89,18 @@
 > (views:set-point! (view) 1)
 > (press! "C-s" "b")
 > (wait-scan)
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (list (drawn client) (drawn other))
 ((("match" "b") ("match.other" "b") ("match.other" "b") ("match.other" "b")) ())
 > (press! "RET")
 > (isearch:clear-highlights (view))
-> (set-option! isearch:lazy-highlight-cleanup #t)
+> (options:set! isearch:lazy-highlight-cleanup #t)
 ; With isearch:search-folds off, a search passes over a fold of its own
 ; view but not one of another view of the buffer.
 > (define g (show "g" "x one\ny one\nz one\n"))
 > (define v2 (views:make g))
 > (views:fold! (view) 7 12)
-> (set-option! isearch:search-folds #f)
+> (options:set! isearch:search-folds #f)
 > (press! "C-s" "o" "n" "e" "C-s")
 > (here)
 (18 "I-search: one" "one")
@@ -111,18 +111,18 @@
 > (views:point v2)
 12
 > (parameterize ([web:current-client other]) (views:call-with-view v2 (lambda () (keys:press! other "RET"))))
-> (set-option! isearch:search-folds #t)
+> (options:set! isearch:search-folds #t)
 ; A failing search keeps its last match drawn.
-> (set-option! isearch:lazy-highlight-no-delay-length 1)
+> (options:set! isearch:lazy-highlight-no-delay-length 1)
 > (define fl (show "fl" "ab ab\n"))
 > (press! "C-s" "a" "b" "z")
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (list (here) (drawn client))
 ((3 "Failing I-search: ab{z}" "ab") (("match" "ab")))
 > (press! "C-g" "C-g")
-! &quit
+! &cancelled
 ; A repeat keeps the scan, so the count and the other matches stay.
-> (set-option! isearch:lazy-count #t)
+> (options:set! isearch:lazy-count #t)
 > (define rp (show "rp" "ab ab ab ab ab\n"))
 > (press! "C-s" "a" "b")
 > (wait-scan)
@@ -139,25 +139,25 @@
 > (eq? s1 (isearch:search-scan (isearch:current client)))
 #f
 > (press! "RET")
-> (set-option! isearch:lazy-count #f)
+> (options:set! isearch:lazy-count #f)
 ; With isearch:lazy-highlight none, only the current match is drawn.
-> (set-option! isearch:lazy-highlight 'none)
+> (options:set! isearch:lazy-highlight 'none)
 > (define nn (show "nn" "abc ab abc ab\n"))
 > (press! "C-s" "a" "b" "c")
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (drawn client)
 (("match" "abc"))
 > (press! "RET")
-> (set-option! isearch:lazy-highlight 'selected)
+> (options:set! isearch:lazy-highlight 'selected)
 ; With isearch:lazy-highlight all, every view of the buffer draws the
 ; current match as the current one.
-> (set-option! isearch:lazy-highlight 'all)
+> (options:set! isearch:lazy-highlight 'all)
 > (define al (show "al" "ab ab ab\n"))
 > (define al2 (views:make al))
 > (layout-split:split-below)
 > (press! "C-s" "a" "b" "C-s")
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (list (drawn client) (faced (html->string (views:draw al2 client))))
 ((("match.other" "ab") ("match" "ab") ("match.other" "ab")) (("match.other" "ab") ("match" "ab") ("match.other" "ab")))
 > (press! "RET")
-> (set-option! isearch:lazy-highlight 'selected)
+> (options:set! isearch:lazy-highlight 'selected)

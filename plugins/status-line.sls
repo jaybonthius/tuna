@@ -1,18 +1,18 @@
 #!tuna
-(import (buffers) (document) (views) (layout) (keys) (commands) (modes) (web) (haml))
+(import (buffers) (document) (views) (layout) (keys) (commands) (modes) (web) (haml) (options) (tables))
 
-(define-option visible #t boolean? "Whether a view has a status line.")
+(options:define-option visible #t boolean? "Whether a view has a status line.")
 
-(define-table segments
+(tables:define-table segments
   "Where segments show: each segment's place, from status-line:left or status-line:right.")
 
-(define-table keymap "The keymap of the status line, searched after its segments' keymaps.")
+(tables:define-table keymap "The keymap of the status line, searched after its segments' keymaps.")
 
 ;; Tables, so unloading the module that defines a segment takes back its
 ;; show procedure and keymap.
-(define-table %shows)
+(tables:define-table %shows)
 
-(define-table %keymaps)
+(tables:define-table %keymaps)
 
 (module %internals
   (check-main-thread check-view make-place place-record? placed-segments segment-html exported-name)
@@ -51,7 +51,7 @@
     #f)
 
   (define (shown-html name show window)
-    (guard (c [(not (quit-condition? c)) (show-failed! name window c)])
+    (guard (c [(not (cancelled? c)) (show-failed! name window c)])
       (let ([r (views:with-view window (show window))])
         (cond
           [(or (not r) (string? r) (html? r))
@@ -66,8 +66,8 @@
                (make-irritants-condition (list r))))]))))
 
   (define (segment-html name window)
-    (let ([content (or (shown-html name (table-ref %shows name #f) window) (list))]
-          [keymap (table-ref %keymaps name #f)])
+    (let ([content (or (shown-html name (tables:ref %shows name #f) window) (list))]
+          [keymap (tables:ref %keymaps name #f)])
       (if keymap
           (haml (:button.status-line-segment ([type "button"] [tabindex "-1"] [data-segment (symbol->string name)]
                                               [data-keymap (views:keymap-mark keymap)])
@@ -87,7 +87,7 @@
       entries)
     (set! misplaced entries))
 
-  ;; Equal numbers keep the order of table-entries, the order first
+  ;; Equal numbers keep the order of tables:entries, the order first
   ;; placed, since list-sort is stable.
   (define (placed side entries)
     (map car
@@ -96,7 +96,7 @@
 
   (define (placed-segments)
     (let-values ([(entries bad) (partition (lambda (e) (place-record? (cdr e)))
-                                           (filter (lambda (e) (table-ref %shows (car e) #f)) (table-entries segments)))])
+                                           (filter (lambda (e) (tables:ref %shows (car e) #f)) (tables:entries segments)))])
       (report-misplaced! bad)
       (values (placed 'left entries) (placed 'right entries)))))
 
@@ -105,11 +105,11 @@
 (define (%define-segment! id show keymap)
   (unless (procedure? show)
     (assertion-violation 'status-line:define-segment "not a procedure" show))
-  (unless (or (not keymap) (table? keymap))
+  (unless (or (not keymap) (tables:table? keymap))
     (assertion-violation 'status-line:define-segment "not a keymap or #f" keymap))
-  (let ([name (exported-name (current-owner) id)])
-    (table-set! %shows name show)
-    (if keymap (table-set! %keymaps name keymap) (table-remove! %keymaps name))
+  (let ([name (exported-name (owner-name (current-owner)) id)])
+    (tables:set! %shows name show)
+    (if keymap (tables:set! %keymaps name keymap) (tables:remove! %keymaps name))
     name))
 
 (define-syntax define-segment
@@ -285,16 +285,16 @@
         (list content (draw view client))
         content)))
 
-(table-set! segments modified (left 10))
-(table-set! segments buffer-name (left 20))
-(table-set! segments position (left 30))
-(table-set! segments percent-position (left 40))
-(table-set! segments region-size (left 50))
-(table-set! segments major-mode (right 40))
-(table-set! segments minor-modes (right 50))
+(tables:set! segments modified (left 10))
+(tables:set! segments buffer-name (left 20))
+(tables:set! segments position (left 30))
+(tables:set! segments percent-position (left 40))
+(tables:set! segments region-size (left 50))
+(tables:set! segments major-mode (right 40))
+(tables:set! segments minor-modes (right 50))
 (keys:bind! keymap "<mouse-2>" mouse-reset-layout)
 (keys:bind! keymap "<mouse-3>" mouse-delete-view)
 (keys:bind! keymap "<down-mouse-1>" keys:ignore)
 (keys:bind! keymap "<drag-mouse-1>" keys:ignore)
-(table-set! web:stylesheets 'status-line "status-line/status-line.css")
+(tables:set! web:stylesheets 'status-line "status-line/status-line.css")
 (advice-add! layout:draw-view-atom %add-status-line)

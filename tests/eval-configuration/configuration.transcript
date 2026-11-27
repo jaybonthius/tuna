@@ -12,7 +12,7 @@ chez-scheme:mode
 > (flag! "fail")
 > (set! after-fail 'not-yet)
 > (evaluate! init)
-! car: 1 is not a pair (when (flag? "fail") (car 1)) at line 15, char 1 of $HOME/.config/tuna/init.ss
+! car: 1 is not a pair (when (flag? "fail") (car 1)) at line 16, char 1 of $HOME/.config/tuna/init.ss
 #t
 > (list (echo-area:current-message) after-fail)
 ("1 is not a pair" ran)

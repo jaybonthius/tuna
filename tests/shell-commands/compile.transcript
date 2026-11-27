@@ -9,12 +9,12 @@
 > (write-file! "other/bar.py" "print('bar')\n")
 > (define foo (files:visit (at "proj/foo.py")))
 > (define bar (files:visit (at "other/bar.py")))
-> (buffers:with-buffer foo (set-option-local! shell-commands:compile-command "echo foo"))
-> (buffers:with-buffer bar (set-option-local! shell-commands:compile-command "echo bar"))
+> (buffers:with-buffer foo (options:set-local! shell-commands:compile-command "echo foo"))
+> (buffers:with-buffer bar (options:set-local! shell-commands:compile-command "echo bar"))
 > (define entered '())
-> (add-hook! runs:started (lambda (b) (set! entered (cons (modes:major-mode b) entered))))
+> (hooks:add! runs:started (lambda (b) (set! entered (cons (modes:major-mode b) entered))))
 > (layout:switch-to-buffer foo)
-> (define task (spawn-task (lambda () (in-client (lambda () (commands:run shell-commands:compile))))))
+> (define task (spawn-task (lambda (restore) (in-client (lambda () (commands:run shell-commands:compile))))))
 > (settle)
 > (input)
 "echo foo"
@@ -61,12 +61,12 @@
 > (list (output build) (header-folder build) (modes:major-mode build))
 ("bar" "~/proj/" shell-commands:compilation-mode)
 > (layout:switch-to-buffer bar)
-> (define task (spawn-task (lambda () (in-client (lambda () (commands:run shell-commands:recompile '(4)))))))
+> (define task (spawn-task (lambda (restore) (in-client (lambda () (commands:run shell-commands:recompile '(4)))))))
 > (settle)
 > (input)
 "echo bar"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (settle)
 ; With no run in the build's buffer, the folder is the current buffer's.
 > (buffers:kill! build)
@@ -80,7 +80,7 @@
 ("bar" "~/other/")
 ; In M-&'s buffer recompile runs the compile command in compile's buffer
 ; and leaves M-&'s run, its mode and its g as they were.
-> (set-option! shell-commands:compile-command "echo built")
+> (options:set! shell-commands:compile-command "echo built")
 > (run! shell-commands:async-shell-command "echo async")
 > (define async (buffers:find "*Async Shell Command*"))
 > (ended? async)
@@ -120,8 +120,8 @@ runs:mode
 1
 ; In a mode derived from compile's, g reruns the buffer's run in that
 ; mode.
-> (define-table mine-keymap)
-> (define-hook mine-hook)
+> (tables:define-table mine-keymap)
+> (hooks:define-hook mine-hook)
 > (modes:define-major-mode mine (parent shell-commands:compilation-mode) (keymap mine-keymap) (hook mine-hook))
 > (define mine-buffer (runs:start-for-user "*mine*" "echo mine" (processes:options [directory "~/"]) mine))
 > (ended? mine-buffer)
@@ -148,13 +148,13 @@ runs:mode
 > (commands:define-command (project-compile)
     "Runs compile in a project's root, in a buffer of the project's own."
     (let ([root (at "proj/")])
-      (with-options ([files:directory-override (cons (buffers:current) root)]
+      (options:with ([files:directory-override (cons (buffers:current) root)]
                      [shell-commands:compile-buffer-name (lambda () (string-append "*compilation " root "*"))])
         (commands:run shell-commands:compile))))
 > (testing:wait-until (lambda () (files:buffer-visiting (at "other/bar.py"))))
 > (define bar (files:buffer-visiting (at "other/bar.py")))
 > (layout:switch-to-buffer bar)
-> (define task (spawn-task (lambda () (in-client (lambda () (commands:run project-compile))))))
+> (define task (spawn-task (lambda (restore) (in-client (lambda () (commands:run project-compile))))))
 > (settle)
 > (press! "C-a" "C-k")
 > (type! "pwd")
@@ -164,7 +164,7 @@ runs:mode
 0
 > (output project-build)
 "$HOME/proj"
-> (with-options ([files:directory-override (cons bar (at "proj/"))]
+> (options:with ([files:directory-override (cons bar (at "proj/"))]
                  [shell-commands:compile-buffer-name (lambda () (string-append "*compilation " (at "proj/") "*"))])
     (run! shell-commands:recompile #f))
 > (ended? project-build)
@@ -172,9 +172,7 @@ runs:mode
 > (header-folder project-build)
 "~/proj/"
 > (define done #f)
-> (spawn-task
-    (lambda ()
-      (with-options ([files:directory-override (cons bar (at "proj"))])
+> (spawn-task (lambda (restore) (options:with ([files:directory-override (cons bar (at "proj"))])
         (in-client (lambda () (commands:run shell-commands:shell-command "pwd" #f))))
       (set! done #t)))
 #<task>

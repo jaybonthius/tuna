@@ -1,5 +1,5 @@
 #!tuna
-(import (document) (buffers))
+(import (document) (buffers) (hooks))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -45,13 +45,13 @@
 (buffers:define-layer highlights (priority 10))
 (buffers:define-layer responses (travels) (sticky after))
 
-(define made 0)
+(define %made 0)
 
 ;; Collected into the oldest generation at once, so that no measurement
 ;; pays for copying a new document between generations.
 (define (text-buffer bytes)
-  (set! made (+ made 1))
-  (let ([b (buffers:make (format "bench-~a" made)
+  (set! %made (+ %made 1))
+  (let ([b (buffers:make (format "bench-~a" %made)
              (document:replace (document:from-datum '(buffers:text ())) 1 1 (document:from-utf8 bytes)))])
     (collect (collect-maximum-generation))
     b))
@@ -128,14 +128,14 @@
       (add-highlights! b 10000)
       (add-responses! b 1000)
       (for-each (lambda (p) (buffers:anchor b p)) (vector->list (inner b)))
-      (add-hook! buffers:after-edit quiet)
+      (hooks:add! buffers:after-edit quiet)
       (collect (collect-maximum-generation))
       (show "keystroke" megabytes
         (ns-per-op (lambda () (inner b))
           (lambda (ps)
             (buffers:with-buffer b
               (vector-for-each (lambda (p) (let ([at (or (buffers:stop b p) p)]) (buffers:replace! b at at "x"))) ps)))))
-      (remove-hook! buffers:after-edit quiet))))
+      (hooks:remove! buffers:after-edit quiet))))
 
 ;; A buffer that code built, with a node per line, where stops take the
 ;; general path through openings and closings.
@@ -143,8 +143,8 @@
 (buffers:define-kind line)
 
 (define (structured-buffer megabytes)
-  (set! made (+ made 1))
-  (let ([b (buffers:make (format "bench-~a" made)
+  (set! %made (+ %made 1))
+  (let ([b (buffers:make (format "bench-~a" %made)
              (apply section '()
                (map (lambda (i) (line '() "word word café word λx word word word.\n"))
                     (iota (quotient (* megabytes 1000000) 40)))))])
@@ -237,8 +237,8 @@
 (define (line-start k) (+ 1 (* k (string-length paragraph-text))))
 
 (define (blocks-buffer)
-  (set! made (+ made 1))
-  (let ([b (buffers:make (format "bench-~a" made)
+  (set! %made (+ %made 1))
+  (let ([b (buffers:make (format "bench-~a" %made)
              (apply page '()
                (append (paragraphs 1000) (list (grid '() (row '() (cell '() "a\n") (cell '() "b\n")))) (paragraphs 1000))))])
     (collect (collect-maximum-generation))

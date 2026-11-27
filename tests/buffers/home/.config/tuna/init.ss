@@ -1,14 +1,20 @@
-(import (tuna) (testing) (tuna plugins) (document))
+(import (hooks) (options) (timers) (scopes) (plugins))
+(import (tuna) (testing) (document))
 (use-plugin buffers
   (config
-    (add-hook! buffers:kill-queries
+    (hooks:add! buffers:kill-queries
       (lambda (buffer) (not (string=? (buffers:name buffer) "*scratch*"))))))
-(import (md) (lists) (form))
+(import (md) (form))
+;; Loaded, not imported, so its unload in a test stays an unload.
+(load-module! '(lists))
 
-(define made 0)
+;; The configuration is read again when a plugin it imports reloads, so
+;; the next name is found among the buffers rather than counted.
 (define (fresh content)
-  (set! made (+ made 1))
-  (buffers:make (format "b~a" made) content))
+  (let next ([n 1])
+    (if (buffers:find (format "b~a" n))
+        (next (+ n 1))
+        (buffers:make (format "b~a" n) content))))
 
 (define (root b) (car (document:datums (buffers:document b))))
 (define (children b) (cddr (root b)))

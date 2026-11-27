@@ -51,7 +51,7 @@
 > (views:set-point! v (+ 3 (ui:section-heading-start (find '(hunk . "@@ b @@") '(file . "b") '(unstaged . #f)))))
 > (string? (html v))
 #t
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (st)
 (("Head: main" "Unstaged changes (3)" "modified a" "@@ a @@" "-a1" "+a2" "modified b" "@@ b @@" "-b1" "+b2" "modified c" "@@ c @@" "-c1" "+c2" "Staged") () 96)
 > (rebuild! (unstagedn 3 (fa) (fb2) (fc)) (staged))
@@ -86,7 +86,7 @@
 > (hide! '(file . "b") '(unstaged . #f))
 > (views:set-point! v 1)
 > (press! "C-s" "b" "2" "C-g")
-! &quit
+! &cancelled
 > (st)
 (("Head: main" "Unstaged changes (3)" "modified a" "@@ a @@" "-a1" "+a2" "modified b…" "modified c" "@@ c @@" "-c1" "+c2" "Staged") ((89 . 121)) 2)
 ; A search that moves from one match to another in the same hidden body
@@ -116,7 +116,7 @@
 > (hide! '(file . "b") '(unstaged . #f))
 > (begin (views:set-point! v (+ 3 (ui:section-heading-start (find '(hunk . "@@ b @@") '(file . "b") '(unstaged . #f))))) (html v) (rebuild! (unstagedn 3 (fa) (fb2) (fc)) (staged)) (list (st) (hid? '(file . "b") '(unstaged . #f))))
 ((("Head: main" "Unstaged changes (3)" "modified a" "@@ a @@" "-a1" "+a2" "modified b…" "modified c" "@@ c @@" "-c1" "+c2" "Staged") ((89 . 121)) 79) #t)
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (string? (html v))
 #t
 > (list (st) (hid? '(file . "b") '(unstaged . #f)))

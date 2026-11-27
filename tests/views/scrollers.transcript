@@ -68,7 +68,7 @@
 > (define reports 0)
 > (define (scrolled! client items . rest)
     (set! reports (+ reports 1))
-    ((table-ref web:input-handlers "scroller") client
+    ((tables:ref web:input-handlers "scroller") client
      (append `(("type" . "scroller") ("scroller" . ,(car (numbers-after (scroller-html client) "data-scroller=\"")))
                ("placement" . ,(car (scroller-of client))) ("report" . ,reports)
                ("items" . ,(list->vector items)) ("whole" . ,(list->vector items)) ("settled" . ,(pair? rest)))
@@ -82,7 +82,7 @@
 ; them; a client that has not reported tells nothing.
 > (views:scroller-wholly-in-view s phone)
 #f
-> ((table-ref web:input-handlers "scroller") desktop
+> ((tables:ref web:input-handlers "scroller") desktop
    `(("type" . "scroller") ("scroller" . ,(car (numbers-after (scroller-html desktop) "data-scroller=\"")))
      ("placement" . ,(car (scroller-of desktop))) ("report" . 50) ("items" . #(4 5)) ("whole" . #(4)) ("settled" . #f)))
 > (list (views:scroller-in-view s desktop) (views:scroller-wholly-in-view s desktop))
@@ -105,13 +105,13 @@
 > (length rested)
 1
 > (define stale (car p0))
-> ((table-ref web:input-handlers "scroller") phone
+> ((tables:ref web:input-handlers "scroller") phone
    `(("type" . "scroller") ("scroller" . ,(car (numbers-after (scroller-html phone) "data-scroller=\"")))
      ("placement" . ,stale) ("report" . 99) ("items" . #(1)) ("whole" . #(1)) ("settled" . #t)
      ("item" . 1) ("align" . "start") ("focus" . 1)))
 > (list (views:scroller-focus s) (length rested) (views:scroller-in-view s phone))
 (6 1 (1))
-> (raised (lambda () ((table-ref web:input-handlers "scroller") phone '(("type" . "scroller") ("scroller" . 1)))))
+> (raised (lambda () ((tables:ref web:input-handlers "scroller") phone '(("type" . "scroller") ("scroller" . 1)))))
 (views "not a scroller report")
 ; A removed client is forgotten; a dropped scroller ignores reports.
 > (web:client-removed desktop)

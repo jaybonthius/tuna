@@ -1,7 +1,7 @@
 ; s-o goes back to the view selected before, by the plugin's own ticks:
 ; a view gets a tick once it has stayed selected for recent-views:delay
 ; seconds, or when a press follows another command.
-> (set-option! recent-views:delay 0.5)
+> (options:set! recent-views:delay 0.5)
 > (define (named name) (views:make (buffers:make name "")))
 > (define a (named "a"))
 > (define b (named "b"))
@@ -62,5 +62,5 @@
 "c"
 ; The delay is a finite number of seconds, as a timer takes.
 > (define (raised thunk) (guard (c [#t (condition-message c)]) (thunk)))
-> (raised (lambda () (set-option! recent-views:delay +inf.0)))
+> (raised (lambda () (options:set! recent-views:delay +inf.0)))
 "+inf.0 is not a valid value for recent-views:delay"

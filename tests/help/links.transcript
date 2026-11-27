@@ -29,14 +29,14 @@ Honks once.
 > (shown)
 (("notes" #t))
 ; help:select-view? selects the view showing *Help*.
-> (set-option! help:select-view? #t)
+> (options:set! help:select-view? #t)
 > (press! "C-h" "l")
 > (shown)
 (("notes" #f) ("*Help*" #t))
 ; A killed *Help* is made again by the next description, which runs
 ; help:mode-hook again.
 > (define hooked 0)
-> (add-hook! help:mode-hook (lambda () (set! hooked (+ hooked 1))))
+> (hooks:add! help:mode-hook (lambda () (set! hooked (+ hooked 1))))
 > (buffers:kill! (help-buffer))
 #t
 > (press! "C-h" "l")
@@ -59,9 +59,9 @@ Honks once.
 > (start! "C-h" "f")
 > (type! "ha")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (settle)
-> (unload-module! '(harpo))
+> (unload-owner! (module-owner '(harpo)))
 > (layout:select! (help-view))
 > (press! "g")
 > (help-with "f5" "C-h f" "[a]" "[C-g]" "[g]")

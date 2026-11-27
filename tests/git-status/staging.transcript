@@ -13,7 +13,7 @@
 ; each staging command ends in git:command-ended, and the status
 ; buffer is refreshed after it.
 > (define ended-commands '())
-> (add-hook! git:command-ended (lambda (r c) (set! ended-commands (cons (car (git:command-arguments c)) ended-commands))))
+> (hooks:add! git:command-ended (lambda (r c) (set! ended-commands (cons (car (git:command-arguments c)) ended-commands))))
 ; u on a staged file, git reset; point goes to the next staged file.
 > (go-to-section! '(file . "a.py") '(staged . #f))
 > (press! "u")
@@ -194,7 +194,7 @@
 (("Stage file,s: ") " M a.py\n M b.txt\nD  gone.txt\n M long.txt\nA  z.txt\n?? new.txt\n?? newer.txt\n?? third.txt\n")
 ; with no context lines, a hunk or lines command raises; a whole file
 ; still stages.
-> (set-option! git:diff-arguments '("-U0"))
+> (options:set! git:diff-arguments '("-U0"))
 > (git-mode:refresh-repository repo)
 > (go-to-section! '(file . "long.txt") '(unstaged . #f))
 > (press! "TAB")
@@ -206,14 +206,14 @@
 > (settle!)
 > (git-out "repo" "status" "--short" "long.txt")
 "M  long.txt\n"
-> (set-option! git:diff-arguments '())
+> (options:set! git:diff-arguments '())
 ; while the diff hides whitespace changes, s on a whole file applies
 ; its patch with --ignore-space-change, so the hidden changes stay
 ; unstaged.
 > (write-file! "repo/w.txt" "a b\nx\n")
 > (sh "cd repo && git add w.txt && git commit -qm w")
 > (write-file! "repo/w.txt" "a  b\ny\n")
-> (set-option! git:diff-arguments '("-w"))
+> (options:set! git:diff-arguments '("-w"))
 > (git-mode:refresh-repository repo)
 > (go-to-section! '(file . "w.txt") '(unstaged . #f))
 > (press! "s")
@@ -222,7 +222,7 @@
 "a b\ny\n"
 > (map git:command-arguments (list-tail (git:commands repo) (- (length (git:commands repo)) 1)))
 (("apply" "-p1" "--whitespace=nowarn" "--cached" "--ignore-space-change" "-"))
-> (set-option! git:diff-arguments '())
+> (options:set! git:diff-arguments '())
 ; a binary file is staged, unstaged and discarded whole.
 > (call-with-port (open-file-output-port (at "repo/bin.dat") (file-options no-fail)) (lambda (p) (put-bytevector p #vu8(0 1 2 0))))
 > (sh "cd repo && git add bin.dat && git commit -qm bin")

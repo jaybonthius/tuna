@@ -1,41 +1,41 @@
-; A quit requested while a failed reload is reported never escapes before
-; the previous version is back. The advice on report asks for a second
-; quit after a random number of calls, so that the timer lands it
-; anywhere in the report and what follows it. A quit that escapes after
-; the previous version is back is allowed, and so is one landing in the
-; previous version's body as it runs again, which unloads the module as
-; any raise there does; a try then loads it again.
+; A cancel requested while a failed reload is reported never leaves the
+; new version half loaded. The advice on report asks for a second cancel
+; after a random number of calls, so that the timer lands it anywhere in
+; the report and what follows it. One that lands in the previous
+; version's body as it runs again unloads the module, as any raise there
+; does; a try then loads it again.
 > (put-version! "looper-1.sls" ".config/tuna/lib/looper.sls")
 > (import (looper))
 > (define asked? #f)
 > (define (burn n) (if (fx= n 0) 0 (fx+ 1 (burn (fx- n 1)))))
+> (import (testing))
 > (define (ask-again report c)
     (cond
-      [(not (quit-condition? c)) (report c)]
+      [(not (cancelled? c)) (report c)]
       [(not asked?)
        (set! asked? #t)
        (burn (random 1000))
-       (request-quit!)]))
+       (testing:request-quit!)]))
 > (advice-add! report ask-again)
 > (put-version! "looper-runaway.sls" ".config/tuna/lib/looper.sls")
-> (define (take-quit) (guard (c [(quit-condition? c) #f]) (burn 3000)))
+> (define (take-quit) (guard (c [(cancelled? c) #f]) (burn 3000)))
 > (define (try)
     (set! asked? #f)
-    (let ([escaped? (guard (c [(quit-condition? c) #t])
-                      (eval-file "~/.config/tuna/lib/looper.sls")
+    (let ([escaped? (guard (c [(cancelled? c) #t])
+                      (if (module-owner '(looper)) (reload-modules! '((looper))) (load-module! '(looper)))
                       #f)])
       (take-quit)
-      (case (guard (c [#t 'unloaded]) (eval-text "(looper:f)"))
-        [(1) #t]
+      (case (guard (c [(cancelled? c) 'cancelled] [#t 'unloaded]) (plugins:eval-form '(looper:f)))
+        [(1 cancelled) #t]
         [(unloaded)
          (put-version! "looper-1.sls" ".config/tuna/lib/looper.sls")
          (load-module! '(looper))
          (put-version! "looper-runaway.sls" ".config/tuna/lib/looper.sls")
-         (not escaped?)]
+         #t]
         [else #f])))
 > (define half-reloaded 0)
 > (do ([i 0 (+ i 1)]) ((= i 2000))
-    (unless (guard (c [(quit-condition? c) #t]) (try))
+    (unless (guard (c [(cancelled? c) #t]) (try))
       (set! half-reloaded (+ half-reloaded 1))))
 > half-reloaded
 0

@@ -17,11 +17,11 @@
 > (text (buffers:find "*Shell Command Output*"))
 "out\nerr\n"
 ; runs:shell names the shell and its switches.
-> (set-option! runs:shell '("bash" "-c"))
+> (options:set! runs:shell '("bash" "-c"))
 > (run! shell-commands:shell-command "echo $0" #f)
 > (message)
 "bash"
-> (set-option! runs:shell '("sh" "-c"))
+> (options:set! runs:shell '("sh" "-c"))
 > (run! shell-commands:shell-command "echo $0" #f)
 > (message)
 "sh"
@@ -58,7 +58,7 @@
 > (press! "RET")
 > (settle)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (settle)
 > (message)
 "Quit"

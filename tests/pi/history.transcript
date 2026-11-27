@@ -12,10 +12,11 @@
 ; The history pi reads after a change of session or a reload comes in
 ; whole; its Markdown is made on a thread of pi-chat's own, and each
 ; message shows as its plain text until its blocks arrive.
-> (eval-file (library-file "pi.sls"))
+> (reload-modules! '((pi)))
 > (define chat (car (pi:chats)))
 > (testing:wait-until (lambda () (= 100 (length (pi:chat-transcript chat)))))
 > (load-module! '(pi-chat))
+#<owner (pi-chat) 2>
 > (in-client (lambda () (chat:show! chat)))
 > (testing:wait-until (lambda () (and (= 100 (length (drawn chat))) (equal? (list-ref (drawn chat) 99) '(reply (stop . stop) (md "Reply 49\n"))))))
 > (list (length (drawn chat)) (list-ref (drawn chat) 98) (list-ref (drawn chat) 99))

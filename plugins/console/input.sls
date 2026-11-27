@@ -18,7 +18,7 @@
 
   (define busy (list 'busy))
 
-  ;; A quit can land anywhere in code on the main thread, so the main
+  ;; A cancel can land anywhere in code on the main thread, so the main
   ;; thread holds the mutex only with interrupts disabled. A blocked
   ;; acquire with interrupts disabled would keep a collection waiting for
   ;; the main thread, so it only tries the mutex, which the reader holds
@@ -77,7 +77,7 @@
         (when resume (resume void)))
       (loop)))
 
-  ;; eval-text reads the text back, so it must read as the same datum:
+  ;; The console reads the text back, so it must read as the same datum:
   ;; nothing elided, shared structure labelled, gensyms in full.
   (define (form-text x)
     (if (eof-object? x)

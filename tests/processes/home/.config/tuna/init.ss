@@ -1,4 +1,7 @@
-(import (tuna) (testing) (tuna plugins) (tuna eval) (processes) (buffers) (document))
+(import (options) (timers) (plugins))
+(import (tuna) (testing) (buffers) (document))
+;; Loaded, not imported, so its unload in a test stays an unload.
+(load-module! '(processes))
 
 (putenv "PATH" (string-append (getenv "HOME") "/bin:" (getenv "PATH")))
 

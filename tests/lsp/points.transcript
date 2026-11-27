@@ -7,8 +7,8 @@
                          `(responses ("textDocument/onTypeFormatting" . ,(if (and (pair? edits) (eq? (car edits) 'delay)) `(delay ,(cadr edits) ,(list->vector (cddr edits))) (list->vector edits))))
                          '(name . "shaper")))
 > (answer! (edit 1 0 0 "  "))
-> (table-set! lsp:language-servers "fakelang" (list shaper))
-> (add-hook! fake-mode-hook lsp:ensure)
+> (tables:set! lsp:language-servers "fakelang" (list shaper))
+> (hooks:add! fake-mode-hook lsp:ensure)
 > (define c (visit! path))
 > (wait-for "shaper" "textDocument/didOpen")
 > (define (around v) (let ([doc (buffers:document c)] [p (views:point v)]) (list (document:text doc 0 p) (document:text doc p (document:length doc)))))
@@ -24,7 +24,7 @@
 > (wait-for "shaper" "textDocument/didChange" (+ changes 1))
 > (list (around (view)) (length (of-method "shaper" "textDocument/onTypeFormatting")))
 (("(define (f x)\n" "\n") 0)
-> (set-option! lsp:on-type-formatting? #t)
+> (options:set! lsp:on-type-formatting? #t)
 > (buffers:replace! c 1 (- (document:length (buffers:document c)) 1) "(define (f x)\n")
 #<edit 2>
 ; RET at the end of a line: the server inserts the new line's indentation
@@ -80,7 +80,7 @@
 ; buffer has changed since the line break and on-type formatting asks
 ; nothing. A line break inserted after it by code asks, and is the only
 ; break asked about.
-> (table-set! indentation:indenters fake-mode
+> (tables:set! indentation:indenters fake-mode
     (lambda (buffer position) (if (= (document:line (buffers:document buffer) position) 1) 0 2)))
 > (answer!)
 > (fresh! "(define (m v)\n" "(define (m v)")
@@ -92,7 +92,7 @@
 > (wait-for "shaper" "textDocument/onTypeFormatting" (+ asked 1))
 > (map (lambda (m) (ref m "params" "position" "line")) (list-tail (of-method "shaper" "textDocument/onTypeFormatting") asked))
 (3)
-> (table-remove! indentation:indenters fake-mode)
+> (tables:remove! indentation:indenters fake-mode)
 ; Edits at one start apply as the specification says: inserts there in
 ; the list's order, then the replacement that starts there; an insert
 ; listed after the replacement, which the specification does not allow,

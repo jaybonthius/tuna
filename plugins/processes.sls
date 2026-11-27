@@ -1,7 +1,9 @@
 #!tuna
-(import (buffers) (prefix (processes running) running:))
+(import (buffers) (prefix (processes running) running:) (hooks) (options))
 
-(define-option log-size 1048576 (lambda (v) (and (fixnum? v) (fx> v 0)))
+(define %self (current-owner))
+
+(options:define-option log-size 1048576 (lambda (v) (and (fixnum? v) (fx> v 0)))
   "How many bytes of output Tuna holds per process."
   running:set-log-limit!)
 
@@ -11,7 +13,7 @@
 
 (module %internals
   (check-main-thread check-process check-procedure input-bytes environment-changes? make-checked-options no-options
-   ignore-exit hold-quits start-own start-user run-program attach-from offset? first-line)
+   ignore-exit without-cancels start-own start-user run-program attach-from offset? first-line)
 
   (define (check-main-thread who)
     (unless (running:on-main-thread?)
@@ -81,14 +83,12 @@
 
   (define (ignore-exit status) (void))
 
-  ;; Tuna's dynamic-wind runs its in with quits held off. A quit landing
-  ;; between the steps of a change to a process would leave it half made,
-  ;; such as input queued that no thread writes, and one landing in a
-  ;; delivery would lose output its modules never see again.
-  (define (hold-quits thunk)
-    (let ([result #f])
-      (dynamic-wind (lambda () (set! result (thunk))) void void)
-      result))
+  ;; A cancel landing between the steps of a change to a process would
+  ;; leave it half made, such as input queued that no thread writes, and
+  ;; one landing in a delivery would lose output its modules never see
+  ;; again.
+  (define (without-cancels thunk)
+    (call-with-cancellation-masked (lambda (restore) (thunk))))
 
   ;; A raise is reported, as a hook reports an entry's, so the other
   ;; modules following the process still get theirs.
@@ -113,7 +113,7 @@
       (check-procedure 'processes:start on-error-output)
       (when (running:options-terminal options)
         (assertion-violation 'processes:start "a terminal joins standard error to the output" options)))
-    (hold-quits
+    (without-cancels
       (lambda ()
         (running:start! 'own program arguments
           (if on-error-output (running:options-with-separate-stderr options) options)
@@ -124,10 +124,11 @@
     (check-main-thread 'processes:start-for-user)
     (check-command 'processes:start-for-user program arguments)
     (check-options 'processes:start-for-user options)
-    (hold-quits (lambda () (running:start! 'user program arguments options #f #f #f #f))))
+    (without-cancels (lambda () (running:start! 'user program arguments options #f #f #f #f))))
 
-  ;; A quit or raise that ends the task, such as the quit an unload sends,
-  ;; reaches the task where it paused, and stops the program on its way.
+  ;; A cancel, stop or raise that ends the task, such as the stop an
+  ;; unload sends, reaches the task where it paused, and stops the program
+  ;; on its way.
   (define (run-program program arguments input options)
     (check-command 'processes:run program arguments)
     (check-options 'processes:run options)
@@ -141,7 +142,7 @@
         (lambda ()
           (suspend
             (lambda (resume)
-              (hold-quits
+              (without-cancels
                 (lambda ()
                   (set! process
                     (running:start-run! program arguments bytes options (current-owner) resume))))))))))
@@ -165,7 +166,7 @@
       (assertion-violation 'processes:attach! "past the output read so far" from))
     (check-procedure 'processes:attach! on-output)
     (check-procedure 'processes:attach! on-exit)
-    (hold-quits
+    (without-cancels
       (lambda () (running:attach! process (current-owner) from (reporting on-output) (reporting on-exit))))))
 
 (import %internals)
@@ -372,13 +373,13 @@
   (let ([bytes (input-bytes 'processes:send! input)])
     (when (running:process-input-ended? process)
       (assertion-violation 'processes:send! "the input was closed" process))
-    (hold-quits (lambda () (running:send! process bytes)))
+    (without-cancels (lambda () (running:send! process bytes)))
     (void)))
 
 (define (close-input! process)
   (check-main-thread 'processes:close-input!)
   (check-process 'processes:close-input! process)
-  (hold-quits (lambda () (running:close-input! process)))
+  (without-cancels (lambda () (running:close-input! process)))
   (void))
 
 (define (resize! process rows columns)
@@ -396,7 +397,7 @@
 (define (stop! process)
   (check-main-thread 'processes:stop!)
   (check-process 'processes:stop! process)
-  (hold-quits (lambda () (running:stop! process)))
+  (without-cancels (lambda () (running:stop! process)))
   (void))
 
 (define (signal! process name)
@@ -476,8 +477,9 @@
         (stop! process)))
     (all)))
 
-(add-hook! buffers:killed %stop-buffer-processes)
+(hooks:add! buffers:killed %stop-buffer-processes)
 
-(running:set-quit-holder! hold-quits)
+(running:set-cancel-holder! without-cancels)
+(running:set-poster! (lambda (thunk) (call-as-owner %self (lambda () (spawn-task (lambda (restore) (thunk)))))))
 (running:set-log-limit! (log-size))
 (running:post-waiting-deliveries!)

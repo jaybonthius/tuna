@@ -8,7 +8,7 @@ went-on
 > (raise (condition (make-who-condition 'here) (make-irritants-condition '(1 2))))
 ! here: with irritants (1 2)
 ; After an error, a posted thunk ends and the main thread goes on.
-> (post! (lambda () (display "before ") (car '()) (display "never")))
+> (begin (spawn-task (lambda (restore) (display "before ") (car '()) (display "never"))) (void))
 before 
 ! car: () is not a pair
 > (+ 1 2)
@@ -16,9 +16,9 @@ before
 ; A posted thunk runs on behalf of the module that posted it.
 > (import (waiter))
 > (define posted-by #f)
-> (as-module '(waiter) (post! (lambda () (set! posted-by (current-owner)))))
+> (begin (call-as-owner (module-owner '(waiter)) (lambda () (spawn-task (lambda (restore) (set! posted-by (current-owner)))))) (void))
 > posted-by
-(waiter)
+#<owner (waiter) 1>
 ; report receives a condition no handler takes before the stack unwinds.
 > (define where (make-thread-parameter 'outside))
 > (define (show-where report c) (display (where)) (newline) (report c))
@@ -30,11 +30,11 @@ inside
 ; A raise on another thread reaches report on the main thread and ends
 ; that thread; after a warning the thread goes on.
 > (define finished? #f)
-> (thread-join (fork-thread (lambda () (car 5) (set! finished? #t))))
+> (begin (join-task (fork-task (lambda (restore) (car 5) (set! finished? #t)))) (void))
 ! car: 5 is not a pair
 > finished?
 #f
-> (thread-join (fork-thread (lambda () (warning 'thread "careful") (set! finished? #t))))
+> (begin (join-task (fork-task (lambda (restore) (warning 'thread "careful") (set! finished? #t)))) (void))
 ! thread: careful
 > finished?
 #t

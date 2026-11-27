@@ -33,7 +33,9 @@
     (write-file path text)
     path))
 
+;; The configuration is read again when a plugin it imports reloads.
 (define-record-type session
+  (nongenerative tests-treesit-highlight-session)
   (fields highlight (mutable doc) (mutable files) (mutable excluded) (mutable drawn)
           (mutable since) (mutable faces) (mutable data)))
 

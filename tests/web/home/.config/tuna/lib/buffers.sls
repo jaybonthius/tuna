@@ -1,5 +1,5 @@
 #!tuna
 ;; Stands in for buffers with a stylesheet of its own.
-(import (web))
+(import (web) (tables))
 
-(table-set! web:stylesheets 'buffers "buffers.css")
+(tables:set! web:stylesheets 'buffers "buffers.css")

@@ -19,17 +19,17 @@ other
 "the plugin compat"
 ; Tuna's own names resolve only to Tuna's libraries.
 > (import (tuna extra))
-! library (tuna extra) not found
+! load-module!: not a module with irritant (tuna extra)
 > (import (only (tuna core) where))
-! library (tuna core) not found
+! load-module!: not a module with irritant (tuna core)
 > (import (only (lang extra) where))
-! library (lang extra) not found
+! load-module!: not a module with irritant (lang extra)
 ; The owners' names, and names that would replace Chez's own prefixed
 ; REPL names, are not module names.
 > (import (init))
-! import: a module cannot be named (init)
+! library (init) not found
 > (import (repl))
-! import: a module cannot be named (repl)
+! library (repl) not found
 > (import (csv7 tools))
 ! import: a module cannot be named (csv7 tools)
 > (import (r6rs))

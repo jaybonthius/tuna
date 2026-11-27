@@ -147,7 +147,7 @@
       (lambda (action)
         (as-client desktop
           (lambda ()
-            ((table-ref web:input-handlers "mouse") desktop
+            ((tables:ref web:input-handlers "mouse") desktop
              `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
                ("view" . ,(views:id v)) ("version" . 0) ("showing" . ,(views:shown-count v))
                ("line" . 100) ("chars" . 3) ("keymaps" . ,(vector (read (open-input-string (views:keymap-mark views:scroll-bar-keymap)))))
@@ -184,7 +184,8 @@ above-handle
 > (line-of v (views:point v))
 287
 > (parameterize ([commands:prefix-argument 5]) (run desktop views:move-to-window-line-top-bottom))
-> (list (reverse rows-asked) (line-of v (views:point v)) (line-of v (views:row-start v desktop -1)))
+> (let* ([asked (reverse rows-asked)] [line (line-of v (views:point v))])
+    (list asked line (line-of v (views:row-start v desktop -1))))
 ((null 2 -3 5) 275 289)
 > (advice-remove! web:ask-page answer-row)
 ; C-l puts point's place at the centre, then the top, then the bottom;
@@ -229,7 +230,7 @@ above-handle
 > (views:remove-option! v views:drawn-screens)
 ; A report that is not one is refused, as is one with a line 0 or a
 ; fraction past 1, before it changes anything.
-> ((table-ref web:input-handlers "scroll") phone '(("type" . "scroll") ("view" . 1)))
+> ((tables:ref web:input-handlers "scroll") phone '(("type" . "scroll") ("view" . 1)))
 ! views: not a scroll report with irritant (("type" . "scroll") ("view" . 1))
 > (define (refused? . overrides)
     (guard (c [(assertion-violation? c) (condition-message c)])

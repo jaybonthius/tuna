@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (buffers) (document) (views) (keys) (commands) (web) (haml))
+(import (layout) (buffers) (document) (views) (keys) (commands) (web) (haml) (options) (tables))
 
 (define-enumeration direction (row column) directions)
 
@@ -327,10 +327,10 @@
 
 (define (%threshold? v) (or (not v) (and (fixnum? v) (fx> v 0))))
 
-(define-option split-width-threshold 160 %threshold?
+(options:define-option split-width-threshold 160 %threshold?
   "The fewest columns a view needs for layout-split:display-pop-up to split it beside, or #f never to.")
 
-(define-option split-height-threshold 80 %threshold?
+(options:define-option split-height-threshold 80 %threshold?
   "The fewest lines a view needs for layout-split:display-pop-up to split it below, or #f never to, except as the only view of its level.")
 
 ;; A part that carries depth was placed at a side by a plugin, as
@@ -442,7 +442,7 @@
          (assertion-violation 'layout-split:display-at-side "not a buffer" b))
        (or (layout:find-view b) (place! b side depth size attributes)))]))
 
-(define-table resize-keymap "Keys that go on resizing after C-x { or C-x }.")
+(tables:define-table resize-keymap "Keys that go on resizing after C-x { or C-x }.")
 
 (keys:bind! keys:global "C-x 2" split-below)
 (keys:bind! keys:global "C-x 3" split-right)
@@ -455,6 +455,6 @@
 (keys:bind! layout:part-mode-keymap "w c" wrap-in-column)
 (keys:bind! resize-keymap "}" enlarge)
 (keys:bind! resize-keymap "{" shrink)
-(table-set! keys:repeat-keymaps resize-keymap)
-(set-option! layout:display-action display-pop-up)
-(table-set! web:stylesheets 'layout-split "layout-split/layout-split.css")
+(tables:set! keys:repeat-keymaps resize-keymap)
+(options:set! layout:display-action display-pop-up)
+(tables:set! web:stylesheets 'layout-split "layout-split/layout-split.css")

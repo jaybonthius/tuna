@@ -16,7 +16,7 @@
     (if (and (eq? view v) (eq? client desktop))
         (list (list 7 11 '((face . match))) (list 18 22 '((face . match.other))))
         '()))
-> (table-set! views:span-sources source 1000)
+> (tables:set! views:span-sources source 1000)
 > (faced (html-of v desktop))
 (("match" "beta") ("match.other" "beta"))
 > (faced (html-of v phone))
@@ -36,12 +36,12 @@
 > (around (html-of v desktop))
 "<span data-face=\"keyword\"><span class=\"cursor-on primary\">a</span>lpha <span data-face=\"match\">beta</span> </span>gamma"
 ; A source of a lower priority is drawn outside the layer.
-> (table-set! views:span-sources source 10)
+> (tables:set! views:span-sources source 10)
 > (around (html-of v desktop))
 "<span data-face=\"keyword\"><span class=\"cursor-on primary\">a</span>lpha </span><span data-face=\"match\"><span data-face=\"keyword\">beta</span></span><span data-face=\"keyword\"> </span>gamma"
 > (buffers:remove-span! (buffers:layer b marks) '((face . keyword)))
 ; A source above priority 0 that the region reaches keeps its background.
-> (table-set! views:span-sources source 1000)
+> (tables:set! views:span-sources source 1000)
 > (begin (views:set-mark! v 1) (views:set-point! v 13))
 > (faced (html-of v desktop))
 (("match" "beta") ("match.other" "beta"))
@@ -53,22 +53,22 @@
 > (define (note-report report c) (set! reported (cons (condition-message c) reported)))
 > (advice-add! report note-report)
 > (define (broken view client start end) (error 'broken "no spans here"))
-> (table-set! views:span-sources broken 5)
+> (tables:set! views:span-sources broken 5)
 > (faced (html-of v desktop))
 (("match" "beta") ("match.other" "beta"))
 > reported
 ("no spans here")
 > (define (malformed view client start end) '((1 2)))
-> (table-set! views:span-sources malformed 5)
+> (tables:set! views:span-sources malformed 5)
 > (faced (html-of v desktop))
 (("match" "beta") ("match.other" "beta"))
 > (car reported)
 "a source returned what is not a list of spans"
 > (advice-remove! report note-report)
 ; A source removed draws nothing more.
-> (table-remove! views:span-sources broken)
-> (table-remove! views:span-sources malformed)
-> (table-remove! views:span-sources source)
+> (tables:remove! views:span-sources broken)
+> (tables:remove! views:span-sources malformed)
+> (tables:remove! views:span-sources source)
 > (faced (html-of v desktop))
 ()
 ; A hand scroll, which runs no command, shows the spans of the run then
@@ -79,7 +79,7 @@
 > (define (each-line view client start end)
     (set! runs (cons (list (line-of view start) (line-of view end)) runs))
     (if (eq? view lv) (list (list start (+ start 4) '((face . match)))) '()))
-> (table-set! views:span-sources each-line 1000)
+> (tables:set! views:span-sources each-line 1000)
 > (report! desktop lv 1 0 #t)
 > (string? (html-of lv desktop))
 #t
@@ -90,7 +90,7 @@
 #t
 > (car runs)
 (110 193)
-> (table-remove! views:span-sources each-line)
+> (tables:remove! views:span-sources each-line)
 ; A span covering a node standing alone puts its face on the node's
 ; element, as it would colour characters.
 > (import (md))
@@ -104,10 +104,10 @@
       (let ([i (search html "<div class=\"node" from)])
         (if (and i (< i (search html "<img" 0))) (loop (+ i 1) i) (substring html last (+ (search html ">" last) 1))))))
 > (define (cover-image view client start end) (if (eq? view pv) (list (list img (+ img 1) '((face . match)))) '()))
-> (table-set! views:span-sources cover-image 1000)
+> (tables:set! views:span-sources cover-image 1000)
 > (image-node (html-of pv desktop))
 "<div class=\"node whole\" id=\"v3-3\" data-at=\"5\" data-to=\"6\" data-line=\"2\" data-before=\"2\" data-face=\"match\">"
-> (table-remove! views:span-sources cover-image)
+> (tables:remove! views:span-sources cover-image)
 > (image-node (html-of pv desktop))
 "<div class=\"node whole\" id=\"v3-3\" data-at=\"5\" data-to=\"6\" data-line=\"2\" data-before=\"2\">"
 ; views:folds-at gives the bounds of each fold holding a position.

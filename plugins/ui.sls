@@ -1,18 +1,18 @@
 #!tuna
-(import (buffers) (document) (views) (keys) (commands) (modes) (web) (haml))
+(import (buffers) (document) (views) (keys) (commands) (modes) (web) (haml) (hooks) (options) (tables))
 
 ;; This module defines list as a kind constructor, so its own code builds
 ;; lists with cons and quasiquote.
 
-(define-table %buttons)
+(tables:define-table %buttons)
 
-(define-table list-keys "Keys that move through a list and choose its row.")
+(tables:define-table list-keys "Keys that move through a list and choose its row.")
 
-(define-table list-click-keys "Clicks on a list whose click chooses: off a row, they run nothing.")
+(tables:define-table list-click-keys "Clicks on a list whose click chooses: off a row, they run nothing.")
 
-(define-table row-keys "Clicks on a row of a list whose click chooses: a click chooses the row.")
+(tables:define-table row-keys "Clicks on a row of a list whose click chooses: a click chooses the row.")
 
-(define-table disabled-keys "Keys that do nothing on a disabled button or link.")
+(tables:define-table disabled-keys "Keys that do nothing on a disabled button or link.")
 
 (module %internals
   (draw-labelled button-at disabled? list-node? row-atom? list-state set-list-state! rows-count rows-count-set! rows-draw
@@ -38,7 +38,7 @@
                   (let loop ([n (document:enclosing doc p)])
                     (cond
                       [(not n) #f]
-                      [(table-ref %buttons (document:node-kind n) #f) n]
+                      [(tables:ref %buttons (document:node-kind n) #f) n]
                       [else (loop (document:enclosing doc (document:node-start n)))])))))))
 
   (define (list-node? n)
@@ -121,7 +121,7 @@
     (and (warning? c) (not (serious-condition? c))))
 
   (define (failure? c)
-    (not (or (quit-condition? c) (warning-only? c))))
+    (not (or (cancelled? c) (warning-only? c))))
 
   (define (heading-of state i)
     (and (not (rows-failed? state))
@@ -185,7 +185,7 @@
   (keys:bind! keymap "<down-mouse-1>" keys:ignore)
   (keys:bind! keymap "<drag-mouse-1>" keys:ignore)
   (keys:bind! keymap "<drag-mouse-2>" keys:ignore)
-  (table-set! %buttons kind))
+  (tables:set! %buttons kind))
 
 (define-syntax %define-labelled-kind
   (lambda (x)
@@ -193,7 +193,7 @@
       [(_ who id command-expr drawer)
        (with-syntax ([id-keys (datum->syntax #'id (string->symbol (string-append (symbol->string (syntax->datum #'id)) "-keys")))])
          #'(begin
-             (define-table id-keys "The keys of a button kind.")
+             (tables:define-table id-keys "The keys of a button kind.")
              (buffers:define-kind id (inline) (draw drawer) (keymap id-keys))
              (define-values () (begin (%bind-button! 'who id-keys (buffers:kind-name (buffers:constructor-kind id)) command-expr) (values)))))])))
 
@@ -457,25 +457,25 @@
           (let ([i (selected-row node v)])
             (when i (%choose! v node i)))))))
 
-(define-table section-initial-visibility
+(tables:define-table section-initial-visibility
   "Section types, as keys, to show or hide: the visibility a section of that type starts with in a view when it has no hidden attribute.")
 
-(define-hook section-visibility-choosers
+(hooks:define-hook section-visibility-choosers
   "Called with a view and a section; the first entry that returns show or hide, not #f, decides the visibility the view first gives the section.")
 
-(define-hook section-moved
+(hooks:define-hook section-moved
   "Called with the view and the section at point, or #f, after each section motion command and each other command that changed the section at point.")
 
-(define-option highlight-current-section? #t boolean? "Whether the section at point is highlighted.")
+(options:define-option highlight-current-section? #t boolean? "Whether the section at point is highlighted.")
 
-(define-hook section-heading-adornments
+(hooks:define-hook section-heading-adornments
   "Called with a view and a section as its heading is drawn; each entry returns HTML drawn after the heading, which is no text of the buffer, or #f.")
 
-(define-table section-keymap "Keys in buffers of ui:section-mode and of the modes derived from it.")
+(tables:define-table section-keymap "Keys in buffers of ui:section-mode and of the modes derived from it.")
 
-(define-table %section-chevron-keys)
+(tables:define-table %section-chevron-keys)
 
-(define-hook section-mode-hook "Called in each buffer that turns on ui:section-mode.")
+(hooks:define-hook section-mode-hook "Called in each buffer that turns on ui:section-mode.")
 
 (modes:define-major-mode section-mode
   (parent modes:special)
@@ -637,10 +637,10 @@
     (or (exists (lambda (entry)
                   (let ([v (entry view section)])
                     (and (memq v '(show hide)) v)))
-                (hook-entries section-visibility-choosers))
+                (hooks:entries section-visibility-choosers))
         (let ([hidden (document:node-attribute section 'hidden 'none)])
           (cond
-            [(eq? hidden 'none) (table-ref section-initial-visibility (document:node-attribute section 'type) 'show)]
+            [(eq? hidden 'none) (tables:ref section-initial-visibility (document:node-attribute section 'type) 'show)]
             [hidden 'hide]
             [else 'show]))))
 
@@ -821,7 +821,7 @@
          [ellipsis (if hidden? (haml (:span.ui-section-ellipsis "…")) '())]
          [adornments (if section
                          (fold-right (lambda (entry acc) (let ([h (entry view section)]) (if h (cons h acc) acc)))
-                                     '() (hook-entries section-heading-adornments))
+                                     '() (hooks:entries section-heading-adornments))
                          '())])
     (haml (:div.ui-section-heading
             chevron
@@ -1324,9 +1324,9 @@
       "those near what it shows.\n")
     (list '((rows . long)))))
 
-(define-table showcase-keymap "Keys in *Showcase*.")
+(tables:define-table showcase-keymap "Keys in *Showcase*.")
 
-(define-hook showcase-mode-hook "Called in each buffer that turns on ui:showcase-mode.")
+(hooks:define-hook showcase-mode-hook "Called in each buffer that turns on ui:showcase-mode.")
 
 (modes:define-major-mode showcase-mode
   (parent modes:special)
@@ -1378,12 +1378,12 @@
             (keys:bind! section-keymap (string-append "M-" digit) section-show-level-everywhere))
           '("1" "2" "3" "4"))
 (keys:bind! %section-chevron-keys "<mouse-1>" section-mouse-toggle)
-(table-set! section-initial-visibility 'stashes 'hide)
-(add-hook! section-mode-hook %settle-on-mode)
-(add-hook! buffers:after-edit %settle-after-edit)
-(add-hook! views:drawn-ranges-changed %settle-when-drawn)
-(add-hook! views:fold-opened %note-opened)
-(add-hook! commands:after-command %note-section-change)
+(tables:set! section-initial-visibility 'stashes 'hide)
+(hooks:add! section-mode-hook %settle-on-mode)
+(hooks:add! buffers:after-edit %settle-after-edit)
+(hooks:add! views:drawn-ranges-changed %settle-when-drawn)
+(hooks:add! views:fold-opened %note-opened)
+(hooks:add! commands:after-command %note-section-change)
 (keys:bind! showcase-keymap "g" keys:undefined)
 (keys:bind! list-keys "C-n" next-row)
 (keys:bind! list-keys "<down>" next-row)
@@ -1406,12 +1406,12 @@
 (keys:bind! disabled-keys "<drag-mouse-1>" keys:ignore)
 (keys:bind! disabled-keys "<drag-mouse-2>" keys:ignore)
 ;; Ahead of the entries that find the button kind's own keymap.
-(add-hook! keys:find-keymaps %disabled-keymaps -10)
+(hooks:add! keys:find-keymaps %disabled-keymaps -10)
 ;; Ahead of the keymaps found by place, which the list's rows and text sit in.
-(add-hook! keys:find-keymaps %choosing-keymaps -5)
-(table-set! views:position-describers list describe-list)
-(table-set! web:stylesheets 'ui "ui/ui.css")
-(add-hook! buffers:killed forget-buffer!)
+(hooks:add! keys:find-keymaps %choosing-keymaps -5)
+(tables:set! views:position-describers list describe-list)
+(tables:set! web:stylesheets 'ui "ui/ui.css")
+(hooks:add! buffers:killed forget-buffer!)
 
 ;; A list's rows are this module's, so a showcase made before a reload
 ;; gets them again.

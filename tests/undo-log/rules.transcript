@@ -1,6 +1,5 @@
 ; Rules of the log beside those of visiting.
-> (import (tuna eval))
-> (define (reload! name) (eval-file (string-append (getenv "TUNA_LIBRARY") "/" name ".sls")))
+> (define (reload! name) (reload-modules! (list (list (string->symbol name)))))
 > (define (kinds path) (map car (checks:log-records path)))
 > (define (logged path n)
     (testing:wait-until (lambda () (= (length (checks:log-records path)) n)))
@@ -30,15 +29,15 @@
 ; A modified buffer that a log holds lets C-x C-c exit without asking
 ; about it; one that keeps no log makes it ask.
 > (define asked '())
-> (set-option! ask:yes-or-no-reader (lambda (question) (set! asked (cons question asked)) #f))
-> (list (buffers:modified? r) (exists (lambda (entry) (entry r)) (hook-entries files:unsaved-kept)))
+> (options:set! ask:yes-or-no-reader (lambda (question) (set! asked (cons question asked)) #f))
+> (list (buffers:modified? r) (exists (lambda (entry) (entry r)) (hooks:entries files:unsaved-kept)))
 (#t #t)
 > (checks:write-text! "~/n.txt" "no log\n")
 > (define n (files:visit "~/n.txt"))
-> (buffers:with-buffer n (set-option-local! undo:limit 0))
+> (buffers:with-buffer n (options:set-local! undo:limit 0))
 > (buffers:replace! n 1 1 "x")
 #<edit 1>
-> (exists (lambda (entry) (entry n)) (hook-entries files:unsaved-kept))
+> (exists (lambda (entry) (entry n)) (hooks:entries files:unsaved-kept))
 #f
 > (commands:run files:save-buffers-kill-tuna)
 > asked
@@ -46,7 +45,7 @@
 ; Killing them in a command asks the same way: only about the buffer no
 ; log holds.
 > (set! asked '())
-> (set-option! ask:y-or-n-reader (lambda (question) (set! asked (cons question asked)) #f))
+> (options:set! ask:y-or-n-reader (lambda (question) (set! asked (cons question asked)) #f))
 > (commands:define-command (kill [buffer (buffers:current)]) "Kills BUFFER." (buffers:kill! buffer))
 > (checks:write-text! "~/k.txt" "kill\n")
 > (define k (files:visit "~/k.txt"))
@@ -54,7 +53,7 @@
 #<edit 1>
 > (logged "~/k.txt" 4)
 (undo-history group saved at)
-> (list (commands:run kill k) (commands:run kill n) asked)
+> (let* ([killed-k (commands:run kill k)] [killed-n (commands:run kill n)]) (list killed-k killed-n asked))
 (#t #f ("Buffer n.txt has unsaved text; kill anyway? "))
 ; undo:forget! drops a buffer's history and so its log.
 > (undo:forget! r)
@@ -67,15 +66,15 @@
 (undo-history group at)
 ; The log rebuilds unsaved edits from a saved state, so a history with
 ; none keeps the buffer's edits from no log, and C-x C-c asks about it.
-> (list (buffers:modified? r) (cadr (undo:history r)) (exists (lambda (entry) (entry r)) (hook-entries files:unsaved-kept)))
+> (list (buffers:modified? r) (cadr (undo:history r)) (exists (lambda (entry) (entry r)) (hooks:entries files:unsaved-kept)))
 (#t #f #f)
 > (checks:write-text! "~/l.txt" "limit\n")
 > (define l (files:visit "~/l.txt"))
-> (buffers:with-buffer l (set-option-local! undo:limit 100))
+> (buffers:with-buffer l (options:set-local! undo:limit 100))
 > (buffers:replace! l 1 1 (make-string 200 #\x))
 #<edit 1>
 ! (undo) undo:limit: an edit group is larger than the limit, so the buffer's history starts again with irritant "l.txt"
-> (list (buffers:modified? l) (cadr (undo:history l)) (exists (lambda (entry) (entry l)) (hook-entries files:unsaved-kept)))
+> (list (buffers:modified? l) (cadr (undo:history l)) (exists (lambda (entry) (entry l)) (hooks:entries files:unsaved-kept)))
 (#t #f #f)
 ; Reloading this plugin alone writes no log for a buffer that had none
 ; until its history holds a group, and then with the saved state, from
@@ -83,7 +82,7 @@
 > (checks:write-text! "~/f.txt" "fresh\n")
 > (define f (files:visit "~/f.txt"))
 > (reload! "undo-log")
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (checks:exists? (checks:log-of "~/f.txt"))
 #f
 > (buffers:replace! f 1 1 "x")
@@ -92,15 +91,15 @@
 (undo-history group saved at)
 ; Nor does it rebuild edits made while the buffer kept no log, as it has
 ; no saved state for them, so C-x C-c asks about them.
-> (set-option! undo-log:keep-log? (lambda (path) (not (string=? (path-extension path) "nolog"))))
+> (options:set! undo-log:keep-log? (lambda (path) (not (string=? (path-extension path) "nolog"))))
 > (checks:write-text! "~/m.nolog" "missed\n")
 > (define m (files:visit "~/m.nolog"))
 > (buffers:replace! m 1 1 "x")
 #<edit 1>
-> (set-option! undo-log:keep-log? (lambda (path) #t))
+> (options:set! undo-log:keep-log? (lambda (path) #t))
 > (reload! "undo-log")
-> (sleep-for 0.2)
-> (list (buffers:modified? m) (cadr (undo:history m)) (exists (lambda (entry) (entry m)) (hook-entries files:unsaved-kept)))
+> (timers:sleep 0.2)
+> (list (buffers:modified? m) (cadr (undo:history m)) (exists (lambda (entry) (entry m)) (hooks:entries files:unsaved-kept)))
 (#t 0 #f)
 ; A silent edit is in no record, and undo moves the saved state past it,
 ; so the saved file no longer fits the log: C-x C-c asks about the
@@ -111,7 +110,7 @@
 #<edit 1>
 > (logged "~/s.txt" 4)
 (undo-history group saved at)
-> (define (kept? b) (exists (lambda (entry) (entry b)) (hook-entries files:unsaved-kept)))
+> (define (kept? b) (exists (lambda (entry) (entry b)) (hooks:entries files:unsaved-kept)))
 > (kept? s)
 #t
 > (buffers:with-silent-edits s (buffers:replace! s 3 3 "~"))

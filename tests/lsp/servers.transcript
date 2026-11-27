@@ -1,13 +1,13 @@
 ; A server defined in a module is named under the module; a configuration's
-; table-set! on a default server's name wins over the module's entry.
+; tables:set! on a default server's name wins over the module's entry.
 > (import (chez-lsp))
-> (list chez-lsp:chez-lsp (lsp:server? (table-ref lsp:servers chez-lsp:chez-lsp)))
+> (list chez-lsp:chez-lsp (lsp:server? (tables:ref lsp:servers chez-lsp:chez-lsp)))
 (chez-lsp:chez-lsp #t)
 > (define ours (lsp:server '("basedpyright-langserver" "--stdio") (configuration '(("basedpyright" ("analysis" ("typeCheckingMode" . "basic")))))))
-> (table-set! lsp:servers lsp:basedpyright ours)
-> (eq? (table-ref lsp:servers lsp:basedpyright) ours)
+> (tables:set! lsp:servers lsp:basedpyright ours)
+> (eq? (tables:ref lsp:servers lsp:basedpyright) ours)
 #t
-> (table-ref lsp:language-servers "go")
+> (tables:ref lsp:language-servers "go")
 (lsp:gopls)
 > (lsp:server '("x") (colour "red"))
 ! lsp:server: invalid clause (colour "red") in (lsp:server (quote ("x")) (colour "red"))
@@ -17,8 +17,8 @@
 > (lsp:define-server missing '("no-such-language-server"))
 > (lsp:define-server alpha (fake-command "alpha"))
 > (configure! "alpha" '(capabilities ("textDocumentSync" . 2)))
-> (table-set! lsp:language-servers "fakelang" (list (list missing alpha)))
-> (add-hook! fake-mode-hook lsp:ensure)
+> (tables:set! lsp:language-servers "fakelang" (list (list missing alpha)))
+> (hooks:add! fake-mode-hook lsp:ensure)
 > (write-file! (string-append project "/a.fk") "one\n")
 > (define a (visit! (string-append project "/a.fk")))
 > (wait-for "alpha" "textDocument/didOpen")
@@ -30,7 +30,7 @@
 #t
 ; A server none of whose programs is found is reported once per buffer,
 ; though the mode's hooks run again after each module loads.
-> (table-set! lsp:language-servers "fakelang" (list alpha missing))
+> (tables:set! lsp:language-servers "fakelang" (list alpha missing))
 > (take-said!)
 ()
 > (buffers:with-buffer a (lsp:ensure))
@@ -38,12 +38,12 @@
 > (take-said!)
 ("lsp: no server of (missing) is installed")
 ; Two languages that list one name share its connection.
-> (define-table other-keymap)
-> (define-hook other-hook)
+> (tables:define-table other-keymap)
+> (hooks:define-hook other-hook)
 > (modes:define-major-mode other-mode (keymap other-keymap) (hook other-hook) (language "otherlang"))
-> (table-set! auto-mode:file-names "ot" other-mode)
-> (table-set! lsp:language-servers "otherlang" (list alpha))
-> (add-hook! other-hook lsp:ensure)
+> (tables:set! auto-mode:file-names "ot" other-mode)
+> (tables:set! lsp:language-servers "otherlang" (list alpha))
+> (hooks:add! other-hook lsp:ensure)
 > (write-file! (string-append project "/b.ot") "two\n")
 > (define b (visit! (string-append project "/b.ot")))
 > (wait-for "alpha" "textDocument/didOpen" 2)
@@ -72,7 +72,7 @@
 ("Asking fake politely to terminate" "fake exited with status 0" "Reconnected!")
 ; A name removed from a language's list releases its buffers at their
 ; next lsp:ensure.
-> (table-set! lsp:language-servers "otherlang" '())
+> (tables:set! lsp:language-servers "otherlang" '())
 > (buffers:with-buffer b (lsp:ensure))
 > (list (lsp:managed? b) (lsp:managed? a))
 (#f #t)
@@ -84,7 +84,7 @@
 ; answer.
 > (lsp:define-server modules (fake-command "modules") (root '("go.mod")))
 > (configure! "modules" '(capabilities ("textDocumentSync" . 2)))
-> (table-set! lsp:language-servers "otherlang" (list modules))
+> (tables:set! lsp:language-servers "otherlang" (list modules))
 > (write-file! (string-append project "/one/go.mod") "")
 > (write-file! (string-append project "/two/go.mod") "")
 > (define m1 (visit! (string-append project "/one/x.ot")))
@@ -96,7 +96,7 @@
 "/project/"
 > (lsp:define-server rooted (fake-command "rooted") (root (lambda (folder) (string-append folder "../"))))
 > (configure! "rooted" '(capabilities ("textDocumentSync" . 2)))
-> (table-set! lsp:language-servers "otherlang" (list rooted))
+> (tables:set! lsp:language-servers "otherlang" (list rooted))
 > (define m3 (visit! (string-append project "/one/z.ot")))
 > (wait-for "rooted" "textDocument/didOpen")
 > (let ([root (lsp:connection-root (car (lsp:buffer-connections m3)))]) (substring root (string-length home) (string-length root)))
@@ -111,7 +111,7 @@
     (configuration '(("style" ("lineLength" . 88)))) (ignored-capabilities (lsp:capabilities rename)))
 > (configure! "types" '(capabilities ("textDocumentSync" . 2) ("documentFormattingProvider" . #t) ("renameProvider" . #t)))
 > (configure! "style" '(capabilities ("textDocumentSync" . 2) ("documentFormattingProvider" . #t) ("renameProvider" . #t)))
-> (table-set! lsp:language-servers "otherlang" (list types style))
+> (tables:set! lsp:language-servers "otherlang" (list types style))
 > (define both (visit! (string-append project "/both.ot")))
 > (wait-for "types" "textDocument/didOpen")
 > (wait-for "style" "textDocument/didOpen")
@@ -149,7 +149,7 @@
 > (list (length (of-method "types" "textDocument/rename")) (length (of-method "style" "textDocument/rename")))
 (1 0)
 ; lsp:ignored-capabilities, set locally, removes a feature in one buffer.
-> (buffers:with-buffer both (set-option-local! lsp:ignored-capabilities (lsp:capabilities formatting)))
+> (buffers:with-buffer both (options:set-local! lsp:ignored-capabilities (lsp:capabilities formatting)))
 > (raised (lambda () (in-client (lambda () (lsp:format-buffer both)))))
 (lsp:format-buffer "No server formats here")
 ; initialize offers all the plugin can do, a feature a server ignores

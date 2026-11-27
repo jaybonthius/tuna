@@ -327,7 +327,7 @@
 
   ;; Across file systems rename(2) fails, and the file is copied, then
   ;; deleted, as mv does. moved is called once to holds the whole file,
-  ;; before the deletion, which a quit can stop part way.
+  ;; before the deletion, which a cancel can stop part way.
   (define (rename-path from to replace? moved)
     (check-not-inside 'rename-path from to)
     (check-absent 'rename-path to replace?)

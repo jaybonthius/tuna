@@ -90,10 +90,10 @@
 (#t #f)
 > (buffers:replace! a 1 1 "x")
 #<edit 1>
-> (define waiter (spawn-task (lambda () (car (undo:history a)))))
+> (define waiter (spawn-task (lambda (restore) (car (undo:history a)))))
 > (undo:install! a #f 0)
 #t
-> (join-task waiter)
+> (testing:join waiter)
 1
 > (list (tree a) (undo:attach! a))
 ((1 0 (0 #f) (1 0)) #f)

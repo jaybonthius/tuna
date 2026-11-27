@@ -1,11 +1,11 @@
 > (define repo (fresh! "repo"))
 > (define (short) (git-out "repo" "status" "--short"))
 > (define events '())
-> (add-hook! git-mode:before-refresh (lambda (r) (set! events (cons (list 'before (git:repository-name r)) events))))
-> (add-hook! git-mode:after-refresh (lambda (r) (set! events (cons (list 'after (git:repository-name r)) events))))
+> (hooks:add! git-mode:before-refresh (lambda (r) (set! events (cons (list 'before (git:repository-name r)) events))))
+> (hooks:add! git-mode:after-refresh (lambda (r) (set! events (cons (list 'after (git:repository-name r)) events))))
 ; a file changed outside Tuna changes nothing until a refresh.
 > (sh "cd repo && echo outside > outside.txt")
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (exists (lambda (l) (string=? l "outside.txt")) (status))
 #f
 ; g refreshes through buffers:revert-function, with the hooks
@@ -61,7 +61,7 @@
 > (settle!)
 > (and (section '(file . "r4.txt") '(unstaged . #f)) #t)
 #f
-> (add-hook! files:after-save git-status:refresh-after-save)
+> (hooks:add! files:after-save git-status:refresh-after-save)
 > (buffers:insert! c 1 "top\n")
 5
 > (sh "cd repo && git add r4.txt")
@@ -69,36 +69,36 @@
 > (testing:wait-until (lambda () (and (section '(file . "r4.txt") '(unstaged . #f)) #t)))
 > (and (section '(file . "r4.txt") '(unstaged . #f)) #t)
 #t
-> (remove-hook! files:after-save git-status:refresh-after-save)
+> (hooks:remove! files:after-save git-status:refresh-after-save)
 ; git-mode:save-repository-buffers save saves without asking, never
 ; leaves the buffer.
 > (buffers:insert! c 1 "again\n")
 7
-> (set-option! git-mode:save-repository-buffers (git-mode:saving save))
+> (options:set! git-mode:save-repository-buffers (git-mode:saving save))
 > (press! "g")
 > (settle!)
 > (list (take-asked!) (buffers:modified? c))
 (() #f)
 > (buffers:insert! c 1 "never\n")
 7
-> (set-option! git-mode:save-repository-buffers (git-mode:saving never))
+> (options:set! git-mode:save-repository-buffers (git-mode:saving never))
 > (press! "g")
 > (settle!)
 > (list (take-asked!) (buffers:modified? c))
 (() #t)
 > (files:save-buffer c)
-> (set-option! git-mode:save-repository-buffers (git-mode:saving ask))
+> (options:set! git-mode:save-repository-buffers (git-mode:saving ask))
 ; a command that changes files reverts the unmodified buffers
 ; visiting them, unless git-mode:revert-buffers? is #f.
 > (define a (files:visit (at "repo/a.py")))
 > (sh "cd repo && git reset -q && git checkout -q -- a.py")
-> (set-option! git-mode:revert-buffers? #f)
+> (options:set! git-mode:revert-buffers? #f)
 > (sh "cd repo && echo more >> a.py")
 > (press! "g")
 > (settle!)
 > (substring (document:text (buffers:document a)) 0 4)
 "one\n"
-> (set-option! git-mode:revert-buffers? #t)
+> (options:set! git-mode:revert-buffers? #t)
 > (press! "g")
 > (settle!)
 > (let ([t (document:text (buffers:document a))]) (substring t (- (string-length t) 5) (string-length t)))
@@ -106,13 +106,13 @@
 ; while a refresh runs, the buffer keeps its contents and its keys
 ; work, until the new contents come in one rewrite.
 > (define edits 0)
-> (add-hook! buffers:after-edit (lambda (b e) (when (eq? b (status-buffer)) (set! edits (+ edits 1)))))
+> (hooks:add! buffers:after-edit (lambda (b e) (when (eq? b (status-buffer)) (set! edits (+ edits 1)))))
 > (sh "cd repo && echo r8 > r8.txt")
 > (define before (status))
-> (define refreshing (spawn-task (lambda () (git-mode:refresh-repository repo))))
+> (define refreshing (spawn-task (lambda (restore) (git-mode:refresh-repository repo))))
 > (list (equal? (status) before) edits)
 (#t 0)
 > (press! "n")
-> (join-task refreshing)
+> (testing:join refreshing)
 > (list edits (and (member "r8.txt" (status)) #t))
 (2 #t)

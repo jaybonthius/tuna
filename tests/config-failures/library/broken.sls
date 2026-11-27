@@ -1,3 +1,4 @@
 #!tuna
-(define-option level 1 fixnum? "A level.")
+(import (options))
+(options:define-option level 1 fixnum? "A level.")
 (car '())

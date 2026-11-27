@@ -16,7 +16,7 @@ cp tests/lsp/home/fake-server.ss "$dir/home/"
 # The web plugin's stand-in spares the benchmark a server.
 cp tests/lsp/home/.config/tuna/lib/web.sls "$lib/web.sls"
 cat > "$dir/home/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins))
+(import (tuna) (plugins))
 (use-plugin layout)
 (use-plugin editing)
 (use-plugin files)

@@ -1,8 +1,8 @@
 #!tuna
-(import (modes))
+(import (modes) (hooks) (tables))
 
-(define-table keymap "Keys in HTML buffers.")
-(define-hook mode-hook "Called in each buffer that turns on HTML mode.")
+(tables:define-table keymap "Keys in HTML buffers.")
+(hooks:define-hook mode-hook "Called in each buffer that turns on HTML mode.")
 
 (modes:define-major-mode mode
   (lighter "HTML")

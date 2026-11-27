@@ -1,6 +1,12 @@
 #!tuna
-(import (completion) (commands) (keys) (buffers) (document) (files) (faces) (web))
+(import (completion) (commands) (keys) (buffers) (document) (files) (faces) (web) (tables))
 
+
+;; A command defined at the top level is a plain procedure, with no
+;; documentation the kernel keeps.
+(define (%command-documentation command)
+  (guard (c [(assertion-violation? c) #f])
+    (definition-documentation command)))
 (define (%first-line s)
   (let ([n (string-length s)])
     (let loop ([i 0])
@@ -20,7 +26,7 @@
                                    "")])
                         (eq-hashtable-set! found cmd k)
                         k))]
-            [doc (and (commands:command? cmd) (documentation cmd))])
+            [doc (and (commands:command? cmd) (%command-documentation cmd))])
         (list (cons faces:keyword keys) (cons faces:shadow (if doc (%first-line doc) "")))))))
 
 (define (buffer session)
@@ -94,8 +100,8 @@
   (lambda (value details)
     (if (symbol? details) (list (cons faces:shadow (symbol->string details))) '())))
 
-(table-set! completion:annotators completion:command-category command)
-(table-set! completion:annotators completion:buffer-category buffer)
-(table-set! completion:annotators completion:file-category file)
-(table-set! completion:annotators completion:name-category kind)
-(table-set! completion:annotators completion:identifier-category kind)
+(tables:set! completion:annotators completion:command-category command)
+(tables:set! completion:annotators completion:buffer-category buffer)
+(tables:set! completion:annotators completion:file-category file)
+(tables:set! completion:annotators completion:name-category kind)
+(tables:set! completion:annotators completion:identifier-category kind)

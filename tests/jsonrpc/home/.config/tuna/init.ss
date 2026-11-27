@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (web) (keys) (views) (buffers) (document) (modes) (processes) (json-rpc))
+(import (options) (timers))
+(import (tuna) (testing) (web) (keys) (views) (buffers) (document) (modes) (processes) (json-rpc))
 (use-plugin layout)
 (use-plugin editing)
 (use-plugin jsonrpc)
@@ -55,7 +56,6 @@
        (loop s (cons (substring s start i) lines) (+ i 1) (+ i 1))]
       [else (loop s lines start (+ i 1))])))
 
-(define make-quit (record-constructor (record-constructor-descriptor &quit)))
 
 (define cancels '())
 

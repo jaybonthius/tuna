@@ -1,17 +1,19 @@
 #!tuna
-(import (files) (buffers) (layout) (modes) (keys) (commands) (ask) (with-editor state))
+(import (files) (buffers) (layout) (modes) (keys) (commands) (ask) (with-editor state) (hooks) (options) (tables))
 
-(define-hook finish-checks
+(define %self (current-owner))
+
+(hooks:define-hook finish-checks
   "Called with the buffer before finishing; an entry that returns #f keeps the buffer open and the program waiting.")
 
-(define-hook cancel-checks
+(hooks:define-hook cancel-checks
   "Called with the buffer before canceling; an entry that returns #f keeps it open.")
 
-(define-hook finished "Called with the file's path after finishing.")
+(hooks:define-hook finished "Called with the file's path after finishing.")
 
-(define-hook canceled "Called with the file's path after canceling.")
+(hooks:define-hook canceled "Called with the file's path after canceling.")
 
-(define-table keymap "Keys in a buffer a program waits for.")
+(tables:define-table keymap "Keys in a buffer a program waits for.")
 
 (modes:define-minor-mode mode
   "Whether a program waits for this buffer: C-c C-c finishes the edit and C-c C-k cancels it."
@@ -109,7 +111,7 @@
         (ask:message "Type C-c C-c to finish, C-c C-k to cancel")
         (let ([b (files:visit path)])
           (eq-hashtable-set! requests b (make-request folder wrapper (or (files:path b) path)))
-          (buffers:with-buffer b (set-option-local! mode #t))
+          (buffers:with-buffer b (options:set-local! mode #t))
           (layout:switch-to-buffer b)))))
 
   (define request-prefix (string->utf8 "\x1b;]7563;tuna-edit;"))
@@ -187,7 +189,7 @@
                                 (cond
                                   [(and semicolon (string=? (substring payload 0 semicolon) edit-token))
                                    (let ([folder (substring payload (fx+ semicolon 1) (string-length payload))])
-                                     (as-module (this-module) (spawn-task (lambda () (serve! folder wrapper)))))
+                                     (call-as-owner %self (lambda () (spawn-task (lambda (restore) (serve! folder wrapper))))))
                                    (cond
                                      [(fx= (fx+ bell 1) n) (set! skip-newline? #t)]
                                      [(fx= (bytevector-u8-ref data (fx+ bell 1)) 10) (loop (fx+ bell 2))]
@@ -229,7 +231,7 @@
 (commands:define-command (finish [force (commands:prefix-argument)])
   "Saves the buffer and tells the program waiting for it to go on, then kills the buffer; with a prefix argument, without asking with-editor:finish-checks."
   (let ([b (%waiting-buffer 'with-editor:finish)])
-    (when (or force (for-all (lambda (entry) (entry b)) (hook-entries finish-checks)))
+    (when (or force (for-all (lambda (entry) (entry b)) (hooks:entries finish-checks)))
       (files:save-buffer b)
       (let ([request (request-for b)])
         (cond
@@ -244,7 +246,7 @@
 (commands:define-command (cancel [force (commands:prefix-argument)])
   "Tells the program waiting for the buffer to give up, and kills the buffer without saving; with a prefix argument, without asking with-editor:cancel-checks."
   (let ([b (%waiting-buffer 'with-editor:cancel)])
-    (when (or force (for-all (lambda (entry) (entry b)) (hook-entries cancel-checks)))
+    (when (or force (for-all (lambda (entry) (entry b)) (hooks:entries cancel-checks)))
       (let ([request (take-request! b)])
         (answer! request "cancel")
         (buffers:set-modified! b #f)
@@ -259,12 +261,12 @@
 
 (keys:bind! keymap "C-c C-c" finish)
 (keys:bind! keymap "C-c C-k" cancel)
-(add-hook! buffers:killed %cancel-killed)
+(hooks:add! buffers:killed %cancel-killed)
 
 (write-script!)
 
 ;; A program waiting from before a reload of this plugin still waits, so
 ;; its buffer takes this copy's mode and keys.
 (vector-for-each
-  (lambda (b) (when (buffers:live? b) (buffers:with-buffer b (set-option-local! mode #t))))
+  (lambda (b) (when (buffers:live? b) (buffers:with-buffer b (options:set-local! mode #t))))
   (hashtable-keys requests))

@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins))
+(import (options))
+(import (tuna))
 (use-plugin ask)
 
 (define (raised thunk)

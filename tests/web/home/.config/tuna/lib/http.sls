@@ -1,5 +1,11 @@
 #!tuna
-(import (json))
+(import (json) (timers))
+
+;; The client's threads are its own, not those of the code that calls it,
+;; so they end with its unload, which shuts its connections down.
+(define %self (current-owner))
+
+(define (%fork proc) (call-as-owner %self (lambda () (fork-task proc))))
 
 ;; The client works on threads of its own, since code on the main thread
 ;; must not wait on the network.
@@ -7,7 +13,8 @@
          page-connect! page-close! page-send! page-send-numbered! send-items page-send-all! page-send-range!
          page-confirm! page-goodbye! page-next page-events-closed? page-connect-and-next! heartbeats-seen
          wait-for-server occupy-port! unused-port target-port target-address source-address set-port-source! percent-encode-all
-         flood auto-confirm open-raw-stream raw-stream-encoding raw-stream-next raw-stream-close!)
+         flood auto-confirm open-raw-stream raw-stream-encoding raw-stream-next raw-stream-close!
+         shut-down-connections!)
 
   (define libc (load-shared-object "libc.so.6"))
   (define c-socket (foreign-procedure "socket" (int int int) int))
@@ -22,9 +29,7 @@
   (define (off-main-thread thunk)
     (suspend
       (lambda (resume)
-        (fork-thread
-          (lambda ()
-            (resume (guard (e [#t (lambda () (raise e))])
+        (%fork (lambda (restore) (resume (guard (e [#t (lambda () (raise e))])
                       (let ([v (thunk)]) (lambda () v)))))))))
 
   (define-record-type connection
@@ -105,7 +110,25 @@
       (unless (fx= 0 (c-connect fd address 16))
         (c-close fd)
         (error 'http "cannot connect" port))
-      (make-connection fd (make-immobile-bytevector 65536) 0 0)))
+      (let ([c (make-connection fd (make-immobile-bytevector 65536) 0 0)])
+        (with-mutex open-connections-mutex (hashtable-set! open-connections c #t))
+        c)))
+
+  ;; A connection is closed under the mutex, so a shutdown never reaches
+  ;; its descriptor once another file may have the same number.
+  (define open-connections (make-eq-hashtable))
+  (define open-connections-mutex (make-mutex))
+
+  (define (close-connection! c)
+    (with-mutex open-connections-mutex
+      (hashtable-delete! open-connections c)
+      (c-close (connection-fd c))))
+
+  ;; A reader waits in recv, where no stop reaches it, and its module's
+  ;; unload waits for its thread; a shutdown ends the wait.
+  (define (shut-down-connections!)
+    (with-mutex open-connections-mutex
+      (vector-for-each (lambda (c) (c-shutdown (connection-fd c) 2)) (hashtable-keys open-connections))))
 
   ;; The bytes are copied to where the collector does not move them, since
   ;; send runs while collections go on.
@@ -236,7 +259,7 @@
                       [(header response-headers "content-length")
                        => (lambda (n) (read-bytes c (string->number n)))]
                       [else (read-bytes c 0)])])
-          (c-close (connection-fd c))
+          (close-connection! c)
           (make-response status response-headers body)))))
 
   (define (request method path headers body)
@@ -258,7 +281,7 @@
   (define (wait-for-server)
     (let loop ([tries 0])
       (unless (or (guard (e [#t #f]) (request "GET" "/web/tuna.js" '() #f) #t) (fx= tries 500))
-        (sleep-for 0.01)
+        (timers:sleep 0.01)
         (loop (fx+ tries 1)))))
 
   (define-record-type page
@@ -329,14 +352,12 @@
       (with-mutex (page-mutex page)
         (page-stream-set! page c)
         (page-closed?-set! page #f))
-      (fork-thread
-        (lambda ()
-          (read-chunks c (event-reader page))
+      (%fork (lambda (restore) (read-chunks c (event-reader page))
           (with-mutex (page-mutex page)
             (when (eq? (page-stream page) c)
               (page-closed?-set! page #t))
             (condition-broadcast (page-arrived page)))
-          (c-close (connection-fd c))))
+          (close-connection! c)))
       (void)))
 
   ;; Its events arrive compressed, which this client cannot read, so only
@@ -353,9 +374,7 @@
                           headers #f))
             (let-values ([(status response-headers) (read-head c)])
               (let ([s (make-raw-stream c (make-mutex) (make-condition) (header response-headers "content-encoding") '() #f)])
-                (fork-thread
-                  (lambda ()
-                    (read-chunks c
+                (%fork (lambda (restore) (read-chunks c
                       (lambda (bytes)
                         (with-mutex (raw-stream-mutex s)
                           (raw-stream-sizes-set! s (cons (bytevector-length bytes) (raw-stream-sizes s)))
@@ -363,7 +382,7 @@
                     (with-mutex (raw-stream-mutex s)
                       (raw-stream-closed?-set! s #t)
                       (condition-broadcast (raw-stream-arrived s)))
-                    (c-close (connection-fd c))))
+                    (close-connection! c)))
                 s)))))))
 
   ;; A screen can come in several chunks, so its bytes are those of the
@@ -472,7 +491,7 @@
                            (let-values ([(status headers) (read-head c)])
                              (read-response-body c status headers)
                              (cons status (loop (cdr numbered)))))))])
-              (c-close (connection-fd c))
+              (close-connection! c)
               statuses))))))
 
   (define (number-items! page items)
@@ -501,9 +520,7 @@
                 (do ([k 0 (fx+ k 1)]) ((fx= k threads))
                   (let ([numbers (filter (lambda (i) (fx= (fxmod i threads) k)) (map 1+ (iota n)))])
                     (with-mutex m (set! running (fx+ running 1)))
-                    (fork-thread
-                      (lambda ()
-                        (let ([c (connect port)])
+                    (%fork (lambda (restore) (let ([c (connect port)])
                           (for-each
                             (lambda (seq)
                               (send-all c (request-bytes* port "POST" "/input" '()
@@ -511,7 +528,7 @@
                               (let-values ([(status headers) (read-head c)])
                                 (read-response-body c status headers)))
                             (windows-reversed numbers 5))
-                          (c-close (connection-fd c)))
+                          (close-connection! c))
                         (with-mutex m
                           (set! running (fx- running 1))
                           (condition-signal done)))))))
@@ -527,9 +544,7 @@
 
   (define (auto-confirm page)
     (let ([port (server-port)] [seen '()] [m (make-mutex)])
-      (fork-thread
-        (lambda ()
-          (let loop ()
+      (%fork (lambda (restore) (let loop ()
             (let ([e (take-event! page 10)])
               (when (pair? e)
                 (let ([shown (show e)])
@@ -539,7 +554,7 @@
                       (send-all c (request-bytes port "POST" (format "/applied?count=~a" (cadr shown))
                                     '(("content-type" . "application/json")) (signals page)))
                       (read-head c)
-                      (c-close (connection-fd c))))
+                      (close-connection! c)))
                   (loop)))))))
       (lambda () (with-mutex m (reverse seen)))))
 
@@ -677,3 +692,5 @@
           (let ([start (fx+ 1 (let find ([i 0]) (if (char=? (string-ref text i) #\>) i (find (fx+ i 1)))))])
             (list 'script (substring text start (fx- (string-length text) 9))))]
          [else (cons (string->symbol (car e)) (map (lambda (d) (list (car d) (cdr d))) data))]))]))
+
+(on-unload shut-down-connections!)

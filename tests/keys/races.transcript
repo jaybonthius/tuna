@@ -3,7 +3,7 @@
 ; bindings; quits leave each frame's session whole.
 > (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 > (define one (layout:current-frame))
-> (define-table km)
+> (tables:define-table km)
 > (keys:bind! km "a" layout:other-view)
 > (map on-thread
     (list (lambda () (keys:press! one "a"))
@@ -18,7 +18,7 @@
           (lambda () (length (keys:bindings km)))
           (lambda () (list (keys:command-keys) (keys:typed-char) (keys:shift-translated?)))
           (lambda () (keys:item-key '(("key" . "x") ("code" . "KeyX") ("modifiers" . #("control")))))))
-((keys:press! "not on the main thread") (keys:lookup "not on the main thread") (keys:active-keymaps "not on the main thread") (keys:where-is "not on the main thread") (keys:pending "not on the main thread") (keys:push-keymap! "not on the main thread") (keys:bind! "not on the main thread") (keys:remap! "not on the main thread") (table-remove! "only the main thread makes changes") 1 (#f #f #f) "C-x")
+((keys:press! "not on the main thread") (keys:lookup "not on the main thread") (keys:active-keymaps "not on the main thread") (keys:where-is "not on the main thread") (keys:pending "not on the main thread") (keys:push-keymap! "not on the main thread") (keys:bind! "not on the main thread") (keys:remap! "not on the main thread") (owned:remove! "only the main thread makes changes") 1 (#f #f #f) "C-x")
 > (define end (keys:push-keymap! one km (lambda (f c) #t)))
 > (on-thread end)
 (keys:push-keymap! "not on the main thread")
@@ -39,10 +39,10 @@
         (set! converted (+ converted 1))
         (loop))))
 > (begin
-    (for-each (lambda (i) (fork-thread converter)) '(1 2 3 4))
-    (do ([i 0 (+ i 1)]) ((= i 20000)) (set-option! keys:left-option-meta? (even? i)))
+    (for-each (lambda (i) (fork-task (lambda (restore) (converter)))) '(1 2 3 4))
+    (do ([i 0 (+ i 1)]) ((= i 20000)) (options:set! keys:left-option-meta? (even? i)))
     (set! converting #f)
-    (remove-option! keys:left-option-meta?)
+    (options:unset! keys:left-option-meta?)
     (list (> converted 1000) bad))
 (#t ())
 ; Threads reading a keymap's bindings while the main thread binds and
@@ -58,7 +58,7 @@
         (set! reads (+ reads 1))
         (loop))))
 > (begin
-    (for-each (lambda (i) (fork-thread reader)) '(1 2 3 4))
+    (for-each (lambda (i) (fork-task (lambda (restore) (reader)))) '(1 2 3 4))
     (do ([i 0 (+ i 1)]) ((= i 5000))
       (let ([k (format "C-c ~a ~a" (mod i 7) (mod i 9))])
         (if (even? i) (keys:bind! km k layout:other-view) (keys:unbind! km k))))
@@ -67,7 +67,7 @@
 (#t ())
 ; ESC is the Meta prefix from here, as for a user who takes it out of the
 ; quit keys and unbinds it.
-> (set-option! keys:quit-keys '("C-g"))
+> (options:set! keys:quit-keys '("C-g"))
 > (keys:unbind! keys:global "ESC")
 ; A session is whole when its pending keys are a prefix or end in an ESC
 ; waiting to make the next key Meta, which keys:lookup gives #f for. C-g
@@ -94,7 +94,7 @@
 > (keys:bind! keys:global "M-x" editing:next-line)
 > (define quits-reported 0)
 > (define (count-quits report c)
-    (if (quit-condition? c) (set! quits-reported (+ quits-reported 1)) (report c)))
+    (if (cancelled? c) (set! quits-reported (+ quits-reported 1)) (report c)))
 > (advice-add! report count-quits)
 > (define quits-caught 0)
 > (define presses 0)
@@ -104,7 +104,7 @@
     (let loop ()
       (if quitting
           (begin
-            (request-quit!)
+            (testing:request-quit!)
             (chez:sleep (make-time 'time-duration 1000000 0))
             (loop))
           (set! stopped #t))))
@@ -120,10 +120,10 @@
 ; before it enters the guard again.
 > (define (stress until)
     (let again ()
-      (guard (c [(quit-condition? c) (set! quits-caught (+ quits-caught 1)) (again)])
+      (guard (c [(cancelled? c) (set! quits-caught (+ quits-caught 1)) (again)])
         (unless forked
           (set! forked #t)
-          (fork-thread quitter))
+          (fork-task (lambda (restore) (quitter))))
         (with-exception-handler
           (lambda (c) (if (warning? c) (set! warnings (+ warnings 1)) (raise-continuable c)))
           (lambda ()
@@ -161,12 +161,11 @@
 ; Reloading the plugin ends every temporary keymap, starts each frame's
 ; session afresh, reloads the modules that import it, and keeps the
 ; configuration's and the REPL's bindings.
-> (import (tuna eval))
 > (define exits 0)
-> (define-table t)
+> (tables:define-table t)
 > (define end-t (keys:push-keymap! one t (lambda (f c) #t) (lambda () (set! exits (+ exits 1)))))
 > (keys:press! one "C-x")
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/keys.sls"))
+> (reload-modules! '((keys)))
 > (list exits (keys:pending one) (map name-of (keys:active-keymaps one)))
 (1 #f (keys:global))
 > (map (lambda (k) (name-of (keys:lookup one k))) '("C-c g o" "C-c o" "C-x o" "C-g" "M-5" "C-n"))

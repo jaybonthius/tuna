@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (files))
+(import (buffers) (files) (timers))
 
 (define (save-modified)
   (for-each (lambda (buffer)
@@ -8,4 +8,4 @@
                   (files:save-buffer buffer))))
             (files:buffers)))
 
-(run-with-idle-timer 5 save-modified)
+(timers:run-when-idle 5 save-modified)

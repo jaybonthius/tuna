@@ -1,12 +1,13 @@
-(import (tuna) (tuna plugins) (document) (haml) (web) (pager) (magit) (boxes) (layout-split))
+(import (hooks) (options) (tables) (timers))
+(import (tuna) (document) (haml) (web) (pager) (magit) (boxes) (layout-split))
 (use-plugin layout-split)
-(use-plugin layout-tabs
-  (config
-    (table-set! layout:display-rules magit:status-buffer? layout-tabs:display-in-new-tab)))
+;; Loaded, not imported, so its unload in a test stays an unload.
+(load-module! '(layout-tabs))
+(tables:set! layout:display-rules magit:status-buffer? layout-tabs:display-in-new-tab)
 (use-plugin layout
   (config
-    (set-option! layout:display-action layout-split:display-right)
-    (table-set! layout:display-rules pager:buffer? layout-split:display-below)))
+    (options:set! layout:display-action layout-split:display-right)
+    (tables:set! layout:display-rules pager:buffer? layout-split:display-below)))
 
 (define (raised thunk)
   (guard (c [#t (list (if (who-condition? c) (condition-who c) 'none)
@@ -45,7 +46,7 @@
 (define (press! client . keys)
   (for-each
     (lambda (key)
-      ((table-ref web:input-handlers "key") client
+      ((tables:ref web:input-handlers "key") client
        (list (cons "type" "key") (cons "key" (car key)) (cons "code" "") (cons "modifiers" (list->vector (cdr key))))))
     keys))
 (import (console))

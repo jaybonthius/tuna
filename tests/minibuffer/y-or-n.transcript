@@ -59,9 +59,9 @@
 > (in-client (lambda () (commands:run minibuffer:answer-yes)))
 ! minibuffer:answer-yes: no y-or-n question waits
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
-(raised #<condition &quit>)
+(raised #<condition &cancelled>)
 ; Run where point is in no y-or-n question, they answer the innermost
 ; one, and the prompt holding point stays.
 > (define asked (start! (lambda () (minibuffer:ask-y-or-n "Save it? "))))
@@ -69,12 +69,12 @@
 > (in-client (lambda () (minibuffer:y-or-n-mode)))
 #f
 > (in-client (lambda () (commands:run minibuffer:answer-yes)))
-> (list (result asked) (task-done? named))
+> (list (result asked) (eq? (task-state named) 'done))
 (#t #f)
 > (type! "y")
 > (input)
 "y"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result named)
-(raised #<condition &quit>)
+(raised #<condition &cancelled>)

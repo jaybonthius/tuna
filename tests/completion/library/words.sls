@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (buffers) (document) (views) (editing))
+(import (completion) (buffers) (document) (views) (editing) (hooks))
 
 (completion:define-category word-category "Words of the current buffer.")
 
@@ -23,4 +23,4 @@
                    (candidates (lambda (prefix) (buffer-words buffer)))
                    (category word-category)))))))
 
-(add-hook! completion:find-region complete-word 10)
+(hooks:add! completion:find-region complete-word 10)

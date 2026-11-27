@@ -4,9 +4,7 @@
 > (import (user))
 > (define exiting? #f)
 > (define paused
-    (spawn-task
-      (lambda ()
-        (dynamic-wind
+    (spawn-task (lambda (restore) (dynamic-wind
           void
           (lambda () (suspend (lambda (resume) (void))))
           (lambda () (when exiting? (user:say-leaving) (exit 9)))))))

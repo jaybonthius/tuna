@@ -22,7 +22,7 @@
 ; The line alone shows, as Emacs's default mode line; with
 ; views:column-number on, the column follows it, counting characters
 ; from the line's start, a tab as one.
-> (set-option! views:column-number #t)
+> (options:set! views:column-number #t)
 > (views:set-point! (view) 15)
 > (document:text (buffers:document notes) 11 15)
 "\tTab"
@@ -35,7 +35,7 @@
 ; lighters of the minor modes on in the view follow.
 > (in-client (lambda () (press! "x")))
 > (modes:set-major-mode python:mode notes)
-> (views:with-view (view) (set-option-local! fill:mode #t))
+> (views:with-view (view) (options:set-local! fill:mode #t))
 > (status (view))
 (("status-line:modified" . "*") ("status-line:buffer-name" . "notes.txt") ("status-line:position" . "2:12") ("status-line:percent-position" . "79%") ("status-line:region-size" . "") ("status-line:major-mode" . "Python") ("status-line:minor-modes" . "Fill"))
 > (files:save-buffer notes)
@@ -64,10 +64,10 @@
 #<edit 1>
 > (length (screen-status-lines client))
 2
-> (buffers:with-buffer notes (set-option-local! status-line:visible #f))
+> (buffers:with-buffer notes (options:set-local! status-line:visible #f))
 > (screen-status-lines client)
 ()
-> (buffers:with-buffer notes (remove-option-local! status-line:visible))
+> (buffers:with-buffer notes (options:unset-local! status-line:visible))
 > (length (screen-status-lines client))
 2
 ; Segments show the left side's, then the right side's, each in order;
@@ -76,11 +76,11 @@
 > (define (show-b view) "b")
 > (status-line:define-segment seg-a (show show-a))
 > (status-line:define-segment seg-b (show show-b))
-> (table-set! status-line:segments seg-b (status-line:left 20))
-> (table-set! status-line:segments seg-a (status-line:left 20))
+> (tables:set! status-line:segments seg-b (status-line:left 20))
+> (tables:set! status-line:segments seg-a (status-line:left 20))
 > (map car (status (view)))
 ("status-line:modified" "status-line:buffer-name" "seg-b" "seg-a" "status-line:position" "status-line:percent-position" "status-line:region-size" "status-line:major-mode" "status-line:minor-modes")
-> (table-set! status-line:segments seg-b (status-line:right 0))
+> (tables:set! status-line:segments seg-b (status-line:right 0))
 > (map car (status (view)))
 ("status-line:modified" "status-line:buffer-name" "seg-a" "status-line:position" "status-line:percent-position" "status-line:region-size" "seg-b" "status-line:major-mode" "status-line:minor-modes")
 ; A segment is its name, as a mode is.
@@ -88,18 +88,18 @@
 (seg-a status-line:position)
 ; A value that is not a place goes to report once, and its segment is
 ; not shown; a key that is not a segment is left out.
-> (table-set! status-line:segments seg-a 'left)
-! status-line:segments: not a place with irritant left
+> (tables:set! status-line:segments seg-a 'left)
+! (status-line) status-line:segments: not a place with irritant left
 > (map car (status (view)))
 ("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "seg-b" "status-line:major-mode" "status-line:minor-modes")
 > (map car (status (view)))
 ("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "seg-b" "status-line:major-mode" "status-line:minor-modes")
-> (table-set! status-line:segments car (status-line:left 1))
+> (tables:set! status-line:segments car (status-line:left 1))
 > (map car (status (view)))
 ("status-line:modified" "status-line:buffer-name" "status-line:position" "status-line:percent-position" "status-line:region-size" "seg-b" "status-line:major-mode" "status-line:minor-modes")
-> (table-remove! status-line:segments car)
-> (table-remove! status-line:segments seg-a)
-> (table-remove! status-line:segments seg-b)
+> (tables:remove! status-line:segments car)
+> (tables:remove! status-line:segments seg-a)
+> (tables:remove! status-line:segments seg-b)
 ; A show procedure that raises goes to report once, and its segment
 ; shows nothing until it shows without raising; so does one returning
 ; what is not HTML, a string or #f.
@@ -108,12 +108,12 @@
 > (define (show-number view) 42)
 > (status-line:define-segment flaky (show show-flaky))
 > (status-line:define-segment number (show show-number))
-> (table-set! status-line:segments flaky (status-line:left 40))
-! car: () is not a pair
-! car: () is not a pair
-> (table-set! status-line:segments number (status-line:left 41))
-! number: a show procedure returned what is not HTML, a string or #f with irritant 42
-! number: a show procedure returned what is not HTML, a string or #f with irritant 42
+> (tables:set! status-line:segments flaky (status-line:left 40))
+! (status-line) car: () is not a pair
+! (status-line) car: () is not a pair
+> (tables:set! status-line:segments number (status-line:left 41))
+! (status-line) number: a show procedure returned what is not HTML, a string or #f with irritant 42
+! (status-line) number: a show procedure returned what is not HTML, a string or #f with irritant 42
 > (cdr (assoc "flaky" (status (view))))
 ""
 > (cdr (assoc "flaky" (status (view))))
@@ -122,23 +122,23 @@
 > (cdr (assoc "flaky" (status (view))))
 "fine"
 > (set! fail? #t)
-! car: () is not a pair
-! car: () is not a pair
+! (status-line) car: () is not a pair
+! (status-line) car: () is not a pair
 > (cdr (assoc "flaky" (status (view))))
 ""
 > (cdr (assoc "number" (status (view))))
 ""
-> (table-remove! status-line:segments flaky)
-> (table-remove! status-line:segments number)
+> (tables:remove! status-line:segments flaky)
+> (tables:remove! status-line:segments number)
 ; A show procedure runs inside views:with-view of the window's view,
 ; with the window's buffer current, and the plugin's own show procedures
 ; can be advised.
 > (define (show-current view) (format "~a ~a" (eq? (views:current) view) (buffers:name (buffers:current))))
 > (status-line:define-segment current (show show-current))
-> (table-set! status-line:segments current (status-line:left 50))
+> (tables:set! status-line:segments current (status-line:left 50))
 > (cdr (assoc "current" (status (view))))
 "#t notes.txt"
-> (table-remove! status-line:segments current)
+> (tables:remove! status-line:segments current)
 > (define (shout show view) (string-upcase (show view)))
 > (advice-add! status-line:show-buffer-name shout)
 > (cdr (assoc "status-line:buffer-name" (status (view))))
@@ -164,8 +164,8 @@
 > (status-line:define-segment bad (show show-a) (keymap 'keys))
 ! status-line:define-segment: not a keymap or #f with irritant keys
 > (define result #f)
-> (let ([v (view)]) (fork-thread (lambda () (set! result (raised (lambda () (status-line:draw v client)))))))
-#<thread 6>
-> (sleep-for 0.1)
+> (let ([v (view)]) (fork-task (lambda (restore) (set! result (raised (lambda () (status-line:draw v client)))))))
+#<task>
+> (timers:sleep 0.1)
 > result
 (status-line:draw "not on the main thread")

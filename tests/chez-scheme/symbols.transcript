@@ -5,15 +5,15 @@
 ("$%" "_-+*/&|<>=")
 > (syntax:mode-symbol-characters prog:mode)
 "_-+*/&|<>="
-> (define-table derived-keymap)
-> (define-hook derived-hook)
+> (tables:define-table derived-keymap)
+> (hooks:define-hook derived-hook)
 > (modes:define-major-mode derived (parent chez-scheme:mode) (keymap derived-keymap) (hook derived-hook))
 > (list (syntax:mode-word-characters derived) (syntax:mode-symbol-characters derived))
 ("$%" "!$%&*/:<=>?^_~+-.@")
-> (table-set! syntax:symbol-characters derived "-")
+> (tables:set! syntax:symbol-characters derived "-")
 > (syntax:mode-symbol-characters derived)
 "-"
-> (table-remove! syntax:symbol-characters derived)
+> (tables:remove! syntax:symbol-characters derived)
 ; The symbol around a position, read with the buffer's mode or the one
 ; given.
 > (define s (scheme-buffer "s.ss" "(buffers:insert! b \"x\") ; list->vector\n"))
@@ -34,10 +34,10 @@
 > (symbol-at plain (after plain "ins") chez-scheme:mode)
 "buffers:insert!"
 ; A user changes the default for every mode without an entry of its own.
-> (table-set! syntax:symbol-characters modes:fundamental "_-+*/&|<>=:!")
+> (tables:set! syntax:symbol-characters modes:fundamental "_-+*/&|<>=:!")
 > (symbol-at plain (after plain "ins"))
 "buffers:insert!"
-> (table-set! syntax:symbol-characters modes:fundamental "_-+*/&|<>=")
+> (tables:set! syntax:symbol-characters modes:fundamental "_-+*/&|<>=")
 ; A buffer's own characters are its major mode's unless advice on
 ; syntax:buffer-word-characters or syntax:buffer-symbol-characters
 ; answers for it, as a minor mode would; asking with a mode reads that
@@ -68,7 +68,7 @@
 (syntax:symbol-bounds "not a position in the buffer")
 > (raised (lambda () (syntax:symbol-bounds s 1 "scheme")))
 (syntax:symbol-bounds "not a mode")
-> (table-set! syntax:word-characters derived 'dollar)
+> (tables:set! syntax:word-characters derived 'dollar)
 > (raised (lambda () (syntax:mode-word-characters derived)))
 (syntax:mode-word-characters "the mode's entry is not a string")
-> (table-remove! syntax:word-characters derived)
+> (tables:remove! syntax:word-characters derived)

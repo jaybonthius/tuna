@@ -33,10 +33,10 @@
 ("M-x" "M-X" "M-!" "M--" "M-:" "M-SPC" "M-<left>" "M-e" "C-M-f" "M-¡" "M-s-w")
 > (list (key "≈" "KeyX" "right-option") (key "Dead" "KeyE" "right-option") (key "≈" "KeyX" "left-option" "right-option"))
 ("≈" "<dead>" "M-x")
-> (set-option! keys:left-option-meta? #f keys:right-option-meta? #t)
+> (options:set! keys:left-option-meta? #f keys:right-option-meta? #t)
 > (list (key "≈" "KeyX" "left-option") (key "≈" "KeyX" "right-option") (key "≈" "KeyX" "left-option" "right-option"))
 ("≈" "M-x" "M-x")
-> (remove-option! keys:left-option-meta? keys:right-option-meta?)
+> (options:unset! keys:left-option-meta? keys:right-option-meta?)
 > (list (keys:left-option-meta?) (keys:right-option-meta?))
 (#t #f)
 ; Items the page script would not send.
@@ -62,7 +62,7 @@
           (key "F1" "F1" "shift") (key "\\" "Backslash" "alt") (key "~" "Backquote" "shift" "super")))
 #t
 ; The page script is in the web plugin's scripts, beside this plugin.
-> (table-ref web:scripts 'keys)
+> (tables:ref web:scripts 'keys)
 "keys/keys.js"
 > (file-exists? (string-append (getenv "TUNA_LIBRARY") "/keys/keys.js"))
 #t

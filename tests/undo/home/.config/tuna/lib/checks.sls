@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (commands) (undo))
+(import (buffers) (document) (commands) (undo) (timers))
 
 (define (end b) (fx- (document:length (buffers:document b)) 1))
 
@@ -21,5 +21,5 @@
   "Inserts TEXT at the start, pauses, and inserts it again."
   (let ([b (buffers:current)])
     (buffers:replace! b 1 1 text)
-    (sleep-for 0.01)
+    (timers:sleep 0.01)
     (buffers:replace! b 1 1 text)))

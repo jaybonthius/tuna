@@ -1,5 +1,5 @@
 #!tuna
-(import (terminal) (buffers) (document))
+(import (terminal) (buffers) (document) (options) (timers))
 
 (define (now-ms)
   (let ([t (current-time 'time-monotonic)])
@@ -17,14 +17,14 @@
 (define (wait-for b text)
   (let loop ()
     (unless (screen-has? b text)
-      (sleep-for 0.005)
+      (timers:sleep 0.005)
       (loop))))
 
 ;; Every row of the flood carries a colour, so each row's styles are
 ;; drawn as spans.
 (define (run)
-  (set-option! terminal:shell '("sh"))
-  (set-option! terminal:environment '(("PS1" . "$ ")))
+  (options:set! terminal:shell '("sh"))
+  (options:set! terminal:environment '(("PS1" . "$ ")))
   (let ([b (terminal:start #f)])
     (wait-for b "$ ")
     (let ([start (now-ms)])

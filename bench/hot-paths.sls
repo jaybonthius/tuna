@@ -1,13 +1,13 @@
 #!tuna
-(import (bench-callee))
+(import (bench-callee) (hooks) (options) (tables) (scopes) (plugins))
 
-(define-option column 70 fixnum?)
-(define-hook other10)
-(define-hook same10)
-(define-hook other1)
-(define-hook changed)
-(define-table keys)
-(define-table procedures)
+(options:define-option column 70 fixnum?)
+(hooks:define-hook other10)
+(hooks:define-hook same10)
+(hooks:define-hook other1)
+(hooks:define-hook changed)
+(tables:define-table keys)
+(tables:define-table procedures)
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -44,18 +44,18 @@
 (define (fill-table!)
   (for-each
     (lambda (i)
-      (table-set! keys (string->symbol (format "k~a" i)) 1)
-      (table-set! keys (format "s~a" i) 1)
-      (table-set! keys (list 'C-c (integer->char (+ 97 (mod i 26))) i) 1))
+      (tables:set! keys (string->symbol (format "k~a" i)) 1)
+      (tables:set! keys (format "s~a" i) 1)
+      (tables:set! keys (list 'C-c (integer->char (+ 97 (mod i 26))) i) 1))
     (iota 100))
-  (table-set! keys #\a 1))
+  (tables:set! keys #\a 1))
 
 ;; Equal-hash gives every procedure one hash, so a thousand of them is
 ;; where a table that hashed them so would search the longest.
 (define procedure-keys (list->vector (map (lambda (i) (lambda () i)) (iota 1000))))
 
 (define (fill-procedures!)
-  (vector-for-each (lambda (p) (table-set! procedures p 1)) procedure-keys))
+  (vector-for-each (lambda (p) (tables:set! procedures p 1)) procedure-keys))
 
 (define (calls)
   (measure "changeable-call" 20000000 1
@@ -64,23 +64,23 @@
 (define (options)
   (measure "option-read" 20000000 1
     (lambda (n) (let loop ([i 0] [acc 0]) (if (fx= i n) acc (loop (fx+ i 1) (fx+ acc (column)))))))
-  (with-options ([column 5])
+  (options:with ([column 5])
     (measure "option-read-bound" 20000000 1
       (lambda (n) (let loop ([i 0] [acc 0]) (if (fx= i n) acc (loop (fx+ i 1) (fx+ acc (column))))))))
   (measure "with-options" 5000000 1
     (lambda (n)
       (let loop ([i 0] [acc 0])
-        (if (fx= i n) acc (loop (fx+ i 1) (with-options ([column i]) (fx+ acc 1)))))))
-  (let ([s (make-scope)])
-    (parameterize ([current-scope s])
-      (set-option-local! column 100)
+        (if (fx= i n) acc (loop (fx+ i 1) (options:with ([column i]) (fx+ acc 1)))))))
+  (let ([s (scopes:make)])
+    (parameterize ([scopes:current s])
+      (options:set-local! column 100)
       (measure "option-read-local" 20000000 1
         (lambda (n) (let loop ([i 0] [acc 0]) (if (fx= i n) acc (loop (fx+ i 1) (fx+ acc (column)))))))
-      (remove-option-local! column))))
+      (options:unset-local! column))))
 
 (define (hooks)
-  (as-module '(init)
-    (for-each (lambda (p) (add-hook! same10 p)) (entries 10)))
+  (call-as-owner (plugins:configuration-owner)
+    (lambda () (for-each (lambda (p) (hooks:add! same10 p)) (entries 10))))
   (measure "hook-entry-other" 1000000 10
     (lambda (n) (let loop ([i 0]) (unless (fx= i n) (other10 i) (loop (fx+ i 1))))))
   (measure "hook-entry-same" 1000000 10
@@ -102,28 +102,29 @@
     (measure-against "table-ref-symbol" 5000000 1 (key-loop symbols)
       (lambda (n)
         (let loop ([i 0] [acc 0])
-          (if (fx= i n) acc (loop (fx+ i 1) (fx+ acc (table-ref keys (vector-ref symbols (fxand i 63)) 0)))))))
+          (if (fx= i n) acc (loop (fx+ i 1) (fx+ acc (tables:ref keys (vector-ref symbols (fxand i 63)) 0)))))))
     (measure-against "table-ref-string" 5000000 1 (key-loop strings)
       (lambda (n)
         (let loop ([i 0] [acc 0])
-          (if (fx= i n) acc (loop (fx+ i 1) (fx+ acc (table-ref keys (vector-ref strings (fxand i 63)) 0))))))))
+          (if (fx= i n) acc (loop (fx+ i 1) (fx+ acc (tables:ref keys (vector-ref strings (fxand i 63)) 0))))))))
   (fill-procedures!)
   (measure-against "table-ref-procedure" 5000000 1 (key-loop procedure-keys)
     (lambda (n)
       (let loop ([i 0] [acc 0])
-        (if (fx= i n) acc (loop (fx+ i 1) (fx+ acc (table-ref procedures (vector-ref procedure-keys (fxand i 63)) 0))))))))
+        (if (fx= i n) acc (loop (fx+ i 1) (fx+ acc (tables:ref procedures (vector-ref procedure-keys (fxand i 63)) 0))))))))
 
 (define (changes)
-  (as-module '(init)
-    (for-each (lambda (p) (add-hook! changed p)) (entries 10))
-    (measure "table-set!" 20000 1
-      (lambda (n) (let loop ([i 0]) (unless (fx= i n) (table-set! keys #\a i) (loop (fx+ i 1))))))
-    (measure "set-option!" 20000 1
-      (lambda (n) (let loop ([i 0]) (unless (fx= i n) (set-option! column (fx+ 60 (fxand i 7))) (loop (fx+ i 1))))))
-    (measure "add-hook!-remove-hook!" 20000 1
-      (lambda (n)
-        (let loop ([i 0])
-          (unless (fx= i n) (add-hook! changed entry) (remove-hook! changed entry) (loop (fx+ i 1))))))))
+  (call-as-owner (plugins:configuration-owner)
+    (lambda ()
+      (for-each (lambda (p) (hooks:add! changed p)) (entries 10))
+      (measure "table-set!" 20000 1
+        (lambda (n) (let loop ([i 0]) (unless (fx= i n) (tables:set! keys #\a i) (loop (fx+ i 1))))))
+      (measure "set-option!" 20000 1
+        (lambda (n) (let loop ([i 0]) (unless (fx= i n) (options:set! column (fx+ 60 (fxand i 7))) (loop (fx+ i 1))))))
+      (measure "add-hook!-remove-hook!" 20000 1
+        (lambda (n)
+          (let loop ([i 0])
+            (unless (fx= i n) (hooks:add! changed entry) (hooks:remove! changed entry) (loop (fx+ i 1)))))))))
 
 (define (spawn-tasks n)
   (collect-rendezvous)
@@ -132,7 +133,7 @@
       (lambda (resume)
         (let ([left n])
           (do ([i 0 (+ i 1)]) ((= i n))
-            (spawn-task (lambda () (set! left (- left 1)) (when (= left 0) (resume void))))))))
+            (spawn-task (lambda (restore) (set! left (- left 1)) (when (= left 0) (resume void))))))))
     (/ (- (now-ns) start) (exact->inexact n))))
 
 (define (tasks)
@@ -147,9 +148,11 @@
   (let ([start (bytes-allocated-so-far)])
     (suspend
       (lambda (resume)
-        (do ([i 0 (+ i 1)]) ((= i n)) (post! void))
-        (post! (lambda () (resume void)))))
+        (do ([i 0 (+ i 1)]) ((= i n)) (spawn-task ignore))
+        (spawn-task (lambda (restore) (resume void)))))
     (/ (- (bytes-allocated-so-far) start) (exact->inexact n))))
+
+(define (ignore restore) (void))
 
 (define (posts)
   (printf "posted-item-bytes ~,2f\n" (median (map (lambda (k) (posted-item-bytes 100000)) (iota 5)))))
@@ -163,5 +166,5 @@
   (tasks)
   (posts))
 
-(for-each (lambda (p) (add-hook! other10 p)) (entries 10))
-(add-hook! other1 (car (entries 1)))
+(for-each (lambda (p) (hooks:add! other10 p)) (entries 10))
+(hooks:add! other1 (car (entries 1)))

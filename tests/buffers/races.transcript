@@ -26,9 +26,7 @@
 ; Only the main thread changes a buffer.
 > (define from-thread #f)
 > (begin
-    (fork-thread
-      (lambda ()
-        (guard (c [#t (set! from-thread (list (condition-who c) (condition-message c)))])
+    (fork-task (lambda (restore) (guard (c [#t (set! from-thread (list (condition-who c) (condition-message c)))])
           (buffers:replace! lines 1 1 "x"))))
     (testing:wait-until (lambda () from-thread))
     from-thread)
@@ -37,9 +35,7 @@
 ; it changes both.
 > (define (from-another-thread thunk)
     (let ([answer #f])
-      (fork-thread
-        (lambda ()
-          (guard (c [#t (set! answer (list (condition-who c) (condition-message c)))])
+      (fork-task (lambda (restore) (guard (c [#t (set! answer (list (condition-who c) (condition-message c)))])
             (thunk))))
       (testing:wait-until (lambda () answer))
       answer))
@@ -71,7 +67,7 @@
     (let loop ()
       (if quitting
           (begin
-            (request-quit!)
+            (testing:request-quit!)
             (chez:sleep (make-time 'time-duration 1000000 0))
             (loop))
           (set! stopped #t))))
@@ -95,10 +91,10 @@
 ; before it enters the guard again.
 > (let ([until (+ (real-time) 2000)])
     (let again ()
-      (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (again)])
+      (guard (c [(cancelled? c) (set! quits (+ quits 1)) (again)])
         (unless forked
           (set! forked #t)
-          (fork-thread quitter))
+          (fork-task (lambda (restore) (quitter))))
         (stress until)
         (set! quitting #f)
         (let spin () (unless stopped (spin)))

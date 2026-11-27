@@ -6,7 +6,7 @@
 > (answer! f "prompt" (lambda (f r) #f))
 > (define t (start! (lambda () (pi:send! chat "Fix it"))))
 > (define r (wait-held f "prompt"))
-> (list (ref r "message") (ref r "streamingBehavior") (task-done? t))
+> (list (ref r "message") (ref r "streamingBehavior") (eq? (task-state t) 'done))
 ("Fix it" "steer" #f)
 > (respond! f r '(("disposition" . "started")))
 > (result t)

@@ -1,27 +1,31 @@
 #!tuna
+(import (hooks) (tables))
 ;; Stands in for the web plugin, so no server starts: clients are records
 ;; the tests make.
 (define-record-type client (fields number))
 
-(define-table input-handlers)
-(define-table scripts)
-(define-table stylesheets)
-(define-table early-scripts)
+(tables:define-table input-handlers)
+(tables:define-table scripts)
+(tables:define-table stylesheets)
+(tables:define-table early-scripts)
 
 (define (send-screen! client screen title) (void))
 
-(define-hook client-added)
-(define-hook client-removed)
+(hooks:define-hook client-added)
+(hooks:define-hook client-removed)
 
-(define connected '())
+(define %connected '())
 
-(define (clients) connected)
+(define (clients) %connected)
 
+;; A configuration read again asks again for the clients it made, and
+;; gets the same ones.
 (define (add-client! n)
-  (let ([c (make-client n)])
-    (set! connected (append connected (list c)))
-    (client-added c)
-    c))
+  (or (find (lambda (c) (= (client-number c) n)) %connected)
+      (let ([c (make-client n)])
+        (set! %connected (append %connected (list c)))
+        (client-added c)
+        c)))
 
 (define current-client (make-thread-parameter #f))
 

@@ -5,8 +5,8 @@
       (responses ("textDocument/completion" . ,result))))
 > (define (configure-completion! result) (with-output-to-file (config-of "alpha") (lambda () (write (completion-config result))) 'replace))
 > (configure-completion! (vector (item "apple") (item "apricot") (item "banana")))
-> (table-set! lsp:language-servers "fakelang" (list alpha))
-> (add-hook! fake-mode-hook lsp:ensure)
+> (tables:set! lsp:language-servers "fakelang" (list alpha))
+> (hooks:add! fake-mode-hook lsp:ensure)
 > (write-file! (string-append project "/a.fk") "\n")
 > (define a (visit! (string-append project "/a.fk")))
 > (wait-for "alpha" "textDocument/didOpen")
@@ -37,7 +37,7 @@
 ; A text edit is counted on the text the request saw, so it applies after
 ; more typing; extra edits, such as an import, and a command follow.
 > (define ran '())
-> (table-set! lsp:commands "server.cmd" (lambda (c arguments) (set! ran (cons (vector->list arguments) ran))))
+> (tables:set! lsp:commands "server.cmd" (lambda (c arguments) (set! ran (cons (vector->list arguments) ran))))
 > (configure-completion! (vector `(("label" . "datetime")
                                    ("textEdit" ("range" ("start" ("line" . 1) ("character" . 0)) ("end" ("line" . 1) ("character" . 2))) ("newText" . "datetime.now"))
                                    ("additionalTextEdits" . #((("range" ("start" ("line" . 0) ("character" . 0)) ("end" ("line" . 0) ("character" . 0))) ("newText" . "import datetime\n"))))
@@ -55,7 +55,7 @@
 > (list (text a) ran)
 ("import datetime\nx\ndatetime.now\n" ((1 2)))
 ; Without a local procedure a command goes to the server.
-> (table-remove! lsp:commands "server.cmd")
+> (tables:remove! lsp:commands "server.cmd")
 > (fresh!)
 > (press! "C-M-i")
 > (wait-matches (session))
@@ -65,13 +65,13 @@
 (("command" . "server.cmd") ("arguments" . #(1 2)))
 ; A server's trigger character starts completion as soon as it is typed,
 ; with no text before point, where a symbol's first character starts none.
-> (set-option! completion-popup:auto-delay 0.01)
+> (options:set! completion-popup:auto-delay 0.01)
 > (configure-completion! (vector (item "now") (item "today")))
 > (buffers:replace! a 1 (- (document:length (buffers:document a)) 1) "\n")
 #<edit 22>
 > (in-client (lambda () (views:set-point! (view) 1)))
 > (type! "d")
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (session)
 #f
 > (type! ".")
@@ -80,4 +80,4 @@
 > (texts (session))
 ("now" "today")
 > (press! "C-g")
-> (set-option! completion-popup:auto-delay #f)
+> (options:set! completion-popup:auto-delay #f)

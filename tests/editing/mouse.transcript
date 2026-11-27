@@ -3,7 +3,7 @@
 ; or a drag at the release.
 > (define (mouse-in! v action at . fields)
     (parameterize ([web:current-client client])
-      ((table-ref web:input-handlers "mouse") client
+      ((tables:ref web:input-handlers "mouse") client
        (append fields
                `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
                  ("view" . ,(views:id v)) ("version" . ,(buffers:version (views:buffer v)))
@@ -82,14 +82,14 @@
 > (apply mouse! "click" 2 (double))
 > (state)
 ("foo-bar  x---y\nsecond line\nthird" ((4 1)))
-> (table-set! syntax:word-characters modes:fundamental "-")
+> (tables:set! syntax:word-characters modes:fundamental "-")
 > (apply mouse! "down" 2 (double))
 > (state)
 ("foo-bar  x---y\nsecond line\nthird" ((8 1)))
 > (apply mouse! "down" 9 (double))
 > (state)
 ("foo-bar  x---y\nsecond line\nthird" ((10 8)))
-> (table-set! syntax:word-characters modes:fundamental "")
+> (tables:set! syntax:word-characters modes:fundamental "")
 > (apply mouse! "down" 12 (double))
 > (state)
 ("foo-bar  x---y\nsecond line\nthird" ((14 11)))
@@ -259,7 +259,7 @@
 ("fouronthree four" ((5 #f)))
 ; The middle button yanks, so the yanker of the kind it inserts places it.
 > (define calls '())
-> (table-set! kill-ring:yankers 'md:image (lambda (b at piece) (set! calls (cons at calls)) at))
+> (tables:set! kill-ring:yankers 'md:image (lambda (b at piece) (set! calls (cons at calls)) at))
 > (cadr (start! (md:doc '() (md:para '() "Pic " (md:image '((src . "a.png"))) ".\n")) 7))
 ((7 #f))
 > (let ([c (car (views:cursors (view)))]) (views:set-cursor! c 7 6))

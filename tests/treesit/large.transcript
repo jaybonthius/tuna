@@ -14,7 +14,7 @@
     (views:scroll-to! v (line-start b 20000) (views:align top))
     (show! desktop v)
     (modes:set-major-mode python:mode b))
-> (let loop () (unless first-runs (sleep-for 0.01) (loop)))
+> (let loop () (unless first-runs (timers:sleep 0.01) (loop)))
 > (drawn-lines v)
 ((19900 20100))
 > (map (lambda (s) (list (line-of b (car s)) (line-of b (- (cadr s) 1)))) (list-head (sets) 1))

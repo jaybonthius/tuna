@@ -23,14 +23,14 @@
 > (line! 3)
 > (define jumped '())
 > (define (note-jump v) (set! jumped (cons (views:point v) jumped)))
-> (add-hook! jump-history:after-jump note-jump)
+> (hooks:add! jump-history:after-jump note-jump)
 > (define t (start! (lambda () (press! "M-g" "g"))))
 > (type! "5")
 > (press! "RET")
 > (result t)
 > (length jumped)
 1
-> (remove-hook! jump-history:after-jump note-jump)
+> (hooks:remove! jump-history:after-jump note-jump)
 > (press! "M-,")
 > (here)
 ("a.txt" 3)
@@ -67,7 +67,7 @@
 > (define t (start! (lambda () (press! "C-x" "b"))))
 > (press! "C-n")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (equal? (places) before)
 #t
@@ -123,7 +123,7 @@
 ; M-g f reads the buffer's diagnostics grouped by severity, most severe
 ; first; e SPC narrows to errors. It goes to the one chosen, and M-,
 ; returns.
-> (buffers:with-buffer notes (set-option-local! diagnostics:mode #t))
+> (buffers:with-buffer notes (options:set-local! diagnostics:mode #t))
 > (define source (diagnostics:make-source))
 > (define (on-line n severity message)
     (diagnostics:make-diagnostic (cons n 0) #f severity message))
@@ -151,7 +151,7 @@
 ; C-u M-g f reads the project's, from files no buffer visits too.
 > (define uses (files:visit (string-append code "/uses.txt")))
 > (in-client (lambda () (layout:switch-to-buffer uses)))
-> (buffers:with-buffer uses (set-option-local! diagnostics:mode #t))
+> (buffers:with-buffer uses (options:set-local! diagnostics:mode #t))
 > (diagnostics:report! source uses (list (diagnostics:make-diagnostic '(2 . 4) #f (diagnostics:severity warning) "average is slow")))
 #t
 > (diagnostics:report! source (string-append code "/sub/twice.txt") (list (diagnostics:make-diagnostic '(2 . 4) #f (diagnostics:severity error) "total twice")))
@@ -222,6 +222,6 @@
 > (equal? (places) before)
 #t
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
-(raised #<condition &quit>)
+(raised #<condition &cancelled>)

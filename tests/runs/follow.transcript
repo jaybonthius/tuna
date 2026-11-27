@@ -2,8 +2,8 @@
 ; such as one a runs:started entry shows, start at the end, and stay
 ; after the output as it arrives, a rewritten meter line included.
 > (define (show-run b) (layout:switch-to-buffer b))
-> (add-hook! runs:started show-run)
-> (set-option! runs:follow-output? #t)
+> (hooks:add! runs:started show-run)
+> (options:set! runs:follow-output? #t)
 > (define meter (runs:start-for-user "*meter*" "printf 'a\\n10%%'; sleep 0.2; printf '\\r20%%'; sleep 0.2; printf '\\rdone\\n'" home))
 > (define v (layout:selected-view))
 > (eq? (views:buffer v) meter)
@@ -15,13 +15,13 @@
 > (= (views:point v) (- (document:length (buffers:document meter)) 1))
 #t
 ; Without it, the points start at the start of the buffer and stay.
-> (remove-option! runs:follow-output?)
+> (options:unset! runs:follow-output?)
 > (define quiet (runs:start-for-user "*meter*" "printf 'b\\n'; sleep 0.2; printf 'c\\n'" home))
 > (ended? quiet)
 0
 > (list (eq? quiet meter) (views:point v))
 (#t 1)
-> (remove-hook! runs:started show-run)
+> (hooks:remove! runs:started show-run)
 ; g in a run's buffer runs it again as the user's run, through
 ; buffers:revert-buffer.
 > (layout:switch-to-buffer quiet)

@@ -1,4 +1,4 @@
-#!tuna/base
+#!tuna
 (import (buffers))
 
 (define (%tune n) n)

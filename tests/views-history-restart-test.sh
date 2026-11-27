@@ -24,7 +24,7 @@ cp tests/views/home/.config/tuna/lib/web.sls \
    tests/views/home/.config/tuna/lib/md.sls "$home/.config/tuna/lib/"
 printf 'one\ntwo\nthree\n' > "$home/a.txt"
 cat > "$home/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins) (document) (md))
+(import (tuna) (document) (md))
 (use-plugin views)
 (use-plugin files)
 (define notes (buffers:make "notes" "one two\nthree four\nfive six\n"))
@@ -80,10 +80,10 @@ output=$(run '(define v (views:atom-view (document:token (buffers:document layou
 (define late (buffers:make "late" "late\n"))
 (views:set-buffer! v late)
 (string=? before (text))
-(set-idle! #t)
-(sleep-for 1.5)
-(set-idle! #f)
-(sleep-for 0.3)
+(timers:set-idle! #t)
+(timers:sleep 1.5)
+(timers:set-idle! #f)
+(timers:sleep 0.3)
 (string=? before (text))')
 expect "written at idle" "$output" '#t
 #f'
@@ -102,9 +102,9 @@ expect "a run that shows a buffer no start makes" "$output" '("*gone*<7>")'
 grep -q 'gone' "$histories" || fail "the gone buffer is not saved at exit"
 for restart in 1 2; do
   output=$(run '(define v (views:atom-view (document:token (buffers:document layout) 1)))
-(set-idle! #t)
-(sleep-for 1.5)
-(set-idle! #f)
+(timers:set-idle! #t)
+(timers:sleep 1.5)
+(timers:set-idle! #f)
 (names (views:previous-buffers v))')
   expect "restart $restart without it" "$output" '()'
   if grep -q 'gone' "$histories"; then fail "restart $restart: the gone buffer is still saved"; fi

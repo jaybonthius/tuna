@@ -1,13 +1,13 @@
 > (define repo (fresh! "repo"))
 ; past git-status:file-list-limit untracked files, the list ends in
 ; how many are not listed.
-> (set-option! git-status:file-list-limit 2)
+> (options:set! git-status:file-list-limit 2)
 > (sh "cd repo && echo 1 > u1.txt && echo 2 > u2.txt")
 > (git-mode:refresh-repository repo)
 > (ui:show-section! (view) (section '(untracked . #f)))
 > (list-head (list-tail (status) 2) 5)
 ("Untracked files (3)" "new.txt" "u1.txt" "1 files not listed" "Unstaged changes (4)")
-> (set-option! git-status:file-list-limit 100)
+> (options:set! git-status:file-list-limit 100)
 ; git-status:untracked-files lists every file, none, or a folder as
 ; itself; #f follows status.showUntrackedFiles.
 > (sh "cd repo && mkdir -p folder && echo f > folder/x.txt && echo g > folder/y.txt")
@@ -15,15 +15,15 @@
 > (git-mode:refresh-repository repo)
 > (untracked)
 ("folder/" "new.txt" "u1.txt" "u2.txt")
-> (set-option! git-status:untracked-files (git:untracked-listing all))
+> (options:set! git-status:untracked-files (git:untracked-listing all))
 > (git-mode:refresh-repository repo)
 > (untracked)
 ("folder/x.txt" "folder/y.txt" "new.txt" "u1.txt" "u2.txt")
-> (set-option! git-status:untracked-files (git:untracked-listing no))
+> (options:set! git-status:untracked-files (git:untracked-listing no))
 > (git-mode:refresh-repository repo)
 > (section '(untracked . #f))
 #f
-> (set-option! git-status:untracked-files #f)
+> (options:set! git-status:untracked-files #f)
 > (sh "cd repo && git config status.showUntrackedFiles no")
 > (git-mode:refresh-repository repo)
 > (section '(untracked . #f))
@@ -48,15 +48,15 @@
 ; among the built-in ones, by depth.
 > (define (notes-section repository status) (list (ui:section '((type . notes) (value . #f)) "Notes" "a note")))
 > (define (user-header repository status) (list (list "User:     Tuna")))
-> (add-hook! git-status:sections notes-section 15)
-> (add-hook! git-status:headers user-header 15)
+> (hooks:add! git-status:sections notes-section 15)
+> (hooks:add! git-status:headers user-header 15)
 > (git-mode:refresh-repository repo)
 > (list-head (status) 3)
 ("Head:     main long" "Merge:    origin/main First commit" "User:     Tuna")
 > (list-head (member "Notes" (status)) 2)
 ("Notes" "a note")
-> (remove-hook! git-status:sections notes-section)
-> (remove-hook! git-status:headers user-header)
+> (hooks:remove! git-status:sections notes-section)
+> (hooks:remove! git-status:headers user-header)
 > (git-mode:refresh-repository repo)
 ; a row's buttons run s, u and k on that row whatever point
 ; is; point and the selected view stay.

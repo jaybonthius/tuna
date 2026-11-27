@@ -5,7 +5,7 @@
 > (define t (start! (lambda () (press! "M-s" "r"))))
 > (define s (session))
 > (type! "ne")
-> (sleep-for 0.5)
+> (timers:sleep 0.5)
 > (texts s)
 ()
 > (type! "edle")
@@ -52,7 +52,7 @@
 > (texts s)
 ("text.txt-1-needle one" "text.txt:2:hay")
 > (press! "C-g")
-! &quit
+! &cancelled
 ; rg's complaint about the search is shown.
 > (define t (start! (lambda () (press! "M-s" "r"))))
 > (define s (session))
@@ -64,13 +64,13 @@
 > (echo-area:current-message)
 "rg: regex parse error:"
 > (press! "C-g")
-! &quit
+! &cancelled
 ; Lines show as rg prints them, before it ends.
-> (set-option! grep:command-line (list (string-append (getenv "HOME") "/bin/slow-rg")))
+> (options:set! grep:command-line (list (string-append (getenv "HOME") "/bin/slow-rg")))
 > (define t (start! (lambda () (press! "M-s" "r"))))
 > (define s (session))
 > (type! "first")
-> (sleep-for 0.5)
+> (timers:sleep 0.5)
 > (texts s)
 ("a.txt:1:first")
 > (completion:session-busy? s)
@@ -79,16 +79,16 @@
 > (processes:status slow)
 #f
 > (processes:owner slow)
-(grep)
+#<owner (grep) 1>
 ; A new search stops the running rg at once, and its lines stay until the
 ; new search shows its own.
 > (type! "s")
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (processes:status slow)
 -1
 > (texts s)
 ("a.txt:1:first")
-> (sleep-for 0.5)
+> (timers:sleep 0.5)
 > (texts s)
 ("a.txt:1:first")
 > (define slower (find (lambda (p) (and (not (eq? p slow)) (string=? (car (processes:command-line p)) (car (grep:command-line))))) (processes:all)))
@@ -96,13 +96,13 @@
 #f
 ; Quitting the prompt stops it too.
 > (press! "C-g")
-! &quit
-> (sleep-for 0.1)
+! &cancelled
+> (timers:sleep 0.1)
 > (processes:status slower)
 -1
 ; RET with nothing selected, as when a fast typist's key comes before a
 ; broad search's matches, chooses the line whose text is the input.
-> (set-option! grep:command-line (list (string-append (getenv "HOME") "/bin/many-rg")))
+> (options:set! grep:command-line (list (string-append (getenv "HOME") "/bin/many-rg")))
 > (define t (start! (lambda () (press! "M-s" "r"))))
 > (define s (session))
 > (type! "line")
@@ -119,7 +119,7 @@
 ; Lines group by file, under the path rg printed, each row the line's
 ; number and text. A file's lines come together, so the matches of each
 ; round of lines go at the end of the same matches.
-> (set-option! grep:command-line (list (string-append (getenv "HOME") "/bin/grouped-rg")))
+> (options:set! grep:command-line (list (string-append (getenv "HOME") "/bin/grouped-rg")))
 > (define t (start! (lambda () (press! "M-s" "r"))))
 > (define s (session))
 > (type! "any")
@@ -153,7 +153,7 @@
 > (views:set-buffer! (view) (files:visit "~/src/text.txt"))
 ; Lines of a file that come after another file's are matched again with
 ; the earlier ones, so the file's lines stay together.
-> (set-option! grep:command-line (list (string-append (getenv "HOME") "/bin/interleaved-rg")))
+> (options:set! grep:command-line (list (string-append (getenv "HOME") "/bin/interleaved-rg")))
 > (define t (start! (lambda () (press! "M-s" "r"))))
 > (define s (session))
 > (type! "any")
@@ -163,9 +163,9 @@
 > (texts s)
 ("a.txt:1:one a" "a.txt:2:two a" "b.txt:1:one b")
 > (press! "C-g")
-! &quit
+! &cancelled
 ; Without rg, each search says so.
-> (set-option! grep:command-line (list "no-such-rg"))
+> (options:set! grep:command-line (list "no-such-rg"))
 > (define t (start! (lambda () (press! "M-s" "r"))))
 > (define s (session))
 > (type! "needle")
@@ -181,11 +181,11 @@
 > (wait-matches s)
 ! (grep) spawn-process: cannot run no-such-rg: No such file or directory with irritants ("no-such-rg" ("-e" "-1" "-F" "."))
 > (press! "C-g")
-! &quit
-> (set-option! grep:command-line (option-default grep:command-line))
+! &cancelled
+> (options:set! grep:command-line (options:default grep:command-line))
 ; With the default styles, the filter after # matches inside a line found,
 ; and M-s l matches inside a line.
-> (set-option! completion:styles (list completion:prefix completion:partial))
+> (options:set! completion:styles (list completion:prefix completion:partial))
 > (views:set-buffer! (view) (files:visit (string-append (getenv "HOME") "/src/text.txt")))
 > (define t (start! (lambda () (press! "M-s" "r"))))
 > (define s (session))
@@ -194,7 +194,7 @@
 > (texts s)
 ("text.txt:3:needle two")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (views:set-buffer! (view) (buffers:make "code" "(define (f x)\n  (display x))\n"))
 > (define t (start! (lambda () (press! "M-s" "l"))))
 > (define s (session))
@@ -203,7 +203,7 @@
 > (texts s)
 ("  (display x))")
 > (press! "C-g")
-! &quit
+! &cancelled
 ; In a project, M-s r searches the project from its root; a file in a git
 ; submodule searches its parent repository's project.
 > (system "cd ~/code && git init -q tuna && mkdir -p tuna/lib/sub && echo 'gitdir: ../../.git/modules/lib/sub' > tuna/lib/sub/.git && echo '(define needle 1)' > tuna/lib/sub/deep.sls && echo '(define top 1)' > tuna/top.sls")
@@ -244,7 +244,7 @@
 > (document:line (buffers:document (views:buffer (view))) (views:point (view)))
 3
 > (press! "C-g")
-! &quit
+! &cancelled
 ; A location carries rg's column, counted in characters from the line's
 ; start, and grep goes to it; a context line's column is 0.
 > (system "mkdir -p ~/columns && printf 'h\\303\\251llo needle\\n  needle\\nafter\\n' > ~/columns/c.txt")
@@ -304,7 +304,7 @@
 > (list (place) (and (member "b.sls" (open-files)) #t))
 (("b.sls" 1) #t)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (list (place) (equal? (open-files) before))
 (("a.txt" 1) #t)
 ; Choosing a line keeps its file's buffer, kills the others the previews
@@ -337,18 +337,18 @@
 ("a.txt" 1)
 ; With grep:preview-delay, a line is shown once it has stayed selected
 ; that long.
-> (set-option! grep:preview-delay 0.3)
+> (options:set! grep:preview-delay 0.3)
 > (define t (start! (lambda () (press! "M-s" "r"))))
 > (define s (session))
 > (type! "define-record --sort=path")
 > (wait-matches s)
 > (press! "C-n")
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (place)
 ("a.txt" 1)
 > (testing:wait-until (lambda () (equal? (place) '("b.sls" 1))))
 > (place)
 ("b.sls" 1)
 > (press! "C-g")
-! &quit
-> (set-option! grep:preview-delay 0)
+! &cancelled
+> (options:set! grep:preview-delay 0)

@@ -8,12 +8,12 @@
 > (list (session) (text) (last-message))
 (#f "y1 x2 x3\n" "a read-only span refuses the edit")
 > (views:set-point! (view) 1)
-> (set-option! replace:skip-read-only #t)
+> (options:set! replace:skip-read-only #t)
 > (replace! "M-%" "x" "y")
 > (press! "!")
 > (list (session) (text) (last-message))
 (#f "y1 x2 y3\n" "Replaced 1 occurrence (skipped 1)")
-> (set-option! replace:skip-read-only #f)
+> (options:set! replace:skip-read-only #f)
 ; A match touching an atom's text is passed over and counted.
 > (buffers:define-kind chip (content atom) (text (lambda (n) "foo")))
 > (define a (buffers:make "atoms" '(buffers:text () "foo " #(chip ()) " foo\n")))
@@ -48,8 +48,8 @@
 ; A session is a record with hooks; advice on replace:prompt shows a
 ; count.
 > (define events '())
-> (add-hook! replace:started (lambda (s) (set! events (cons (list 'started (replace:session-count s)) events))))
-> (add-hook! replace:ended (lambda (s n) (set! events (cons (list 'ended n (keys:prompt client)) events))))
+> (hooks:add! replace:started (lambda (s) (set! events (cons (list 'started (replace:session-count s)) events))))
+> (hooks:add! replace:ended (lambda (s n) (set! events (cons (list 'ended n (keys:prompt client)) events))))
 > (define (with-count prompt s)
     (let* ([scan (replace:session-scan s)] [m (replace:session-match s)]
            [index (and m (search:scan-index scan (search:match-start m)))])
@@ -59,7 +59,7 @@
 > (advice-add! replace:prompt with-count)
 > (define r (show "rec" "o1 o2 o3\n"))
 > (replace! "M-%" "o" "0")
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (press! "n")
 > (prompt)
 "[2/3] Query replacing o with 0: (? for help) "
@@ -74,23 +74,23 @@
 ; procedure replacement gets each match and the count so far.
 > (define q (show "code" "k k k\n"))
 > (define result #f)
-> (spawn-task (lambda () (set! result (replace:query-replace! (view) other (search:make-query "k") (lambda (m n) (number->string n)) 1 6 'forward))))
+> (spawn-task (lambda (restore) (set! result (replace:query-replace! (view) other (search:make-query "k") (lambda (m n) (number->string n)) 1 6 'forward))))
 #<task>
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (list (replace:current client) (replace:session? (replace:current other)))
 (#f #t)
 > (press-in! other "y" "y" "q")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (list result (text))
 (2 "0 1 k\n")
-> (spawn-task (lambda () (replace:query-replace! (view) other (search:make-query "k") "z" 1 6 'forward)))
+> (spawn-task (lambda (restore) (replace:query-replace! (view) other (search:make-query "k") "z" 1 6 'forward)))
 #<task>
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (replace:query-replace! (view) other (search:make-query "k") "z" 1 6 'forward)
 ! replace:query-replace!: a replace session is already running for this client
-> (spawn-task (lambda () (guard (c [#t (set! result (condition-message c))]) (replace:query-replace! (view) other (search:make-query "k") "z" 1 6 'forward))))
+> (spawn-task (lambda (restore) (guard (c [#t (set! result (condition-message c))]) (replace:query-replace! (view) other (search:make-query "k") "z" 1 6 'forward))))
 #<task>
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > result
 "a replace session is already running for this client"
 > (press-in! other "q")
@@ -117,7 +117,6 @@
 #t
 > (replace! "M-%" "w" "v")
 > (press! "C-g")
-! &quit
 > (list (point) (= (+ before 1) (length (jump-history:places))))
 (2 #t)
 > (views:set-point! (view) 1)
@@ -135,7 +134,7 @@
 > (start! "M-%")
 > (type! "X")
 > (press! "RET")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (list (isearch:current client) (asked))
 (#f (6 "Query replacing ab with X: (? for help) " "ab"))
 > (press! "!")
@@ -146,7 +145,7 @@
 > (start! "C-M-%")
 > (type! "Y")
 > (press! "RET")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (press! "!")
 > (text)
 "Y Y\n"
@@ -158,9 +157,9 @@
 ; The prompt holds the query and the replacement as typed; the echo area
 ; draws their control characters as ^X.
 > (define tabbed (show "tabbed" "a\tb\n"))
-> (spawn-task (lambda () (replace:query-replace! (view) client (search:make-query "a\tb") "c\td" 1 5 'forward)))
+> (spawn-task (lambda (restore) (replace:query-replace! (view) client (search:make-query "a\tb") "c\td" 1 5 'forward)))
 #<task>
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (keys:prompt client)
 ("Query replacing a\tb with c\td: (? for help) ")
 > (prompt)

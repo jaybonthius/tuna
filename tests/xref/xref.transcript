@@ -36,18 +36,18 @@
 ; A quit while choosing records nothing.
 > (define t (start! (lambda () (press! "M-."))))
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (list (here) (places))
 (("uses.txt" 1) ())
 ; A display that returns at once, as a list would, leaves the command
 ; ended, and the place it started from recorded.
 > (define shown '())
-> (set-option! xref:definitions-display (lambda (items title) (set! shown (list title (length items)))))
+> (options:set! xref:definitions-display (lambda (items title) (set! shown (list title (length items)))))
 > (define t (start! (lambda () (press! "M-."))))
-> (list (task-done? t) shown (here) (places))
+> (list (eq? (task-state t) 'done) shown (here) (places))
 (#t ("Definitions of total" 2) ("uses.txt" 1) (("uses.txt" 1)))
-> (remove-option! xref:definitions-display)
+> (options:unset! xref:definitions-display)
 ; C-u M-. asks, completing over the backend's identifiers with the one at
 ; point as the default, and takes a name that is not one.
 > (define t (start! (lambda () (press! "C-u" "M-."))))
@@ -72,24 +72,24 @@
 > (texts s)
 ("~/code/uses.txt:1: x = total" "~/code/uses.txt:2: y = average + total")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
-> (set-option! xref:prompt-for-identifier #f xref:auto-jump-to-first-reference? #t)
+> (options:set! xref:prompt-for-identifier #f xref:auto-jump-to-first-reference? #t)
 > (to-word! "total" 2)
 > (press! "M-?")
 > (here)
 ("uses.txt" 1)
-> (set-option! xref:prompt-for-identifier #t)
+> (options:set! xref:prompt-for-identifier #t)
 > (define t (start! (lambda () (press! "M-."))))
 > (minibuffer:prompt? (minibuffer:current-prompt))
 #t
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
-> (remove-option! xref:prompt-for-identifier xref:auto-jump-to-first-reference?)
+> (options:unset! xref:prompt-for-identifier xref:auto-jump-to-first-reference?)
 ; A jump to an item runs jump-history:after-jump, whose entry recentres.
 > (define jumped '())
-> (add-hook! jump-history:after-jump (lambda (v) (set! jumped (cons (buffers:name (views:buffer v)) jumped))))
+> (hooks:add! jump-history:after-jump (lambda (v) (set! jumped (cons (buffers:name (views:buffer v)) jumped))))
 > (to-word! "average" 2)
 > (press! "M-.")
 > jumped
@@ -137,20 +137,20 @@
 > (question)
 "Find definitions of (default total): "
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (define t (start! (lambda () (press! "M-?"))))
 > (question)
 "Find references of (default total): "
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (views:set-point! (view) (document:length (buffers:document uses)))
 > (define t (start! (lambda () (press! "M-."))))
 > (question)
 "Find definitions of: "
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 ; With several definitions, C-x 4 . asks first, then shows the one chosen
 ; in another view.

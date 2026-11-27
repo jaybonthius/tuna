@@ -26,7 +26,7 @@
 
   (define busy (list 'busy))
 
-  ;; A quit can land anywhere in code on the main thread, so the main
+  ;; A cancel can land anywhere in code on the main thread, so the main
   ;; thread holds the mutex only with interrupts disabled. A blocked
   ;; acquire with interrupts disabled would keep a collection waiting for
   ;; the main thread, so it only tries the mutex, which the writer holds
@@ -60,7 +60,7 @@
         (set! failures '())
         taken)))
 
-  ;; Waiting on a condition would hold the mutex where a quit can land,
+  ;; Waiting on a condition would hold the mutex where a cancel can land,
   ;; so the main thread looks again every few milliseconds.
   (define (wait-for-writes seconds)
     (let ([deadline (add-duration (current-time 'time-monotonic)

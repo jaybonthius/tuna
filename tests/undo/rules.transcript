@@ -9,7 +9,7 @@
 #<edit 2>
 > (begin (buffers:replace! b 1 1 "3") (buffers:replace! b 1 1 "4"))
 #<edit 4>
-> (begin (buffers:replace! b 1 1 "5") (sleep-for 0.01) (buffers:replace! b 1 1 "6"))
+> (begin (buffers:replace! b 1 1 "5") (timers:sleep 0.01) (buffers:replace! b 1 1 "6"))
 #<edit 6>
 > (list (text b) (parents b))
 ("654321abc\n" (#f 0 1 2 3 4))
@@ -92,7 +92,7 @@
 > (define g (buffers:make "group" "\n"))
 > (undo:with-edit-group g
     (buffers:with-buffer g (commands:run checks:insert 1 "a"))
-    (sleep-for 0.01)
+    (timers:sleep 0.01)
     (buffers:with-buffer g (commands:run checks:insert 1 "b"))
     (values 1 2))
 1
@@ -104,7 +104,7 @@
 > (raised (lambda ()
     (undo:with-edit-group g
       (buffers:replace! g 1 1 "x")
-      (sleep-for 0.01)
+      (timers:sleep 0.01)
       (buffers:replace! g 1 1 "y")
       (error 'body "failed"))))
 (body "failed")
@@ -193,7 +193,7 @@ escaped
     (when (and sneak (eq? buffer k))
       (set! sneak #f)
       (buffers:replace! k 1 1 "!")))
-> (add-hook! buffers:after-edit sneak-in)
+> (hooks:add! buffers:after-edit sneak-in)
 > (set! sneak #t)
 > (in-k undo:undo 1)
 ! undo:undo: the buffer does not hold the text its history expects
@@ -211,7 +211,7 @@ escaped
 > (in-k undo:undo 1)
 > (list (text k) (tree k))
 ("!01a23456789\n" (4 0 (0 #f) (1 2) (2 0) (3 2) (4 2)))
-> (remove-hook! buffers:after-edit sneak-in)
+> (hooks:remove! buffers:after-edit sneak-in)
 ; Undo puts the view's cursors where they were before the group; redo
 ; puts them at the end of the group's last edit.
 > (define w (buffers:make "cursors" "one two\n"))
@@ -235,7 +235,7 @@ escaped
 ; A history is trimmed to the limit: the oldest groups go first, a
 ; branch off the root before the path to the current state.
 > (define s (buffers:make "small" "\n"))
-> (buffers:with-buffer s (set-option-local! undo:limit 100))
+> (buffers:with-buffer s (options:set-local! undo:limit 100))
 > (define (in-s command . args) (buffers:with-buffer s (apply commands:run command args)))
 > (for-each (lambda (x) (in-s checks:insert 1 x)) '("a" "b" "c" "d"))
 #<edit 4>
@@ -246,7 +246,7 @@ escaped
 > (text s)
 "a\n"
 > (define s2 (buffers:make "branches" "\n"))
-> (buffers:with-buffer s2 (set-option-local! undo:limit 100))
+> (buffers:with-buffer s2 (options:set-local! undo:limit 100))
 > (define (in-s2 command . args) (buffers:with-buffer s2 (apply commands:run command args)))
 > (in-s2 checks:insert 1 "a")
 #<edit 1>
@@ -267,15 +267,15 @@ escaped
 ! undo:undo: no further undo information
 ; With a limit of 0 a buffer keeps no history.
 > (define z (buffers:make "rebuilt" "\n"))
-> (buffers:with-buffer z (set-option-local! undo:limit 0))
+> (buffers:with-buffer z (options:set-local! undo:limit 0))
 > (buffers:with-buffer z (commands:run checks:insert 1 "a"))
 #<edit 1>
 > (buffers:with-buffer z (commands:run undo:undo 1))
 ! undo:undo: no further undo information
 > (text z)
 "a\n"
-> (raised (lambda () (set-option! undo:limit -1)))
-(set-option! "-1 is not a valid value for undo:limit")
+> (raised (lambda () (options:set! undo:limit -1)))
+(options:set! "-1 is not a valid value for undo:limit")
 ; Undo says Undo and redo says Redo, as Emacs's undo and undo-redo; a
 ; refused redo says nothing. In a prompt's buffer, an internal one, both
 ; say nothing, as the mark commands do there.

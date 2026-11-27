@@ -57,7 +57,7 @@
 ; A user process nobody follows drops its oldest output by default, so
 ; it never waits; attaching from an offset the log no longer holds
 ; starts at the oldest offset kept.
-> (set-option! processes:log-size 1000)
+> (options:set! processes:log-size 1000)
 > (define flood (processes:start-for-user "head" '("-c" "200000" "/dev/zero")))
 > (testing:wait-until (lambda () (= (processes:output-end flood) 200000)))
 > (define pieces '())
@@ -76,7 +76,7 @@
 > (define held (processes:start-for-user "head" '("-c" "200000" "/dev/zero")
                  (processes:options [full-log (processes:full-log pause)])))
 > (testing:wait-until (lambda () (= (processes:output-end held) 1000)))
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (list (processes:output-end held) (processes:status held))
 (1000 #f)
 > (processes:attach! held 0 count-pieces noting-exit)
@@ -84,7 +84,7 @@
 > (testing:wait-until exited?)
 > (list (apply + pieces) (taken!))
 (200000 ((eof 200000) (exit 0)))
-> (remove-option! processes:log-size)
+> (options:unset! processes:log-size)
 ; Arguments are checked.
 > (processes:attach! (processes:start "true" '() (lambda (bytes end) #f)) 0 noting-output)
 ! processes:attach!: not a user process with irritant #<process 7 true>

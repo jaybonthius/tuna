@@ -1,5 +1,7 @@
 #!tuna
-(import (buffers) (document) (jobs) (syntax) (modes) (views) (faces) (web) (pcre2) (search scanning))
+(import (buffers) (document) (jobs) (syntax) (modes) (views) (faces) (web) (pcre2) (search scanning) (options) (tables) (saved))
+
+(define %self (current-owner))
 
 (define-enumeration case (smart fold exact) %cases)
 
@@ -7,28 +9,28 @@
 
 (define-enumeration direction (forward backward) %directions)
 
-(define-option case-fold 'smart (lambda (v) (memq v '(smart fold exact)))
+(options:define-option case-fold 'smart (lambda (v) (memq v '(smart fold exact)))
   "The case rule of queries made without one: smart, fold or exact.")
 
-(define-option lax-whitespace #t boolean?
+(options:define-option lax-whitespace #t boolean?
   "Whether queries made without a whitespace rule, other than regexps, match a run of spaces with search:whitespace.")
 
-(define-option regexp-lax-whitespace #f boolean?
+(options:define-option regexp-lax-whitespace #f boolean?
   "Whether regexp queries made without a whitespace rule match a run of spaces with search:whitespace.")
 
-(define-option whitespace "[ \\t]+" string?
+(options:define-option whitespace "[ \\t]+" string?
   "The pattern a run of spaces matches under a lax whitespace rule; it must hold no capturing group.")
 
-(define-option history-length 16 (lambda (v) (and (fixnum? v) (fx>= v 0)))
+(options:define-option history-length 16 (lambda (v) (and (fixnum? v) (fx>= v 0)))
   "How many texts search:history and search:regexp-history each keep.")
 
-(define-saved history '() (lambda (v) (and (list? v) (for-all string? v))))
+(saved:define-saved history '() (lambda (v) (and (list? v) (for-all string? v))))
 
-(define-saved regexp-history '() (lambda (v) (and (list? v) (for-all string? v))))
+(saved:define-saved regexp-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
-(define-saved prompt-regexp-history '() (lambda (v) (and (list? v) (for-all string? v))))
+(saved:define-saved prompt-regexp-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
-(define-table filters
+(tables:define-table filters
   "Maps predicates of a buffer and a match's start and end to #t; a match of any query counts only when every one returns true.")
 
 (define group-1 'search.group-1)
@@ -324,7 +326,7 @@
   (let* ([h (if (eq? (query-style query) regexp) regexp-history history)]
          [text (query-text query)]
          [kept (cons text (remove text (h)))])
-    (set-saved! h (if (> (length kept) (history-length)) (list-head kept (history-length)) kept))))
+    (saved:set! h (if (> (length kept) (history-length)) (list-head kept (history-length)) kept))))
 
 (define (%caseless? query pattern-exact?)
   (let ([c (query-case query)])
@@ -388,10 +390,10 @@
     (values (vector-ref v (fx* 2 n)) (vector-ref v (fx+ (fx* 2 n) 1)))))
 
 (define (%accepter buffer query)
-  (let ([own (query-filter query)] [reported '()] [entries (table-entries filters)])
+  (let ([own (query-filter query)] [reported '()] [entries (tables:entries filters)])
     (lambda (start end)
       (define (accepts? predicate)
-        (guard (c [(not (quit-condition? c))
+        (guard (c [(not (cancelled? c))
                    (unless (memq predicate reported)
                      (set! reported (cons predicate reported))
                      (report c))
@@ -605,12 +607,13 @@
         (%scan-generation-set! scan (fx+ (%scan-generation scan) 1))
         (let ([generation (%scan-generation scan)])
           (%scan-job-set! scan
-            (as-module (this-module)
-              (jobs:start %scanner
-                          (vector doc atoms (%scan-pattern scan) (%scan-caseless? scan) start end seen seen-end position gathered-to text)
-                          (lambda (report)
-                            (when (and (fx= generation (%scan-generation scan)) (not (%scan-stopped? scan)))
-                              (%take-report! scan report doc)))))))))))
+            (call-as-owner %self
+              (lambda ()
+                (jobs:start %scanner
+                            (vector doc atoms (%scan-pattern scan) (%scan-caseless? scan) start end seen seen-end position gathered-to text)
+                            (lambda (report)
+                              (when (and (fx= generation (%scan-generation scan)) (not (%scan-stopped? scan)))
+                                (%take-report! scan report doc))))))))))))
 
 (define scan
   (case-lambda
@@ -843,7 +846,7 @@
         (if (and (eq? v view) (or (not client) (eq? c client)))
             (%highlight-spans h start end)
             '())))
-    (table-set! views:span-sources (%highlight-source h) 1000)
+    (call-as-owner %self (lambda () (tables:set! views:span-sources (%highlight-source h) 1000)))
     h))
 
 (define (set-current! h match face)
@@ -860,7 +863,7 @@
 
 (define (end-highlight! h)
   (unless (highlight? h) (assertion-violation 'search:end-highlight! "not a highlight" h))
-  (table-remove! views:span-sources (%highlight-source h)))
+  (call-as-owner %self (lambda () (tables:remove! views:span-sources (%highlight-source h)))))
 
 ;; One copy of the text a scan reads serves its finds and the scans that
 ;; follow it while a scan of the buffer runs, rather than a copy at each
@@ -885,7 +888,7 @@
     (hashtable-keys %texts)))
 
 (define (%restart-scans ended)
-  (guard (c [(not (quit-condition? c)) (report c)])
+  (guard (c [(not (cancelled? c)) (report c)])
     (%restart-edited-scans!)
     (%drop-unheld-texts!))
   (ended))
@@ -903,4 +906,4 @@
     (put-string port (format "#<match ~a-~a>" (match-start m) (match-end m)))))
 
 (advice-add! batch-ended %restart-scans)
-(table-set! web:stylesheets 'search "search/search.css")
+(tables:set! web:stylesheets 'search "search/search.css")

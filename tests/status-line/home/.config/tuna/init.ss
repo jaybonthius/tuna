@@ -1,12 +1,13 @@
-(import (tuna) (tuna plugins) (document) (haml) (web) (layout-split))
+(import (options) (tables) (timers) (plugins))
+(import (tuna) (document) (haml) (web) (layout-split))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin modes)
 (use-plugin status-line
   (config
     (when (equal? (getenv "TRANSCRIPT") "examples")
-      (table-remove! status-line:segments status-line:minor-modes)
-      (table-set! status-line:segments status-line:position (status-line:right 90)))))
+      (tables:remove! status-line:segments status-line:minor-modes)
+      (tables:set! status-line:segments status-line:position (status-line:right 90)))))
 (use-plugin files)
 (use-plugin editing)
 (use-plugin undo)
@@ -77,7 +78,7 @@
     (for-each
       (lambda (action)
         (parameterize ([web:current-client client])
-          ((table-ref web:input-handlers "mouse") client
+          ((tables:ref web:input-handlers "mouse") client
            `(("type" . "mouse") ("action" . ,action) ("button" . ,button) ("clicks" . 1) ("modifiers" . #())
              ("view" . ,(views:id s)) ("version" . ,(buffers:version layout:buffer))
              ("showing" . ,(views:shown-count s)) ("token" . ,at)

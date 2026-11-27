@@ -1,30 +1,30 @@
 #!tuna
-(import (processes) (diff) (git state))
+(import (processes) (diff) (git state) (hooks) (options))
 
-(define-option program "git" string? "The git program run.")
+(options:define-option program "git" string? "The git program run.")
 
-(define-option global-arguments
+(options:define-option global-arguments
   '("--no-pager" "--literal-pathspecs" "-c" "core.preloadindex=true" "-c" "log.showSignature=false"
     "-c" "color.ui=false" "-c" "color.diff=false" "-c" "diff.noPrefix=false" "-c" "diff.mnemonicPrefix=false"
     "-c" "diff.srcPrefix=a/" "-c" "diff.dstPrefix=b/" "-c" "diff.suppressBlankEmpty=false" "-c" "core.quotePath=false")
   (lambda (v) (and (list? v) (for-all string? v)))
   "Arguments put before every subcommand, so a user's git configuration cannot change the output git parses.")
 
-(define-option environment
+(options:define-option environment
   '(("GIT_TERMINAL_PROMPT" . "0") ("GIT_SSH_COMMAND" . "ssh -o BatchMode=yes") ("LC_ALL" . "C.UTF-8"))
   processes:environment?
   "Variables added to git's environment.")
 
-(define-option diff-arguments '() (lambda (v) (and (list? v) (for-all string? v)))
+(options:define-option diff-arguments '() (lambda (v) (and (list? v) (for-all string? v)))
   "Arguments every git:diff adds, such as \"--histogram\" or \"-w\".")
 
-(define-option command-log-size 32 (lambda (v) (and (fixnum? v) (fx> v 0)))
+(options:define-option command-log-size 32 (lambda (v) (and (fixnum? v) (fx> v 0)))
   "How many commands each repository's log keeps.")
 
-(define-hook command-updated
+(hooks:define-hook command-updated
   "Called with a repository and a command when the command is queued, starts, gets output and ends.")
 
-(define-hook command-ended
+(hooks:define-hook command-ended
   "Called with a repository and a command after the command ends, whatever its status.")
 
 (define-enumeration untracked-listing (normal all no) %untracked-listings)
@@ -198,7 +198,7 @@
                 (end! state command -1 on-end)
                 (let* ([log-output (lambda (bytes end) (note-output! command bytes #t))]
                        [process
-                        (guard (c [(not (quit-condition? c)) (end! state command c on-end) #f])
+                        (guard (c [(not (cancelled? c)) (end! state command c on-end) #f])
                           (processes:start (program) (append (global-arguments) arguments)
                             (if wrapper (wrapper log-output) log-output)
                             (lambda (status) (end! state command status on-end))

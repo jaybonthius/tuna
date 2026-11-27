@@ -1,7 +1,7 @@
 Tuna is at http://127.0.0.1:PORT/
 > (http:wait-for-server)
 > (define p (http:page))
-> (table-set! web:input-handlers "note" (lambda (client item) (note! (cdr (assoc "n" item)))))
+> (tables:set! web:input-handlers "note" (lambda (client item) (note! (cdr (assoc "n" item)))))
 ; Items run in the order their client numbered them, whatever order they
 ; arrive in, and a number seen before is ignored.
 > (http:send-numbered-all! p
@@ -29,23 +29,23 @@ Tuna is at http://127.0.0.1:PORT/
 > (taken!)
 ()
 ; A handler gets the client and the item, with its client and number.
-> (table-set! web:input-handlers "echo" (lambda (client item) (note! (list client (web:client? client) item))))
+> (tables:set! web:input-handlers "echo" (lambda (client item) (note! (list client (web:client? client) item))))
 > (http:send-numbered! p 8 '(("type" . "echo") ("text" . "hi")))
 204
 > (let ([seen (car (taken!))])
     (list (car seen) (cadr seen) (equal? (caddr seen) (list '("type" . "echo") '("text" . "hi") (cons "client" (http:id p)) '("seq" . 8)))))
 (#<client 1> #t #t)
 ; A handler runs as the module whose entry is in effect.
-> (table-set! web:input-handlers "owner" (lambda (client item) (note! (current-owner))))
+> (tables:set! web:input-handlers "owner" (lambda (client item) (note! (current-owner))))
 > (http:send! p '(("type" . "owner")))
 204
 > (taken!)
-((repl))
+(#<owner (repl) 1>)
 > (import (handlers))
 > (http:send! p '(("type" . "module-owner")))
 204
-> handlers:owner
-(handlers)
+> (handlers:owner)
+#<owner (handlers) 1>
 ; A handler that raises is reported, and the next item runs.
 > (http:send-all! p '((("type" . "module-fail")) (("type" . "note") ("n" . "next"))))
 ! (handlers) car: () is not a pair
@@ -60,21 +60,45 @@ Tuna is at http://127.0.0.1:PORT/
 > (taken!)
 ("after")
 ; An item whose quit is true stops the command running when it arrives,
-; then runs in its turn.
-> (table-set! web:input-handlers "spin" (lambda (client item) (let loop () (loop))))
-> (table-set! web:input-handlers "keyboard-quit" (lambda (client item) (note! 'quit-ran)))
-> (http:send-all! p '((("type" . "spin")) (("type" . "keyboard-quit") ("quit" . #t))))
-! &quit
+; then runs in its turn. The quits are sent from a thread once the
+; command runs, since the REPL waits behind it.
+> (define spinning #f)
+> (define (send-while-spinning! p type quits)
+    (set! spinning #f)
+    (testing:join
+      (fork-task
+        (lambda (restore)
+          (let ([first (http:send! p (list (cons "type" type)))])
+            (let wait () (unless spinning (sleep (make-time 'time-duration 1000000 0)) (wait)))
+            (cons first (map (lambda (quit) (http:send! p quit)) quits)))))))
+> (tables:set! web:input-handlers "spin" (lambda (client item) (set! spinning #t) (let loop () (loop))))
+> (tables:set! web:input-handlers "keyboard-quit" (lambda (client item) (note! 'quit-ran)))
+> (send-while-spinning! p "spin" '((("type" . "keyboard-quit") ("quit" . #t))))
+! &cancelled
 (204 204)
 > (taken!)
 (quit-ran)
+; A command that holds cancels off is stopped by the second quit: the
+; first quit's item waits behind the command, so the second names the
+; command again.
+> (define spun #f)
+> (tables:set! web:input-handlers "masked-spin"
+    (lambda (client item)
+      (set! spun (current-task))
+      (call-with-cancellation-masked (lambda (restore) (set! spinning #t) (let loop () (loop))))))
+> (send-while-spinning! p "masked-spin" '((("type" . "keyboard-quit") ("quit" . #t)) (("type" . "keyboard-quit") ("quit" . #t))))
+(204 204 204)
+> (let-values ([(how detail) (join-task spun)]) how)
+stopped
+> (taken!)
+(quit-ran quit-ran)
 > (http:send! p '(("type" . "keyboard-quit") ("quit" . #t)))
 204
 > (taken!)
 (quit-ran)
 ; A quit item seen before, as when a page resends one whose post failed,
 ; quits nothing.
-> (table-set! web:input-handlers "spin-briefly"
+> (tables:set! web:input-handlers "spin-briefly"
     (lambda (client item)
       (let ([end (+ (real-time) 500)])
         (let loop () (when (< (real-time) end) (loop))))
@@ -88,7 +112,7 @@ Tuna is at http://127.0.0.1:PORT/
 (quit-ran spun)
 ; Each item runs as a task of its own, so one that pauses lets the next run.
 > (define answer #f)
-> (table-set! web:input-handlers "ask" (lambda (client item) (note! (suspend (lambda (resume) (set! answer resume))))))
+> (tables:set! web:input-handlers "ask" (lambda (client item) (note! (suspend (lambda (resume) (set! answer resume))))))
 > (http:send-all! p '((("type" . "ask")) (("type" . "note") ("n" . "typed"))))
 (204 204)
 > (taken!)
@@ -98,7 +122,7 @@ Tuna is at http://127.0.0.1:PORT/
 ("answered")
 ; While an item runs, web:current-client is its client, also after the
 ; item pauses, so a command its handler runs knows whose key ran it.
-> (table-set! web:input-handlers "whose"
+> (tables:set! web:input-handlers "whose"
     (lambda (client item)
       (note! (eq? (web:current-client) client))
       (note! (eq? (suspend (lambda (resume) (set! answer resume))) (void)))
@@ -113,14 +137,14 @@ Tuna is at http://127.0.0.1:PORT/
 > (web:current-client 'nobody)
 ! web:current-client: not a client or #f with irritant nobody
 ; Tuna is not idle while an item runs, and is idle once none waits.
-> (table-set! web:input-handlers "idle" (lambda (client item) (note! (idle-seconds))))
+> (tables:set! web:input-handlers "idle" (lambda (client item) (note! (timers:idle-seconds))))
 > (http:send! p '(("type" . "idle")))
 204
-> (list (taken!) (real? (idle-seconds)))
+> (list (taken!) (real? (timers:idle-seconds)))
 ((#f) #t)
 ; A client holding 10,000 items behind a missing one is removed, and its
 ; page reloads.
-> (add-hook! web:client-removed (lambda (client) (note! (list 'removed client))))
+> (hooks:add! web:client-removed (lambda (client) (note! (list 'removed client))))
 > (define q (http:page))
 > (http:connect! q)
 > (http:send-range! q 2 10001 '(("type" . "note")))

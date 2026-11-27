@@ -1,12 +1,13 @@
-(import (tuna) (testing) (tuna plugins) (haml) (http))
+(import (hooks) (options) (tables) (timers) (plugins))
+(import (tuna) (testing) (haml) (http))
 
-(use-plugin web
-  (config
-    (set-option! web:port (http:free-port))))
+;; Loaded, not imported, so its unload in a test stays an unload.
+(load-module! '(web))
+(options:set! web:port (http:free-port))
 
 (http:use-port! (lambda () (web:port)))
 
-(define log '())
+(define log (if (top-level-bound? 'log) log '()))
 (define (note! x) (set! log (cons x log)))
 (define (taken!)
   (let ([l (reverse log)])

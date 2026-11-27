@@ -1,16 +1,13 @@
 (library (tuna)
   (export
-    spawn-task suspend current-task task-done? join-task signal-task task?
-    sleep-for run-with-timer run-with-idle-timer cancel-timer! timers timer-procedure timer?
-    set-idle! idle-seconds
-    define-saved set-saved! remove-saved! saved? plain-data?
-    define-hook add-hook! add-local-hook! remove-hook! remove-local-hook! hook-entries hook?
-    define-option with-options set-option! remove-option! set-option-local! remove-option-local!
-    current-scope make-scope scope? option-default option-setting option-settings option-local? option?
-    option-changed
-    define-table table-set! table-remove! table-ref table-entries table-owner table?
-    documentation)
-  (import (only (chezscheme) export) (tuna core main-thread) (tuna scopes) (tuna hooks) (tuna options)
-          (tuna tables) (tuna documentation) (tuna timers) (tuna plain-data)
-          (tuna saved))
-  (export (import (tuna base))))
+    spawn-task fork-task suspend current-task task? task-state join-task live-tasks task-owner task-frames
+    cancel-task stop-task call-with-cancellation-masked
+    &cancelled make-cancelled cancelled? cancelled-reason
+    current-owner call-as-owner owner? owner-name owner-live? module-owner owner<? make-owner
+    unload-owner! on-unload owner-unloading owner-changes loaded-modules
+    &unloaded unloaded? unloaded-owner
+    define-public advice-add! advice-remove! override-set! override-remove!
+    definition-changes definition-documentation
+    load-module! reload-modules! eval-in-module
+    report tick batch-ended module-loaded exit-anyway?)
+  (import (tuna core conditions) (tuna core kernel) (tuna core modules)))

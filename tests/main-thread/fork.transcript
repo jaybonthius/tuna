@@ -4,34 +4,32 @@
 > (begin
     (set-box! forker:go #t)
     (let loop () (unless (unbox forker:posted) (loop))))
-> (map car (module-changes '(forker)))
-(unload-action define define)
-> (map car (module-changes '(repl)))
+> (map car (owner-changes (module-owner '(forker))))
+(unload-action)
+> (map car (owner-changes (plugins:repl-owner)))
 ()
-> (unload-module! '(forker))
+> (unload-owner! (module-owner '(forker)))
 forker's unload action
 ; So does a thread forked at the top level.
 > (let ([go #f] [seen #f])
-    (let ([t (as-module '(init)
-               (fork-thread
-                 (lambda ()
-                   (let loop () (unless go (loop)))
-                   (set! seen (current-owner)))))])
+    (let ([t (call-as-owner (plugins:configuration-owner) (lambda () (fork-task (lambda (restore) (let loop () (unless go (loop)))
+                   (set! seen (current-owner))))))])
       (set! go #t)
-      (thread-join t)
+      (join-task t)
       seen))
-(init)
-; What a thread forked by a module posts belongs to the module's instance
-; at the fork: once that instance has unloaded, the post never runs, even
-; under the module's next instance.
+#<owner (init) 1>
+; A thread forked by a module is its instance's: the instance's unload
+; stops it, so what it would have posted never runs.
 > (import (poster))
 > (define old-go poster:go)
 > (define old-posted poster:posted)
 > (begin
-    (unload-module! '(poster))
+    (unload-owner! (module-owner '(poster)))
     (load-module! '(poster))
     (set-box! old-go #t)
-    (let loop () (unless (unbox old-posted) (loop))))
+    (void))
+> (unbox old-posted)
+#f
 > (begin
     (set-box! poster:go #t)
     (let loop () (unless (unbox poster:posted) (loop))))

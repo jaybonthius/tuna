@@ -18,7 +18,7 @@ mkdir -p "$home/.config/tuna/lib" "$dir/work"
 sh tests/test-home.sh "$tuna" "$dir/library" "$home"
 cp tests/layout/home/.config/tuna/lib/web.sls "$home/.config/tuna/lib/"
 cat > "$home/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins) (document) (buffers))
+(import (tuna) (document) (buffers))
 (define notes (buffers:make "notes" "one\ntwo\nthree\n"))
 (define other (buffers:make "other" "other\n"))
 (use-plugin layout-split)

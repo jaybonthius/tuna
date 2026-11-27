@@ -1,5 +1,5 @@
 ; Entries: pushing, the yank pointer, the cap and argument checks.
-> (set-option! kill-ring:skip-duplicates #f)
+> (options:set! kill-ring:skip-duplicates #f)
 > (list (kill-ring:current) (kill-ring:entries))
 (#f ())
 > (raised (lambda () (kill-ring:rotate! 1)))
@@ -35,10 +35,10 @@
 > (do ([i 0 (+ i 1)]) ((= i 130)) (kill-ring:push! (list (number->string i))))
 > (let ([e (kill-ring:entries)]) (list (length e) (car e) (list-ref e 119)))
 (120 ("129") ("10"))
-> (map (lambda (v) (raised (lambda () (set-option! kill-ring:max v)))) (list -1 1.5 'x))
-((set-option! "-1 is not a valid value for kill-ring:max") (set-option! "1.5 is not a valid value for kill-ring:max") (set-option! "x is not a valid value for kill-ring:max"))
+> (map (lambda (v) (raised (lambda () (options:set! kill-ring:max v)))) (list -1 1.5 'x))
+((options:set! "-1 is not a valid value for kill-ring:max") (options:set! "1.5 is not a valid value for kill-ring:max") (options:set! "x is not a valid value for kill-ring:max"))
 ; A lower cap drops entries at the next push.
-> (set-option! kill-ring:max 3)
+> (options:set! kill-ring:max 3)
 > (length (kill-ring:entries))
 120
 > (kill-ring:push! (list "x"))
@@ -48,7 +48,7 @@
 ("x")
 ; With a cap of 0 the ring keeps nothing, and after-push still gets each
 ; entry, so a clipboard still copies it.
-> (set-option! kill-ring:max 0)
+> (options:set! kill-ring:max 0)
 > (set! pushed '())
 > (kill-ring:push! (list "gone"))
 > (list (kill-ring:entries) (kill-ring:current) (take-pushed!))
@@ -56,12 +56,12 @@
 > (kill-ring:append! (list "also"))
 > (list (kill-ring:entries) (take-pushed!))
 (() ("also"))
-> (remove-option! kill-ring:max)
+> (options:unset! kill-ring:max)
 > (kill-ring:max)
 120
 ; Duplicates are compared by text, so a piece with a string's text is
 ; one; the option off pushes them again.
-> (set-option! kill-ring:skip-duplicates #t)
+> (options:set! kill-ring:skip-duplicates #t)
 > (define b (buffers:make "b" "Hello world\n"))
 > (kill-ring:push! (list "Hello"))
 > (kill-ring:rotate! 1)
@@ -73,7 +73,7 @@
 > (kill-ring:push! (list "Hello\nx"))
 > (list (length (kill-ring:entries)) (kill-ring:current))
 (2 ("Hello" "x"))
-> (set-option! kill-ring:skip-duplicates #f)
+> (options:set! kill-ring:skip-duplicates #f)
 > (kill-ring:push! (list "Hello" "x"))
 > (list (length (kill-ring:entries)) (kill-ring:current))
 (3 ("Hello" "x"))
@@ -225,8 +225,8 @@
 > (define (note-yank buffer position piece)
     (set! calls (cons (list (buffers:name buffer) position (buffers:piece-text piece)) calls))
     42)
-> (table-set! kill-ring:yankers 'md:image note-yank)
-> (table-set! kill-ring:yankers 'md:para note-yank)
+> (tables:set! kill-ring:yankers 'md:image note-yank)
+> (tables:set! kill-ring:yankers 'md:para note-yank)
 > (define v (buffers:make "v" (md:doc '() (md:para '() "Pic " (md:image '((src . "a.png"))) ".\n") (md:para '() "Last.\n"))))
 > (define (yank-range! start end) (kill-ring:insert! u 2 (buffers:piece v start end)))
 > (let* ([a (yank-range! 6 7)] [b (yank-range! 1 10)] [c (yank-range! 1 5)] [d (yank-range! 10 18)])
@@ -234,7 +234,7 @@
 (() () () () (("u" 2 "") ("u" 2 "Pic .\n") ("u" 2 "Pic") ("u" 2 "Last.\n")) (md:doc () (md:para () "x<two.\n") (md:para () "Thre+Answer here.y\n")))
 > (let* ([a (yank-range! 2 13)] [b (root u)] [c (yank-range! 11 17)]) (list a b c (root u)))
 (((2 . 13)) (md:doc () (md:para () "Pic " #(md:image ((src . "a.png"))) ".\n") (md:para () "Lax<two.\n") (md:para () "Thre+Answer here.y\n")) ((2 . 8)) (md:doc () (md:para () "Last.\nPic " #(md:image ((src . "a.png"))) ".\n") (md:para () "Lax<two.\n") (md:para () "Thre+Answer here.y\n")))
-> (table-remove! kill-ring:yankers 'md:para)
+> (tables:remove! kill-ring:yankers 'md:para)
 > (yank-range! 10 18)
 ((2 . 10))
 > (raised (lambda () (kill-ring:insert! u 999 (buffers:piece v 1 10))))
@@ -243,9 +243,10 @@
 ((md:doc () (md:para () "Last.\n") (md:para () "Last.\nPic " #(md:image ((src . "a.png"))) ".\n") (md:para () "Lax<two.\n") (md:para () "Thre+Answer here.y\n")) 4)
 ; The options, hook and table are documented, and the configuration's
 ; setting is in effect beneath the REPL's.
-> (map documentation (list kill-ring:max kill-ring:skip-duplicates kill-ring:after-push kill-ring:yankers))
+> (list (options:documentation kill-ring:max) (options:documentation kill-ring:skip-duplicates)
+        (hooks:documentation kill-ring:after-push) (tables:documentation kill-ring:yankers))
 ("How many entries the ring keeps; pushing one more drops the oldest." "When true, pushing an entry whose text equals the newest entry's only moves the yank pointer to the newest." "Called with the newest entry after each push!, append! and prepend!." "Maps a node kind's name to a procedure of a buffer, a position and a buffers:piece that yanks a piece whose top node has that kind, returning the position after what it inserted.")
-> (option-settings kill-ring:skip-duplicates)
+> (options:settings kill-ring:skip-duplicates)
 (((repl) #f) ((init) #t))
 ; insert! returns what the buffer's edits inserted, read from its edit
 ; log. make-kill joins items into one kill that insert! yanks by calling

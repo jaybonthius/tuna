@@ -1,5 +1,5 @@
 #!tuna
-(import (views) (web) (prefix (ghostty) ghostty:))
+(import (views) (web) (prefix (ghostty) ghostty:) (tables))
 
 (define black 'ansi-colors.black)
 (define red 'ansi-colors.red)
@@ -205,5 +205,5 @@
   (check-palette 'ansi-colors:span-value palette)
   (span-value-of style palette))
 
-(table-set! views:span-properties 'ansi-colors span-attributes)
-(table-set! web:stylesheets 'ansi-colors "ansi-colors/ansi-colors.css")
+(tables:set! views:span-properties 'ansi-colors span-attributes)
+(tables:set! web:stylesheets 'ansi-colors "ansi-colors/ansi-colors.css")

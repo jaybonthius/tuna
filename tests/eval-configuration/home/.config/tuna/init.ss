@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins))
+(import (timers))
+(import (tuna))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -19,12 +20,12 @@
 (define after-fail 'ran)
 
 (define (evaluate! b)
-  (let ([t (spawn-task (lambda () (commands:run eval:buffer b)))])
+  (let ([t (spawn-task (lambda (restore) (commands:run eval:buffer b)))])
     (let loop ([n 0])
-      (unless (or (task-done? t) (= n 500))
-        (sleep-for 0.01)
+      (unless (or (eq? (task-state t) 'done) (= n 500))
+        (timers:sleep 0.01)
         (loop (+ n 1))))
-    (task-done? t)))
+    (eq? (task-state t) 'done)))
 
 (define (flag! name) (with-output-to-file (string-append (getenv "HOME") "/" name) void))
 

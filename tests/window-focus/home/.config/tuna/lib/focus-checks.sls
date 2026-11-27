@@ -1,6 +1,6 @@
 #!tuna
 (import (layout) (layout-split) (layout-tabs) (layout-scroll) (layout-float) (buffers) (document) (views)
-        (commands) (minibuffer) (web) (keys) (status-line) (recent-views) (haml))
+        (commands) (minibuffer) (web) (keys) (status-line) (recent-views) (haml) (tables) (timers))
 
 (define-record-type %node
   (fields kind attrs kids id (mutable parent)))
@@ -238,7 +238,7 @@
 
 (define (%refused? thunk)
   (set! %refused #f)
-  (let ([c (guard (c [(not (quit-condition? c)) c])
+  (let ([c (guard (c [(not (cancelled? c)) c])
              (parameterize ([%quiet? #t]) (thunk))
              %refused)])
     (and c
@@ -255,7 +255,7 @@
   (let ([p (minibuffer:current-prompt)])
     (when p
       (%run client minibuffer:abort)
-      (let wait () (when (eq? (minibuffer:current-prompt) p) (sleep-for 0.01) (wait)))
+      (let wait () (when (eq? (minibuffer:current-prompt) p) (timers:sleep 0.01) (wait)))
       (%end-prompts! client))))
 
 (define (%close-popups!)
@@ -396,7 +396,7 @@
              (loop (+ close 6) (cdr stack)))]
           [else (void)])))))
 
-(define (%raises? thunk) (guard (c [(not (quit-condition? c)) #t]) (thunk) #f))
+(define (%raises? thunk) (guard (c [(not (cancelled? c)) #t]) (thunk) #f))
 
 (define (%op-delete! client)
   (let ([n (%pick-one (%nodes layout:buffer))] [before (%before)])
@@ -465,7 +465,7 @@
     (for-each
       (lambda (action)
         (parameterize ([web:current-client client])
-          ((table-ref web:input-handlers "mouse") client
+          ((tables:ref web:input-handlers "mouse") client
            `(("token" . ,(document:node-start node)) ("type" . "mouse") ("action" . ,action) ("button" . ,button)
              ("clicks" . 1) ("modifiers" . #()) ("view" . ,(views:id s)) ("version" . ,(buffers:version layout:buffer))
              ("showing" . ,(views:shown-count s))
@@ -592,13 +592,13 @@
       (let* ([p (minibuffer:current-prompt)] [selected? (eq? (layout:selected-view) (minibuffer:prompt-view p))]
              [back (minibuffer:prompt-selected-view p)])
         (%run client minibuffer:abort)
-        (let loop () (when (eq? (minibuffer:current-prompt) p) (sleep-for 0.01) (loop)))
+        (let loop () (when (eq? (minibuffer:current-prompt) p) (timers:sleep 0.01) (loop)))
         (when selected?
           (if back
               (%check! 'prompt-back (views:id back) (%selected-id))
               (%check! 'prompt-reference (%node-id (%reference (%layout) (%order-ids))) (%selected-id)))))
-      (let ([t (spawn-task (lambda () (guard (c [(quit-condition? c) #f]) (%run client (lambda () (minibuffer:read "Q: "))))))])
-        (let loop () (unless (or (minibuffer:current-prompt) (task-done? t)) (sleep-for 0.01) (loop))))))
+      (let ([t (spawn-task (lambda (restore) (guard (c [(cancelled? c) #f]) (%run client (lambda () (minibuffer:read "Q: "))))))])
+        (let loop () (unless (or (minibuffer:current-prompt) (eq? (task-state t) 'done)) (timers:sleep 0.01) (loop))))))
 
 (define %ops
   (list (cons 'delete %op-delete!) (cons 'delete %op-delete!) (cons 'C-x-0 %op-delete-view!) (cons 'close-popup %op-close-popup!)
@@ -645,7 +645,7 @@
     (do ([s 0 (fx+ s 1)]) ((fx= s steps))
       (let ([op (%pick-one %ops)])
         (set! %where (list seed l s (car op)))
-        (guard (c [(not (quit-condition? c))
+        (guard (c [(not (cancelled? c))
                    (%fail! "~s: raised ~s ~a ~s\n" %where (and (who-condition? c) (condition-who c))
                            (if (message-condition? c) (condition-message c) c) (and (irritants-condition? c) (condition-irritants c)))])
           ((cdr op) client)

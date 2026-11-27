@@ -1,33 +1,34 @@
-; sleep-for pauses the current task, and the main thread goes on.
+; timers:sleep pauses the current task, and the main thread goes on.
 > (define napping #f)
 > (begin
-    (set! napping (spawn-task (lambda () (sleep-for 0.3) 'rested)))
-    (sleep-for 0.05)
-    (task-done? napping))
+    (set! napping (spawn-task (lambda (restore) (timers:sleep 0.3) 'rested)))
+    (timers:sleep 0.05)
+    (eq? (task-state napping) 'done))
 #f
-> (join-task napping)
+> (testing:join napping)
 rested
 ; Sleeping tasks wake in the order of their times.
 > (begin
-    (spawn-task (lambda () (sleep-for 0.2) (note! 'second)))
-    (spawn-task (lambda () (sleep-for 0.1) (note! 'first)))
-    (sleep-for 0.3)
+    (spawn-task (lambda (restore) (timers:sleep 0.2) (note! 'second)))
+    (spawn-task (lambda (restore) (timers:sleep 0.1) (note! 'first)))
+    (timers:sleep 0.3)
     (reverse log))
 (first second)
 ; join-task raises the condition a task raised after it slept.
-> (define failing (spawn-task (lambda () (sleep-for 0.05) (error 'nap "woke badly"))))
-> (join-task failing)
+> (define failing (spawn-task (lambda (restore) (timers:sleep 0.05) (error 'nap "woke badly"))))
+> (testing:join failing)
 ! nap: woke badly
 ! nap: woke badly
-; signal-task raises in a sleeping task.
-> (define waiting (spawn-task (lambda () (sleep-for 100))))
-> (signal-task waiting 'stop)
-! non-condition value stop
-> (guard (c [#t c]) (join-task waiting))
+; cancel-task raises in a sleeping task.
+> (define waiting (spawn-task (lambda (restore) (timers:sleep 100))))
+> (cancel-task waiting 'stop)
+! &cancelled
+> (guard (c [(cancelled? c) (cancelled-reason c)]) (testing:join waiting))
 stop
-; Only a task can sleep.
-> (on-thread (lambda () (sleep-for 1)))
+; Only a task can sleep; a thread Chez forks is none.
+> (import (rename (only (chezscheme) fork-thread thread-join) (fork-thread chez:fork-thread) (thread-join chez:thread-join)))
+> (let ([r #f]) (chez:thread-join (chez:fork-thread (lambda () (set! r (guard (c [#t (condition-message c)]) (timers:sleep 1)))))) r)
 "not in a task"
-> (sleep-for -1)
-! sleep-for: not a number of seconds with irritant -1
-> (sleep-for 0)
+> (timers:sleep -1)
+! timers:sleep: not a number of seconds with irritant -1
+> (timers:sleep 0)

@@ -4,9 +4,9 @@
 > (define user-view (view))
 > (import (magit))
 ; A menu is a table, with its documentation.
-> (table? magit:merge-menu)
+> (tables:table? magit:merge-menu)
 #t
-> (documentation magit:merge-menu)
+> (tables:documentation magit:merge-menu)
 "Git's merge menu."
 ; Showing a menu draws it at once in the buffer  *transient*, as a
 ; palette as tall as the menu, and leaves the view selected.
@@ -81,13 +81,13 @@
 > (raised (lambda () (transient:arguments 'menu)))
 (transient:arguments "not a table")
 > (let ([result #f])
-    (fork-thread (lambda () (set! result (raised (lambda () (transient:show! magit:merge-menu))))))
+    (fork-task (lambda (restore) (set! result (raised (lambda () (transient:show! magit:merge-menu))))))
     (testing:wait-until (lambda () result))
     result)
 (transient:show! "not on the main thread")
 ; When the module that defined a menu unloads, its menu closes.
 > (press! "C-c" "m")
-> (unload-module! '(magit))
+> (unload-owner! (module-owner '(magit)))
 > (list (menu) (popups))
 (() (layout:popups-root ()))
 ; A keymap no module defined as a menu stays open, empty, when its
@@ -96,16 +96,17 @@
 > (in-client (lambda () (transient:show! plain:keymap)))
 > (menu)
 ((("h" "plain:hello")))
-> (unload-module! '(plain))
+> (unload-owner! (module-owner '(plain)))
 > (menu)
 ()
-> (map documentation (list-head (keys:active-keymaps client) 2))
+> (map tables:documentation (list-head (keys:active-keymaps client) 2))
 ("Plain keys." "The keys of every open menu, searched after the top menu's keymap.")
 > (press! "C-f")
 > (list (menu) (popups))
 (() (layout:popups-root ()))
 ; The menus close when the menu's view leaves the layout.
 > (load-module! '(magit))
+#<owner (magit) 2>
 > (press! "C-x" "2")
 > (define upper (view))
 > (press! "C-c" "m")
@@ -114,7 +115,7 @@
 (() (layout:popups-root ()))
 ; A display rule may put the menu elsewhere, such as at the bottom of the
 ; screen, as in Emacs; closing it removes that part.
-> (table-set! layout:display-rules transient:buffer?
+> (tables:set! layout:display-rules transient:buffer?
     (layout-split:display-at-side (layout:direction down) 95 'content '((locked . #t))))
 > (press! "C-c" "m")
 > (datums layout:buffer)
@@ -124,14 +125,18 @@
 > (press! "C-g")
 > (datums layout:buffer)
 ((layout:level () (layout-split:container ((direction . column)) (layout:level () #(views:view ((view . 9) (buffer . "notes")))) #(views:view ((view . 3) (buffer . " *Echo Area*") (depth . 90) (size . content) (locked . #t))) #(views:view ((view . 4) (buffer . " *Minibuf*") (depth . 100) (size . content) (locked . #t))))))
-> (table-remove! layout:display-rules transient:buffer?)
+> (tables:remove! layout:display-rules transient:buffer?)
 ; When this plugin unloads, the menus close, its buffer goes, and the
-; modules that import it unload.
+; modules that import it unload; the configuration, which imports
+; transient, loads a new instance at once.
 > (press! "C-c" "m")
-> (unload-module! '(transient))
-> (list (popups) (buffers:find " *transient*") (keys:lookup client "C-c m"))
-((layout:popups-root ()) #f #f)
+> (define old (map module-owner '((transient) (magit))))
+> (define old-buffer (buffers:find " *transient*"))
+> (unload-owner! (car old))
+> (list (popups) (map owner-live? old) (buffers:live? old-buffer))
+((layout:popups-root ()) (#f #f) #f)
 > (load-module! '(magit))
+#<owner (magit) 3>
 > (press! "C-c" "m")
 > (menu)
 ("Merge" ("Arguments" ("- f" "Fast-forward only" "--ff-only") ("- n" "No fast-forward" "--no-ff") ("- s" "Strategy" "--strategy=")) ("Actions" ("m" "Merge")))

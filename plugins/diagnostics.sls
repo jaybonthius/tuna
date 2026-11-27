@@ -1,5 +1,7 @@
 #!tuna
-(import (buffers) (document) (files) (modes) (syntax) (views) (commands) (faces) (ask) (docs-at-point))
+(import (buffers) (document) (files) (modes) (syntax) (views) (commands) (faces) (ask) (docs-at-point) (hooks) (options) (tables) (timers))
+
+(define %self (current-owner))
 
 (define %severities '(error warning info hint))
 
@@ -44,7 +46,7 @@
     (assertion-violation who "neither a string nor #f" code))
   (unless (and (enum-set? tags) (enum-set-subset? tags (enum-set-universe %no-tags)))
     (assertion-violation who "not a set of tags" tags))
-  (unless (or (not keymap) (table? keymap))
+  (unless (or (not keymap) (tables:table? keymap))
     (assertion-violation who "neither a keymap nor #f" keymap))
   (make-%details origin code tags keymap data))
 
@@ -169,7 +171,7 @@
   (sealed #t)
   (fields owner))
 
-(define-hook changed "Called with a buffer or a path after its diagnostics change.")
+(hooks:define-hook changed "Called with a buffer or a path after its diagnostics change.")
 
 (define %in-buffers (make-weak-eq-hashtable))
 (define %in-paths (make-hashtable string-hash string=?))
@@ -193,7 +195,7 @@
   "Whether a buffer's diagnostics are drawn and its checkers run."
   (on-change (lambda (on?) (%follow-mode!))))
 
-(define-table mark-keymap "Keys active at a drawn diagnostic, after the diagnostic's own keymap.")
+(tables:define-table mark-keymap "Keys active at a drawn diagnostic, after the diagnostic's own keymap.")
 
 (buffers:define-layer error-marks (priority 53) (sticky neither) (evaporate) (keymap mark-keymap))
 (buffers:define-layer warning-marks (priority 52) (sticky neither) (evaporate) (keymap mark-keymap))
@@ -247,7 +249,7 @@
                        chars)))
 
 (define (%symbol-or-line b start)
-  (let-values ([(a e) (guard (c [(not (quit-condition? c)) (values #f #f)]) (syntax:symbol-bounds b start))])
+  (let-values ([(a e) (guard (c [(not (cancelled? c)) (values #f #f)]) (syntax:symbol-bounds b start))])
     (if (and a (fx< a e))
         (values a e)
         (let* ([doc (buffers:document b)] [line (document:line doc start)] [end (%line-end doc line)])
@@ -420,11 +422,12 @@
 ;; The entry is local to buffers with the mode on, so docs-at-point asks
 ;; only where diagnostics may answer.
 (define (%follow-at-point! b)
-  (as-module (this-module)
-    (buffers:with-buffer b
-      (if (mode)
-          (add-local-hook! docs-at-point:sources at-point 90)
-          (remove-local-hook! docs-at-point:sources at-point)))))
+  (call-as-owner %self
+    (lambda ()
+      (buffers:with-buffer b
+        (if (mode)
+            (hooks:add-local! docs-at-point:sources at-point 90)
+            (hooks:remove-local! docs-at-point:sources at-point))))))
 
 ;; An edit that empties a diagnostic's range removes it, so its anchors
 ;; never pass each other.
@@ -454,19 +457,19 @@
         (eq-hashtable-set! %checks-of b c)
         c)))
 
-(define-hook checkers
+(hooks:define-hook checkers
   "Its entries are procedures of a buffer that check it, pausing until they have, and return the diagnostics they found.")
 
-(define-option check-delay 0.5 (lambda (v) (or (not v) (and (real? v) (>= v 0))))
+(options:define-option check-delay 0.5 (lambda (v) (or (not v) (and (real? v) (>= v 0))))
   "Seconds without edits before a buffer's checkers run again; #f runs them only when the mode turns on, on save and on diagnostics:check.")
 
-(define-option check-on-save? #t boolean? "Whether a save runs the buffer's checkers.")
+(options:define-option check-on-save? #t boolean? "Whether a save runs the buffer's checkers.")
 
-(define-option wrap-around? #t boolean? "Whether diagnostics:next goes round the buffer's ends.")
+(options:define-option wrap-around? #t boolean? "Whether diagnostics:next goes round the buffer's ends.")
 
-(define %quit (record-constructor (record-constructor-descriptor &quit)))
+(define (%quit) (make-cancelled #f))
 
-(define (%entries b) (buffers:with-buffer b (hook-entries checkers)))
+(define (%entries b) (buffers:with-buffer b (hooks:entries checkers)))
 
 ;; An entry's source is made in the name of its diagnostics' maker,
 ;; since the module that added an entry is known only inside its call.
@@ -477,7 +480,7 @@
       [(null? found) #f]
       [else
        (let* ([maker (%diagnostic-maker (car found))]
-              [s (guard (c [(not (quit-condition? c)) (make-source)]) (as-module maker (make-source)))])
+              [s (guard (c [(not (cancelled? c)) (make-source)]) (call-as-owner maker (lambda () (make-source))))])
          (%checks-sources-set! cs (cons (cons entry s) (%checks-sources cs)))
          s)])))
 
@@ -485,12 +488,12 @@
   (let ([last (assq entry (%checks-running cs))])
     (when last
       (%checks-running-set! cs (remq last (%checks-running cs)))
-      (unless (task-done? (cdr last)) (signal-task (cdr last) (%quit)))))
+      (unless (eq? (task-state (cdr last)) 'done) (cancel-task (cdr last)))))
   (letrec ([task
             (spawn-task
-              (lambda ()
+              (lambda (restore)
                 (define (current?) (let ([r (assq entry (%checks-running cs))]) (and r (eq? (cdr r) task))))
-                (guard (c [(quit-condition? c) (void)]
+                (guard (c [(cancelled? c) (void)]
                           [else
                            (when (current?)
                              (%checks-failed-set! cs (cons entry (%checks-failed cs))))
@@ -518,7 +521,7 @@
   (unless (buffers:buffer? b)
     (assertion-violation 'diagnostics:checking? "not a buffer" b))
   (let ([cs (eq-hashtable-ref %checks-of b #f)])
-    (and cs (exists (lambda (r) (not (task-done? (cdr r)))) (%checks-running cs)) #t)))
+    (and cs (exists (lambda (r) (not (eq? (task-state (cdr r)) 'done))) (%checks-running cs)) #t)))
 
 (define (check-failed? b)
   (unless (buffers:buffer? b)
@@ -538,12 +541,12 @@
       (let ([was? (eq-hashtable-ref %drawn b #f)])
         (%draw! b)
         (when (and (not was?) (%mode-in? b))
-          (spawn-task (lambda () (when (and (buffers:live? b) (%mode-in? b)) (%run-checks! b #f)))))))
+          (spawn-task (lambda (restore) (when (and (buffers:live? b) (%mode-in? b)) (%run-checks! b #f)))))))
     (buffers:all)))
 
 (define (%stop-timer! cs)
   (when (%checks-timer cs)
-    (cancel-timer! (%checks-timer cs))
+    (timers:cancel! (%checks-timer cs))
     (%checks-timer-set! cs #f)))
 
 (define (%after-edit b edit)
@@ -555,11 +558,12 @@
         (let ([cs (%checks-for b)])
           (%stop-timer! cs)
           (%checks-timer-set! cs
-            (as-module (this-module)
-              (run-with-timer delay
-                (lambda ()
-                  (%checks-timer-set! cs #f)
-                  (when (and (buffers:live? b) (%mode-in? b)) (%run-checks! b #f)))))))))))
+            (call-as-owner %self
+              (lambda ()
+                (timers:run-after delay
+                  (lambda ()
+                    (%checks-timer-set! cs #f)
+                    (when (and (buffers:live? b) (%mode-in? b)) (%run-checks! b #f))))))))))))
 
 (define (%after-save b)
   (when (and (%mode-in? b) (buffers:with-buffer b (check-on-save?)))
@@ -571,7 +575,7 @@
   (let ([cs (eq-hashtable-ref %checks-of b #f)] [entries (%entries b)])
     (when cs
       (for-each
-        (lambda (r) (unless (memq (car r) entries) (unless (task-done? (cdr r)) (signal-task (cdr r) (%quit)))))
+        (lambda (r) (unless (memq (car r) entries) (unless (eq? (task-state (cdr r)) 'done) (cancel-task (cdr r)))))
         (%checks-running cs))
       (%checks-running-set! cs (filter (lambda (r) (memq (car r) entries)) (%checks-running cs)))
       (%checks-failed-set! cs (filter (lambda (e) (memq e entries)) (%checks-failed cs)))
@@ -580,7 +584,7 @@
         (for-each (lambda (s) (clear! (cdr s) b)) gone))))
   (%draw! b)
   (when (%mode-in? b)
-    (spawn-task (lambda () (when (and (buffers:live? b) (%mode-in? b)) (%run-checks! b #f))))))
+    (spawn-task (lambda (restore) (when (and (buffers:live? b) (%mode-in? b)) (%run-checks! b #f))))))
 
 (define (%after-visit b)
   (let* ([path (files:path b)] [h (and path (hashtable-ref %in-paths path #f))])
@@ -594,7 +598,7 @@
   (let ([cs (eq-hashtable-ref %checks-of b #f)])
     (when cs
       (%stop-timer! cs)
-      (for-each (lambda (r) (unless (task-done? (cdr r)) (signal-task (cdr r) (%quit)))) (%checks-running cs))
+      (for-each (lambda (r) (unless (eq? (task-state (cdr r)) 'done) (cancel-task (cdr r)))) (%checks-running cs))
       (eq-hashtable-delete! %checks-of b)))
   (when (hashtable-ref %in-buffers b #f)
     (hashtable-delete! %in-buffers b)
@@ -632,11 +636,11 @@
   "Moves point to the start of the Nth diagnostic before point and tells the text of each diagnostic there; C-u, or any prefix that is not a number, moves by one, skipping infos and hints."
   (%move! (fx- 0 n)))
 
-(add-hook! buffers:after-edit %after-edit)
-(add-hook! files:after-save %after-save)
-(add-hook! files:after-visit %after-visit)
-(add-hook! modes:major-mode-changed %after-major-mode)
-(add-hook! buffers:killed %killed)
+(hooks:add! buffers:after-edit %after-edit)
+(hooks:add! files:after-save %after-save)
+(hooks:add! files:after-visit %after-visit)
+(hooks:add! modes:major-mode-changed %after-major-mode)
+(hooks:add! buffers:killed %killed)
 (for-each
-  (lambda (b) (buffers:with-buffer b (when (mode) (add-local-hook! docs-at-point:sources at-point 90))))
+  (lambda (b) (buffers:with-buffer b (when (mode) (hooks:add-local! docs-at-point:sources at-point 90))))
   (buffers:all))

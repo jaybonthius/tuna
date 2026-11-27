@@ -20,8 +20,7 @@
 #t
 ; Reloading the plugin's source keeps the text, the configuration's
 ; setting and hook entry; kills made before it are still kills.
-> (import (tuna eval))
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/kill-ring.sls"))
+> (reload-modules! '((kill-ring)))
 > (equal? (ring-texts) expected)
 #t
 > (list (kill-ring:current) (kill-ring:skip-duplicates))
@@ -32,16 +31,17 @@
 ("after")
 > (list (kill-ring:insert! b 12 (cadr one)) (spans-of b responses))
 (((12 . 17)) (("Hello" gpt) ("Hello" gpt)))
-> (map car (definition-changes batch-ended))
+> (map (lambda (c) (owner-name (car c))) (definition-changes batch-ended))
 ((kill-ring) (tuna))
 ; Unloading saves a change made in the same batch, and takes back the
-; advice that saves after each batch.
-> (begin (kill-ring:push! (list "last")) (unload-module! '(kill-ring)))
-> (definition-changes batch-ended)
-(((tuna) define #f))
+; advice that saves after each batch; the configuration, which imports
+; kill-ring, loads a new instance at once, which reads the saved ring.
+> (define old (module-owner '(kill-ring)))
+> (begin (kill-ring:push! (list "last")) (unload-owner! old))
+> (list (owner-live? old) (exists (lambda (c) (eq? (car c) old)) (definition-changes batch-ended)))
+(#f #f)
 > (testing:wait-until (lambda () (equal? (car (saved-texts)) '("last"))))
 > (car (saved-texts))
 ("last")
-> (load-module! '(kill-ring))
-> (list (kill-ring:current) (length (kill-ring:entries)) (map car (definition-changes batch-ended)))
+> (list (kill-ring:current) (length (kill-ring:entries)) (map (lambda (c) (owner-name (car c))) (definition-changes batch-ended)))
 (("last") 5 ((kill-ring) (tuna)))

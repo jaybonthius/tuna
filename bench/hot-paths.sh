@@ -10,13 +10,13 @@ cpu=${BENCH_CPU:-$(($(nproc) - 1))}
 dir=$(mktemp -d "${TMPDIR:-/tmp}/tuna-bench-hot-paths.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
 lib=$dir/home/.config/tuna/lib
-mkdir -p "$lib" "$dir/library"
+mkdir -p "$lib"
 cp bench/hot-paths.sls "$lib/hot-paths.sls"
 cp bench/main-thread-paths.sls "$lib/main-thread-paths.sls"
 printf '#!tuna\n(define (add1 x) (fx+ x 1))\n' > "$lib/bench-callee.sls"
 printf '(import (tuna) (hot-paths) (main-thread-paths))\n(hot-paths:run)\n(main-thread-paths:run)\n(exit)\n' > "$dir/home/.config/tuna/init.ss"
 
-output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$dir/library" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
+output=$(cd "$dir" && HOME="$dir/home" TUNA_LIBRARY="$(dirname "$tuna")/plugins" taskset -c "$cpu" "$tuna" < /dev/null 2>&1)
 echo "$output" | awk '
   BEGIN {
     unit["changeable-call"] = "ns"

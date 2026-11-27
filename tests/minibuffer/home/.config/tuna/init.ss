@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (document) (haml) (web))
+(import (quiet) (hooks) (options) (tables) (timers))
+(import (tuna) (testing) (document) (haml) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -6,7 +7,7 @@
 (use-plugin undo)
 (use-plugin minibuffer
   (config
-    (set-option! minibuffer:history-length 300)))
+    (options:set! minibuffer:history-length 300)))
 
 (define client (web:add-client! 1))
 
@@ -32,17 +33,17 @@
 ;; own and wait for the prompt.
 (define (start! thunk)
   (let* ([before (minibuffer:current-prompt)]
-         [t (spawn-task (lambda () (in-client thunk)))])
-    (testing:wait-until (lambda () (or (task-done? t) (not (eq? (minibuffer:current-prompt) before)))))
+         [t (spawn-task (lambda (restore) (in-client thunk)))])
+    (testing:wait-until (lambda () (or (eq? (task-state t) 'done) (not (eq? (minibuffer:current-prompt) before)))))
     t))
 
 ;; A read that is still waiting has asked again: the prompt that took the
 ;; key has ended and a new one waits.
 (define (result t)
-  (testing:wait-until (lambda () (or (task-done? t) (minibuffer:current-prompt))))
-  (if (task-done? t)
+  (testing:wait-until (lambda () (or (eq? (task-state t) 'done) (minibuffer:current-prompt))))
+  (if (eq? (task-state t) 'done)
       (guard (c [#t (list 'raised (if (message-condition? c) (condition-message c) c))])
-        (join-task t))
+        (testing:join t))
       'waiting))
 
 
@@ -60,7 +61,7 @@
     (thunk)))
 (define (mouse-in! v action place)
   (parameterize ([web:current-client client])
-    ((table-ref web:input-handlers "mouse") client
+    ((tables:ref web:input-handlers "mouse") client
      (append place
              `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
                ("view" . ,(views:id v)) ("version" . ,(buffers:version (views:buffer v)))

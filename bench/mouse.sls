@@ -1,5 +1,5 @@
 #!tuna
-(import (document) (buffers) (views) (keys) (layout) (editing) (undo) (web))
+(import (document) (buffers) (views) (keys) (layout) (editing) (undo) (web) (options) (tables))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -24,7 +24,7 @@
 
 (define client (web:add-client! 1))
 
-(define handle (table-ref web:input-handlers "mouse"))
+(define handle (tables:ref web:input-handlers "mouse"))
 
 (define (item view version . fields)
   (append fields
@@ -40,7 +40,7 @@
              (apply string-append (map (lambda (i) (format "line ~a of the text a benchmark clicks in\n" i)) (iota 336))))]
         [v (layout:selected-view)])
     (views:set-buffer! v b)
-    (buffers:with-buffer b (set-option-local! undo:limit 0))
+    (buffers:with-buffer b (options:set-local! undo:limit 0))
     (let ([now (buffers:version b)])
       (show "mouse-click" (ns-per-op (handled (item v now '("action" . "click") '("line" . 100) '("count" . 5)))))
       ((handled (item v now '("action" . "down") '("line" . 100) '("count" . 5))))

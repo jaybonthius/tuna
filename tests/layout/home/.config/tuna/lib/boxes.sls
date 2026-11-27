@@ -1,7 +1,7 @@
 #!tuna
-(import (layout) (keys) (commands) (document) (haml))
+(import (layout) (keys) (commands) (document) (haml) (tables))
 
-(define-table box-keys)
+(tables:define-table box-keys)
 
 (commands:define-command (box-command) "Does nothing." #f)
 

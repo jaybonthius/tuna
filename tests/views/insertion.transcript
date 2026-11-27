@@ -3,7 +3,7 @@
 ; follows it, as after a command that moved point; a point elsewhere
 ; stays where it was.
 > (define out (buffers:make "out" (lines 3)))
-> (buffers:with-buffer out (set-option-local! views:point-after-insertion? #t))
+> (buffers:with-buffer out (options:set-local! views:point-after-insertion? #t))
 > (define v (views:make out))
 > (define w (views:make out))
 > (define end (- (document:length (buffers:document out)) 1))

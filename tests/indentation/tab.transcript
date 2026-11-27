@@ -46,9 +46,9 @@
 ; TAB with a region ending at a line's start
 > (after "(define (f x)\n(g‸ x)\n(h x))" "C-SPC" "C-n" "C-a" "TAB")
 "(define (f x)\n  (g x)\n‸(h x))"
-; TAB on define-option's doc line
-> (after "(define-option delete-selection #f boolean?\n‸\"When true.\")" "TAB")
-"(define-option delete-selection #f boolean?\n  ‸\"When true.\")"
+; TAB on options:define-option's doc line
+> (after "(options:define-option delete-selection #f boolean?\n‸\"When true.\")" "TAB")
+"(options:define-option delete-selection #f boolean?\n  ‸\"When true.\")"
 ; TAB under a tab-indented call
 > (after "(list\n\t(g a\n‸b)" "TAB")
 "(list\n\t(g a\n           ‸b)"

@@ -1,47 +1,49 @@
 #!tuna
-(import (buffers) (document) (jobs) (commands) (keys) (ask) (files disk) (files paths))
+(import (buffers) (document) (jobs) (commands) (keys) (ask) (files disk) (files paths) (hooks) (options) (tables) (saved))
 
-(define-option require-final-newline #f boolean?
+(define %self (current-owner))
+
+(options:define-option require-final-newline #f boolean?
   "When true, saving a file buffer whose text does not end in a line break adds one, as an edit.")
 
-(define-option confirm-exit? #f boolean?
+(options:define-option confirm-exit? #f boolean?
   "When true, files:save-buffers-kill-tuna asks before it exits, unless it has asked about modified buffers.")
 
-(define-hook after-visit
+(hooks:define-hook after-visit
   "Called with a buffer after it has visited a file, before files:visit returns.")
 
-(define-hook after-temporary-visit
+(hooks:define-hook after-temporary-visit
   "Called with a buffer after it has visited a file temporarily, before files:visit-temporarily returns, in place of files:after-visit: the work a temporary visit allows.")
 
-(define-hook before-save
+(hooks:define-hook before-save
   "Called with a buffer before it is written; an entry may edit it.")
 
-(define-hook after-save
+(hooks:define-hook after-save
   "Called with a buffer after its file has been written.")
 
-(define-hook after-revert
+(hooks:define-hook after-revert
   "Called with a buffer after its file has been read into it again.")
 
-(define-hook unsaved-kept
+(hooks:define-hook unsaved-kept
   "Called with a modified buffer when Tuna is asked to exit or to kill the buffer; an entry that returns true keeps the buffer's unsaved edits, so neither asks about it.")
 
-(define-hook folder-visitors
+(hooks:define-hook folder-visitors
   "Called with a folder's resolved path when files:visit finds a folder; the first entry, by depth, that returns a buffer gives files:visit its result.")
 
-(define-hook after-rename
+(hooks:define-hook after-rename
   "Called with the old and new paths after files:rename-file has renamed a file or folder and moved the buffers visiting it.")
 
-(define-hook directory-finders
+(hooks:define-hook directory-finders
   "Called with a buffer by files:directory; the first entry, by depth, that returns a folder, a string starting with /, gives the buffer's folder. files' own entry, files:file-directory, is at depth -10.")
 
 (define (%absolute-folder? v)
   (and (string? v) (fx> (string-length v) 0) (char=? (string-ref v 0) #\/)))
 
-(define-option directory-override #f
+(options:define-option directory-override #f
   (lambda (v)
     (or (not v)
         (and (pair? v) (buffers:buffer? (car v)) (%absolute-folder? (cdr v)))))
-  "#f, or a pair of a buffer and a folder starting with /, which files:directory of that buffer returns; a command binds it with with-options for the commands it runs.")
+  "#f, or a pair of a buffer and a folder starting with /, which files:directory of that buffer returns; a command binds it with options:with for the commands it runs.")
 
 (define (%within? path folder)
   (let ([n (string-length folder)])
@@ -129,10 +131,10 @@
       [(char=? (string-ref path i) #\/) (loop (fx- i 1) i (cons (substring path (fx+ i 1) end) parts))]
       [else (loop (fx- i 1) end parts)])))
 
-(define-option offer-save? #t boolean?
+(options:define-option offer-save? #t boolean?
   "When false in a buffer that visits no file, the buffer holds nothing to save: killing it asks nothing, and files:save-buffer leaves it alone.")
 
-(define-option delete-by-moving-to-trash? #f boolean?
+(options:define-option delete-by-moving-to-trash? #f boolean?
   "When true, commands that delete files for the user move them to the trash with files:move-to-trash.")
 
 (define (%visit? v)
@@ -142,7 +144,7 @@
        (count? (vector-ref v 3)) (count? (vector-ref v 4))
        (boolean? (vector-ref v 5)) (boolean? (vector-ref v 6))))
 
-(define-saved %visits '() (lambda (v) (and (list? v) (for-all %visit? v))))
+(saved:define-saved %visits '() (lambda (v) (and (list? v) (for-all %visit? v))))
 
 (define-condition-type &changed-on-disk &error %make-changed-on-disk %changed-on-disk?)
 
@@ -276,7 +278,7 @@
   (define (temporary-buffer? b) (eq-hashtable-ref temporary b #f))
 
   (define (save-visits!)
-    (set-saved! %visits (append (map entry->visit (reverse (remp (lambda (e) (temporary-buffer? (entry-buffer e))) visited)))
+    (saved:set! %visits (append (map entry->visit (reverse (remp (lambda (e) (temporary-buffer? (entry-buffer e))) visited)))
                                 pending)))
 
   (define (add-entry! e)
@@ -372,9 +374,9 @@
       (eq-hashtable-delete! last-reads (current-task))
       read))
 
-  ;; Tuna's dynamic-wind holds quits off while its in runs, so bookkeeping
+  ;; Tuna's dynamic-wind holds cancels off while its in runs, so bookkeeping
   ;; done there is never left half done.
-  (define (without-quits thunk)
+  (define (without-cancels thunk)
     (let ([result #f])
       (dynamic-wind (lambda () (set! result (thunk))) void void)
       result))
@@ -382,7 +384,7 @@
   ;; A document other than the one read carries edits made on the way,
   ;; so the buffer starts modified.
   (define (open-buffer! path doc length hash read)
-    (without-quits
+    (without-cancels
       (lambda ()
         (let* ([b (buffers:make (name-for! path) doc)]
                [e (make-entry b path (buffers:name b) length hash
@@ -395,7 +397,7 @@
           b))))
 
   (define (forget-entry! e)
-    (without-quits
+    (without-cancels
       (lambda ()
         (eq-hashtable-delete! by-buffer (entry-buffer e))
         (hashtable-delete! by-path (entry-path e))
@@ -406,7 +408,7 @@
   ;; The buffer leaves its name first, so a file named as the buffer is
   ;; not given a name made distinct from the buffer's own.
   (define (move-entry! b path)
-    (without-quits
+    (without-cancels
       (lambda ()
         (buffers:rename! b (string-append (buffers:name b) "\x0;"))
         (let ([e (entry-of b)])
@@ -431,11 +433,11 @@
                   e)))))))
 
   ;; The hook is called as the save is recorded, not when the saving task
-  ;; resumes, since a quit can reach that task after the file is written.
+  ;; resumes, since a cancel can reach that task after the file is written.
   (define (record-save! e version result)
     (when (and (entry-live? e) (pair? result) (number? (car result)))
       (let ([b (entry-buffer e)])
-        (without-quits
+        (without-cancels
           (lambda ()
             (entry-length-set! e (car result))
             (entry-hash-set! e (cadr result))
@@ -445,10 +447,10 @@
         (ask:message (string-append "Wrote " (abbreviated-path (entry-path e))))
         (buffers:with-buffer b (after-save b)))))
 
-  ;; Recorded before the edit, so a quit between them leaves the buffer
+  ;; Recorded before the edit, so a cancel between them leaves the buffer
   ;; modified against the file now on disk rather than against the old one.
   (define (record-read! e read)
-    (without-quits
+    (without-cancels
       (lambda ()
         (entry-length-set! e (contents-length read))
         (entry-hash-set! e (contents-hash read))
@@ -483,9 +485,9 @@
   ;; A task that holds the lock, or a job still writing the file, makes
   ;; others wait. Tuna's dynamic-wind runs its out at each pause as well as
   ;; at the end, so the lock goes only once the body has returned or a
-  ;; raise is leaving it; the in and out hold quits off. Two handlers note
-  ;; the raise: a quit landing in the inner one as it starts reaches the
-  ;; outer, and quits come a thousand calls apart.
+  ;; raise is leaving it; the in and out hold cancels off. Two handlers note
+  ;; the raise: a cancel landing in the inner one as it starts reaches the
+  ;; outer, and cancels come a thousand calls apart.
   (define (with-entry-lock who e thunk)
     (let ([me (current-task)])
       (if (and me (eq? (entry-holder e) me))
@@ -500,7 +502,7 @@
               (when (or (entry-holder e) (entry-job e))
                 (suspend
                   (lambda (resume)
-                    (without-quits
+                    (without-cancels
                       (lambda ()
                         (let ([w (cons who resume)])
                           (set! waiting (cons w waiting))
@@ -553,36 +555,37 @@
   ;; module. Its result is recorded as it arrives, so a save is known even
   ;; when the waiting task has been signalled; and the entry stays busy
   ;; until the job ends, so another save cannot read the file mid-write.
-  ;; The job, its waiter and the mark start with quits held off, so none
+  ;; The job, its waiter and the mark start with cancels held off, so none
   ;; is left without the others.
   (define (run-job who worker input record! e)
     (let ([result #f])
       (suspend
         (lambda (resume)
           (let ([w (cons who resume)])
-            (without-quits
+            (without-cancels
               (lambda ()
-                (as-module (this-module)
-                  (jobs:start worker input
-                    (lambda (v) (set! result v) (record! v))
-                    (lambda (ended)
-                      (when e
-                        (entry-job-set! e #f)
-                        (wake-waiters! e))
-                      (when (take-waiter! w)
-                        (resume
-                          (lambda ()
-                            (cond
-                              [(condition? ended) (raise ended)]
-                              [ended (assertion-violation who "the job was stopped")])
-                            (failed result who)
-                            result))))))
+                (call-as-owner %self
+                  (lambda ()
+                    (jobs:start worker input
+                      (lambda (v) (set! result v) (record! v))
+                      (lambda (ended)
+                        (when e
+                          (entry-job-set! e #f)
+                          (wake-waiters! e))
+                        (when (take-waiter! w)
+                          (resume
+                            (lambda ()
+                              (cond
+                                [(condition? ended) (raise ended)]
+                                [ended (assertion-violation who "the job was stopped")])
+                              (failed result who)
+                              result)))))))
                 (set! waiting (cons w waiting))
                 (when e (entry-job-set! e #t)))))))))
 
-  ;; Unlike a save, an operation on files may run long, so a quit of the
+  ;; Unlike a save, an operation on files may run long, so a cancel of the
   ;; task waiting for it stops the job; the files already done stay done.
-  ;; Each value is recorded as it arrives, as a save's is, since a quit
+  ;; Each value is recorded as it arrives, as a save's is, since a cancel
   ;; can reach the task after the job has done its work but before the
   ;; task resumes.
   (define run-operation
@@ -594,21 +597,22 @@
            (suspend
              (lambda (resume)
                (let ([w (cons who resume)])
-                 (without-quits
+                 (without-cancels
                    (lambda ()
-                     (as-module (this-module)
-                       (set! job
-                         (jobs:start worker input
-                           (lambda (v) (set! result v) (record! v))
-                           (lambda (ended)
-                             (when (take-waiter! w)
-                               (resume
-                                 (lambda ()
-                                   (cond
-                                     [(condition? ended) (raise ended)]
-                                     [ended (assertion-violation who "the job was stopped")])
-                                   (failed result who)
-                                   result)))))))
+                     (call-as-owner %self
+                       (lambda ()
+                         (set! job
+                           (jobs:start worker input
+                             (lambda (v) (set! result v) (record! v))
+                             (lambda (ended)
+                               (when (take-waiter! w)
+                                 (resume
+                                   (lambda ()
+                                     (cond
+                                       [(condition? ended) (raise ended)]
+                                       [ended (assertion-violation who "the job was stopped")])
+                                     (failed result who)
+                                     result))))))))
                      (set! waiting (cons w waiting)))))))))]))
 
   ;; Moving the renamed buffers onto a path another buffer visits would
@@ -660,7 +664,7 @@
 
   (define (open-pending! visit)
     (for-each (lambda (v)
-                (guard (c [(not (quit-condition? c)) (report c)])
+                (guard (c [(not (cancelled? c)) (report c)])
                   (visit (visit-path v)))
                 (set! pending (remq v pending)))
               pending)))
@@ -679,7 +683,7 @@
     (values (contents-document read) (contents-length read) (contents-hash read))))
 
 (define (%visit-folder path c)
-  (let ([b (exists (lambda (entry) (entry path)) (hook-entries folder-visitors))])
+  (let ([b (exists (lambda (entry) (entry path)) (hooks:entries folder-visitors))])
     (unless b (raise c))
     (unless (buffers:buffer? b)
       (assertion-violation 'files:visit "a folder visitor returned no buffer" b))
@@ -763,7 +767,7 @@
         (unless (or (not folder) (%absolute-folder? folder))
           (assertion-violation 'files:directory "a directory finder returned no absolute folder" folder))
         (and folder (%with-final-slash folder))))
-    (hook-entries directory-finders)))
+    (hooks:entries directory-finders)))
 
 (define directory
   (case-lambda
@@ -931,7 +935,7 @@
   (buffers:set-modified! buffer #f))
 
 (define (%unsaved-kept? buffer)
-  (exists (lambda (entry) (entry buffer)) (hook-entries unsaved-kept)))
+  (exists (lambda (entry) (entry buffer)) (hooks:entries unsaved-kept)))
 
 (commands:define-command (save-buffers-kill-tuna)
   "Exits Tuna, asking first when a modified file buffer's edits would be lost, else when files:confirm-exit? is true."
@@ -1008,11 +1012,11 @@
   (run-operation 'files:make-folder %folder-creator (%operation-path 'files:make-folder path))
   (void))
 
-(add-hook! buffers:killed forget-killed!)
-(add-hook! buffers:kill-queries %confirm-kill)
-(set-option! buffers:revert-function revert-from-file)
-(add-hook! directory-finders file-directory -10)
-(table-set! commands:command-modes revert-from-file '())
+(hooks:add! buffers:killed forget-killed!)
+(hooks:add! buffers:kill-queries %confirm-kill)
+(options:set! buffers:revert-function revert-from-file)
+(hooks:add! directory-finders file-directory -10)
+(tables:set! commands:command-modes revert-from-file '())
 (keys:bind! keys:global "C-x C-w" write-file)
 (keys:bind! keys:global "C-x C-s" save-buffer)
 (keys:bind! keys:global "C-x s" save-some-buffers)
@@ -1022,4 +1026,4 @@
 (on-unload save-visits!)
 (on-unload stop-waiting!)
 (take-back!)
-(spawn-task (lambda () (open-pending! visit)))
+(spawn-task (lambda (restore) (open-pending! visit)))

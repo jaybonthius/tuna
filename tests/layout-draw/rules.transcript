@@ -7,70 +7,53 @@
     (set! drawn (cons (web:client-name client) drawn))
     (screen client))
 > (advice-add! layout:screen note-client)
-> (begin (set! drawn '()) (sleep-for 0) (list-head (reverse drawn) 2))
+> (begin (set! drawn '()) (timers:sleep 0) (list-head (reverse drawn) 2))
 (desktop phone)
 > (advice-remove! layout:screen note-client)
 ; It draws every connected client after every batch, whether or not
 ; anything it shows changed.
-> (define start (begin (web:given! desktop) web:batches))
+> (define start (begin (web:given! desktop) (web:batches)))
 > (let ([n (length (web:given! desktop))])
-    (list (> n 0) (= n (- web:batches start))))
+    (list (> n 0) (= n (- (web:batches) start))))
 (#t #t)
 ; The advice beneath layout's runs first, so what it did is drawn.
-> (define (with-batches screen client) (haml (:p "batch " web:batches)))
+> (define (with-batches screen client) (haml (:p "batch " (web:batches))))
 > (advice-add! layout:screen with-batches)
 > (begin
     (web:given! desktop)
-    (sleep-for 0)
-    (equal? (last-shown desktop) (format "<p>batch ~a</p>" web:batches)))
+    (timers:sleep 0)
+    (equal? (last-shown desktop) (format "<p>batch ~a</p>" (web:batches))))
 #t
 > (advice-remove! layout:screen with-batches)
-; Drawing acts for no module, as (tuna): a change raises. Code that draws
-; may set its own variables.
+; Advice on drawing runs as its owner, so what it starts is its owner's.
 > (define draws 0)
 > (define (with-owner screen client)
     (set! draws (+ draws 1))
-    (haml (:p (format "~s" (current-owner)))))
+    (haml (:p (format "~s" (owner-name (current-owner))))))
 > (advice-add! layout:screen with-owner)
 > (list (last-shown desktop) (> draws 0))
-("<p>(tuna)</p>" #t)
-> (define timers-before (timers))
-> (define (with-timer screen client) (run-with-timer 60 void) (screen client))
-> (advice-add! layout:screen with-timer)
-! run-with-timer: this code acts for no module; name its module with as-module
-! run-with-timer: this code acts for no module; name its module with as-module
-; haml writes a newline after <pre>, which a browser drops.
-> (last-shown phone)
-"<pre class=\"layout-error\">\nException in run-with-timer: this code acts for no module; name its module with as-module</pre>"
-> (advice-remove! layout:screen with-timer)
-> (define (with-post screen client) (post! void) (screen client))
-> (advice-add! layout:screen with-post)
-! post!: this code acts for no module; name its module with as-module
-! post!: this code acts for no module; name its module with as-module
-> (advice-remove! layout:screen with-post)
+("<p>(repl)</p>" #t)
 > (advice-remove! layout:screen with-owner)
-> (equal? (timers) timers-before)
-#t
 ; A draw that raises is reported once, until a draw for that client
 ; succeeds, and the client shows the condition. The other clients are
 ; drawn.
 > (define (desktop-fails screen client)
     (if (eq? client desktop) (car '()) (screen client)))
 > (advice-add! layout:screen desktop-fails)
-! car: () is not a pair
-> (sleep-for 0)
+! (layout) car: () is not a pair
+> (timers:sleep 0)
 > (list (last-shown desktop) (last-shown phone))
 ("<pre class=\"layout-error\">\nException in car: () is not a pair</pre>" "<p>Hello from Tuna</p>")
 > (advice-remove! layout:screen desktop-fails)
 > (last-shown desktop)
 "<p>Hello from Tuna</p>"
 > (advice-add! layout:screen desktop-fails)
-! car: () is not a pair
+! (layout) car: () is not a pair
 > (advice-remove! layout:screen desktop-fails)
 > (define (raises-oops screen client) (raise 'oops))
 > (advice-add! layout:screen raises-oops)
-! non-condition value oops
-! non-condition value oops
+! (layout) non-condition value oops
+! (layout) non-condition value oops
 > (last-shown desktop)
 "<pre class=\"layout-error\">\nException occurred with non-condition value oops</pre>"
 > (advice-remove! layout:screen raises-oops)
@@ -83,7 +66,7 @@
 > (begin
     (web:given! desktop)
     (set! warn? #t)
-    (sleep-for 0)
+    (timers:sleep 0)
     (list warn? (sent (web:given! desktop))))
 ! draw: careful
 (#f ("<p>Hello from Tuna</p>"))
@@ -91,11 +74,12 @@
 ; A quit ends the draw it lands in, unreported; the other clients are
 ; drawn, and the next batch draws again.
 > (define quit? #f)
+> (import (testing))
 > (define (quit-on-desktop screen client)
     (set! drawn (cons (web:client-name client) drawn))
     (when (and quit? (eq? client desktop))
       (set! quit? #f)
-      (request-quit!)
+      (testing:request-quit!)
       (let spin () (spin)))
     (screen client))
 > (advice-add! layout:screen quit-on-desktop)
@@ -114,7 +98,7 @@
 > (advice-add! layout:screen with-progress)
 > (begin
     (web:given! desktop)
-    (for-each (lambda (i) (set! progress i) (sleep-for 0)) '(1 2 3))
+    (for-each (lambda (i) (set! progress i) (timers:sleep 0)) '(1 2 3))
     (sent (web:given! desktop)))
 ("<p>step 1</p>" "<p>step 2</p>" "<p>step 3</p>")
 > (advice-remove! layout:screen with-progress)
@@ -128,23 +112,23 @@
 > (begin
     (web:given! desktop)
     (set! fail? #t)
-    (sleep-for 0)
+    (timers:sleep 0)
     (list fail? (sent (web:given! desktop))))
-! car: () is not a pair
+! (layout) car: () is not a pair
 (#f ("<p>Hello from Tuna</p>"))
 > (advice-remove! web:count-batch! fails-once)
 ; So is a quit that lands there.
 > (define quit? #f)
 > (define (quits-once count)
-    (when quit? (set! quit? #f) (request-quit!) (let spin () (spin)))
+    (when quit? (set! quit? #f) (testing:request-quit!) (let spin () (spin)))
     (count))
 > (advice-add! web:count-batch! quits-once)
 > (begin
     (web:given! desktop)
     (set! quit? #t)
-    (sleep-for 0)
+    (timers:sleep 0)
     (list quit? (sent (web:given! desktop))))
-! &quit
+! (layout) &cancelled
 (#f ("<p>Hello from Tuna</p>"))
 > (advice-remove! web:count-batch! quits-once)
 ; With no client connected, nothing is drawn.
@@ -153,16 +137,15 @@
 > (define (count-draws screen client) (set! draws (+ draws 1)) (screen client))
 > (advice-add! layout:screen count-draws)
 > (set! draws 0)
-> (sleep-for 0)
+> (timers:sleep 0)
 > draws
 0
 > (advice-remove! layout:screen count-draws)
-; Turned off, layout draws nothing; turned on again, it draws, without
-; the configuration's advice, which went with the definition.
+; Unloading layout, which the configuration imports, loads a new
+; instance at once, and the configuration's advice on its screen comes
+; back with the configuration's re-read.
 > (define laptop (web:connect! 'laptop))
-> (unload-module! '(layout))
-> (begin (web:given! laptop) (sleep-for 0) (web:given! laptop))
-()
-> (load-module! '(layout))
-> (substring (last-shown laptop) 0 26)
-"<div class=\"layout-screen\""
+> (define old (module-owner '(layout)))
+> (unload-owner! old)
+> (begin (timers:sleep 0) (list (owner-live? old) (last-shown laptop)))
+(#f "<p>Hello from Tuna</p>")

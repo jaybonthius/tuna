@@ -8,7 +8,7 @@
       (chez:dynamic-wind void (lambda () (exit)) (lambda () (car '()))))
     (display "the task goes on")
     (newline)
-    (sleep-for 0.05)
+    (timers:sleep 0.05)
     (display "after a pause")
     (newline))
 handler ran

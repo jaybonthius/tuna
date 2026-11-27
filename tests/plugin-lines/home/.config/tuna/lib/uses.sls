@@ -1,4 +1,4 @@
 #!tuna
-(import (tuna plugins))
+(import)
 (use-plugin vertico)
 (define (x) 1)

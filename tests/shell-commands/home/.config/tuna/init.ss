@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (web) (keys) (commands) (document) (buffers) (views) (modes) (processes))
+(import (hooks) (options) (tables) (timers) (plugins))
+(import (tuna) (testing) (web) (keys) (commands) (document) (buffers) (views) (modes) (processes))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -11,8 +12,8 @@
 (use-plugin dired)
 (use-plugin shell-commands
   (config
-    (set-option! runs:shell '("/bin/sh" "-c"))))
-(import (tuna eval))
+    (options:set! runs:shell '("/bin/sh" "-c"))))
+(import)
 
 (define client (web:add-client! 1))
 
@@ -27,13 +28,13 @@
   (parameterize ([web:current-client client])
     (views:call-with-view (layout:selected-view) thunk)))
 
-(define (settle) (sleep-for 0.1))
+(define (settle) (timers:sleep 0.1))
 
 
 ;; A command that reads or waits pauses its task, so tests start it in a
 ;; task of its own.
 (define (start! . keys)
-  (spawn-task (lambda () (apply press! keys)))
+  (spawn-task (lambda (restore) (apply press! keys)))
   (settle))
 
 (define (type! text) (apply press! (map (lambda (c) (if (char=? c #\space) "SPC" (string c))) (string->list text))))
@@ -42,9 +43,7 @@
 ;; and waits for it.
 (define (run! command . arguments)
   (let ([done #f])
-    (spawn-task
-      (lambda ()
-        (guard (c [#t (set! done #t) (raise c)])
+    (spawn-task (lambda (restore) (guard (c [#t (set! done #t) (raise c)])
           (in-client (lambda () (apply commands:run command arguments)))
           (set! done #t))))
     (testing:wait-until (lambda () done))))
@@ -87,9 +86,10 @@
   (map (lambda (v) (buffers:name (views:buffer v)))
        (filter (lambda (v) (not (buffers:internal-name? (buffers:name (views:buffer v))))) (layout:views))))
 
-(define library (getenv "TUNA_LIBRARY"))
-(define (reload! name) (eval-file (string-append library "/" name ".sls")))
+(define (reload! name) (reload-modules! (list (list (string->symbol name)))))
 
-(define saved 0)
-(set! shell-commands:save-buffers (lambda () (set! saved (+ saved 1))))
+;; The configuration is read again when a plugin it imports reloads, and
+;; the count goes on.
+(define saved (if (top-level-bound? 'saved) saved 0))
+(define shell-commands:save-buffers (lambda () (set! saved (+ saved 1))))
 (import (console))

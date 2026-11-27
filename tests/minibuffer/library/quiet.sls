@@ -1,4 +1,8 @@
 #!tuna
-(define (silence report c) (void))
+;; The configuration loads it first, so the advice of every plugin loaded
+;; after it runs outside it and still sees each report.
+(define %on? (box #f))
 
-(advice-add! report silence)
+(define (silence! on?) (set-box! %on? on?))
+
+(advice-add! report (lambda (report c) (unless (unbox %on?) (report c))))

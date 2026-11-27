@@ -14,7 +14,7 @@
 > (define calls '())
 > (define (record! view buffer)
     (set! calls (cons (list (cdr (assq view names)) (buffers:name buffer) (eq? buffer (buffers:current))) calls)))
-> (add-hook! views:drawn-ranges-changed record!)
+> (hooks:add! views:drawn-ranges-changed record!)
 > (define (told) (let ([c (reverse calls)]) (set! calls '()) c))
 > (define (ranges v)
     (list-sort (lambda (a b) (< (car a) (car b)))
@@ -102,7 +102,7 @@
 > (define ended 0)
 > (define (count-batch ended-batch) (set! ended (+ ended 1)) (ended-batch))
 > (advice-add! batch-ended count-batch)
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (advice-remove! batch-ended count-batch)
 > (list (< ended 100) (views:drawn-ranges ev) (told))
 (#t ((1 . 1)) ())
@@ -196,11 +196,11 @@
 ; hook runs for it a batch later.
 > (define seen #f)
 > (define (look view buffer) (when (eq? view w) (set! seen (views:drawn-ranges v))))
-> (add-hook! views:drawn-ranges-changed look)
+> (hooks:add! views:drawn-ranges-changed look)
 > (show! desktop w)
 > (list (ranges w) (ranges v) seen (told))
 (((1 50)) () () ((w "other" #t) (v "long" #t)))
-> (remove-hook! views:drawn-ranges-changed look)
+> (hooks:remove! views:drawn-ranges-changed look)
 > (show! desktop v w)
 > (list (ranges w) (ranges v) (told))
 (((1 50)) ((201 298)) ((v "long" #t)))
@@ -233,14 +233,14 @@
 > (show! desktop v w x)
 > (list (ranges x) (told))
 (((1 10)) ((x "kept" #t)))
-> (set-option! views:skipped-buffer-predicate (lambda (view buffer reason) (eq? view x)))
+> (options:set! views:skipped-buffer-predicate (lambda (view buffer reason) (eq? view x)))
 > (begin (buffers:kill! k) (void))
 > (list (views:buffer x) (views:drawn-ranges x) (told))
 (#f () ())
-> (set-option! views:skipped-buffer-predicate (lambda (view buffer reason) #f))
+> (options:set! views:skipped-buffer-predicate (lambda (view buffer reason) #f))
 ; An entry that raises is reported and kept, and the others run.
 > (define (fails view buffer) (car '()))
-> (add-hook! views:drawn-ranges-changed fails -1)
+> (hooks:add! views:drawn-ranges-changed fails -1)
 > (views:scroll-to! v (line-start v 20) (views:align top))
 ! car: () is not a pair
 > (list (ranges v) (told))
@@ -249,7 +249,7 @@
 ! car: () is not a pair
 > (list (ranges v) (told))
 (((100 300)) ((v "long" #t)))
-> (remove-hook! views:drawn-ranges-changed fails)
+> (hooks:remove! views:drawn-ranges-changed fails)
 ; An entry that moves the range it is told of runs the hook again once
 ; the move is drawn; moving it once, it runs twice and stops.
 > (define moves 0)
@@ -257,13 +257,13 @@
     (when (and (eq? view v) (= moves 0))
       (set! moves (+ moves 1))
       (views:scroll-to! v (line-start v 100) (views:align top))))
-> (add-hook! views:drawn-ranges-changed move-once)
+> (hooks:add! views:drawn-ranges-changed move-once)
 > (views:scroll-to! v (line-start v 20) (views:align top))
 > (list (ranges v) moves (told))
 (((1 200)) 1 ((v "long" #t) (v "long" #t)))
 > (list (ranges v) moves (told))
 (((1 200)) 1 ())
-> (remove-hook! views:drawn-ranges-changed move-once)
+> (hooks:remove! views:drawn-ranges-changed move-once)
 ; An entry that moves the range on every call runs the hook every batch,
 ; and forms are still read and run between rounds.
 > (define rounds 0)
@@ -271,13 +271,13 @@
     (when (eq? view v)
       (set! rounds (+ rounds 1))
       (views:scroll-to! v (line-start v (if (even? rounds) 20 200)) (views:align top))))
-> (add-hook! views:drawn-ranges-changed move-always)
+> (hooks:add! views:drawn-ranges-changed move-always)
 > (views:scroll-to! v (line-start v 150) (views:align top))
 > (> rounds 0)
 #t
 > (> rounds 1)
 #t
-> (remove-hook! views:drawn-ranges-changed move-always)
+> (hooks:remove! views:drawn-ranges-changed move-always)
 > (define stopped rounds)
 > (begin (told) (void))
 > (list (= rounds stopped) (told))
@@ -285,11 +285,11 @@
 ; A dropped view runs the hook for the buffer it showed, which no longer
 ; lists it among the views showing it, and has no ranges to ask for.
 > (define (showing view buffer) (when (eq? view v) (set! seen (and (memq view (views:showing buffer)) #t))))
-> (add-hook! views:drawn-ranges-changed showing)
+> (hooks:add! views:drawn-ranges-changed showing)
 > (begin (show! desktop w x) (views:drop! v))
 > (list seen (told) (raised (lambda () (views:drawn-ranges v))))
 (#f ((v "long" #t)) (views:drawn-ranges "a dropped view"))
-> (remove-hook! views:drawn-ranges-changed showing)
+> (hooks:remove! views:drawn-ranges-changed showing)
 ; Where lines do not wrap, a one-line file is one range of the whole
 ; file; where they wrap, the range holds only the long line's pieces
 ; drawn.

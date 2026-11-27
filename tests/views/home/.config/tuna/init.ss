@@ -1,7 +1,8 @@
-(import (tuna) (tuna plugins) (document) (haml) (web))
+(import (hooks) (options) (tables) (timers) (plugins))
+(import (tuna) (document) (haml) (web))
 (use-plugin views
   (config
-    (set-option! views:scroll-margin 2
+    (options:set! views:scroll-margin 2
                  views:wrap-lines #f)))
 
 (define (search text needle from)
@@ -89,7 +90,7 @@
          [whole-to (- (+ top (quotient (+ h offset) 20)) 1 2)]
          [mark (lambda (line) (or (cdr (or (assv line marks) '(#f . #f))) (list (cons "line" line))))])
     (set! reports (+ reports 1))
-    ((table-ref web:input-handlers "scroll") client
+    ((tables:ref web:input-handlers "scroll") client
      (map (lambda (field) (or (assoc (car field) overrides) field))
      `(("type" . "scroll") ("view" . ,(views:id view))
        ("placement" . ,(car (numbers-after html "data-placement=\""))) ("report" . ,reports)

@@ -2,43 +2,26 @@
 > (use-plugin greet)
 > (eval-in-module '(text "Chico") '(greet))
 "Hello, Chico!"
-> (import (tuna eval))
-> (eval-text "(text \"Chico\")" "~/.local/share/tuna/plugins/greet/greet.sls")
-"Hello, Chico!"
 ; The configuration's set! reaches the module's own code.
 > (spell:check "a.txt")
 checking a.txt against /home/groucho/words
-; eval-text of a definition in a module's file assigns it, and a procedure
-; held earlier calls the new one.
+; eval-in-module of a definition assigns it, and a procedure held earlier
+; calls the new one.
 > (define held spell:check)
-> (eval-text "(define (check path) (display (string-append \"new check of \" path)))"
-    "~/.local/share/tuna/plugins/spell/spell.sls")
+> (eval-in-module '(define (check path) (display (string-append "new check of " path))) '(spell))
 > (held "b.txt")
 new check of b.txt
-; Assigning from the module's file is not a change, and the
+; Assigning from the module's scope is not a change, and the
 ; configuration's override stays in effect.
-> (module-changes '(repl))
+> (owner-changes (plugins:repl-owner))
 ()
 > (definition-changes spell:dictionary-path)
-(((init) override #f) ((spell) define #f))
-; Forms in the configuration's file evaluate as (init), and in any other
-; file, or without one, as (repl), returning the last form's values.
-> (eval-text "(current-owner)" "~/.config/tuna/init.ss")
-(init)
-> (eval-text "1 (values 2 (current-owner))" "~/notes.ss")
-2
-(repl)
-> (eval-text "")
-> (eval-text "(define from-text 7)")
-> from-text
-7
-> (eval-text 'x)
-! eval-text: not a string with irritant x
+((#<owner (init) 1> override #f) (#<owner (spell) 1> define #f))
 ; A tool that advises a name chosen at run time takes a procedure from the
 ; module's scope and calls it on its own behalf.
 > (define advise-text (eval-in-module '(lambda (p) (advice-add! text p)) '(greet)))
-> (as-module '(spell) (advise-text (lambda (text name) (string-append (text name) "?"))))
+> (call-as-owner (module-owner '(spell)) (lambda () (advise-text (lambda (text name) (string-append (text name) "?")))))
 > (greet:text "Gummo")
 "Hello, Gummo!?"
 > (map car (definition-changes greet:text))
-((spell) (greet))
+(#<owner (spell) 1> #<owner (greet) 1>)

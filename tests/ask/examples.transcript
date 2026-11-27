@@ -16,26 +16,28 @@
 ; Each question calls its reader with the question and returns its answer.
 > (define asked '())
 > (define (reader answer) (lambda (question . rest) (set! asked (cons question asked)) answer))
-> (set-option! ask:file-name-reader (reader "/tmp/notes.txt"))
-> (set-option! ask:line-reader (reader "notes"))
-> (set-option! ask:number-reader (reader 80))
-> (set-option! ask:yes-or-no-reader (reader #t))
-> (set-option! ask:y-or-n-reader (reader #f))
-> (list (ask:file-name "Find file: ") (ask:line "Rename session to: ") (ask:number "Columns: ") (ask:yes-or-no? "Exit anyway? ") (ask:y-or-n? "Save it? "))
+> (options:set! ask:file-name-reader (reader "/tmp/notes.txt"))
+> (options:set! ask:line-reader (reader "notes"))
+> (options:set! ask:number-reader (reader 80))
+> (options:set! ask:yes-or-no-reader (reader #t))
+> (options:set! ask:y-or-n-reader (reader #f))
+> (let* ([f (ask:file-name "Find file: ")] [l (ask:line "Rename session to: ")] [n (ask:number "Columns: ")]
+         [y (ask:yes-or-no? "Exit anyway? ")] [s (ask:y-or-n? "Save it? ")])
+    (list f l n y s))
 ("/tmp/notes.txt" "notes" 80 #t #f)
 > asked
 ("Save it? " "Exit anyway? " "Columns: " "Rename session to: " "Find file: ")
 ; A line's reader gets its default, or #f; a choice's reader gets the
 ; choices, and a line's with candidates gets them and its default.
-> (set-option! ask:line-reader (lambda (question default) (list question default)))
+> (options:set! ask:line-reader (lambda (question default) (list question default)))
 > (ask:line "Rename to: " "notes")
 ("Rename to: " "notes")
 > (ask:line "Rename to: ")
 ("Rename to: " #f)
-> (set-option! ask:choice-reader (lambda (question choices) (cdr (cadr choices))))
+> (options:set! ask:choice-reader (lambda (question choices) (cdr (cadr choices))))
 > (ask:choice "Action: " (list (cons "Rename" 'rename) (cons "Extract" 'extract)))
 extract
-> (set-option! ask:line-with-candidates-reader list)
+> (options:set! ask:line-with-candidates-reader list)
 > (ask:line-with-candidates "Identifier: " (list "car" "cdr"))
 ("Identifier: " ("car" "cdr") #f)
 > (ask:line-with-candidates "Identifier: " (list "car" "cdr") "car")

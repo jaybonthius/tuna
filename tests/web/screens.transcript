@@ -30,7 +30,7 @@ timeout
 timeout
 ; A screen given when the one in flight was sent over a second before goes
 ; at once.
-> (sleep-for 1.1)
+> (timers:sleep 1.1)
 > (web:send-screen! c (haml (:p "five")) "Tuna")
 > (http:show (http:next p))
 (screen 3 0 "<p>five</p>")
@@ -54,7 +54,7 @@ timeout
 > (http:show (http:next p))
 (script "tuna.call(\"show-value\", {\"a\":\"\\u003c/script\\u003e\",\"b\":[1,2.5,true,null]})")
 ; A screen records the last item of its client that ran before it.
-> (table-set! web:input-handlers "draw" (lambda (client item) (web:send-screen! client (haml (:p "drawn")) "Tuna")))
+> (tables:set! web:input-handlers "draw" (lambda (client item) (web:send-screen! client (haml (:p "drawn")) "Tuna")))
 > (http:send-numbered! p 2 '(("type" . "draw")))
 204
 > (http:send-numbered! p 1 '(("type" . "noop")))

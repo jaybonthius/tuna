@@ -14,35 +14,35 @@
 ; be, gives a file buffer another.
 > (define chosen (make-eq-hashtable))
 > (define (chosen-folder b) (eq-hashtable-ref chosen b #f))
-> (add-hook! files:directory-finders chosen-folder -20)
+> (hooks:add! files:directory-finders chosen-folder -20)
 > (eq-hashtable-set! chosen plain "/tmp")
 > (eq-hashtable-set! chosen a "/srv/elsewhere/")
 > (map files:directory (list a plain))
 ("/srv/elsewhere/" "/tmp/")
-> (remove-hook! files:directory-finders chosen-folder)
+> (hooks:remove! files:directory-finders chosen-folder)
 > (map files:directory (list a plain))
 ("$HOME/src/d/" "$HOME/")
 > (define (nowhere b) 'nowhere)
-> (add-hook! files:directory-finders nowhere)
+> (hooks:add! files:directory-finders nowhere)
 > (files:directory plain)
 ! files:directory: a directory finder returned no absolute folder with irritant nowhere
-> (remove-hook! files:directory-finders nowhere)
+> (hooks:remove! files:directory-finders nowhere)
 ; A folder that does not start with / is refused at the finder that gave
 ; it, as the override refuses one, since commands hand it on as absolute.
 > (define (relative b) "~/src/")
-> (add-hook! files:directory-finders relative)
+> (hooks:add! files:directory-finders relative)
 > (files:directory plain)
 ! files:directory: a directory finder returned no absolute folder with irritant "~/src/"
-> (remove-hook! files:directory-finders relative)
-; files:directory-override, bound with with-options, gives one buffer a
+> (hooks:remove! files:directory-finders relative)
+; files:directory-override, bound with options:with, gives one buffer a
 ; folder for what runs inside it, before any entry; another buffer, and
 ; a file visited inside it, keep their own.
 > (disk-checks:write-text! "~/src/e/b.txt" "b\n")
 > (define seen #f)
 > (define (note-folder b) (set! seen (files:directory)))
-> (add-hook! files:after-visit note-folder)
+> (hooks:add! files:after-visit note-folder)
 > (define b #f)
-> (with-options ([files:directory-override (cons a "/srv/project")])
+> (options:with ([files:directory-override (cons a "/srv/project")])
     (set! b (files:visit "~/src/e/b.txt"))
     (list (files:directory a) (files:directory plain) (files:directory b)))
 ("/srv/project/" "$HOME/" "$HOME/src/e/")
@@ -50,7 +50,7 @@
 "$HOME/src/e/"
 > (files:directory a)
 "$HOME/src/d/"
-> (with-options ([files:directory-override (cons a "relative/")]) (files:directory a))
-! with-options: (#<buffer a.txt> . "relative/") is not a valid value for files:directory-override
-> (with-options ([files:directory-override "/srv"]) (files:directory a))
-! with-options: "/srv" is not a valid value for files:directory-override
+> (options:with ([files:directory-override (cons a "relative/")]) (files:directory a))
+! options:with: (#<buffer a.txt> . "relative/") is not a valid value for files:directory-override
+> (options:with ([files:directory-override "/srv"]) (files:directory a))
+! options:with: "/srv" is not a valid value for files:directory-override

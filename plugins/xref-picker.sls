@@ -1,5 +1,7 @@
 #!tuna
-(import (xref) (jump-history) (completion) (files) (projects) (buffers) (document) (views) (layout) (commands) (keys) (faces))
+(import (xref) (jump-history) (completion) (files) (projects) (buffers) (document) (views) (layout) (commands) (keys) (faces) (options) (tables) (timers))
+
+(define %self (current-owner))
 
 (define (%project-root)
   (let ([project (projects:find (files:directory))])
@@ -10,7 +12,7 @@
       (substring path (string-length root) (string-length path))
       (files:abbreviated-path path)))
 
-(define-option preview-delay 0 (lambda (v) (and (real? v) (>= v 0)))
+(options:define-option preview-delay 0 (lambda (v) (and (real? v) (>= v 0)))
   "Seconds an item must stay selected before xref-picker:choose-and-go shows its place.")
 
 (define (%location item) (cons* (xref:item-path item) (xref:item-line item) (xref:item-column item)))
@@ -56,16 +58,16 @@
     (let ([asked #f] [timer #f] [task #f])
       (define (stop!)
         (when timer
-          (cancel-timer! timer)
+          (timers:cancel! timer)
           (set! timer #f))
-        (when (and task (not (task-done? task)))
-          (signal-task task (%quit)))
+        (when (and task (not (eq? (task-state task) 'done)))
+          (cancel-task task))
         (set! task #f))
       (define (ask! input)
         (set! task
           (spawn-task
-            (lambda ()
-              (let ([items (guard (c [(quit-condition? c) #f] [else (report c) '()]) (apropos input))])
+            (lambda (restore)
+              (let ([items (guard (c [(cancelled? c) #f] [else (report c) '()]) (apropos input))])
                 (when items
                   (emit 'clear)
                   (emit (list->vector (map (lambda (item) (cons (xref:item-summary item) item)) items)))
@@ -80,13 +82,14 @@
            (if (fx< (string-length input) (completion:async-min-input))
                (begin (emit 'clear) (emit 'done))
                (set! timer
-                 (as-module (this-module)
-                   (run-with-timer (completion:async-delay)
-                     (lambda ()
-                       (set! timer #f)
-                       (ask! input))))))])))))
+                 (call-as-owner %self
+                   (lambda ()
+                     (timers:run-after (completion:async-delay)
+                       (lambda ()
+                         (set! timer #f)
+                         (ask! input)))))))])))))
 
-(define %quit (record-constructor (record-constructor-descriptor &quit)))
+(define (%quit) (make-cancelled #f))
 
 (define (%read-apropos-item)
   (let ([view (views:current)])
@@ -103,6 +106,6 @@
     (xref:go-to-item item)
     (jump-history:push! left at)))
 
-(set-option! xref:definitions-display choose-and-go xref:references-display choose-and-go)
-(table-set! completion:annotators symbol-category %symbol-annotator)
+(options:set! xref:definitions-display choose-and-go xref:references-display choose-and-go)
+(tables:set! completion:annotators symbol-category %symbol-annotator)
 (keys:remap! keys:global xref:find-apropos find-apropos)

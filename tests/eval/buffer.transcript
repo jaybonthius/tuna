@@ -34,7 +34,7 @@
 > (define evaluated (length (log-tail 100)))
 > (define t (start! "C-c" "C-k"))
 > (press! "C-g")
-! &quit
+! &cancelled
 > (finish t)
 #t
 > (list (buffers:modified? notes) (= evaluated (length (log-tail 100))) (message))
@@ -63,7 +63,7 @@
 ; no Evaluated line shows: a body that raises,
 > (write-file! ".config/tuna/lib/greet.sls" "#!tuna\n(define (text n) n)\n(car 1)\n")
 > (finish (start! "C-c" "C-k"))
-! (greet) car: 1 is not a pair
+! car: 1 is not a pair
 #t
 > (list (greet:text "a") (message))
 ("Hi, a!" "1 is not a pair")
@@ -82,11 +82,11 @@
 > (list (greet:text "a") (message) (echo-area:current-face))
 ("Hey, a" "possible incorrect argument count in call (car)" warning)
 ; and a good reload during which an advice of module-loaded raises.
-> (define (raise-after loaded name) (loaded name) (when (equal? name '(greet)) (car 2)))
+> (define (raise-after loaded instance) (loaded instance) (when (equal? (owner-name instance) '(greet)) (car 2)))
 > (advice-add! module-loaded raise-after)
 > (write-file! ".config/tuna/lib/greet.sls" "#!tuna\n(define (text n) (string-append \"Yo, \" n))\n")
 > (finish (start! "C-c" "C-k"))
-! (greet) car: 2 is not a pair
+! car: 2 is not a pair
 #t
 > (list (greet:text "a") (message))
 ("Yo, a" "2 is not a pair")

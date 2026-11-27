@@ -29,7 +29,7 @@
 (1 1)
 ; Reloading pi: Pi keeps working, and pi follows it again from what it
 ; saved, Pi's answers and the output still in the log.
-> (eval-file (library-file "pi.sls"))
+> (reload-modules! '((pi)))
 ! pi:last-reply: pi was unloaded
 > (result t)
 (refused "pi was unloaded")
@@ -53,12 +53,13 @@
 > (transcript chat)
 ((user 0 "u1" "Hi") (reply 1 "a1" stop ((text "Hello"))) (reply 2 #f pending ((text "Working"))))
 ; Pi says on, while pi is off; a question it asks then waits for pi.
-> (unload-module! '(pi))
+> (unload-owner! (module-owner '(pi)))
 > (memq '(pi-chat) (loaded-modules))
 #f
 > (say! f (ui-request "d3" "confirm" '("title" . "Proceed?")))
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (load-module! '(pi))
+#<owner (pi) 3>
 > (define chat (car (pi:chats)))
 > (testing:wait-until (lambda () (= 2 (length (pi:chat-dialogs chat)))))
 > (map pi:dialog-title (pi:chat-dialogs chat))
@@ -66,11 +67,12 @@
 > (eq? (pi:chat-process chat) process)
 #t
 > (load-module! '(pi-chat))
+#<owner (pi-chat) 3>
 > (buffers:name (chat:buffer chat))
 "*pi: home*"
 ; A widget saved as its key, placement and lines restores.
-> (eval-in-module '(set-saved! %chats (map (lambda (v) (let ([v (vector-copy v)]) (vector-set! v 5 '(#("plan" above ("Step 1")))) v)) (%chats))) '(pi))
-> (eval-file (library-file "pi.sls"))
+> (eval-in-module '(saved:set! %chats (map (lambda (v) (let ([v (vector-copy v)]) (vector-set! v 5 '(#("plan" above ("Step 1")))) v)) (%chats))) '(pi))
+> (reload-modules! '((pi)))
 > (define chat (car (pi:chats)))
 > (map (lambda (w) (list (pi:widget-key w) (pi:widget-placement w) (pi:widget-lines w))) (pi:chat-widgets chat))
 (("plan" above ("Step 1")))

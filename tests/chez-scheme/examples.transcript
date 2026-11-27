@@ -6,7 +6,7 @@
 > (define program (scheme-buffer "program.ss" "(display 1)\n"))
 > (buffers:with-buffer program (modes:derived? (modes:major-mode (buffers:current)) prog:mode))
 #t
-> (list (modes:lighter prog:mode) (table-ref modes:parents prog:mode #f) (eq? (table-ref modes:keymaps prog:mode) prog:keymap))
+> (list (modes:lighter prog:mode) (tables:ref modes:parents prog:mode #f) (eq? (tables:ref modes:keymaps prog:mode) prog:keymap))
 ("Prog" #f #t)
 > (keys:bind! prog:keymap "C-c C-u" editing:upcase-region)
 > (local files:require-final-newline program)
@@ -44,11 +44,11 @@
 > (syntax:top-level-form b 15)
 1
 13
-> (table-set! syntax:bracket-users 'test (lambda (buffer) #t))
+> (tables:set! syntax:bracket-users 'test (lambda (buffer) #t))
 > (syntax-highlighting:update!)
 > (brackets b)
 ((1 2 ((bracket . 1))) (7 8 ((bracket . 2))) (11 12 ((bracket . 2))) (12 13 ((bracket . 1))))
-> (table-remove! syntax:bracket-users 'test)
+> (tables:remove! syntax:bracket-users 'test)
 > (syntax-highlighting:update!)
 ; chez-scheme
 > (disk:write-text! "~/.config/tuna/lib/greet.sls" "#!tuna\n(define (text name) (string-append \"Hello, \" name \"!\"))\n")

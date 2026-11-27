@@ -147,7 +147,7 @@
 > (outline)
 (layout:level (layout-split:container (layout:level "one") "*bottom*"))
 ; layout:history-limit caps the steps back; 0 keeps none.
-> (set-option! layout:history-limit 2)
+> (options:set! layout:history-limit 2)
 > (press! c1 '("x" "control") '("2"))
 > (press! c1 '("x" "control") '("3"))
 > (press! c1 '("x" "control") '("0"))
@@ -157,7 +157,7 @@
 ! layout:history-back: no more back history in this level
 > (outline)
 (layout:level (layout-split:container (layout:level (layout-split:container "one" "one")) "*bottom*"))
-> (set-option! layout:history-limit 0)
+> (options:set! layout:history-limit 0)
 > (press! c1 '("x" "control") '("2"))
 > (back!)
 ! layout:history-back: no more back history in this level
@@ -165,7 +165,7 @@
 (layout:history-back "no more back history in this level")
 ; Another command between two of the same ends their sequence, so each
 ; is a step back.
-> (set-option! layout:history-limit 10)
+> (options:set! layout:history-limit 10)
 > (define b1 (views:make (named "one")))
 > (define b2 (views:make (named "two")))
 > (set-parts! (layout-split:container '((direction . row)) (atom b1) (atom b2)))
@@ -212,7 +212,7 @@
 > (set-parts! (layout-split:container '((direction . row)) (atom d1) (atom d2)))
 > (layout:select! d1)
 > (press! c1 '("x" "control") '("3"))
-> (unload-module! '(layout-tabs))
+> (unload-owner! (module-owner '(layout-tabs)))
 > (back!)
 > (outline)
 (layout:level (layout-split:container "one" "two"))

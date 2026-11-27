@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins) (document) (haml) (web))
+(import (hooks) (options) (tables) (timers))
+(import (tuna) (document) (haml) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -26,8 +27,8 @@
 ;; A key whose command reads pauses its task, so it is pressed in a task
 ;; of its own.
 (define (start! . keys)
-  (spawn-task (lambda () (apply press! keys)))
-  (sleep-for 0.05))
+  (spawn-task (lambda (restore) (apply press! keys)))
+  (timers:sleep 0.05))
 
 (define (type! text) (apply press! (map (lambda (c) (if (char=? c #\space) "SPC" (string c))) (string->list text))))
 
@@ -70,14 +71,14 @@
   (let ([s (isearch:current client)])
     (let loop ([n 0])
       (unless (or (not s) (= n 300) (search:scan-done? (isearch:search-scan s)))
-        (sleep-for 0.01)
+        (timers:sleep 0.01)
         (loop (+ n 1))))))
 
 ;; A search's scan ends after the search itself may have.
 (define (wait-drawn c)
   (let loop ([n 0])
     (when (and (< n 300) (null? (drawn c)))
-      (sleep-for 0.01)
+      (timers:sleep 0.01)
       (loop (+ n 1)))))
 
 (define (faced-text html)

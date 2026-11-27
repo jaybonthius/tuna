@@ -1,5 +1,7 @@
 #!tuna
-(import (buffers) (views) (layout) (commands) (modes))
+(import (buffers) (views) (layout) (commands) (modes) (hooks) (options) (timers) (scopes))
+
+(define %self (current-owner))
 
 (define-record-type (%doc %make-doc doc?)
   (sealed #t)
@@ -66,10 +68,10 @@
                 (if (%options-echo-given? options) (%options-echo options) text)
                 (%options-spans options))]))
 
-(define-hook sources
+(hooks:define-hook sources
   "Called with the selected view, each entry in a task of its own, once Tuna has been idle docs-at-point:delay seconds after a command; returns a doc, a list of docs, or #f.")
 
-(define-hook displays
+(hooks:define-hook displays
   "Called with the view the docs are about, the docs to show and whether the user asked for them, each time the strategy's choice changes.")
 
 (define (first answers)
@@ -83,13 +85,13 @@
 (define (all answers)
   (apply append (filter pair? answers)))
 
-(define-option strategy first procedure?
+(options:define-option strategy first procedure?
   "Chooses the docs to show from the sources' answers so far, one per entry of docs-at-point:sources, each a list of docs or the symbol waiting.")
 
-(define-option delay 0.5 (lambda (v) (and (real? v) (finite? v) (>= v 0)))
+(options:define-option delay 0.5 (lambda (v) (and (real? v) (finite? v) (>= v 0)))
   "Seconds of idleness after a command before the sources are asked.")
 
-(define-option after-edits-only? #f boolean?
+(options:define-option after-edits-only? #f boolean?
   "Whether the sources are asked only after a command that changed the selected view's buffer.")
 
 (modes:define-minor-mode mode
@@ -124,10 +126,10 @@
 (define %tasks '())
 
 (define (%stop-asking!)
-  (for-each (lambda (t) (unless (task-done? t) (signal-task t (%quit)))) %tasks)
+  (for-each (lambda (t) (unless (eq? (task-state t) 'done) (cancel-task t))) %tasks)
   (set! %tasks '()))
 
-(define %quit (record-constructor (record-constructor-descriptor &quit)))
+(define (%quit) (make-cancelled #f))
 
 (define (%answer-docs answer)
   (cond
@@ -143,9 +145,9 @@
 ;; document unless a source was added for that buffer alone, as Eldoc
 ;; keeps to buffers that set it up.
 (define (%entries view)
-  (let ([entries (views:call-with-view view (lambda () (hook-entries sources)))])
+  (let ([entries (views:call-with-view view (lambda () (hooks:entries sources)))])
     (if (buffers:internal-name? (buffers:name (views:buffer view)))
-        (let ([global (parameterize ([current-scope #f]) (hook-entries sources))])
+        (let ([global (parameterize ([scopes:current #f]) (hooks:entries sources))])
           (remp (lambda (e) (memq e global)) entries))
         entries)))
 
@@ -167,8 +169,8 @@
             (let ([entry (car entries)])
               (set! %tasks
                 (cons (spawn-task
-                        (lambda ()
-                          (let ([docs (guard (c [(quit-condition? c) #f] [else (report c) '()])
+                        (lambda (restore)
+                          (let ([docs (guard (c [(cancelled? c) #f] [else (report c) '()])
                                         (%answer-docs (views:call-with-view view (lambda () (entry view)))))])
                             (when (and docs (%still? place))
                               (vector-set! answers i docs)
@@ -192,9 +194,9 @@
 
 (define (%set-timer! seconds)
   (unless (eqv? seconds %timer-delay)
-    (when %idle-timer (cancel-timer! %idle-timer))
+    (when %idle-timer (timers:cancel! %idle-timer))
     (set! %timer-delay seconds)
-    (set! %idle-timer (as-module (this-module) (run-with-idle-timer seconds %on-idle)))))
+    (set! %idle-timer (call-as-owner %self (lambda () (timers:run-when-idle seconds %on-idle))))))
 
 ;; An edit is the ending command's own, kept by its task: a command paused
 ;; at a prompt ends after the prompt's own commands have run, and compared
@@ -229,7 +231,7 @@
                (set! %last-place place)
                (displays view '() #f)])))))))
 
-(add-hook! commands:before-command %note-start)
-(add-hook! commands:after-command %note-end)
+(hooks:add! commands:before-command %note-start)
+(hooks:add! commands:after-command %note-end)
 (%set-timer! (delay))
 (on-unload %stop-asking!)

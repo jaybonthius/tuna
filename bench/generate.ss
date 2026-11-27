@@ -71,15 +71,16 @@
                     (sort string<? picked)
                     (let ([d (plugin-id (random-below i))])
                       (loop (- n 1) (if (member d picked) picked (cons d picked)))))))]
-         [imports (append (map (lambda (d) (format "(~a)" d)) dependencies)
+         [imports (append '("(options)" "(hooks)")
+                          (map (lambda (d) (format "(~a)" d)) dependencies)
                           (if (< i extras) (list (format "(~a extra)" (plugin-id i))) '()))])
     (append
       (list "#!tuna")
-      (if (null? imports) '() (list (format "(import ~{~a~^ ~})" imports)))
+      (list (format "(import ~{~a~^ ~})" imports))
       (list
-        "(define-option width 70 fixnum? \"Width of the output.\")"
-        "(define-option enabled #t boolean? \"Whether the plugin acts.\")"
-        "(define-hook after-run \"Called with each result.\")"
+        "(options:define-option width 70 fixnum? \"Width of the output.\")"
+        "(options:define-option enabled #t boolean? \"Whether the plugin acts.\")"
+        "(hooks:define-hook after-run \"Called with each result.\")"
         "(define-record-type entry (fields key (mutable value)))"
         "(define-syntax with-entry"
         "  (syntax-rules () [(_ (k v) body ...) (let ([e (make-entry k v)]) body ...)]))")
@@ -89,15 +90,16 @@
           '()
           (list
             "(define (on-dependency-run v) (h0 (list v) 1))"
-            (format "(add-hook! ~a:after-run on-dependency-run)" (car dependencies)))))))
+            (format "(hooks:add! ~a:after-run on-dependency-run)" (car dependencies)))))))
 
 (define (extra-module)
   (append
     (list
       "#!tuna"
+      "(import (options) (hooks))"
       "(define-record-type entry (fields key (mutable value)))"
-      "(define-option enabled #t boolean? \"Whether the extra acts.\")"
-      "(define-hook after-run \"Called with each result.\")"
+      "(options:define-option enabled #t boolean? \"Whether the extra acts.\")"
+      "(hooks:define-hook after-run \"Called with each result.\")"
       "(define (width) 60)")
     (helpers-of 10)
     (apply append (map (lambda (k) (command k '())) (iota commands)))))
@@ -114,9 +116,9 @@
 
 (write-lines (string-append home "/.config/tuna/init.ss")
   (append
-    (list "(import (tuna))")
+    (list "(import (tuna) (options))")
     (map (lambda (i) (format "(import (~a))" (plugin-id i))) (iota plugins))
     (list
-      "(set-option! p010:width 80 p020:enabled #f)"
+      "(options:set! p010:width 80 p020:enabled #f)"
       "(printf \"configured-ms ~a check ~s\\n\" (real-time) (p000:cmd0 \"x\"))"
       "(exit)")))

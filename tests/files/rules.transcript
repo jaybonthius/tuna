@@ -1,6 +1,6 @@
 ; Encodings: every file saves byte for byte.
 > (define (bytes-of b) (disk-checks:read-bytes (files:path b)))
-> (define (local-final-newline-off! b) (buffers:with-buffer b (set-option-local! files:require-final-newline #f)))
+> (define (local-final-newline-off! b) (buffers:with-buffer b (options:set-local! files:require-final-newline #f)))
 > (disk-checks:write-bytes! "~/bom.txt" #vu8(#xEF #xBB #xBF 97 13 10 98 13 10))
 > (define bom (files:visit "~/bom.txt"))
 > (text bom)
@@ -221,22 +221,22 @@
 ; entry that raises is reported and the save goes on.
 > (define calls '())
 > (define (note name) (lambda (b) (set! calls (cons (list name (buffers:name b) (eq? b (buffers:current))) calls))))
-> (add-hook! files:after-visit (note 'after-visit))
-> (add-hook! files:after-save (note 'after-save))
-> (add-hook! files:after-revert (note 'after-revert))
+> (hooks:add! files:after-visit (note 'after-visit))
+> (hooks:add! files:after-save (note 'after-save))
+> (hooks:add! files:after-revert (note 'after-revert))
 > (define (refuse b) (error 'hooked "refused"))
-> (add-hook! files:before-save refuse)
+> (hooks:add! files:before-save refuse)
 > (disk-checks:write-text! "~/hooks.txt" "h\n")
 > (define hooked (files:visit "~/hooks.txt"))
 > (eq? hooked (files:visit "~/hooks.txt"))
 #t
-> (buffers:with-buffer hooked (add-local-hook! files:before-save (note 'local-before-save)))
+> (buffers:with-buffer hooked (hooks:add-local! files:before-save (note 'local-before-save)))
 > (buffers:replace! hooked 1 1 "+")
 #<edit 1>
 > (files:save-buffer hooked)
 ! hooked: refused
 > (files:save-buffer hooked)
-> (remove-hook! files:before-save refuse)
+> (hooks:remove! files:before-save refuse)
 > (files:revert-from-file hooked)
 > (reverse calls)
 ((after-visit "hooks.txt" #t) (local-before-save "hooks.txt" #t) (after-save "hooks.txt" #t) (after-revert "hooks.txt" #t))
@@ -257,25 +257,6 @@
 #t
 > (list (files:buffer-visiting "~/final.txt") (memq final (files:buffers)) (buffers:modified? final))
 (#f #f #f)
-; Reading, saving, writing and reverting pause, so outside a task they
-; refuse at once and change nothing.
-> (define outside #f)
-> (define (call-outside-task batch-ended)
-    (unless outside
-      (set! outside
-        (map (lambda (call) (guard (c [#t (list (condition-who c) (condition-message c))]) (call)))
-             (list (lambda () (files:read-document "~/final.txt"))
-                   (lambda () (files:save-buffer hooked))
-                   (lambda () (files:write-file "~/elsewhere.txt" hooked))
-                   (lambda () (files:revert-from-file hooked))))))
-    (batch-ended))
-> (advice-add! batch-ended call-outside-task)
-> (sleep-for 0.05)
-> (advice-remove! batch-ended call-outside-task)
-> outside
-((files:read-document "not in a task") (files:save-buffer "not in a task") (files:write-file "not in a task") (files:revert-from-file "not in a task"))
-> (list (buffers:name hooked) (files:buffer-visiting "~/elsewhere.txt"))
-("hooks.txt" #f)
 ; A worker's failure from a defect is a violation, not a disk error.
 > (import (only (files disk) failure failure-violation?))
 > (map (lambda (c) (failure-violation? (failure c)))
@@ -324,7 +305,7 @@
 ; reaches every revert-buffer-function. files:revert-from-file says
 ; Reverted buffer when it runs as a command, as under C-x x g, and
 ; nothing when code calls it.
-> (commands:command-name (table-ref keys:global "C-x x g"))
+> (commands:command-name (tables:ref keys:global "C-x x g"))
 buffers:revert-buffer
 > (disk-checks:write-text! "~/said-2.txt" "changed\n")
 > (files:revert-from-file said-file)

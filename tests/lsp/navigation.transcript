@@ -13,8 +13,8 @@
                        `(responses ("textDocument/definition" . #(,(loc a-path 0 0 5)))
                                    ("textDocument/hover" . (delay 0.5 (("contents" . "total: style")))))
                        '(name . "style"))
-> (table-set! lsp:language-servers "fakelang" (list types style))
-> (add-hook! fake-mode-hook lsp:ensure)
+> (tables:set! lsp:language-servers "fakelang" (list types style))
+> (hooks:add! fake-mode-hook lsp:ensure)
 > (define a (visit! a-path))
 > (wait-for "types" "textDocument/didOpen")
 > (wait-for "style" "textDocument/didOpen")
@@ -67,7 +67,7 @@
 > (define (lit)
     (let ([l (find (lambda (l) (= (buffers:layer-priority l) 5)) (buffers:layers a (view)))])
       (if l (map (lambda (s) (list (car s) (cadr s) (cdr (assq 'face (caddr s))))) (buffers:spans l 0 (document:length (buffers:document a)))) '())))
-> (set-option! docs-at-point:mode #f)
+> (options:set! docs-at-point:mode #f)
 > (press! "C-a")
 > (lit)
 ()
@@ -77,7 +77,7 @@
 > (press! "C-f")
 > (lit)
 ()
-> (set-option! docs-at-point:mode #t)
+> (options:set! docs-at-point:mode #t)
 ; A hover's echo is the first line its Markdown shows, a fence's marks
 ; left out.
 > (configure! "types" '(capabilities ("textDocumentSync" . 2) ("hoverProvider" . #t))

@@ -79,8 +79,8 @@
 ; The action runs on the main thread only, as layout's procedures do.
 > (define (on-thread thunk)
     (let ([result #f])
-      (fork-thread (lambda () (set! result (guard (c [#t (list (condition-who c) (condition-message c))]) (thunk)))))
-      (let loop ([n 0]) (unless (or result (= n 500)) (sleep-for 0.01) (loop (+ n 1))))
+      (fork-task (lambda (restore) (set! result (guard (c [#t (list (condition-who c) (condition-message c))]) (thunk)))))
+      (let loop ([n 0]) (unless (or result (= n 500)) (timers:sleep 0.01) (loop (+ n 1))))
       result))
 > (on-thread (lambda () ((cdar placements) (named "*echo*"))))
 (layout:find-view "not on the main thread")

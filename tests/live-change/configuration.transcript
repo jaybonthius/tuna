@@ -1,0 +1,47 @@
+; Reading the configuration again takes back its changes, then runs it.
+> (owner-changes (plugins:configuration-owner))
+((advice #<procedure> #<procedure announce>) (override #<procedure> #f))
+> (plugins:load-configuration!)
+> (owner-changes (plugins:configuration-owner))
+((advice #<procedure> #<procedure announce>) (override #<procedure> #f))
+> (put-version! "init-2.ss" ".config/tuna/init.ss")
+> (plugins:load-configuration!)
+> (map car (owner-changes (plugins:configuration-owner)))
+(unload-action override)
+> (spell:dictionary-path)
+"/home/groucho/other-words"
+> (files:save! "b")
+[spell] 
+"b"
+; Its unload actions run first.
+> (plugins:load-configuration!)
+configuration unloading
+> (map car (owner-changes (plugins:configuration-owner)))
+(unload-action override)
+; eval-in-module: a define of the module's name assigns it, which is not
+; a change; any other definition raises.
+> (put-version! "fresh.sls" ".config/tuna/lib/fresh.sls")
+> (load-module! '(fresh))
+#<owner (fresh) 1>
+> (fresh:x)
+fresh
+> (eval-in-module '(define (x) 'assigned) '(fresh))
+> (fresh:x)
+assigned
+> (owner-changes (module-owner '(fresh)))
+((define #<procedure> fresh:x))
+> (eval-in-module '(this-module) '(fresh))
+(fresh)
+> (eval-in-module '(define-syntax y (syntax-rules () [(_) 1])) '(fresh))
+! (fresh) invalid definition in immutable environment (define-syntax y (syntax-rules () ((...) 1)))
+; A tool advises a name chosen at run time, as its own change.
+> (put-version! "tool.sls" ".config/tuna/lib/tool.sls")
+> (import (tool))
+> (tool:run '(fresh) 'x (lambda (x) (list (x))))
+> (fresh:x)
+(assigned)
+> (map car (owner-changes (module-owner '(tool))))
+(advice define define)
+; Tuna exits at the end of its input, unloading every module, the
+; configuration first.
+configuration unloading

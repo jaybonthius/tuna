@@ -5,7 +5,7 @@
 > (define two (layout:other-frame))
 > (define got '())
 > (define (take-got!) (let ([g (reverse got)]) (set! got '()) g))
-> (define (recorded thunk) (guard (c [(quit-condition? c) 'quit]) (thunk)))
+> (define (recorded thunk) (guard (c [(cancelled? c) 'quit]) (thunk)))
 > (commands:define-command (read-one)
     "Records the next key and the prefix argument."
     (let ([key (recorded keys:read-key)])
@@ -18,9 +18,9 @@
 > (keys:bind! keys:global "C-x C-f" file-picker:find-file)
 > (keys:bind! keys:global "M-x" editing:next-line)
 > (define (start-in frame . keys)
-    (spawn-task (lambda () (apply press-all! frame keys)))
-    (sleep-for 0.02))
-> (define (settle) (sleep-for 0.02))
+    (spawn-task (lambda (restore) (apply press-all! frame keys)))
+    (timers:sleep 0.02))
+> (define (settle) (timers:sleep 0.02))
 ; A key read returns the next key without looking it up: nothing runs.
 > (start-in one "C-c" "k")
 > (list (keys:reading one) (keys:reading two))
@@ -67,7 +67,7 @@
 > (file-picker:take!)
 (("notes.txt" #f))
 ; No temporary keymap is tested and advice on keys:press! sees the key.
-> (define-table temporary)
+> (tables:define-table temporary)
 > (define tested 0)
 > (define end-temporary
     (keys:push-keymap! one temporary (lambda (found command) (set! tested (+ tested 1)) #t)))
@@ -104,11 +104,11 @@
 ("ESC" "C-F" "C-g" "C-x C-g" "C-c z" ("<mouse-1>" #(3 7)) ("<drag-mouse-1>" #(3 7) #(3 9)) "C-x <mouse-1>")
 ; ESC as the Meta prefix, for a user who takes it out of the quit keys
 ; and unbinds it, waits for the next key and is returned as typed.
-> (set-option! keys:quit-keys '("C-g"))
+> (options:set! keys:quit-keys '("C-g"))
 > (keys:unbind! keys:global "ESC")
 > (read-sequence-of "ESC" "x")
 "ESC x"
-> (set-option! keys:quit-keys '("C-g" "ESC"))
+> (options:set! keys:quit-keys '("C-g" "ESC"))
 > (keys:bind! keys:global "ESC" keys:keyboard-quit)
 ; Keys typed while a command waited before reading are an unfinished
 ; sequence: a sequence read continues them, and a key read drops them.
@@ -233,8 +233,9 @@
 > (settle)
 > (list (take-got!) (calls))
 ((("C-g" #f "C-c k")) ((1 "keys-settings" (("quitKeys" . #("C-g" "ESC")) ("leftOptionMeta" . #t) ("rightOptionMeta" . #f)))))
-; When its client is removed, a read raises &quit in its command, also
-; when the key it took has not yet reached the command.
+; When its client is removed, a read raises &cancelled in its command; a
+; key handed to the read just before reaches it first, and the cancel
+; lands in the command after.
 > (start-in c1 "C-c" "k")
 > (web:client-removed c1)
 > (settle)
@@ -245,15 +246,15 @@
 > (begin (keys:press! c1 "e") (web:client-removed c1))
 > (settle)
 > (list (take-got!) (keys:reading c2))
-(((quit #f "C-c k")) "C-c k")
-; Reloading the plugin raises &quit in every read, whether or not its
-; key is in hand. The commands' keys were the old instance's.
-> (import (tuna eval))
+((("e" #f "C-c k")) "C-c k")
+; Reloading the plugin raises &cancelled in every read; a read already
+; handed its key returns it first. The commands' keys were the old
+; instance's.
 > (start-in one "C-c" "k")
-> (begin (keys:press! c2 "f") (eval-file (string-append (getenv "TUNA_LIBRARY") "/keys.sls")))
+> (begin (keys:press! c2 "f") (reload-modules! '((keys))))
 > (settle)
 > (list (take-got!) (keys:reading one) (keys:reading c2))
-(((quit #f #f) (quit #f #f)) #f #f)
+((("f" #f "C-c k") (quit #f "C-c k")) #f #f)
 > (start-in one "C-c" "k")
 > (press-all! one "g")
 > (settle)
@@ -268,7 +269,7 @@
       (set! got (cons (list key (editing:take!)) got))))
 > (keys:bind! keys:global "C-c t" read-after-typing)
 > (begin
-    (for-each (lambda (keys) (spawn-task (lambda () (apply press-all! one keys))))
+    (for-each (lambda (keys) (spawn-task (lambda (restore) (apply press-all! one keys))))
               '(("C-c" "t") ("TAB") ("x")))
     (void))
 > (settle)

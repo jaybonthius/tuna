@@ -1,5 +1,5 @@
 #!tuna
-(import (pi) (chat) (pi-chat) (pi-picker) (transient) (commands) (keys))
+(import (pi) (chat) (pi-chat) (pi-picker) (transient) (commands) (keys) (tables))
 
 (define (%title)
   (let ([chat (pi-chat:current-chat)])
@@ -101,4 +101,4 @@
 
 (keys:bind! pi-chat:keymap "C-c C-p" show)
 
-(table-set! commands:command-modes show (list pi-chat:mode))
+(tables:set! commands:command-modes show (list pi-chat:mode))

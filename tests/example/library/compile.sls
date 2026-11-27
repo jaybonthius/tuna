@@ -1,2 +1,3 @@
 #!tuna
-(define-table excluded)
+(import (tables))
+(tables:define-table excluded)

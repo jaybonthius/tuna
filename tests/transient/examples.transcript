@@ -3,7 +3,7 @@
 ; The page's configuration: menus at the bottom of the screen, as in
 ; Emacs, and q to close one.
 > (keys:bind! transient:keymap "q" transient:quit)
-> (table-set! layout:display-rules transient:buffer?
+> (tables:set! layout:display-rules transient:buffer?
     (layout-split:display-at-side (layout:direction down) 95 'content '((locked . #t))))
 ; magit.sls: the merge menu, and an entry removed by the user.
 > (import (magit))
@@ -17,9 +17,9 @@
 > (press! "q")
 > (transient:remove! magit:merge-menu "- s")
 > (press! "C-c" "m" "-" "f" "m")
-> magit:merges
+> (magit:merges)
 (("--ff-only"))
-> (table-remove! layout:display-rules transient:buffer?)
+> (tables:remove! layout:display-rules transient:buffer?)
 ; pi.sls: the chat menu. a toggles auto-compaction and the menu stays to
 ; show the new state.
 > (import (pi))
@@ -30,7 +30,7 @@
 > (menu)
 ("Pi, notes" ("Session" ("n" "New") ("r" "Resume") ("N" "Rename")) ("Model" ("m" "Model (sonnet)") ("a" "Auto-compact (on)")))
 > (press! "m")
-> (list (menu) pi:ran)
+> (list (menu) (pi:ran))
 (() (model))
 > (in-client (lambda () (commands:run pi:show-menu)))
 > (menu)
@@ -41,7 +41,7 @@
 > (menu)
 (("Templates" ("a" "Review") ("b" "Explain")))
 > (press! "b")
-> pi:ran
+> (pi:ran)
 ("Explain" model)
 ; python.sls: a mode's keys shown as a menu.
 > (import (python))

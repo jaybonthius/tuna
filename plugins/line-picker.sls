@@ -1,10 +1,10 @@
 #!tuna
 (import (minibuffer) (completion) (buffers) (commands) (document) (editing) (faces) (jobs) (jump-history) (keys)
-        (views) (line-picker lines))
+        (views) (line-picker lines) (options) (tables) (saved))
 
-(define-saved goto-line-history '() (lambda (v) (and (list? v) (for-all string? v))))
+(saved:define-saved goto-line-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
-(define-option start-from-top? #f boolean?
+(options:define-option start-from-top? #f boolean?
   "When true, M-s l lists lines from the first; otherwise from point's line, wrapping. C-u M-s l does the other for one read.")
 
 (completion:define-category line-category "Lines of the current buffer, valued by the line's start.")
@@ -120,7 +120,7 @@
       (jump-history:push! (views:buffer view) left view))
     (jump-history:after-jump view)))
 
-(table-set! completion:category-default-styles line-category (list completion:substring))
+(tables:set! completion:category-default-styles line-category (list completion:substring))
 (keys:bind! keys:global "M-s l" line)
 (keys:bind! keys:global "M-g g" goto-line)
 (keys:bind! keys:global "M-g M-g" goto-line)

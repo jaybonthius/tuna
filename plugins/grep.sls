@@ -1,13 +1,15 @@
 #!tuna
-(import (completion) (commands) (editing) (files) (jump-history) (keys) (processes) (projects) (views))
+(import (completion) (commands) (editing) (files) (jump-history) (keys) (processes) (projects) (views) (options) (timers))
 
-(define-option command-line
+(define %self (current-owner))
+
+(options:define-option command-line
   (list "rg" "--null" "--line-buffered" "--color=never" "--max-columns=1000" "--path-separator" "/"
         "--smart-case" "--no-heading" "--with-filename" "--line-number" "--column" "--search-zip")
   (lambda (v) (and (pair? v) (list? v) (for-all string? v)))
   "The program grep:grep runs, then the arguments it starts with.")
 
-(define-option preview-delay 0 (lambda (v) (and (real? v) (>= v 0)))
+(options:define-option preview-delay 0 (lambda (v) (and (real? v) (>= v 0)))
   "Seconds the selected line must stay selected before grep:grep shows its place.")
 
 (define (%split input)
@@ -140,7 +142,7 @@
     (let ([search #f] [timer #f] [running #f])
       (define (stop!)
         (when timer
-          (cancel-timer! timer)
+          (timers:cancel! timer)
           (set! timer #f))
         (when running
           (processes:stop! running)
@@ -191,11 +193,12 @@
            (set! search (%search-of prefix))
            (let ([command (command-line)] [minimum (completion:async-min-input)])
              (set! timer
-               (as-module (this-module)
-                 (run-with-timer (completion:async-delay)
-                   (lambda ()
-                     (set! timer #f)
-                     (run! command minimum))))))])))))
+               (call-as-owner %self
+                 (lambda ()
+                   (timers:run-after (completion:async-delay)
+                     (lambda ()
+                       (set! timer #f)
+                       (run! command minimum)))))))])))))
 
 (define (%search-folder)
   (let ([folder (files:directory)])

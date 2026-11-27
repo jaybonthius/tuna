@@ -1,4 +1,4 @@
-(import (chezscheme) (tuna-test) (tuna files))
+(import (chezscheme) (tuna-test) (plugins files))
 
 (define root
   (let ([dir (format "/tmp/tuna-files-test-~a" (get-process-id))])

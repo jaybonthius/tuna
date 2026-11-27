@@ -1,28 +1,28 @@
 #!tuna
 (import (search) (isearch) (buffers) (document) (jobs) (views) (layout) (keys) (commands) (modes) (minibuffer)
-        (jump-history) (next-error) (pulse) (ask) (faces) (web) (haml))
+        (jump-history) (next-error) (pulse) (ask) (faces) (web) (haml) (hooks) (options) (tables) (saved))
 
-(define-option context-lines 0 fixnum?
+(options:define-option context-lines 0 fixnum?
   "How many lines around each match occur:occur lists without a prefix argument; a negative number lists that many before only.")
 
-(define-option jump-to-current-line #f boolean?
+(options:define-option jump-to-current-line #f boolean?
   "Whether *Occur* lists the line point was on when it was made, and starts with point at its end.")
 
-(define-saved collect-history '("\\1") (lambda (v) (and (list? v) (for-all string? v))))
+(saved:define-saved collect-history '("\\1") (lambda (v) (and (list? v) (for-all string? v))))
 
 (define match 'occur.match)
 
-(define-table keymap "The keys of occur:mode.")
+(tables:define-table keymap "The keys of occur:mode.")
 
-(define-table edit-keymap "The keys of occur:edit-mode.")
+(tables:define-table edit-keymap "The keys of occur:edit-mode.")
 
-(define-table line-keymap "The keys of a listed line, in occur:mode and occur:edit-mode.")
+(tables:define-table line-keymap "The keys of a listed line, in occur:mode and occur:edit-mode.")
 
-(define-hook mode-hook "Called in each buffer that turns on occur:mode, and on occur:edit-mode before occur:edit-mode-hook.")
+(hooks:define-hook mode-hook "Called in each buffer that turns on occur:mode, and on occur:edit-mode before occur:edit-mode-hook.")
 
-(define-hook edit-mode-hook "Called in each buffer that turns on occur:edit-mode.")
+(hooks:define-hook edit-mode-hook "Called in each buffer that turns on occur:edit-mode.")
 
-(define-hook listed "Called with *Occur* after each listing that has matches, occur:refresh included.")
+(hooks:define-hook listed "Called with *Occur* after each listing that has matches, occur:refresh included.")
 
 (modes:define-major-mode mode (parent modes:special) (lighter "Occur") (keymap keymap) (hook mode-hook) (plugin-only #t))
 
@@ -563,13 +563,13 @@
                 (views:set-point! shown (+ at (string-length inserted)))
                 (views:scroll-to! shown (views:point shown) (views:align center))))))))))
 
-(define (%set-revert) (set-option-local! buffers:revert-function refresh))
+(define (%set-revert) (options:set-local! buffers:revert-function refresh))
 
 (define (%as-occur-mode) (mode-hook))
 
-(add-hook! mode-hook %set-revert)
-(add-hook! edit-mode-hook %as-occur-mode -100)
-(add-hook! buffers:after-edit %mirror!)
+(hooks:add! mode-hook %set-revert)
+(hooks:add! edit-mode-hook %as-occur-mode -100)
+(hooks:add! buffers:after-edit %mirror!)
 (keys:bind! keys:global "M-s o" occur)
 (keys:bind! isearch:keymap "M-s o" isearch-occur)
 (keys:bind! keymap "RET" goto-occurrence)
@@ -586,4 +586,4 @@
 (keys:bind! edit-keymap "C-o" display-occurrence)
 (keys:bind! line-keymap "<mouse-1>" mouse-goto-occurrence)
 (keys:bind! line-keymap "<mouse-2>" mouse-goto-occurrence)
-(table-set! web:stylesheets 'occur "occur/occur.css")
+(tables:set! web:stylesheets 'occur "occur/occur.css")

@@ -2,9 +2,9 @@
 ; ran before the index was installed, so its import raised, saying the
 ; line has no source, and installed nothing.
 ! use-plugin: the line for consult has no source: give it a git or local clause, or use an index that names it (use-plugin consult) at line 2, char 1 of $HOME/.config/tuna/init.ss
-> (memq 'consult (installed-plugins))
+> (memq 'consult (plugins:installed))
 #f
-> (installed-plugins)
+> (plugins:installed)
 (sources)
 > (use-plugin magit)
 ! use-plugin: the line for magit has no source: give it a git or local clause, or use an index that names it
@@ -16,11 +16,11 @@
 "compat buffer"
 ; A plugin that holds no main module, or a missing commit, installs
 ; nothing.
-> (install-plugin! '(use-plugin empty (git "https://github.com/bob/empty")))
+> (plugins:install! '(use-plugin empty (git "https://github.com/bob/empty")))
 ! install-plugin!: plugin empty holds no module (empty)
 > (use-plugin empty (git "https://github.com/bob/empty"))
 ! use-plugin: plugin empty holds no module (empty)
 > (use-plugin vertico (git "https://github.com/minad/vertico") (commit "0000000"))
 ! use-plugin: commit 0000000 not found in https://github.com/minad/vertico
-> (installed-plugins)
+> (plugins:installed)
 (consult sources compat)

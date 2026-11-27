@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins) (document) (haml) (web))
+(import (hooks) (options) (tables) (timers))
+(import (tuna) (document) (haml) (web))
 (use-plugin layout)
 (use-plugin echo-area)
 (use-plugin layout-split)
@@ -9,7 +10,7 @@
 (use-plugin status-line)
 (use-plugin diagnostics
   (config
-    (set-option! diagnostics:check-delay #f)))
+    (options:set! diagnostics:check-delay #f)))
 (use-plugin diagnostics-list
   (config
     (keys:bind! keys:global "C-c l b" diagnostics-list:show-buffer-diagnostics)
@@ -90,7 +91,7 @@
     (for-each
       (lambda (action)
         (parameterize ([web:current-client client])
-          ((table-ref web:input-handlers "mouse") client
+          ((tables:ref web:input-handlers "mouse") client
            `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
              ("view" . ,(views:id s)) ("version" . ,(buffers:version layout:buffer))
              ("showing" . ,(views:shown-count s)) ("token" . ,at)
@@ -103,7 +104,7 @@
   (for-each
     (lambda (action)
       (parameterize ([web:current-client client])
-        ((table-ref web:input-handlers "mouse") client
+        ((tables:ref web:input-handlers "mouse") client
          `(("type" . "mouse") ("action" . ,action) ("button" . ,button) ("clicks" . 1) ("modifiers" . #())
            ("view" . ,(views:id v)) ("version" . ,(buffers:version (views:buffer v)))
            ("showing" . ,(views:shown-count v)) ,@place
@@ -124,7 +125,7 @@
 (define (mark b s severity message)
   (diagnostics:make-diagnostic (word b s) (+ (word b s) (string-length s)) severity message))
 
-(define (mode! b on?) (buffers:with-buffer b (set-option-local! diagnostics:mode on?)))
+(define (mode! b on?) (buffers:with-buffer b (options:set-local! diagnostics:mode on?)))
 
 (define root
   (let ([f (format "~a/project" (getenv "HOME"))])
@@ -138,5 +139,5 @@
 
 (define notes (files:visit (write-file! "notes.txt" "alpha beta gamma\ndelta epsilon\nzeta eta\n")))
 (layout:switch-to-buffer notes)
-(set-idle! #t)
+(timers:set-idle! #t)
 (import (console))

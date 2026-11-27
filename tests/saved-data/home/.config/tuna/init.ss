@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins))
-(define-saved history '() list?)
-(set-saved! history (cons "start" (history)))
+(import (timers) (saved) (plain-data) (plugins))
+(import (tuna))
+(saved:define-saved history '() list?)
+(saved:set! history (cons "start" (history)))
 (import (console))

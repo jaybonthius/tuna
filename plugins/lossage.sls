@@ -1,12 +1,12 @@
 #!tuna
-(import (keys) (commands))
+(import (keys) (commands) (hooks) (options) (scopes))
 
 ;; One record serves every client, so only the setting bounds it, not a
-;; with-options binding or a buffer's local value; on-change is called for
+;; options:with binding or a buffer's local value; on-change is called for
 ;; a local value's change too, in that value's scope.
-(define-option size 300 (lambda (v) (and (fixnum? v) (fx> v 0)))
+(options:define-option size 300 (lambda (v) (and (fixnum? v) (fx> v 0)))
   "How many keys and commands the record keeps, counted alike; older ones go."
-  (lambda (kept) (unless (current-scope) (set! %record (%newest %record kept)))))
+  (lambda (kept) (unless (scopes:current) (set! %record (%newest %record kept)))))
 
 ;; A fresh list at each change, rather than a ring changed in place, so
 ;; a reader on any thread sees a whole record.
@@ -16,7 +16,7 @@
   (if (fx> (length record) n) (list-head record n) record))
 
 (define (%record! entry)
-  (set! %record (cons entry (%newest %record (fx- (option-setting size) 1)))))
+  (set! %record (cons entry (%newest %record (fx- (options:setting size) 1)))))
 
 (define (recent-keys) (reverse %record))
 
@@ -39,4 +39,4 @@
   (%record! (commands:command-name command)))
 
 (advice-add! keys:press! %record-key)
-(add-hook! commands:before-command %record-command)
+(hooks:add! commands:before-command %record-command)

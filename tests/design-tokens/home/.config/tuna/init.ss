@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins))
+(import (tables))
+(import (tuna))
 (use-plugin design-tokens)
 (use-plugin faces)
 

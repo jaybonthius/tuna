@@ -1,22 +1,22 @@
 #!tuna
-(import (buffers) (document) (views) (layout) (layout-split) (keys) (commands) (modes) (echo-area) (web) (haml) (ask))
+(import (buffers) (document) (views) (layout) (layout-split) (keys) (commands) (modes) (echo-area) (web) (haml) (ask) (hooks) (options) (tables) (saved))
 
-(define-saved history '() (lambda (v) (and (list? v) (for-all string? v))))
+(saved:define-saved history '() (lambda (v) (and (list? v) (for-all string? v))))
 
-(define-saved number-history '() (lambda (v) (and (list? v) (for-all string? v))))
+(saved:define-saved number-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
-(define-option history-length 100 (lambda (v) (and (fixnum? v) (fx>= v 0)))
+(options:define-option history-length 100 (lambda (v) (and (fixnum? v) (fx>= v 0)))
   "How many answers a history keeps.")
 
-(define-hook prompt-started "Called with each prompt after its setup, before the task pauses.")
+(hooks:define-hook prompt-started "Called with each prompt after its setup, before the task pauses.")
 
-(define-hook prompt-ended "Called with each prompt after it ends, however it ends.")
+(hooks:define-hook prompt-ended "Called with each prompt after it ends, however it ends.")
 
-(define-hook input-changed "Called with a prompt after each edit of its input, in the task that made the edit.")
+(hooks:define-hook input-changed "Called with a prompt after each edit of its input, in the task that made the edit.")
 
-(define-table keymap "The keymap of the minibuffer's major mode.")
+(tables:define-table keymap "The keymap of the minibuffer's major mode.")
 
-(define-hook %mode-hook)
+(hooks:define-hook %mode-hook)
 
 (modes:define-major-mode mode (keymap keymap) (hook %mode-hook) (plugin-only #t))
 
@@ -99,7 +99,7 @@
    history-of entries-of prompt-chosen prompt-chosen-set! default-of shown-in prompt-keymaps prompt-keymaps-set! prompt-message prompt-message-set!
    prompt-recalled prompt-recalled-set! prompt-typed prompt-typed-set! prompt-ended? prompt-node prompt-parts
    input-range input-text prompt-holding prompt-at start-prompt! end-prompt! answer! prompt-of
-   setups prompt-keymaps-at quit-condition without-quits bar-view narrow-views! at-bottom bottom-prompt
+   setups prompt-keymaps-at quit-condition without-cancels bar-view narrow-views! at-bottom bottom-prompt
    write-content! prompt-answer prompt-resume-set! clear-messages! prompt-before-id live-view)
 
   (define main-thread (get-thread-id))
@@ -129,14 +129,14 @@
     (when (prompt-ended? p)
       (assertion-violation who "a prompt that has ended" p)))
 
-  ;; Tuna's dynamic-wind holds quits off while its in runs, so a prompt is
+  ;; Tuna's dynamic-wind holds cancels off while its in runs, so a prompt is
   ;; never left half inserted or half removed.
-  (define (without-quits thunk)
+  (define (without-cancels thunk)
     (let ([result #f])
       (dynamic-wind (lambda () (set! result (thunk))) void void)
       result))
 
-  (define quit-condition (record-constructor (record-constructor-descriptor &quit)))
+  (define (quit-condition) (make-cancelled #f))
 
   ;; An internal buffer starts silent, but the input's edits are the
   ;; user's.
@@ -185,7 +185,7 @@
 
   (define (write-content! p datums)
     (let ([c (caddr (prompt-parts (prompt-node p)))])
-      (without-quits
+      (without-cancels
         (lambda () (write! (document:node-start c) (document:node-end c) (apply content '() datums))))))
 
   (define (prompt-at position)
@@ -252,7 +252,7 @@
   ;; a message that shows, and let a queued report show after the input.
   (define (start-prompt! p text)
     (when (echo-area:current-message) (echo-area:message! ""))
-    (without-quits
+    (without-cancels
       (lambda ()
         (let ([outer (and (pair? prompts) (car prompts))] [end (fx- (document:length (buffers:document buffer)) 1)])
           (when outer
@@ -275,7 +275,7 @@
   ;; prompt whose start raised may have no node.
   (define (end-prompt! p)
     (unless (prompt-ended? p)
-      (without-quits
+      (without-cancels
         (lambda ()
           (let ([v (live-view (shown-id p))] [n (prompt-node p)] [before (live-view (prompt-before-id p))]
                 [innermost? (and (pair? prompts) (eq? p (car prompts)))])
@@ -385,7 +385,7 @@
 
 (define (add-keymap! p keymap)
   (check-live 'minibuffer:add-keymap! p)
-  (unless (table? keymap)
+  (unless (tables:table? keymap)
     (assertion-violation 'minibuffer:add-keymap! "not a table" keymap))
   (prompt-keymaps-set! p (cons keymap (prompt-keymaps p))))
 
@@ -414,7 +414,7 @@
     (when (and h (not (prompt-chosen p)) (not (string=? text "")))
       (let loop ([entries (cons text (remove text (h)))] [n (history-length)] [acc '()])
         (if (or (null? entries) (fx= n 0))
-            (set-saved! h (reverse acc))
+            (saved:set! h (reverse acc))
             (loop (cdr entries) (fx- n 1) (cons (car entries) acc)))))))
 
 (define (exit! p value)
@@ -468,7 +468,7 @@
     [(question h default)
      (unless (string? question)
        (assertion-violation 'minibuffer:read "not a string" question))
-     (unless (or (not h) (saved? h))
+     (unless (or (not h) (saved:saved? h))
        (assertion-violation 'minibuffer:read "neither saved data nor #f" h))
      (unless (or (not default) (string? default))
        (assertion-violation 'minibuffer:read "neither a string nor #f" default))
@@ -477,7 +477,7 @@
 (define (read-entry question h entries)
   (unless (string? question)
     (assertion-violation 'minibuffer:read-entry "not a string" question))
-  (unless (or (not h) (saved? h))
+  (unless (or (not h) (saved:saved? h))
     (assertion-violation 'minibuffer:read-entry "neither saved data nor #f" h))
   (unless (and (list? entries) (for-all string? entries))
     (assertion-violation 'minibuffer:read-entry "not a list of strings" entries))
@@ -504,7 +504,7 @@
     [(question h default)
      (unless (string? question)
        (assertion-violation 'minibuffer:read-number "not a string" question))
-     (unless (or (not h) (saved? h))
+     (unless (or (not h) (saved:saved? h))
        (assertion-violation 'minibuffer:read-number "neither saved data nor #f" h))
      (unless (or (not default) (real? default))
        (assertion-violation 'minibuffer:read-number "neither a real number nor #f" default))
@@ -515,7 +515,7 @@
               [n (string->number answer 10)])
          (if (and n (real? n)) n (loop "Please enter a number"))))]))
 
-(define-table y-or-n-keymap "Added to the prompt of each y-or-n question.")
+(tables:define-table y-or-n-keymap "Added to the prompt of each y-or-n question.")
 
 (define (%y-or-n-question? p)
   (and (memq y-or-n-keymap (prompt-keymaps p)) #t))
@@ -584,7 +584,7 @@
   "Quits the innermost prompt: its read raises a quit."
   (let ([p (%innermost 'minibuffer:abort)])
     (end-prompt! p)
-    (signal-task (prompt-task p) (quit-condition))))
+    (cancel-task (prompt-task p))))
 
 (define (%recall! p n who)
   (let* ([h (history-of p)] [entries (append (entries-of p) (if h (h) '()))] [k (+ (prompt-recalled p) n)] [default (default-of p)])
@@ -631,11 +631,10 @@
   (for-each
     (lambda (p)
       (end-prompt! p)
-      (signal-task (prompt-task p) (quit-condition)))
+      (cancel-task (prompt-task p)))
     prompts)
   (let ([v (bar-view)])
     (when v (layout:delete-part! (layout:view-node v))))
-  (remove-hook! buffers:kill-queries %keep-buffer)
   (buffers:kill! buffer))
 
 (modes:set-major-mode mode buffer)
@@ -659,18 +658,18 @@
 ;; select-prompt is of use only outside the prompt, so M-x offers it
 ;; everywhere.
 (for-each
-  (lambda (command) (table-set! commands:command-modes command (list mode)))
+  (lambda (command) (tables:set! commands:command-modes command (list mode)))
   (list exit abort previous-history next-history mouse-set-point))
-(table-set! commands:command-modes answer-yes (list y-or-n-mode))
-(table-set! commands:command-modes answer-no (list y-or-n-mode))
-(add-hook! keys:find-keymaps %prompt-keymaps 40)
-(set-option! ask:line-reader %ask-line)
-(set-option! ask:number-reader read-number)
-(set-option! ask:yes-or-no-reader ask-yes-or-no)
-(set-option! ask:y-or-n-reader ask-y-or-n)
-(table-set! web:stylesheets 'minibuffer "minibuffer/minibuffer.css")
-(add-hook! buffers:after-edit %input-edited)
-(add-hook! buffers:kill-queries %keep-buffer)
+(tables:set! commands:command-modes answer-yes (list y-or-n-mode))
+(tables:set! commands:command-modes answer-no (list y-or-n-mode))
+(hooks:add! keys:find-keymaps %prompt-keymaps 40)
+(options:set! ask:line-reader %ask-line)
+(options:set! ask:number-reader read-number)
+(options:set! ask:yes-or-no-reader ask-yes-or-no)
+(options:set! ask:y-or-n-reader ask-y-or-n)
+(tables:set! web:stylesheets 'minibuffer "minibuffer/minibuffer.css")
+(hooks:add! buffers:after-edit %input-edited)
+(hooks:add! buffers:kill-queries %keep-buffer)
 (advice-add! echo-area:hidden? %hide-echo-area)
 (advice-add! keys:press! %clear-on-key)
 (on-unload %unload)

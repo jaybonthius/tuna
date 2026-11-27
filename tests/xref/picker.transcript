@@ -22,7 +22,7 @@
 > (list (shown) (open?))
 (("twice.txt" 2) (#t #t))
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (list (shown) (open?) (places))
 (("uses.txt" 1) (#f #f) ())
@@ -40,18 +40,18 @@
 ; C-M-. searches the backend's identifiers as the input is typed, once it
 ; holds completion:async-min-input characters and has rested
 ; completion:async-delay seconds; a new input quits the search under way.
-> (set-option! completion:async-min-input 2 completion:async-delay 0.1)
+> (options:set! completion:async-min-input 2 completion:async-delay 0.1)
 > (define t (start! (lambda () (press! "C-M-."))))
 > (define s (session))
 > (type! "t")
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (list asked (texts s))
 (() ())
 > (type! "o")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > asked
 ()
-> (sleep-for 0.08)
+> (timers:sleep 0.08)
 > (press! "DEL" "DEL")
 > (type! "av")
 > (testing:wait-until (lambda () (equal? (texts s) '("def average"))))

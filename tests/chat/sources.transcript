@@ -106,7 +106,7 @@
 ; selects.
 > (define menus '())
 > (commands:define-command (echo-menu) "Notes the menu shown." (set! menus (cons (chat:current) menus)))
-> (table-set! chat:status-menus 'fake-agents:echo echo-menu)
+> (tables:set! chat:status-menus 'fake-agents:echo echo-menu)
 > (define parrot-window (view))
 > (define echo-window (layout-split:split-view! parrot-window (layout-split:direction row)))
 > (views:set-buffer! echo-window (chat:buffer e))
@@ -124,7 +124,7 @@
 (#t #t #f 2)
 ; With no chat in the buffer's project, chat:toggle starts one of
 ; chat:default-source.
-> (set-option! chat:default-source 'fake-agents:parrot)
+> (options:set! chat:default-source 'fake-agents:parrot)
 > (system (string-append "mkdir -p " (getenv "HOME") "/other && echo a > " (getenv "HOME") "/other/notes.txt"))
 0
 > (in-client (lambda () (layout:switch-to-buffer (files:visit (string-append (getenv "HOME") "/other/notes.txt")))))
@@ -143,7 +143,7 @@
 > (let ([root (document:token (buffers:document echo-buffer) 0)])
     (list (document:node-attribute root 'source #f) (document:node-attribute root 'session #f)))
 (fake-agents:echo "echo-moved")
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/chat.sls"))
+> (reload-modules! '((chat)))
 > (settle)
 > (list (eq? (chat:buffer e) echo-buffer) (shown e) (eq? (chat:conversation-of echo-buffer) e))
 (#t "Done now\ndraft\n" #t)

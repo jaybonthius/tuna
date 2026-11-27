@@ -18,7 +18,7 @@ file=$home/.local/share/tuna/saved/tuna/kill-ring/texts.ss
 mkdir -p "$home/.config/tuna" "$dir/library" "$dir/work"
 cp -R plugins/. "$dir/library/"
 cat > "$home/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins))
+(import (tuna))
 (use-plugin kill-ring)
 (import (buffers) (console))
 END
@@ -55,7 +55,7 @@ expect "after a restart" "$output" '(("newest") ("Hello there" "two!") ("first")
 # Text that fails the check is set aside, and the ring starts empty.
 printf '(("ok") (1))\n' > "$file"
 output=$(run '(kill-ring:entries)')
-expect "a stored value that fails its check" "$output" "! (kill-ring) define-saved: $file holds a value that fails its check; it is moved to $file.rejected
+expect "a stored value that fails its check" "$output" "! (kill-ring) saved:define-saved: $file holds a value that fails its check; it is moved to $file.rejected
 ()"
 [ -f "$file.rejected" ] || fail "the rejected text was not kept"
 

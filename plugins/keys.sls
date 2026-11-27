@@ -1,20 +1,22 @@
 #!tuna
-(import (commands) (web))
+(import (commands) (web) (hooks) (options) (tables) (timers))
 
-(define-table global "The global keymap, searched after every other.")
+(define %self (current-owner))
 
-(define-table repeat-keymaps
+(tables:define-table global "The global keymap, searched after every other.")
+
+(tables:define-table repeat-keymaps
   "Repeating keymaps, as keys: with the repeat plugin loaded, after a command run by two or more keys, the first that binds the last of them to that command stays while each next key is found in it.")
 
-(define-table universal-argument-keymap
+(tables:define-table universal-argument-keymap
   "Pushed as a temporary keymap by the prefix-argument commands, so the keys it binds, digits and -, go on typing the prefix argument.")
 
-(define-hook find-keymaps
+(hooks:define-hook find-keymaps
   "Called with a client and a mouse key's position or #f; each entry returns a list of the client's keymaps, innermost first.")
 
-(define-option left-option-meta? #t boolean? "Whether the left Option key on a Mac is Meta.")
+(options:define-option left-option-meta? #t boolean? "Whether the left Option key on a Mac is Meta.")
 
-(define-option right-option-meta? #t boolean? "Whether the right Option key on a Mac is Meta.")
+(options:define-option right-option-meta? #t boolean? "Whether the right Option key on a Mac is Meta.")
 
 (module %internals
   (check-main-thread check-sequence check-keymap quit-keys? prefix-argument?
@@ -100,7 +102,7 @@
       (assertion-violation who "not a valid key sequence" keys)))
 
   (define (check-keymap who keymap)
-    (unless (table? keymap)
+    (unless (tables:table? keymap)
       (assertion-violation who "not a keymap" keymap)))
 
   (define (quit-keys? v)
@@ -267,7 +269,7 @@
   ;; Ephemeron, so a frame that is gone takes its session with it even
   ;; when a temporary keymap's procedures hold the frame. A pending
   ;; sequence is one record of what was typed and what it resolved to, so
-  ;; a quit cannot leave the two apart.
+  ;; a cancel cannot leave the two apart.
   (define sessions (make-ephemeron-eq-hashtable))
 
   (define (session-of frame)
@@ -283,14 +285,14 @@
   ;; one handler for all the entries, set up again only after one that
   ;; fails, since a handler allocates more than calling an entry.
   (define (hook-keymaps frame posn)
-    (let ([found '()] [next (hook-entries find-keymaps)])
+    (let ([found '()] [next (hooks:entries find-keymaps)])
       (let run ()
         (unless (null? next)
           (call/cc
             (lambda (k)
               (with-exception-handler
                 (lambda (c)
-                  (if (or (quit-condition? c) (warning-only? c))
+                  (if (or (cancelled? c) (warning-only? c))
                       (raise-continuable c)
                       (begin (report c) (k #f))))
                 (lambda ()
@@ -299,7 +301,7 @@
                       (let ([entry (car next)])
                         (set! next (cdr next))
                         (let ([keymaps (entry frame posn)])
-                          (unless (and (list? keymaps) (for-all table? keymaps))
+                          (unless (and (list? keymaps) (for-all tables:table? keymaps))
                             (assertion-violation 'keys:find-keymaps "an entry returned what is not a list of keymaps" keymaps))
                           (set! found (cons keymaps found))))
                       (loop)))))))
@@ -325,16 +327,16 @@
         [else (loop (fx+ i 1))])))
 
   (define (find-in keymap seq)
-    (or (table-ref keymap seq #f)
-        (and (fx= (string-length seq) 1) (table-ref keymap "<printing-char>" #f))
+    (or (tables:ref keymap seq #f)
+        (and (fx= (string-length seq) 1) (tables:ref keymap "<printing-char>" #f))
         (find-below keymap seq 0)))
 
   (define (find-below keymap seq from)
     (let ([i (space-after seq from)])
       (and i
-           (let ([v (table-ref keymap (substring seq 0 i) #f)])
+           (let ([v (tables:ref keymap (substring seq 0 i) #f)])
              (cond
-               [(table? v) (find-in v (substring seq (fx+ i 1) (string-length seq)))]
+               [(tables:table? v) (find-in v (substring seq (fx+ i 1) (string-length seq)))]
                [(eq? v #t) (find-below keymap seq (fx+ i 1))]
                [else #f])))))
 
@@ -345,7 +347,7 @@
           (let ([v (find-in (car ks) seq)])
             (if v (values v (car ks)) (loop (cdr ks)))))))
 
-  (define (prefix-binding? v) (or (eq? v #t) (table? v)))
+  (define (prefix-binding? v) (or (eq? v #t) (tables:table? v)))
 
   ;; The page has already quit on a quit key, so an ESC among them ends
   ;; the pending keys rather than waiting to make the next key Meta.
@@ -436,12 +438,12 @@
         (let loop ([ks keymaps])
           (if (null? ks)
               command
-              (or (table-ref (car ks) command #f) (loop (cdr ks)))))
+              (or (tables:ref (car ks) command #f) (loop (cdr ks)))))
         command))
 
   (define (keymap-bindings keymap)
     (filter (lambda (entry) (and (string? (car entry)) (not (eq? (cdr entry) #t))))
-            (table-entries keymap)))
+            (tables:entries keymap)))
 
   (define-record-type found-binding
     (sealed #t)
@@ -460,7 +462,7 @@
                 (lambda (entry)
                   (let* ([k (car entry)] [v (cdr entry)] [seq (if prefix (string-append prefix " " k) k)])
                     (cond
-                      [(table? v) (walk (list v) seq (cons keymap path))]
+                      [(tables:table? v) (walk (list v) seq (cons keymap path))]
                       [(hashtable-contains? seen seq) (void)]
                       [else
                        (hashtable-set! seen seq #t)
@@ -634,14 +636,20 @@
   (define (current-event)
     (let ([p (running-press)]) (and p (press-event p))))
 
-  (define make-quit (record-constructor (record-constructor-descriptor &quit)))
+  (define (make-quit) (make-cancelled #f))
 
   (define (end-temporary! t)
     (let ([s (temporary-session t)])
       (when (memq t (session-temporaries s))
         (session-temporaries-set! s (remq t (session-temporaries s)))
-        (guard (c [(not (quit-condition? c)) (report c)])
-          ((temporary-on-exit t))))))
+        ;; on-exit is the pusher's code, run as the pusher: in the pusher's
+        ;; own unload actions, as they are; elsewhere, once the pusher's
+        ;; unload has begun there is nothing of it to run.
+        (guard (c [(and (unloaded? c) (eq? (unloaded-owner c) (temporary-owner t))) (void)]
+                  [(not (cancelled? c)) (report c)])
+          (if (eq? (current-owner) (temporary-owner t))
+              ((temporary-on-exit t))
+              (call-as-owner (temporary-owner t) (temporary-on-exit t)))))))
 
   (define (end-temporaries! s)
     (for-each end-temporary! (session-temporaries s)))
@@ -659,7 +667,7 @@
   ;; end.
   (define watched
     (let ([t (make-hashtable equal-hash equal?)])
-      (hashtable-set! t (this-module) #t)
+      (hashtable-set! t %self #t)
       t))
 
   (define (push-temporary! s keymap keep on-exit owner prompt)
@@ -675,24 +683,24 @@
       (unless (null? ts)
         (let ([t (car ts)])
           (unless (and (memq t (session-temporaries s))
-                       (guard (c [(not (quit-condition? c)) (report c) #f])
+                       (guard (c [(not (cancelled? c)) (report c) #f])
                          ((temporary-keep t) found command)))
             (end-temporary! t)
             (loop (cdr ts)))))))
 
   ;; The command that keys:keyboard-quit runs in is running, not paused,
-  ;; and a command's task that has ended pauses no more. A signalled task
+  ;; and a command's task that has ended pauses no more. A cancelled task
   ;; stays paused until it runs, so its entry goes at once and the next
   ;; C-g reaches the next paused command.
   (define (quit-paused! s)
     (let loop ([es (session-running s)])
       (unless (null? es)
         (let ([task (caar es)])
-          (if (or (eq? task (current-task)) (task-done? task))
+          (if (or (eq? task (current-task)) (eq? (task-state task) 'done))
               (loop (cdr es))
               (begin
                 (session-running-set! s (remq (car es) (session-running s)))
-                (signal-task task (make-quit))))))))
+                (cancel-task task)))))))
 
   (define-record-type waiting-read
     (sealed #t)
@@ -748,7 +756,7 @@
       (lambda (r)
         (when (chosen? r)
           (forget-read! r)
-          (signal-task (waiting-read-task r) (make-quit))))
+          (cancel-task (waiting-read-task r))))
       reads))
 
   ;; A removed client types no more keys, so nothing else would end its
@@ -767,7 +775,7 @@
         [(temporary-prompt (car ts))
          => (lambda (prompt)
               (if (procedure? prompt)
-                  (guard (c [(not (quit-condition? c)) (report c) #f])
+                  (guard (c [(not (cancelled? c)) (report c) #f])
                     (let ([text (prompt)])
                       (unless (or (not text) (prompt? text))
                         (assertion-violation 'keys:push-keymap! "a prompt procedure returned what is not a prompt or #f" text))
@@ -802,7 +810,7 @@
       (unless (and (pair? ts) (eq? (temporary-keymap (car ts)) universal-argument-keymap))
         (push-temporary! s universal-argument-keymap
           (lambda (found command) (eq? found universal-argument-keymap))
-          void (this-module) #f))))
+          void %self #f))))
 
   ;; The page script names each key as it is typed, so that a quit key
   ;; quits before the keys queued ahead of it run. A client whose stream
@@ -849,20 +857,20 @@
   ;; runs at each pause too, so Tuna is idle while the input's command
   ;; waits.
   (define (call-ending-idleness thunk)
-    (if (idle-seconds)
-        (dynamic-wind (lambda () (set-idle! #f)) thunk (lambda () (set-idle! #t)))
+    (if (timers:idle-seconds)
+        (dynamic-wind (lambda () (timers:set-idle! #f)) thunk (lambda () (timers:set-idle! #t)))
         (thunk))))
 
 (import %internals)
 
-(define-option quit-keys '("C-g" "ESC") quit-keys?
+(options:define-option quit-keys '("C-g" "ESC") quit-keys?
   "The keys that quit as they arrive, stopping the running command before the keys queued ahead of them run.")
 
 (define (bind! keymap keys binding)
   (check-main-thread 'keys:bind!)
   (check-keymap 'keys:bind! keymap)
   (check-sequence 'keys:bind! keys)
-  (unless (or (commands:command? binding) (table? binding))
+  (unless (or (commands:command? binding) (tables:table? binding))
     (assertion-violation 'keys:bind! "neither a command nor a keymap" binding))
   (remember-name! binding)
   ;; A leading part bound to a keymap is set to that keymap as this
@@ -871,15 +879,15 @@
   (let loop ([i 0])
     (when (fx< i (string-length keys))
       (when (char=? (string-ref keys i) #\space)
-        (let* ([part (substring keys 0 i)] [v (table-ref keymap part #f)])
-          (table-set! keymap part (if (table? v) v #t))))
+        (let* ([part (substring keys 0 i)] [v (tables:ref keymap part #f)])
+          (tables:set! keymap part (if (tables:table? v) v #t))))
       (loop (fx+ i 1))))
-  (table-set! keymap keys binding))
+  (tables:set! keymap keys binding))
 
 (define (unbind! keymap keys)
   (check-keymap 'keys:unbind! keymap)
   (check-sequence 'keys:unbind! keys)
-  (table-remove! keymap keys))
+  (tables:remove! keymap keys))
 
 (define (remap! keymap command replacement)
   (check-main-thread 'keys:remap!)
@@ -889,7 +897,7 @@
   (unless (commands:command? replacement)
     (assertion-violation 'keys:remap! "not a command" replacement))
   (remember-name! replacement)
-  (table-set! keymap command replacement))
+  (tables:set! keymap command replacement))
 
 (define (bindings keymap)
   (check-keymap 'keys:bindings keymap)
@@ -904,13 +912,13 @@
 
 (define (lookup-in keymaps keys)
   (check-main-thread 'keys:lookup-in)
-  (unless (and (list? keymaps) (for-all table? keymaps))
+  (unless (and (list? keymaps) (for-all tables:table? keymaps))
     (assertion-violation 'keys:lookup-in "not a list of keymaps" keymaps))
   (check-sequence 'keys:lookup-in keys)
   (let-values ([(v found shifted?) (resolve-sequence keymaps keys)])
     (cond
       [(eq? v #t) found]
-      [(table? v) v]
+      [(tables:table? v) v]
       [else (remapped keymaps v)])))
 
 (define (lookup client keys)
@@ -1019,7 +1027,7 @@
                            (when (press-handed? press)
                              (session-wrappers-set! s (append wrappers (session-wrappers s))))
                            (session-running-set! s
-                             (remp (lambda (e) (or (eq? e entry) (task-done? (car e)))) (session-running s))))]))])))]))))))
+                             (remp (lambda (e) (or (eq? e entry) (eq? (task-state (car e)) 'done))) (session-running s))))]))])))]))))))
 
 ;; Input that is no key, such as a paste, comes on its own clock, not
 ;; after the client's last key, so it leaves the client's pending keys,
@@ -1043,7 +1051,7 @@
               (apply commands:run command args)))
           (lambda results
             (session-running-set! s
-              (remp (lambda (e) (or (eq? e entry) (task-done? (car e)))) (session-running s)))
+              (remp (lambda (e) (or (eq? e entry) (eq? (task-state (car e)) 'done))) (session-running s)))
             (apply values results)))))))
 
 (define (pending client)
@@ -1248,16 +1256,16 @@
   '("0" "1" "2" "3" "4" "5" "6" "7" "8" "9"))
 (bind! universal-argument-keymap "-" negative-argument)
 
-(table-set! commands:command-modes ignore '())
-(table-set! commands:command-modes undefined '())
-(table-set! web:scripts 'keys "keys/keys.js")
+(tables:set! commands:command-modes ignore '())
+(tables:set! commands:command-modes undefined '())
+(tables:set! web:scripts 'keys "keys/keys.js")
 
 (advice-add! batch-ended
   (lambda (ended)
     (ended)
     (give-page-settings!)))
 
-(add-hook! web:client-removed quit-client-reads!)
+(hooks:add! web:client-removed quit-client-reads!)
 
 (on-unload
   (lambda ()

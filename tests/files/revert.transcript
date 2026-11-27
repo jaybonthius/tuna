@@ -4,7 +4,7 @@
 > (import (commands))
 > (define (in-task thunk)
     (let ([result #f])
-      (testing:wait-until (let ([t (spawn-task (lambda () (set! result (guard (c [#t (list (condition-who c) (condition-message c))]) (thunk) 'done))))])
+      (testing:wait-until (let ([t (spawn-task (lambda (restore) (set! result (guard (c [#t (list (condition-who c) (condition-message c))]) (thunk) 'done))))])
                     (lambda () result)))
       result))
 > (define (revert-in b) (in-task (lambda () (buffers:with-buffer b (commands:run buffers:revert-buffer)))))
@@ -24,22 +24,17 @@ done
 ; A command set locally runs with the prefix argument still bound.
 > (define seen #f)
 > (commands:define-command (note-prefix [p (commands:prefix-argument)]) "Notes its prefix argument." (set! seen p))
-> (buffers:with-buffer plain (set-option-local! buffers:revert-function note-prefix))
+> (buffers:with-buffer plain (options:set-local! buffers:revert-function note-prefix))
 > (in-task (lambda () (parameterize ([commands:prefix-argument '(4)]) (buffers:with-buffer plain (commands:run buffers:revert-buffer)))))
 done
 > seen
 (4)
 ; M-x does not offer files' reverter, so a user meets one revert command.
-> (table-ref commands:command-modes files:revert-from-file #f)
+> (tables:ref commands:command-modes files:revert-from-file #f)
 ()
-; With files unloaded nothing reverts a file buffer; loading files sets
-; its value again.
-> (unload-module! '(files))
-> (buffers:revert-function)
-#f
-> (in-task (lambda () (commands:run buffers:revert-buffer)))
-! buffers:revert-buffer: nothing reverts this buffer
-done
-> (load-module! '(files))
-> (eq? (buffers:revert-function) files:revert-from-file)
-#t
+; An unload of files takes its value back; the configuration, which
+; imports files, loads a new instance that sets it again.
+> (define old (module-owner '(files)))
+> (unload-owner! old)
+> (list (owner-live? old) (eq? (buffers:revert-function) files:revert-from-file))
+(#f #t)

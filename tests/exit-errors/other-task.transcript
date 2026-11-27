@@ -1,9 +1,9 @@
 ; While exit waits for its task's paused after-thunk, a raise in another
 ; task is reported but not asked about.
-> (set-option! ask:y-or-n-reader (lambda (question) (display question) (newline) #f))
-> (spawn-task (lambda () (sleep-for 0.05) (vector-ref (vector) 0)))
+> (options:set! ask:y-or-n-reader (lambda (question) (display question) (newline) #f))
+> (spawn-task (lambda (restore) (timers:sleep 0.05) (vector-ref (vector) 0)))
 #<task>
-> (dynamic-wind void (lambda () (exit)) (lambda () (sleep-for 0.2)))
+> (dynamic-wind void (lambda () (exit)) (lambda () (timers:sleep 0.2)))
 ! vector-ref: 0 is not a valid index for #()
 configuration unloading
 > (display "never runs")

@@ -1,18 +1,19 @@
 ; A highlighter is a worker, the layer types it fills and its input
 ; procedure; make-highlighter checks each.
-> (syntax-highlighting:highlighter? (table-ref syntax-highlighting:highlighters "marks"))
+> (syntax-highlighting:highlighter? (tables:ref syntax-highlighting:highlighters "marks"))
 #t
-> (syntax-highlighting:highlighter? marks:%marks)
+> (define marks-worker (eval-in-module '%marks '(marks)))
+> (syntax-highlighting:highlighter? marks-worker)
 #f
-> (table-ref syntax-highlighting:highlighters "marks")
+> (tables:ref syntax-highlighting:highlighters "marks")
 #<highlighter>
 > (syntax-highlighting:make-highlighter 'w (list syntax-highlighting:faces) marks:%input)
 ! syntax-highlighting:make-highlighter: not a worker with irritant w
-> (syntax-highlighting:make-highlighter marks:%marks '() marks:%input)
+> (syntax-highlighting:make-highlighter marks-worker '() marks:%input)
 ! syntax-highlighting:make-highlighter: not a list of layer types with irritant ()
-> (syntax-highlighting:make-highlighter marks:%marks (list 1) marks:%input)
+> (syntax-highlighting:make-highlighter marks-worker (list 1) marks:%input)
 ! syntax-highlighting:make-highlighter: not a list of layer types with irritant (1)
-> (syntax-highlighting:make-highlighter marks:%marks (list syntax-highlighting:faces) 'input)
+> (syntax-highlighting:make-highlighter marks-worker (list syntax-highlighting:faces) 'input)
 ! syntax-highlighting:make-highlighter: not a procedure with irritant input
 ; The face layer: below other layers, sticky after, evaporating.
 > (let ([b (buffers:make "layer" "ab")])
@@ -52,7 +53,7 @@
 (("a.mk" (3 ((5 0 1))) 1))
 ; update! calls the input procedure again and sends the job a changed
 ; input; an unchanged one is not sent, so the job does not run.
-> (buffers:with-buffer a (set-option-local! marks:mark "x"))
+> (buffers:with-buffer a (options:set-local! marks:mark "x"))
 > (syntax-highlighting:update! a)
 > (faces a)
 ()
@@ -69,8 +70,8 @@
 (("#b" comment))
 > (marks:inputs)
 (("b.mk" #f 0) ("b.mk" (1 ()) 0))
-> (buffers:with-buffer a (set-option-local! marks:mark "#"))
-> (buffers:with-buffer b (set-option-local! marks:mark "x"))
+> (buffers:with-buffer a (options:set-local! marks:mark "#"))
+> (buffers:with-buffer b (options:set-local! marks:mark "x"))
 > (syntax-highlighting:update!)
 > (list (faces a) (faces b))
 ((("#onex!" comment) ("#2" comment) ("#three" comment)) (("x" comment)))
@@ -80,14 +81,14 @@
 ! syntax-highlighting:update!: not a buffer with irritant a
 ; input-changed! reads a running job's input again, and sends it only
 ; when it changed, as update! does.
-> (buffers:with-buffer a (set-option-local! marks:mark "x"))
+> (buffers:with-buffer a (options:set-local! marks:mark "x"))
 > (syntax-highlighting:input-changed! a)
 > (list (faces a) (marks:inputs))
 (() (("a.mk" (5 ()) 1) ("a.mk" (6 ()) 1)))
 > (syntax-highlighting:input-changed! a)
 > (marks:inputs)
 (("a.mk" (6 ()) 1))
-> (buffers:with-buffer a (set-option-local! marks:mark "#"))
+> (buffers:with-buffer a (options:set-local! marks:mark "#"))
 > (syntax-highlighting:input-changed! a)
 > (list (faces a) (marks:inputs))
 ((("#onex!" comment) ("#2" comment) ("#three" comment)) (("a.mk" (6 ()) 1) ("a.mk" (7 ()) 1)))
@@ -145,7 +146,7 @@
 > (begin (buffers:insert! r 3 "!") (testing:wait-until (lambda () (null? (spans-of r syntax-highlighting:faces)))) (faces r))
 ! (syntax-highlighting) marks: the highlighter raised
 ()
-> (begin (sleep-for 0.2) (job-events))
+> (begin (timers:sleep 0.2) (job-events))
 ((start #<job %raising>))
 > (define reported 0)
 > (advice-add! report (lambda (original c) (set! reported (+ reported 1)) (original c)))
@@ -161,7 +162,7 @@
 ; So does an input procedure that raises: the job stops with it.
 > (marks:inputs)
 (("r" #f 0) ("r" #f 0) ("r" #f 0) ("r" (1 ()) 0))
-> (buffers:with-buffer r (set-option-local! marks:input-raises? #t))
+> (buffers:with-buffer r (options:set-local! marks:input-raises? #t))
 > (syntax-highlighting:update! r)
 ! marks:input: the input raised
 > (list (faces r) (job-events))
@@ -173,9 +174,9 @@
 ; input-changed! leaves a buffer whose input raised as it is: no job
 ; starts, and nothing is reported again.
 > (syntax-highlighting:input-changed! r)
-> (begin (sleep-for 0.2) (job-events))
+> (begin (timers:sleep 0.2) (job-events))
 ()
-> (buffers:with-buffer r (set-option-local! marks:input-raises? #f))
+> (buffers:with-buffer r (options:set-local! marks:input-raises? #f))
 > (syntax-highlighting:update! r)
 > (list (faces r) (job-events))
 ((("#r!" comment)) ((start #<job %marks>)))

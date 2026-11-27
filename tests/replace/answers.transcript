@@ -111,6 +111,5 @@
 > (views:set-point! (view) 1)
 > (replace! "M-%" "x" "y")
 > (press! "y" "C-g")
-! &quit
 > (list (session) (text))
 (#f "y1 x2\n")

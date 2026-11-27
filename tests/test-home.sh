@@ -12,3 +12,6 @@ mkdir -p "$library" "$home/.cache/tuna" "$home/.config/tuna/lib"
 cp -R "$(dirname "$0")/modules/." "$home/.config/tuna/lib/"
 cp -R "$bin/plugins/." "$library/"
 cp -R "$bin/plugins-cache" "$home/.cache/tuna/library"
+start=$home/.cache/tuna/start$(cd "$bin" && pwd)/start
+mkdir -p "$(dirname "$start")"
+cp -R "$bin/start-cache" "$start"

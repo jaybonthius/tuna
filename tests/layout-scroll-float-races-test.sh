@@ -12,7 +12,10 @@ trap 'rm -rf "$dir"' EXIT
 mkdir -p "$dir/home" "$dir/work"
 sh tests/test-home.sh "$tuna" "$dir/library" "$dir/home"
 cp -RL tests/scroll-float/home/. "$dir/home/"
+mkdir -p "$dir/home/.config/tuna/lib"
+cp -R tests/modules/. "$dir/home/.config/tuna/lib/"
 cat > "$dir/input" <<'END'
+(import (testing))
 (import (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 (define notes (buffers:make "notes" (lines "n" 80)))
 (define completions (buffers:make "*completions*" "one\ntwo\n"))
@@ -27,7 +30,7 @@ cat > "$dir/input" <<'END'
     (let loop ()
       (if quitting
           (begin
-            (request-quit!)
+            (testing:request-quit!)
             (chez:sleep (make-time 'time-duration 1000000 0))
             (loop))
           (set! stopped #t))))
@@ -35,7 +38,7 @@ cat > "$dir/input" <<'END'
     (if (vector? d) (list (cdr (assq 'view (vector-ref d 1)))) (apply append (map atom-ids (cddr d)))))
 (define (popups) (car (document:datums (buffers:document layout:popups-buffer))))
 (define (pick ls k) (list-ref ls (mod k (length ls))))
-(define (attempt thunk) (guard (c [(not (quit-condition? c)) #f]) (thunk)))
+(define (attempt thunk) (guard (c [(not (cancelled? c)) #f]) (thunk)))
 (define forked #f)
 ; A quit lands up to a thousand calls after its request, and the
 ; quitter's last request may come after the stress ends. One guard
@@ -45,10 +48,10 @@ cat > "$dir/input" <<'END'
 ; before it enters the guard again.
 (define (stress until)
     (let again ()
-      (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (again)])
+      (guard (c [(cancelled? c) (set! quits (+ quits 1)) (again)])
         (unless forked
           (set! forked #t)
-          (fork-thread quitter))
+          (fork-task (lambda (restore) (quitter))))
         (let loop ([k 0])
           (when (< (real-time) until)
             (let* ([shown (layout:views)] [selected (layout:selected-view)] [many? (> (length (atom-ids (tree))) 10)])
@@ -90,18 +93,18 @@ cat > "$dir/input" <<'END'
 (for-all (lambda (id) (let ([v (views:find id)]) (and v (buffers:live? (views:buffer v))))) (append (atom-ids (tree)) (apply append (map atom-ids (cddr (popups))))))
 (and (string? (html->string (layout:screen client))) (string? (html->string (layout:screen phone))))
 (define before (list (tree) (popups) (views:id (layout:selected-view)) (map views:id (layout:views))))
-(import (tuna eval))
-(eval-file (string-append (getenv "TUNA_LIBRARY") "/layout-scroll.sls"))
+(import (plugins))
+(reload-modules! '((layout-scroll)))
 (equal? before (list (tree) (popups) (views:id (layout:selected-view)) (map views:id (layout:views))))
-(eval-file (string-append (getenv "TUNA_LIBRARY") "/layout-float.sls"))
+(reload-modules! '((layout-float)))
 (and (equal? (car before) (tree)) (equal? (popups) '(layout:popups-root ())))
 (set! before (list (tree) (views:id (layout:selected-view)) (map views:id (layout:views))))
-(eval-file (string-append (getenv "TUNA_LIBRARY") "/layout.sls"))
+(reload-modules! '((layout)))
 (equal? before (list (tree) (views:id (layout:selected-view)) (map views:id (layout:views))))
 (string? (html->string (layout:screen client)))
 END
 output=$(cd "$dir/work" && HOME="$dir/home" TUNA_LIBRARY="$dir/library" "$tuna" < "$dir/input" 2>&1 |
-  grep -v -E '^! (\([a-z-]+\) )?&quit$' || true)
+  grep -v -E '^! (\([a-z-]+\) )?&cancelled$' || true)
 expected='#t
 #t
 #t

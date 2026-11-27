@@ -8,9 +8,7 @@
 > (files:save! "a.txt")
 saving a.txt
 "a.txt"
-> (import (tuna eval))
-> (eval-text "(define (save! path) (display \"[saved]\") path)"
-    (string-append (getenv "TUNA_LIBRARY") "/files.sls"))
+> (eval-in-module '(define (save! path) (display "[saved]") path) '(files))
 > (files:save! "a.txt")
 saving a.txt[saved]
 "a.txt"
@@ -25,24 +23,23 @@ saving a.txt[saved]
 ; Removing (init)'s advice from the REPL is (repl)'s change.
 > (advice-remove! files:save! announce)
 > (definition-changes files:save!)
-(((repl) removal #<procedure announce>) ((repl) advice #<procedure exclaim>) ((init) advice #<procedure announce>) ((files) define #f))
+((#<owner (repl) 1> removal #<procedure announce>) (#<owner (repl) 1> advice #<procedure exclaim>) (#<owner (init) 1> advice #<procedure announce>) (#<owner (files) 1> define #f))
 > (files:save! "b")
 ![saved]
 "b"
-; Removing one's own advice takes the change back.
+; Removing one's own advice puts a removal in its place, which also hides
+; the advice of owners ranked below.
 > (advice-remove! files:save! exclaim)
-> (map cadr (module-changes '(repl)))
-(files:save! greet:text)
+> (map car (owner-changes (plugins:repl-owner)))
+(removal removal advice)
 > (advice-add! files:save! (lambda (save! . arguments) (apply save! arguments)))
 > (files:save! "c")
 [saved]
 "c"
 ; The target must be a changeable definition.
 > (advice-add! files:make-entry exclaim)
-! advice-add!: not a changeable definition files:make-entry in (advice-add! files:make-entry exclaim)
-> (advice-add! fill:column exclaim)
-! advice-add!: not a changeable definition fill:column in (advice-add! fill:column exclaim)
+! advice-add!: not a changeable procedure with irritant #<procedure make-entry>
 > (advice-add! car exclaim)
-! advice-add!: not a changeable definition car in (advice-add! car exclaim)
+! advice-add!: not a changeable procedure with irritant #<procedure car>
 > (advice-add! files:save! 'exclaim)
 ! advice-add!: not a procedure with irritant exclaim

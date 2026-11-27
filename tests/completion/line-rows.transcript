@@ -19,7 +19,7 @@
 > (map (lambda (m) (completion:row-prefix s m)) (list-head (match-list s) 6))
 ((shadow . " 9") (shadow . "10") (shadow . "11") (shadow . "12") (warning . " 1") (warning . " 2"))
 > (press! "C-g")
-! &quit
+! &cancelled
 ; C-u lists them from the first, as does line-picker:start-from-top?,
 ; which C-u then turns round.
 > (define t (start! (lambda () (press! "C-u" "M-s" "l"))))
@@ -27,21 +27,21 @@
 > (car (texts (session)))
 "line 0 gamma"
 > (press! "C-g")
-! &quit
-> (set-option! line-picker:start-from-top? #t)
+! &cancelled
+> (options:set! line-picker:start-from-top? #t)
 > (define t (start! (lambda () (press! "M-s" "l"))))
 > (wait-matches (session))
 > (car (texts (session)))
 "line 0 gamma"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (define t (start! (lambda () (press! "C-u" "M-s" "l"))))
 > (wait-matches (session))
 > (car (texts (session)))
 "line 8 gamma"
 > (press! "C-g")
-! &quit
-> (remove-option! line-picker:start-from-top?)
+! &cancelled
+> (options:unset! line-picker:start-from-top?)
 ; A row's spans are the line's span values in the buffer's layers, read
 ; when the row is drawn, as offsets into its text, and drawn by views'
 ; rule beside the match's own.
@@ -71,7 +71,7 @@
 > (completion:row-faces s (car (match-list s)))
 ()
 > (press! "C-g")
-! &quit
+! &cancelled
 > (define edit-3 (buffers:replace! b 1 (line-start 2) ""))
 > (define edit-4 (buffers:replace! b (+ (line-start 6) 1) (+ (line-start 6) 2) ""))
 > (string=? (document:text (buffers:document b)) body)
@@ -81,7 +81,7 @@
 ; shows that place and highlights its line and matches in the view.
 > (views:set-point! (view) (line-start 9))
 > (define after-jumps '())
-> (add-hook! jump-history:after-jump (lambda (v) (set! after-jumps (cons (views:point v) after-jumps))))
+> (hooks:add! jump-history:after-jump (lambda (v) (set! after-jumps (cons (views:point v) after-jumps))))
 > (define t (start! (lambda () (press! "M-s" "l"))))
 > (define s (session))
 > (wait-matches s)
@@ -122,7 +122,7 @@
 > (list (selected-text (session)) (- (views:point src) (line-start 9)))
 ("line 8 gamma" 0)
 > (press! "C-g")
-! &quit
+! &cancelled
 ; Quitting ends the preview: point comes back and the highlight goes.
 > (define t (start! (lambda () (press! "M-s" "l"))))
 > (wait-matches (session))
@@ -131,7 +131,7 @@
 > (= (views:point src) (line-start 5))
 #t
 > (press! "C-g")
-! &quit
+! &cancelled
 > (list (= (views:point (view)) (line-start 9)) (holds? (html->string (views:draw src client)) "data-face=\"highlight\""))
 (#t #f)
 ; With nothing typed, the read answers the line's start.
@@ -146,13 +146,13 @@
 > (define calls 0)
 > (define t (start! (lambda ()
     (completion:read "? " (list (completion:source (candidates (vector "a" "b")) (faces (lambda (text value) (set! calls (+ calls 1)) (error 'shade "no shade"))))) #f))))
-! shade: no shade
+! (layout) shade: no shade
 > (string? (lines-html (list-view)))
 #t
 > (list calls (map (lambda (m) (completion:row-faces (session) m)) (match-list (session))))
 (1 (() ()))
 > (press! "C-g")
-! &quit
+! &cancelled
 ; A source's lookup gives what the read answers; its exit procedure,
 ; which acts on the candidate as completed, still gets the candidate's
 ; own value.
@@ -186,7 +186,7 @@
 > (define (hand-scroll! v line)
     (let ([mark (lambda (k) (list (cons "line" (+ line k))))])
       (set! reports (+ reports 1))
-      ((table-ref web:input-handlers "scroll") client
+      ((tables:ref web:input-handlers "scroll") client
        `(("type" . "scroll") ("view" . ,(views:id v)) ("placement" . ,(placement v)) ("report" . ,reports)
          ("version" . ,(buffers:version big)) ("top" . ,(mark 0)) ("spacer" . #f) ("fraction" . 0) ("left" . null)
          ("past" . 0) ("sides" . #()) ("start" . ,(mark 2)) ("end" . ,(mark 7)) ("atStart" . #f) ("atEnd" . #f)
@@ -201,7 +201,7 @@
       (set! scrolled-at (completion:matches-count (completion:session-matches (session))))
       (hand-scroll! v 100)
       (hand-scroll! v 100)))
-> (add-hook! jump-history:after-jump scroll-once!)
+> (hooks:add! jump-history:after-jump scroll-once!)
 > (define t (start! (lambda () (press! "M-s" "l"))))
 > (define s (session))
 > (testing:wait-until (lambda () (and (not (completion:session-busy? s)) (= (completion:matches-count (completion:session-matches s)) 60000))))
@@ -210,4 +210,4 @@
 > (list (length after-jumps) (line-of (views:top src #f)))
 (1 100)
 > (press! "C-g")
-! &quit
+! &cancelled

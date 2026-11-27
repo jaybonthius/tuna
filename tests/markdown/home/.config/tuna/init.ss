@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins) (document) (haml) (web))
+(import (options) (tables))
+(import (tuna) (document) (haml) (web))
 (use-plugin markdown
   (config
     (keys:bind! markdown:link-keys "C-c C-o" markdown:follow-link)))
@@ -23,7 +24,7 @@
 
 (define (mouse-in! v action place . fields)
   (parameterize ([web:current-client client])
-    ((table-ref web:input-handlers "mouse") client
+    ((tables:ref web:input-handlers "mouse") client
      (append fields
              `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
                ("view" . ,(views:id v)) ("version" . ,(buffers:version (views:buffer v)))

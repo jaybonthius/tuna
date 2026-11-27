@@ -1,5 +1,5 @@
 #!tuna
-(import (undo) (buffers) (document))
+(import (undo) (buffers) (document) (options))
 
 ;; The main thread's own processor time, so the writer's work on its
 ;; thread, which shares the one CPU, is left out.
@@ -46,14 +46,14 @@
 
 (define (record-cost)
   (let ([kept (buffers:make "kept" "\n")] [plain (buffers:make "plain" "\n")])
-    (buffers:with-buffer plain (set-option-local! undo:limit 0))
+    (buffers:with-buffer plain (options:set-local! undo:limit 0))
     (cpu-ns-difference 2000
       (lambda () (buffers:replace! kept 1 1 "x"))
       (lambda () (buffers:replace! plain 1 1 "x")))))
 
 (define (batch-end-cost record)
   (let ([kept (buffers:make "batch" "\n")] [plain (buffers:make "plain-batch" "\n")])
-    (buffers:with-buffer plain (set-option-local! undo:limit 0))
+    (buffers:with-buffer plain (options:set-local! undo:limit 0))
     (- (cpu-ns-difference 300
          (lambda () (buffers:replace! kept 1 1 "x") (batch-ended))
          (lambda () (buffers:replace! plain 1 1 "x") (batch-ended)))

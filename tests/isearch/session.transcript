@@ -2,8 +2,8 @@
 ; search; ended after its keymap and highlights are gone.
 > (define events '())
 > (define (note! . e) (set! events (cons e events)))
-> (add-hook! isearch:started (lambda (s) (note! 'started (isearch:search-direction s))))
-> (add-hook! isearch:ended (lambda (s cancelled?) (note! 'ended cancelled? (keys:prompt client))))
+> (hooks:add! isearch:started (lambda (s) (note! 'started (isearch:search-direction s))))
+> (hooks:add! isearch:ended (lambda (s cancelled?) (note! 'ended cancelled? (keys:prompt client))))
 > (define b (show "s" "alpha beta gamma beta\n"))
 > (press! "C-s" "b" "e")
 > (isearch:prompt (isearch:current client))
@@ -44,22 +44,22 @@
 (#f #f)
 ; isearch:wrap immediately wraps at once, and never stops at the last match.
 > (define sy (show "sy" "(foo-bar x) foo-bar foo-barz foo-bar\n"))
-> (set-option! isearch:wrap 'immediately)
+> (options:set! isearch:wrap 'immediately)
 > (views:set-point! (view) 30)
 > (press! "C-s" "f" "o" "o" "-" "b" "a" "r" "C-s")
 > (here)
 (9 "Wrapped I-search: foo-bar" "foo-bar")
 > (press! "RET")
-> (set-option! isearch:wrap 'never)
+> (options:set! isearch:wrap 'never)
 > (views:set-point! (view) 30)
 > (press! "C-s" "f" "o" "o" "-" "b" "a" "r" "C-s" "C-s")
 > (here)
 (37 "Failing I-search: foo-bar" "foo-bar")
 > (press! "C-g" "C-g")
-! &quit
-> (set-option! isearch:wrap 'pause)
+! &cancelled
+> (options:set! isearch:wrap 'pause)
 ; With repeat-on-direction-change on, turning around goes to another match.
-> (set-option! isearch:repeat-on-direction-change #t)
+> (options:set! isearch:repeat-on-direction-change #t)
 > (views:set-point! (view) 1)
 > (press! "C-s" "f" "o" "o" "C-s" "C-r")
 > (here)
@@ -67,8 +67,8 @@
 > (press! "RET")
 ; A quit during a long find fails the state it was making; the quit key
 ; then runs, and C-g goes back to the last state that matched.
-> (set-option! isearch:repeat-on-direction-change #f)
-> (define make-quit (record-constructor (record-constructor-descriptor &quit)))
+> (options:set! isearch:repeat-on-direction-change #f)
+> (define (make-quit) (make-cancelled #f))
 > (define (quitting find . args) (raise (make-quit)))
 > (define qb (show "qb" "abc abd abe\n"))
 > (press! "C-s" "a" "b")
@@ -121,6 +121,6 @@
 > (set! client (web:add-client! 3))
 ; Unloading isearch ends every search.
 > (press! "C-s" "f" "o")
-> (unload-module! '(isearch))
+> (unload-owner! (module-owner '(isearch)))
 > (keys:prompt client)
 #f

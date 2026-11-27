@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (document) (haml) (web))
+(import (hooks) (options) (tables) (timers) (saved))
+(import (tuna) (testing) (document) (haml) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -9,16 +10,16 @@
 (use-plugin minibuffer)
 (use-plugin completion
   (config
-    (set-option! completion:styles (list completion:any-order))))
+    (options:set! completion:styles (list completion:any-order))))
 (use-plugin ui)
 (use-plugin layout-float)
 (use-plugin completion-list
   (config
-    (set-option! completion-list:lines 15)))
+    (options:set! completion-list:lines 15)))
 (use-plugin completion-popup
   (config
-    (add-hook! python:mode-hook
-      (lambda () (set-option-local! completion-popup:auto-delay 0.1)))))
+    (hooks:add! python:mode-hook
+      (lambda () (options:set-local! completion-popup:auto-delay 0.1)))))
 (use-plugin files)
 (use-plugin file-picker)
 (use-plugin buffer-picker)
@@ -42,13 +43,13 @@
     (category completion:location-category)
     (title "Notes")))
 
-(set-option! buffer-picker:sources (list buffer-picker:buffers notes-source))
+(options:set! buffer-picker:sources (list buffer-picker:buffers notes-source))
 (use-plugin words)
 (use-plugin completion-annotations
   (config
     (define (annotate-word session)
       (lambda (word details) (list (number->string (string-length word)))))
-    (table-set! completion:annotators words:word-category annotate-word)))
+    (tables:set! completion:annotators words:word-category annotate-word)))
 
 (define client (web:add-client! 1))
 
@@ -74,17 +75,17 @@
 ;; own and wait for the prompt or the key it reads.
 (define (start! thunk)
   (let* ([before (minibuffer:current-prompt)]
-         [t (spawn-task (lambda () (in-client thunk)))])
-    (testing:wait-until (lambda () (or (task-done? t) (not (eq? (minibuffer:current-prompt) before)) (keys:reading client))))
+         [t (spawn-task (lambda (restore) (in-client thunk)))])
+    (testing:wait-until (lambda () (or (eq? (task-state t) 'done) (not (eq? (minibuffer:current-prompt) before)) (keys:reading client))))
     t))
 
 ;; A read that is still waiting has asked again: the prompt that took the
 ;; key has ended and a new one waits.
 (define (result t)
-  (testing:wait-until (lambda () (or (task-done? t) (minibuffer:current-prompt))))
-  (if (task-done? t)
+  (testing:wait-until (lambda () (or (eq? (task-state t) 'done) (minibuffer:current-prompt))))
+  (if (eq? (task-state t) 'done)
       (guard (c [#t (list 'raised (if (message-condition? c) (condition-message c) c))])
-        (join-task t))
+        (testing:join t))
       'waiting))
 
 
@@ -104,7 +105,7 @@
 
 (define (mouse-in! v action place)
   (parameterize ([web:current-client client])
-    ((table-ref web:input-handlers "mouse") client
+    ((tables:ref web:input-handlers "mouse") client
      (append place
              `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
                ("view" . ,(views:id v)) ("version" . ,(buffers:version (views:buffer v)))

@@ -10,13 +10,13 @@
 > (html (bar))
 "<div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-6\" data-at=\"30\" data-to=\"57\"><div class=\"minibuffer-prompt\"><span class=\"minibuffer-depth\">[2] </span><div class=\"line\" id=\"v4-4\" data-line=\"2\" data-before=\"0\" data-at=\"31\"><span class=\"node\" data-at=\"31\" data-to=\"51\"><span class=\"minibuffer-question\"><span data-at=\"32\">Rename buffer to: </span></span></span><span class=\"node\" data-at=\"51\" data-to=\"53\"><span class=\"minibuffer-input\"><span data-at=\"52\"><span class=\"cursor primary\"></span></span></span></span><br></div><div class=\"node\" id=\"v4-5\" data-at=\"54\" data-to=\"56\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result inner)
-(raised #<condition &quit>)
+(raised #<condition &cancelled>)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result outer)
-(raised #<condition &quit>)
+(raised #<condition &cancelled>)
 > (datums minibuf)
 ((minibuffer:%prompts ()))
 ; The part sits at the bottom, locked, below the echo area.
@@ -49,7 +49,7 @@
 "journal"
 ; The palette rule shows prompts in a palette.
 > (use-plugin layout-float)
-> (table-set! layout:display-rules minibuffer:buffer? layout-float:display-palette)
+> (tables:set! layout:display-rules minibuffer:buffer? layout-float:display-palette)
 > (define t (start! (lambda () (minibuffer:read "Name: "))))
 > (datums layout:popups-buffer)
 ((layout:popups-root () (layout-float:container () #(views:view ((view . 5) (buffer . " *Minibuf*") (place box 1/2 1/5) (width . 3/5) (height lines 12) (locked . #t) (other-view . #t))))))
@@ -76,7 +76,7 @@
 ((layout:popups-root ()))
 > (views:buffer (view))
 #<buffer journal>
-> (table-remove! layout:display-rules minibuffer:buffer?)
+> (tables:remove! layout:display-rules minibuffer:buffer?)
 ; ask-yes-or-no and ask-y-or-n.
 > (define t (start! (lambda () (minibuffer:ask-yes-or-no "Delete it? "))))
 > (type! "maybe")

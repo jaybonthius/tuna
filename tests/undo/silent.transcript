@@ -131,7 +131,7 @@
       (let* ([t (text b)] [i (let loop ([i 0]) (if (char=? (string-ref t i) #\[) i (loop (+ i 1))))])
         (buffers:with-silent-edits b
           (buffers:replace! b (+ i 1) (- (document:length (buffers:document b)) 2) (format "[~a]" (- i 1)))))))
-> (buffers:with-buffer e (add-local-hook! buffers:after-edit echo-length))
+> (buffers:with-buffer e (hooks:add-local! buffers:after-edit echo-length))
 > (undo:with-edit-group e (buffers:replace! e 1 1 "ab") (buffers:replace! e 3 3 "cd") (buffers:replace! e 5 5 "ef"))
 #<edit 5>
 > (list (text e) (tree e))
@@ -144,7 +144,7 @@
 ("abcdef\n[6]\n" (1 0 (0 #f) (1 0)) #t)
 ; A group whose body raises is taken back whole past those silent edits.
 > (define g (buffers:make "cancelled" "\n[0]\n"))
-> (buffers:with-buffer g (add-local-hook! buffers:after-edit echo-length))
+> (buffers:with-buffer g (hooks:add-local! buffers:after-edit echo-length))
 > (raised (lambda () (undo:with-edit-group g (buffers:replace! g 1 1 "ab") (buffers:replace! g 3 3 "cd") (error 'body "stops"))))
 (body "stops")
 > (list (text g) (tree g) (buffers:modified? g))

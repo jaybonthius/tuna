@@ -1,10 +1,12 @@
 #!tuna
-(import (commands))
+(import (commands) (timers))
 
-(define order '())
+(define %order '())
+
+(define (order) %order)
 
 (define (note! x)
-  (set! order (cons x order))
+  (set! %order (cons x %order))
   x)
 
 (commands:define-command (hello [name "you"])
@@ -19,7 +21,7 @@
   "Returns its arguments, read in order."
   (list a b c))
 
-(commands:define-command (slow [x (begin (sleep-for 0.01) 'slept)])
+(commands:define-command (slow [x (begin (timers:sleep 0.01) 'slept)])
   "Reads its argument after a pause."
   x)
 

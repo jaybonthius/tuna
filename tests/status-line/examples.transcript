@@ -24,8 +24,8 @@
 > (status (view))
 (("status-line:modified" . "") ("status-line:buffer-name" . "notes") ("status-line:percent-position" . "65%") ("status-line:region-size" . "") ("cursors:cursor-count" . "") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "L2"))
 ; status-line:segments
-> (table-set! status-line:segments status-line:position (status-line:right 90))
-> (table-remove! status-line:segments status-line:modified)
+> (tables:set! status-line:segments status-line:position (status-line:right 90))
+> (tables:remove! status-line:segments status-line:modified)
 > (status (view))
 (("status-line:buffer-name" . "notes") ("status-line:percent-position" . "65%") ("status-line:region-size" . "") ("cursors:cursor-count" . "") ("status-line:major-mode" . "Fundamental") ("status-line:position" . "L2"))
 ; status-line:visible

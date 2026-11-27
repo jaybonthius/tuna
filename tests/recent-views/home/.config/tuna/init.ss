@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins) (document) (web))
+(import (options) (timers))
+(import (tuna) (document) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin recent-views
@@ -20,5 +21,5 @@
 (define (selected) (buffers:name (views:buffer (layout:selected-view))))
 
 ;; Lets the delay pass, so the selected view gets its tick.
-(define (pause!) (sleep-for (* 2 (recent-views:delay))))
+(define (pause!) (timers:sleep (* 2 (recent-views:delay))))
 (import (console))

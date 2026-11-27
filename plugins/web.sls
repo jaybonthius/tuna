@@ -1,5 +1,7 @@
 #!tuna
-(import (h2o) (datastar) (json) (haml))
+(import (h2o) (datastar) (json) (haml) (hooks) (options) (tables) (timers))
+
+(define %self (current-owner))
 
 ;; The server's threads run this code, so none of it may be a top-level
 ;; definition, which can change under a running thread.
@@ -12,28 +14,12 @@
   (define lock (make-mutex))
   (define wake (make-condition))
 
-  ;; A quit can land anywhere in code on the main thread, and one inside
-  ;; the lock would leave a client half changed, so the main thread holds
-  ;; the lock only with interrupts disabled. A blocked acquire with
-  ;; interrupts disabled would keep a collection waiting for the main
-  ;; thread, so it only tries the lock, which other threads hold for a few
-  ;; instructions at a time; a body the main thread runs must not raise,
-  ;; wait or post.
+  ;; A cancel inside the lock would leave a client half changed, so the
+  ;; lock is held masked; a body must not wait.
   (define-syntax with-lock
     (syntax-rules ()
       [(_ e1 e2 ...)
-       (if (eqv? (get-thread-id) main-thread)
-           (let retry ()
-             (let ([v (with-interrupts-disabled
-                        (if (mutex-acquire lock #f)
-                            (let ([v (let () e1 e2 ...)])
-                              (mutex-release lock)
-                              v)
-                            busy))])
-               (if (eq? v busy) (retry) v)))
-           (with-mutex lock e1 e2 ...))]))
-
-  (define busy (list 'busy))
+       (call-with-cancellation-masked (lambda (restore) (with-mutex lock e1 e2 ...)))]))
 
   ;; Only the main thread uses through, removal-timer, held and deferred;
   ;; the lock guards the other mutable fields.
@@ -47,12 +33,12 @@
             (mutable through) (mutable removal-timer)
             (mutable last) (mutable count) (mutable in-flight) (mutable sent-at) (mutable unconfirmed)
             (mutable waiting) (mutable calls) (mutable links) (mutable scripts-version) (mutable title) (mutable first)
-            (mutable asks) (mutable held) (mutable deferred))
+            (mutable asks) (mutable held) (mutable deferred) (mutable item-tasks) (mutable quit-cancelled))
     (protocol
       (lambda (new)
         (lambda (id number links scripts-version)
           (new id number (make-eqv-hashtable) 1 #f #f 0 #f #f 0 #f 0 '() #f '() links scripts-version "Tuna" #f
-               '() 0 '())))))
+               '() 0 '() '() #f)))))
 
   (define-record-type head-file
     (sealed #t)
@@ -103,8 +89,37 @@
   (define removal-seconds 3600)
   (define heartbeat-seconds 15)
 
+  ;; From the first step of web's unload a request thread can no longer
+  ;; act as web; what it would have handed over is dropped, as the page
+  ;; is going away.
   (define (post-as-web thunk)
-    (as-module (this-module) (post! thunk)))
+    (guard (c [(and (unloaded? c) (eq? (unloaded-owner c) %self)) #f])
+      (call-as-owner %self (lambda () (spawn-task (lambda (restore) (thunk)))))))
+
+  ;; A quit names the newest of its client's item tasks that has started:
+  ;; the items queued behind a busy command, the quit's own among them, are
+  ;; not what it stops. The first quit cancels the task, and a second for
+  ;; the same task stops it, as a third C-g overrides inhibit-quit in
+  ;; Emacs. Request threads and the main thread both reach these, under
+  ;; the lock.
+  (define (live-item-tasks c)
+    (filter (lambda (t) (not (eq? (task-state t) 'done))) (client-item-tasks c)))
+
+  (define (quit-item-task! c)
+    (let ([tasks (live-item-tasks c)])
+      (client-item-tasks-set! c tasks)
+      (let ([t (find (lambda (t) (memq (task-state t) '(running paused))) tasks)])
+        (when t
+          (if (eq? t (client-quit-cancelled c))
+              (stop-task t)
+              (begin
+                (client-quit-cancelled-set! c t)
+                (cancel-task t 'quit)))))))
+
+  (define (post-item c thunk)
+    (let ([t (post-as-web thunk)])
+      (when t
+        (client-item-tasks-set! c (cons t (live-item-tasks c))))))
 
   (define (enqueue! thunk)
     (set! outbox (cons thunk outbox))
@@ -149,7 +164,7 @@
     (let ([timer (client-removal-timer c)])
       (when timer
         (client-removal-timer-set! c #f)
-        (cancel-timer! timer)))
+        (timers:cancel! timer)))
     (client-removed c))
 
   (define (reload-page stream)
@@ -167,7 +182,7 @@
           [(or (client-removed? c) (fx< seq (client-next c)) (hashtable-contains? pending seq)) #f]
           [else
            (when (eq? (field item "quit") #t)
-             (request-quit!))
+             (quit-item-task! c))
            (hashtable-set! pending seq item)
            (let loop ()
              (let* ([n (client-next c)] [next (hashtable-ref pending n #f)])
@@ -175,7 +190,7 @@
                  (hashtable-delete! pending n)
                  (client-next-set! c (fx+ n 1))
                  (set! queued (fx+ queued 1))
-                 (post-as-web (lambda () (run-item c n next)))
+                 (post-item c (lambda () (run-item c n next)))
                  (loop))))
            (and (fx>= (hashtable-size pending) max-held-items)
                 (begin (remove-client! c) #t))]))))
@@ -193,7 +208,7 @@
 
   (define (handle-in-order c seq item)
     (dynamic-wind
-      (lambda () (set-idle! #f))
+      (lambda () (timers:set-idle! #f))
       (lambda ()
         (unless (client-removed? c)
           (client-through-set! c seq)
@@ -201,23 +216,24 @@
             (handle-item c item))))
       (lambda ()
         (when (with-lock (fx= queued 0))
-          (set-idle! #t)))))
+          (timers:set-idle! #t)))))
 
   ;; One task runs the waiting items in order, and stops where one of
   ;; them asks its page in turn.
   (define (release-deferred! c)
     (client-held-set! c (fx- (client-held c) 1))
     (when (and (fx= (client-held c) 0) (pair? (client-deferred c)))
-      (with-lock (set! queued (fx+ queued 1)))
-      (post-as-web
-        (lambda ()
-          (with-lock (set! queued (fx- queued 1)))
-          (let loop ()
-            (let ([items (client-deferred c)])
-              (when (and (fx= (client-held c) 0) (pair? items))
-                (client-deferred-set! c (cdr items))
-                (handle-in-order c (caar items) (cdar items))
-                (loop))))))))
+      (with-lock
+        (set! queued (fx+ queued 1))
+        (post-item c
+          (lambda ()
+            (with-lock (set! queued (fx- queued 1)))
+            (let loop ()
+              (let ([items (client-deferred c)])
+                (when (and (fx= (client-held c) 0) (pair? items))
+                  (client-deferred-set! c (cdr items))
+                  (handle-in-order c (caar items) (cdar items))
+                  (loop)))))))))
 
   ;; The question goes after the screen the batch draws, so the page
   ;; answers about what the asking command has done so far.
@@ -266,9 +282,9 @@
 
   (define (handle-item c item)
     (let* ([type (field item "type")]
-           [handler (and (string? type) (table-ref input-handlers type #f))])
+           [handler (and (string? type) (tables:ref input-handlers type #f))])
       (cond
-        [handler (as-module (table-owner input-handlers type) (handler c item))]
+        [handler (call-as-owner (tables:owner input-handlers type) (lambda () (handler c item)))]
         [(member type reported-types) (void)]
         [else
          (set! reported-types (cons type reported-types))
@@ -323,17 +339,17 @@
   (define upload-failed (response 500 '(("content-type" . "text/plain")) "The upload's handler failed\n"))
 
   ;; The server's copy of the table keeps an entry until the batch that
-  ;; unloads its module ends, so as-module may refuse the owner: the name
-  ;; then has no handler. Advice on report may touch editor state, so a
+  ;; unloads its module ends, so its owner may have begun to unload: the
+  ;; name then has no handler. Advice on report may touch editor state, so a
   ;; handler's raise is reported on the main thread, as the handler's
   ;; module's.
   (define (run-upload entry c body)
-    (guard (e [(and (assertion-violation? e) (who-condition? e) (eq? (condition-who e) 'as-module))
-               not-found])
-      (as-module (caddr entry)
-        (guard (e [#t (post! (lambda () (report e))) upload-failed])
-          ((cadr entry) c body)
-          no-content))))
+    (guard (e [(and (unloaded? e) (eq? (unloaded-owner e) (caddr entry))) not-found])
+      (call-as-owner (caddr entry)
+        (lambda ()
+          (guard (e [#t (spawn-task (lambda (restore) (report e))) upload-failed])
+            ((cadr entry) c body)
+            no-content)))))
 
   (define (upload request)
     (let* ([parts (request-parts request "/upload/")]
@@ -482,13 +498,13 @@
 
   (define (schedule-removal! c)
     (unless (or (client-removed? c) (with-lock (client-stream c)) (client-removal-timer c))
-      (client-removal-timer-set! c (run-with-timer removal-seconds (lambda () (expire! c))))))
+      (client-removal-timer-set! c (timers:run-after removal-seconds (lambda () (expire! c))))))
 
   (define (stream-opened! c)
     (let ([timer (client-removal-timer c)])
       (when timer
         (client-removal-timer-set! c #f)
-        (cancel-timer! timer))))
+        (timers:cancel! timer))))
 
   (define (expire! c)
     (client-removal-timer-set! c #f)
@@ -510,15 +526,16 @@
             (sse-response stream)))))
 
   (define (owner-folder owner)
-    (if (member owner '((init) (repl)))
-        configuration-folder
-        (let-values ([(source object found?)
-                      ((library-search-handler) 'web owner (library-directories) (library-extensions))])
-          (and source (path-parent source)))))
+    (let ([name (owner-name owner)])
+      (if (eq? (module-owner name) owner)
+          (let-values ([(source object found?)
+                        (default-library-search-handler 'web name (library-directories) (library-extensions))])
+            (and source (path-parent source)))
+          configuration-folder)))
 
   (define (table-files table)
-    (map (lambda (entry) (list (car entry) (cdr entry) (table-owner table (car entry))))
-         (table-entries table)))
+    (map (lambda (entry) (list (car entry) (cdr entry) (tables:owner table (car entry))))
+         (tables:entries table)))
 
   (define (modification-time path)
     (guard (e [(i/o-error? e) #f])
@@ -697,7 +714,7 @@
            (string=? (substring path 0 (string-length prefix)) prefix)
            (split-path (substring path (string-length prefix) (string-length path))))))
 
-  (define page-folder (string-append (owner-folder (this-module)) "/web/page"))
+  (define page-folder (string-append (owner-folder %self) "/web/page"))
 
   (define (page-file request)
     (let ([file (relative-path (request-parts request "/web/"))])
@@ -836,7 +853,7 @@
     (add-duration t (make-time 'time-duration 0 heartbeat-seconds)))
 
   ;; Once a stream's response has begun, only this thread writes to it, in
-  ;; the order queued: a quit can split the stream library's own lock when
+  ;; the order queued: a cancel can split the stream library's own lock when
   ;; its code runs on the main thread. H2O ends a response that writes
   ;; nothing for its I/O timeout, and so may a proxy between, so every page
   ;; gets a comment on a fixed period: a period that any write restarted
@@ -933,12 +950,12 @@
       (allow-hosts!)
       (set! server
         (if also
-            (guard (e [(not (quit-condition? e)) (report e) (listen p '("127.0.0.1"))])
+            (guard (e [(not (cancelled? e)) (report e) (listen p '("127.0.0.1"))])
               (listen p (list "127.0.0.1" also)))
             (listen p '("127.0.0.1"))))
       (set! server-settings (current-settings))
       (with-lock (set! sender me))
-      (fork-thread (lambda () (send-loop me)))
+      (fork-task (lambda (restore) (send-loop me)))
       (printf "Tuna is at http://127.0.0.1:~a/\n" p)
       (flush-output-port (current-output-port))))
 
@@ -955,11 +972,13 @@
   ;; the code running now has finished, and only if a setting is new.
   (define (restart-server!)
     (when started?
-      (as-module (this-module)
-        (post! (lambda ()
-                 (unless (and server (equal? server-settings (current-settings)))
-                   (stop-server!)
-                   (start-server!)))))))
+      (call-as-owner %self
+        (lambda ()
+          (spawn-task
+            (lambda (restore)
+              (unless (and server (equal? server-settings (current-settings)))
+                (stop-server!)
+                (start-server!))))))))
 
   ;; Started after the batch the plugin loads in, so that what that batch
   ;; posted runs first, such as settings from the command line, whichever
@@ -983,19 +1002,19 @@
 
 (import %internals)
 
-(define-option port 7337 (lambda (v) (and (fixnum? v) (fx<= 1 v 65535)))
+(options:define-option port 7337 (lambda (v) (and (fixnum? v) (fx<= 1 v 65535)))
   "The port Tuna listens on, on 127.0.0.1 and on web:listen-also."
   (lambda (v) (restart-server!)))
 
-(define-option hosts '() (lambda (v) (and (list? v) (for-all string? v)))
+(options:define-option hosts '() (lambda (v) (and (list? v) (for-all string? v)))
   "Host names, as a Host header gives them, that reach the port besides 127.0.0.1 and localhost."
   (lambda (v) (allow-hosts!)))
 
-(define-option listen-also #f (lambda (v) (or (not v) (string? v)))
+(options:define-option listen-also #f (lambda (v) (or (not v) (string? v)))
   "A second numeric address the port is listened on, for a reverse proxy; needs web:proxy-secret-file."
   (lambda (v) (restart-server!)))
 
-(define-option proxy-secret-file #f
+(options:define-option proxy-secret-file #f
   ;; Chez counts ~user/ as absolute too, but only ~/ is expanded here.
   (lambda (v)
     (or (not v)
@@ -1004,20 +1023,20 @@
   "The file, of mode 600, whose text a request from a peer other than 127.0.0.1 or ::1 must give as Tuna-Proxy-Secret."
   (lambda (v) (restart-server!)))
 
-(define-hook client-added "Called with a client when its page is served.")
+(hooks:define-hook client-added "Called with a client when its page is served.")
 
-(define-hook client-removed "Called with a client that has been removed.")
+(hooks:define-hook client-removed "Called with a client that has been removed.")
 
-(define-table input-handlers "Maps an item's type to a procedure of the client and the item.")
+(tables:define-table input-handlers "Maps an item's type to a procedure of the client and the item.")
 
-(define-table upload-handlers
+(tables:define-table upload-handlers
   "Maps a name to a procedure of a client and a bytevector, called on a server thread with the body of each upload to /upload/NAME.")
 
-(define-table stylesheets "Maps a name to a CSS file that every page links.")
+(tables:define-table stylesheets "Maps a name to a CSS file that every page links.")
 
-(define-table scripts "Maps a name to a JavaScript module that every page loads.")
+(tables:define-table scripts "Maps a name to a JavaScript module that every page loads.")
 
-(define-table early-scripts
+(tables:define-table early-scripts
   "Maps a name to a classic script that every page runs in its head, before the first screen is painted.")
 
 (define current-client

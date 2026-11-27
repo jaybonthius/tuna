@@ -35,7 +35,7 @@
         (file "b.txt" (hunk "@@ -1 +1 @@" "-beta" "+BETA")))
       (ui:section '((type . staged)) "Staged changes (1)" (file "b.txt" (hunk "@@ -1 +1 @@" "-alpha" "+ALPHA")))
       (ui:section '((type . stashes)) "Stashes (1)" "stash@{0} WIP")))
-> (table-set! ui:section-initial-visibility 'untracked 'hide)
+> (tables:set! ui:section-initial-visibility 'untracked 'hide)
 > (define b (buffers:make "*status*" first-status))
 > (buffers:set-silent! b #t)
 > (modes:set-major-mode ui:section-mode b)
@@ -48,7 +48,7 @@
 ; n moves to the first child of a shown section, else the next sibling,
 ; else the parent's next sibling; p back; ^ to the parent.
 > (define moved '())
-> (add-hook! ui:section-moved (lambda (view section) (set! moved (cons (and section (ui:section-value section)) moved))))
+> (hooks:add! ui:section-moved (lambda (view section) (set! moved (cons (and section (ui:section-value section)) moved))))
 > (define (at-point) (let ([s (ui:section-at v)]) (and s (list (ui:section-type s) (ui:section-value s)))))
 > (define (n! . keys) (apply press! keys) (at-point))
 > (n! "n")
@@ -215,7 +215,7 @@
 ; the first chooser that answers.
 > (ui:hide-section! v (ui:find-section b '((file . "a.py") (unstaged . #f))))
 > (ui:show-section! v (ui:find-section b '((stashes . #f))))
-> (add-hook! ui:section-visibility-choosers
+> (hooks:add! ui:section-visibility-choosers
     (lambda (view section) (and (eq? (ui:section-type section) 'file) (equal? (ui:section-value section) "big.bin") 'hide)))
 > (buffers:reconcile! b (document:token (buffers:document b) 0)
     (cdr (cdr (status-datum
@@ -280,15 +280,15 @@
 "<span class=\"ui-section-chevron\" data-keymap=\"2 clickable\" aria-hidden=\"true\">▾</span>"
 > (let ([s (html v)]) (list (and (element v "<span class=\"ui-section-ellipsis\"" "span") #t)))
 (#t)
-> (set-option! ui:highlight-current-section? #f)
+> (options:set! ui:highlight-current-section? #f)
 > (classes)
 ("ui-section" "ui-section" "ui-section" "ui-section hidden" "ui-section" "ui-section" "ui-section" "ui-section" "ui-section" "ui-section" "ui-section hidden")
-> (remove-option! ui:highlight-current-section?)
+> (options:unset! ui:highlight-current-section?)
 ; A click on a chevron toggles its section and moves point to its
 ; heading; sections:moved follows any command that changes the section
 ; at point.
 > (set! moved '())
-> (define chevron (vector (read (open-input-string (views:keymap-mark ui:%section-chevron-keys)))))
+> (define chevron (vector (read (open-input-string (views:keymap-mark (eval-in-module '%section-chevron-keys '(ui)))))))
 > (define (click-chevron! identity)
     (let ([p (heading-of identity)])
       (mouse-in! v "down" `(("token" . ,p)) (cons "keymaps" chevron))
@@ -316,7 +316,7 @@
 ; Rebuilding with the same datums edits nothing, so nothing is settled
 ; again.
 > (define edits 0)
-> (add-hook! buffers:after-edit (lambda (buffer edit) (when (eq? buffer b) (set! edits (+ edits 1)))))
+> (hooks:add! buffers:after-edit (lambda (buffer edit) (when (eq? buffer b) (set! edits (+ edits 1)))))
 > (define (current-datum)
     (status-datum
       (ui:section '((type . unstaged)) "Unstaged changes (3)"
@@ -344,7 +344,7 @@
 > (visible u)
 ("Head:     main Second commit" "Unstaged" "Stashes" "stash@{0} WIP")
 > (define renames 0)
-> (add-hook! buffers:after-edit (lambda (buffer edit) (when (eq? buffer c) (set! renames (+ renames 1)))))
+> (hooks:add! buffers:after-edit (lambda (buffer edit) (when (eq? buffer c) (set! renames (+ renames 1)))))
 > (buffers:reconcile! c (document:token (buffers:document c) 0) (cddr (renamed "two")))
 > (list renames (visible u))
 (1 ("Head:     main Second commit" "Unstaged" "Stashes…"))

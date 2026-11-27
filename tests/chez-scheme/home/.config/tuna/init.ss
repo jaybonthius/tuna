@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins) (tuna eval) (document) (web) (disk))
+(import (hooks) (options) (tables) (timers) (plugins))
+(import (tuna) (document) (web) (disk))
 (use-plugin layout)
 (use-plugin modes)
 (use-plugin auto-mode)
@@ -6,11 +7,11 @@
 (use-plugin files)
 (use-plugin prog
   (config
-    (add-hook! prog:mode-hook
-      (lambda () (set-option-local! files:require-final-newline #t)))))
+    (hooks:add! prog:mode-hook
+      (lambda () (options:set-local! files:require-final-newline #t)))))
 (use-plugin chez-scheme
   (config
-    (table-set! auto-mode:file-names "ms" chez-scheme:mode)
+    (tables:set! auto-mode:file-names "ms" chez-scheme:mode)
     (keys:bind! chez-scheme:keymap "C-c C-u" editing:upcase-region)))
 
 (define (text b) (document:text (buffers:document b)))
@@ -29,7 +30,7 @@
     (let ([now (list (buffers:spans (buffers:layer b syntax-highlighting:faces) 0 (document:length (buffers:document b)))
                      (buffers:spans (buffers:layer b syntax:brackets) 0 (document:length (buffers:document b))))])
       (unless (or (= same 15) (= n 500))
-        (sleep-for 0.02)
+        (timers:sleep 0.02)
         (loop (+ n 1) (if (equal? now last) (+ same 1) 0) now)))))
 
 (define (faces b)

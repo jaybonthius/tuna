@@ -1,30 +1,30 @@
 #!tuna
 (import (search) (isearch) (buffers) (document) (views) (keys) (commands) (minibuffer) (ask) (jump-history) (faces)
-        (web))
+        (web) (hooks) (options) (tables) (saved))
 
-(define-option preserve-case #t boolean?
+(options:define-option preserve-case #t boolean?
   "Whether a replacement takes the case of what it replaces.")
 
-(define-option lax-whitespace #f boolean?
+(options:define-option lax-whitespace #f boolean?
   "Whether a run of spaces in M-%'s text matches search:whitespace.")
 
-(define-option skip-read-only #f boolean?
+(options:define-option skip-read-only #f boolean?
   "Whether a match the buffer refuses to edit is passed over rather than ending the session.")
 
-(define-saved history '()
+(saved:define-saved history '()
   (lambda (v) (and (list? v) (for-all (lambda (p) (and (pair? p) (string? (car p)) (string? (cdr p)))) v))))
 
-(define-saved prompt-history '() (lambda (v) (and (list? v) (for-all string? v))))
+(saved:define-saved prompt-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
-(define-hook started "Called with a session once its keymap is pushed, before it asks about its first match.")
+(hooks:define-hook started "Called with a session once its keymap is pushed, before it asks about its first match.")
 
-(define-hook updated "Called with a session each time it asks about a match, and when its scan reports.")
+(hooks:define-hook updated "Called with a session each time it asks about a match, and when its scan reports.")
 
-(define-hook ended "Called with a session and the number of replacements it made, after its keymap and highlights are gone.")
+(hooks:define-hook ended "Called with a session and the number of replacements it made, after its keymap and highlights are gone.")
 
-(define-table keymap "The keymap of a replace session, a temporary keymap of its client.")
+(tables:define-table keymap "The keymap of a replace session, a temporary keymap of its client.")
 
-(define-table %paused-keymap "The keymap of a paused session: only replace:resume.")
+(tables:define-table %paused-keymap "The keymap of a paused session: only replace:resume.")
 
 (define match 'replace.match)
 
@@ -339,7 +339,7 @@
 
 (define (%add-history! from to)
   (let ([pairs (cons (cons from to) (remove (cons from to) (history)))] [n (minibuffer:history-length)])
-    (set-saved! history (if (> (length pairs) n) (list-head pairs n) pairs))))
+    (saved:set! history (if (> (length pairs) n) (list-head pairs n) pairs))))
 
 (define (%rescan-preview! view client state text style)
   (let ([old (car state)])
@@ -355,9 +355,9 @@
   (let* ([view (views:current)] [client (web:current-client)] [state (list #f)] [prompt #f]
          [follow (lambda (p) (when (eq? p prompt) (%rescan-preview! view client state (minibuffer:input p) style)))])
     (define (stop!)
-      (remove-hook! minibuffer:input-changed follow)
+      (hooks:remove! minibuffer:input-changed follow)
       (%rescan-preview! view client state "" style))
-    (add-hook! minibuffer:input-changed follow)
+    (hooks:add! minibuffer:input-changed follow)
     ;; Not dynamic-wind: its exit would run each time the task pauses.
     (let-values ([(from chosen) (guard (c [#t (stop!) (raise c)])
                                   (minibuffer:call-with-setup
@@ -555,7 +555,7 @@
   (let* ([s (%current who)] [r (%session-replacement s)])
     (%session-waiting?-set! s #t)
     (%end-keymap! s)
-    (let ([new (guard (c [(quit-condition? c) (%session-waiting?-set! s #f) (%finish! s) (raise c)])
+    (let ([new (guard (c [(cancelled? c) (%session-waiting?-set! s #f) (%finish! s) (raise c)])
                  (minibuffer:call-with-setup
                    (lambda (p) (when (string? r) (minibuffer:set-input! p r)))
                    (lambda () (minibuffer:read "Edit replacement string: " #f))))])
@@ -641,5 +641,5 @@
 (keys:bind! keymap "C-v" views:scroll-up)
 (keys:bind! keymap "M-v" views:scroll-down)
 (keys:bind! %paused-keymap "C-M-c" resume)
-(table-set! web:stylesheets 'replace "replace/replace.css")
+(tables:set! web:stylesheets 'replace "replace/replace.css")
 (on-unload %end-all!)

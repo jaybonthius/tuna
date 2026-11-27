@@ -1,5 +1,6 @@
 #!tuna
-(import (document) (buffers) (views) (layout) (layout-split) (web) (haml) (http) (scroll-report))
+(import (document) (buffers) (views) (layout) (layout-split) (web) (haml) (http) (scroll-report) (tables) (timers)
+  (rename (only (chezscheme) collect-request-handler) (collect-request-handler chez:collect-request-handler)))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -84,7 +85,7 @@
 (define (wait-for done?)
   (let loop ([n 0])
     (unless (or (done?) (= n 500))
-      (sleep-for 0.01)
+      (timers:sleep 0.01)
       (loop (+ n 1)))))
 
 ;; The pages confirm no screen, so that their work does not share the
@@ -96,7 +97,7 @@
 
 (define (report! v client height)
   (let ([top (document:line (buffers:document (views:buffer v)) (views:top v client))])
-    ((table-ref web:input-handlers "scroll") client (scroll-report:make v client top height #t))))
+    ((tables:ref web:input-handlers "scroll") client (scroll-report:make v client top height #t))))
 
 (define (measure-all!)
   (for-each
@@ -129,11 +130,17 @@
     (printf "~a: ~a lines drawn, ~a bytes a screen\n" name (lines-drawn client) (screen-bytes client))
     (show (string-append "draw-" name) (draw-cost client))))
 
+;; Every thread stops for a full collection, since collect alone refuses
+;; while other threads run.
+(define (collect-fully)
+  (parameterize ([chez:collect-request-handler (lambda () (collect (collect-maximum-generation)))])
+    (collect-rendezvous)))
+
 (define (run)
   (http:use-port! (lambda () (web:port)))
   (http:wait-for-server)
   (let ([text (text-buffer "text" 22000)] [nodes (node-buffer "nodes" 22000)])
-    (collect (collect-maximum-generation))
+    (collect-fully)
     (connect-pages! 1)
     (show-layout! text 1)
     (measure-all!)

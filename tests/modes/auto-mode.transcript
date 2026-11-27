@@ -1,7 +1,7 @@
 ; By the program a #! line names: the last part of its path; for env,
 ; the first argument that neither starts with - nor contains =; as
 ; written, then without a trailing version.
-> (table-set! auto-mode:interpreters "guile" text:mode)
+> (tables:set! auto-mode:interpreters "guile" text:mode)
 > (define n 0)
 > (define (first-line-mode line)
     (set! n (+ n 1))
@@ -21,8 +21,8 @@
 ; By file name: the last part, without a trailing ~, whole, then from
 ; each dot on, longest first; as written, then in lowercase.
 > (import (archive) (make))
-> (table-set! auto-mode:file-names "Makefile" make:mode)
-> (table-set! auto-mode:file-names "gz" text:mode)
+> (tables:set! auto-mode:file-names "Makefile" make:mode)
+> (tables:set! auto-mode:file-names "gz" text:mode)
 > (define b (buffers:make "b" "x"))
 > (map (lambda (name) (auto-mode:by-file-name b name))
        '("/src/Makefile" "/src/makefile" "/x/a.tar.gz" "/x/a.gz" "/x/A.TAR.GZ" "/x/a.py~" "/x/a.py~~"
@@ -31,7 +31,7 @@
 ; A procedure's result is the result, #f included: the lookup stops there.
 > (define seen '())
 > (define (looked buffer name) (set! seen (cons name seen)) #f)
-> (table-set! auto-mode:file-names "bak" looked)
+> (tables:set! auto-mode:file-names "bak" looked)
 > (auto-mode:by-file-name b "/x/a.py.bak~")
 #f
 > seen
@@ -42,17 +42,18 @@ text:mode
 ; in the buffer, so a local value counts.
 > (auto-mode:choose b "/x/a.nothing")
 text:mode
-> (buffers:with-buffer b (set-option-local! auto-mode:default-mode prog:mode))
+> (buffers:with-buffer b (options:set-local! auto-mode:default-mode prog:mode))
 > (auto-mode:choose b "/x/a.nothing")
 prog:mode
 > (define plain-script (buffers:make "plain-script" "#!/usr/bin/env python\n"))
 > (list (auto-mode:choose plain-script "Makefile") (auto-mode:choose plain-script))
 (python:mode python:mode)
-> (remove-hook! auto-mode:choosers auto-mode:by-interpreter)
-> (add-hook! auto-mode:choosers auto-mode:by-interpreter 10)
+> (define mover (make-owner '(mover)))
+> (call-as-owner mover (lambda () (hooks:remove! auto-mode:choosers auto-mode:by-interpreter)))
 > (auto-mode:choose plain-script "Makefile")
 make:mode
-> (add-hook! auto-mode:choosers auto-mode:by-interpreter -10)
+> (unload-owner! mover)
+> (hooks:add! auto-mode:choosers auto-mode:by-interpreter -10)
 > (raised (lambda () (auto-mode:choose "b")))
 (auto-mode:choose "not a buffer")
 > (raised (lambda () (auto-mode:choose b 'name)))
@@ -68,12 +69,12 @@ make:mode
 ; A chooser that raises makes the visit's choice raise; the visit goes on
 ; and the buffer keeps modes:fundamental.
 > (define (broken buffer name) (car '()))
-> (add-hook! auto-mode:choosers broken -100)
+> (hooks:add! auto-mode:choosers broken -100)
 > (disk:write-text! "~/one.py" "1\n")
 > (modes:major-mode (files:visit "~/one.py"))
 ! car: () is not a pair
 modes:fundamental
-> (remove-hook! auto-mode:choosers broken)
+> (hooks:remove! auto-mode:choosers broken)
 > (define one (files:visit "~/one.py"))
 ; normal-mode chooses again; run by a key, its buffer is the current one.
 > (auto-mode:normal-mode one)
@@ -84,23 +85,20 @@ python:mode
 python:mode
 ; The visit's entry runs before the user's entries at the default depth,
 ; so their local values survive; a revert keeps the mode.
-> (add-hook! files:after-visit (lambda (b) (set-option-local! fill:column 40)))
+> (hooks:add! files:after-visit (lambda (b) (options:set-local! fill:column 40)))
 > (disk:write-text! "~/two.py" "2\n")
 > (define two (files:visit "~/two.py"))
 > (list (modes:major-mode two) (local fill:column two) (local fill:mode two))
 (python:mode 40 #t)
-> (buffers:with-buffer two (set-option-local! fill:column 41))
+> (buffers:with-buffer two (options:set-local! fill:column 41))
 > (disk:write-text! "~/two.py" "22\n")
 > (files:revert-from-file two)
 > (list (modes:major-mode two) (local fill:column two) (text two))
 (python:mode 41 "22\n")
-; Buffers open before auto-mode loads keep their mode; normal-mode
-; chooses again on request.
-> (unload-module! '(auto-mode))
+; normal-mode chooses again on request.
 > (disk:write-text! "~/three.py" "3\n")
 > (define three (files:visit "~/three.py"))
-> (load-module! '(auto-mode))
-> (load-module! '(python))
+> (modes:set-major-mode modes:fundamental three)
 > (modes:major-mode three)
 modes:fundamental
 > (auto-mode:normal-mode three)
@@ -112,13 +110,13 @@ python:mode
 ; and the delayed mode hooks run once, in the same buffer.
 > (define visited '())
 > (define (note-visit b) (set! visited (cons (buffers:name b) visited)))
-> (add-hook! files:after-visit note-visit)
+> (hooks:add! files:after-visit note-visit)
 > (define hooked '())
 > (define (note-hook) (set! hooked (cons (buffers:name (buffers:current)) hooked)))
-> (add-hook! python:mode-hook note-hook)
+> (hooks:add! python:mode-hook note-hook)
 > (define previewed '())
 > (define (note-preview b) (set! previewed (cons (list (buffers:name b) (modes:major-mode b)) previewed)))
-> (add-hook! modes:delayed-mode-changed note-preview)
+> (hooks:add! modes:delayed-mode-changed note-preview)
 > (disk:write-text! "~/four.py" "4\n")
 > (define four (files:visit-temporarily "~/four.py"))
 > (list (modes:major-mode four) (modes:hooks-delayed? four) (files:temporary? four) visited hooked previewed)
@@ -148,6 +146,6 @@ python:mode
 > (modes:run-delayed-hooks five)
 > hooked
 ("five.py")
-> (remove-hook! files:after-visit note-visit)
-> (remove-hook! python:mode-hook note-hook)
-> (remove-hook! modes:delayed-mode-changed note-preview)
+> (hooks:remove! files:after-visit note-visit)
+> (hooks:remove! python:mode-hook note-hook)
+> (hooks:remove! modes:delayed-mode-changed note-preview)

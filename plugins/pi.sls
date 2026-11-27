@@ -1,15 +1,17 @@
 #!tuna
-(import (processes) (jobs) (json))
+(import (processes) (jobs) (json) (hooks) (options) (timers) (saved))
 
-(define-option command '("pi")
+(define %self (current-owner))
+
+(options:define-option command '("pi")
   (lambda (v) (and (list? v) (pair? v) (for-all string? v)))
   "The program and its first arguments that start Pi; pi adds --mode rpc and --session-id.")
 
-(define-hook chat-changed "Called with a chat whenever Pi's output changes it, and when a chat starts or ends.")
+(hooks:define-hook chat-changed "Called with a chat whenever Pi's output changes it, and when a chat starts or ends.")
 
-(define-hook activity-changed "Called with a chat, its old activity and its new one.")
+(hooks:define-hook activity-changed "Called with a chat, its old activity and its new one.")
 
-(define-hook editor-text-requested "Called with a chat and a text when an extension sets the editor's text.")
+(hooks:define-hook editor-text-requested "Called with a chat and a text when an extension sets the editor's text.")
 
 (define-enumeration activity (starting idle thinking replying running compacting retrying exited) %activities)
 
@@ -24,7 +26,7 @@
 ;; Questions, statuses, widgets and the queue are saved because Pi says
 ;; each once, and the log that a reload replays keeps only the latest
 ;; output.
-(define-saved %chats '() (lambda (v) (and (list? v) (for-all vector? v))))
+(saved:define-saved %chats '() (lambda (v) (and (list? v) (for-all vector? v))))
 
 (define-record-type (%item %make-item %item?)
   (fields (immutable key item-key) (immutable entry-id item-entry-id)))
@@ -398,7 +400,7 @@
 
 (define (%check-version!)
   (let ([cmd (command)])
-    (guard (c [(not (quit-condition? c))
+    (guard (c [(not (cancelled? c))
                (set! %version-refusal #f)
                (report (condition (make-warning)
                          (make-message-condition
@@ -439,7 +441,7 @@
             (%chat-answered chat))))
 
 (define (%save!)
-  (set-saved! %chats (map %chat->saved %live-chats)))
+  (saved:set! %chats (map %chat->saved %live-chats)))
 
 (define (%changed! chat)
   (%chat-transcript-cache-set! chat #f)
@@ -474,12 +476,13 @@
       (%refuse who "the chat has no Pi"))
     (suspend
       (lambda (resume)
-        (as-module (this-module)
-          (%request! link obj
-            (lambda (data) (resume (lambda () data)))
-            (lambda (message)
-              (let ([c (condition (%make-refused) (make-who-condition who) (make-message-condition message))])
-                (resume (lambda () (raise c)))))))))))
+        (call-as-owner %self
+          (lambda ()
+            (%request! link obj
+              (lambda (data) (resume (lambda () data)))
+              (lambda (message)
+                (let ([c (condition (%make-refused) (make-who-condition who) (make-message-condition message))])
+                  (resume (lambda () (raise c))))))))))))
 
 (define (%fail-pending! link message)
   (let-values ([(ids handlers) (hashtable-entries (link-pending link))])
@@ -848,8 +851,9 @@
   (when (%dialog-timeout d)
     (let ([left (/ (- (+ (%dialog-arrived d) (%dialog-timeout d)) (now-ms)) 1000)])
       (%chat-timers-set! chat
-        (cons (as-module (this-module)
-                (run-with-timer (max 0 (inexact left)) (lambda () (%drop-dialog! chat d))))
+        (cons (call-as-owner %self
+                (lambda ()
+                  (timers:run-after (max 0 (inexact left)) (lambda () (%drop-dialog! chat d)))))
               (%chat-timers chat))))))
 
 (define (%drop-dialog! chat d)
@@ -1060,18 +1064,19 @@
 ;; that module's reload leaves the chat followed.
 (define (%follow! chat process replaying?)
   (let ([link (make-link process replaying?)])
-    (as-module (this-module)
-      (link-job-set! link
-        (jobs:start %parser #f (lambda (value) (%parsed! chat link value))))
-      (processes:attach! process 0
-        (lambda (bytes end)
-          (unless (link-ended? link)
-            (if (eof-object? bytes)
-                (%end-parsing! link)
-                (jobs:send! (link-job link) (cons bytes end)))))
-        (lambda (status)
-          (%end-parsing! link)
-          (%exited! chat link status))))
+    (call-as-owner %self
+      (lambda ()
+        (link-job-set! link
+          (jobs:start %parser #f (lambda (value) (%parsed! chat link value))))
+        (processes:attach! process 0
+          (lambda (bytes end)
+            (unless (link-ended? link)
+              (if (eof-object? bytes)
+                  (%end-parsing! link)
+                  (jobs:send! (link-job link) (cons bytes end)))))
+          (lambda (status)
+            (%end-parsing! link)
+            (%exited! chat link status)))))
     link))
 
 ;; A process that is stopped, or that never started, delivers its exit
@@ -1119,7 +1124,7 @@
       ;; runs, and so before the task starts.
       [else
        (spawn-task
-         (lambda ()
+         (lambda (restore)
            (when (and (memq chat %live-chats) (not (%chat-link chat)))
              (%start-process! chat)
              (%changed! chat))))])))
@@ -1165,41 +1170,42 @@
     (let ([new (%follow! chat (%launch chat (%chat-session-id chat)) #f)])
       (suspend
         (lambda (resume)
-          (as-module (this-module)
-            (%request! new '(("type" . "get_state"))
-              (lambda (data)
-                (resume
-                  (lambda ()
-                    (when (and old (not (link-ended? old)))
-                      (link-ended?-set! old #t)
-                      (%fail-pending! old "Pi was restarted")
-                      (jobs:stop! (link-job old))
-                      (processes:stop! (link-process old)))
-                    (%chat-link-set! chat new)
-                    (%chat-dialogs-set! chat '())
-                    (%chat-statuses-set! chat '())
-                    (%chat-widgets-set! chat '())
-                    (hashtable-clear! (%chat-tools chat))
-                    (%chat-live-set! chat '())
-                    (%chat-notices-set! chat '())
-                    (%set-activity! chat (activity idle))
-                    (let ([held (reverse (link-held new))])
-                      (link-held-set! new '())
-                      (for-each (lambda (record) (%record! chat new record)) held))
-                    (%save!)
-                    (%refresh-all! chat)
-                    (%changed! chat))))
-              (lambda (message)
-                (resume
-                  (lambda ()
-                    (processes:stop! (link-process new))
-                    (%refuse 'pi:restart! message)))))))))))
+          (call-as-owner %self
+            (lambda ()
+              (%request! new '(("type" . "get_state"))
+                (lambda (data)
+                  (resume
+                    (lambda ()
+                      (when (and old (not (link-ended? old)))
+                        (link-ended?-set! old #t)
+                        (%fail-pending! old "Pi was restarted")
+                        (jobs:stop! (link-job old))
+                        (processes:stop! (link-process old)))
+                      (%chat-link-set! chat new)
+                      (%chat-dialogs-set! chat '())
+                      (%chat-statuses-set! chat '())
+                      (%chat-widgets-set! chat '())
+                      (hashtable-clear! (%chat-tools chat))
+                      (%chat-live-set! chat '())
+                      (%chat-notices-set! chat '())
+                      (%set-activity! chat (activity idle))
+                      (let ([held (reverse (link-held new))])
+                        (link-held-set! new '())
+                        (for-each (lambda (record) (%record! chat new record)) held))
+                      (%save!)
+                      (%refresh-all! chat)
+                      (%changed! chat))))
+                (lambda (message)
+                  (resume
+                    (lambda ()
+                      (processes:stop! (link-process new))
+                      (%refuse 'pi:restart! message))))))))))))
 
 (define (stop! chat)
   (%check-chat 'pi:stop! chat)
   (when (memq chat %live-chats)
     (set! %live-chats (remq chat %live-chats))
-    (for-each cancel-timer! (%chat-timers chat))
+    (for-each timers:cancel! (%chat-timers chat))
     (let ([link (%chat-link chat)])
       (when link
         (link-ended?-set! link #t)
@@ -1459,11 +1465,12 @@
   (let ([found
          (suspend
            (lambda (resume)
-             (as-module (this-module)
-               (let ([result '()])
-                 (jobs:start %session-lister (%session-folder directory)
-                   (lambda (v) (set! result v))
-                   (lambda (ended) (resume (lambda () (if (condition? ended) (raise ended) result)))))))))])
+             (call-as-owner %self
+               (lambda ()
+                 (let ([result '()])
+                   (jobs:start %session-lister (%session-folder directory)
+                     (lambda (v) (set! result v))
+                     (lambda (ended) (resume (lambda () (if (condition? ended) (raise ended) result))))))))))])
     (sort (lambda (a b) (time>? (session-modified a) (session-modified b)))
           (map (lambda (v)
                  (%make-session (vector-ref v 0) (vector-ref v 1) (vector-ref v 2) (vector-ref v 3) (vector-ref v 4)
@@ -1472,7 +1479,7 @@
 
 (define (%command-changed option value)
   (when (eq? option command)
-    (spawn-task %check-version!)))
+    (spawn-task (lambda (restore) (%check-version!)))))
 
 ;; A task waiting for Pi's answer would wait for ever once nothing follows
 ;; Pi for this instance of pi.
@@ -1487,8 +1494,8 @@
               (vector-for-each (lambda (h) ((cdr h) "pi was unloaded")) handlers)))))
       %live-chats)))
 
-(add-hook! option-changed %command-changed)
+(hooks:add! options:changed %command-changed)
 
-(spawn-task %check-version!)
+(spawn-task (lambda (restore) (%check-version!)))
 
 (for-each %revive! (%chats))

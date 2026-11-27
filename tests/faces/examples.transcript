@@ -31,8 +31,8 @@
 "<div class=\"line\" id=\"v1-1\" data-line=\"1\" data-before=\"0\" data-at=\"1\"><span class=\"cursor-on primary\">(</span><span data-face=\"keyword\"><span data-face=\"spell.misspelled\">define</span></span> name <span data-face=\"markup.italic\"><span data-face=\"markup.strong\">\"Tuna\"</span></span>)</div><div class=\"line\" id=\"v1-2\" data-line=\"2\" data-before=\"21\"><br></div>"
 ; A face the face entry draws as nothing adds no element, in a list as
 ; alone.
-> (define face-attributes (table-ref views:span-properties 'face #f))
-> (table-set! views:span-properties 'face
+> (define face-attributes (tables:ref views:span-properties 'face #f))
+> (tables:set! views:span-properties 'face
     (lambda (face) (if (eq? face 'spell.misspelled) '() (face-attributes face))))
 > (buffers:set-spans! (buffers:layer buffer highlights) 0 22
     (list (list 2 8 (list (cons 'face (list 'spell.misspelled faces:keyword))))
@@ -40,11 +40,15 @@
 #t
 > (lines view)
 "<div class=\"line\" id=\"v1-1\" data-line=\"1\" data-before=\"0\" data-at=\"1\"><span class=\"cursor-on primary\">(</span><span data-face=\"keyword\">define</span> name \"Tuna\")</div><div class=\"line\" id=\"v1-2\" data-line=\"2\" data-before=\"21\"><br></div>"
-> (table-set! views:span-properties 'face face-attributes)
+> (tables:set! views:span-properties 'face face-attributes)
 ; Every face is a top-level definition, and the plugin's stylesheet styles
-; the families; turning it off takes the stylesheet back.
-> (table-ref web:stylesheets 'faces #f)
+; the families.
+; An unload takes the plugin's stylesheet entry back, and with it every
+; face rule of its own; the configuration, which imports the plugin,
+; loads a new instance that registers its own.
+> (tables:ref web:stylesheets 'faces #f)
 "faces/faces.css"
-> (unload-module! '(faces))
-> (table-ref web:stylesheets 'faces #f)
-#f
+> (define old (module-owner '(faces)))
+> (unload-owner! old)
+> (list (owner-live? old) (eq? (tables:owner web:stylesheets 'faces) (module-owner '(faces))))
+(#f #t)

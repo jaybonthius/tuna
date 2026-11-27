@@ -1,5 +1,6 @@
 #!tuna
-(import (document) (buffers) (views) (web) (haml) (views height-map) (scroll-report))
+(import (document) (buffers) (views) (web) (haml) (scroll-report) (tables)
+  (rename (only (chezscheme) collect-request-handler) (collect-request-handler chez:collect-request-handler)))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -44,32 +45,38 @@
        (let ([end (let scan ([j i]) (if (or (= j (string-length line)) (char=? (string-ref line j) #\space)) j (scan (+ j 1))))])
          (loop end (cons (list (+ start i) (+ start end) (if (even? n) '((face . keyword)) '((face . name)))) acc) (+ n 1)))])))
 
-(define made 0)
+;; Every thread stops for a full collection, since collect alone refuses
+;; while other threads run.
+(define (collect-fully)
+  (parameterize ([chez:collect-request-handler (lambda () (collect (collect-maximum-generation)))])
+    (collect-rendezvous)))
+
+(define %made 0)
 
 (define (file-buffer lines heavy?)
-  (set! made (+ made 1))
+  (set! %made (+ %made 1))
   (let* ([texts (map (lambda (k) (code-line k heavy?)) (iota lines))]
-         [b (buffers:make (format "bench-~a" made) (apply string-append texts))])
+         [b (buffers:make (format "bench-~a" %made) (apply string-append texts))])
     (let loop ([texts texts] [at 1] [spans '()])
       (if (null? texts)
           (buffers:set-spans! (buffers:layer b syntax) 0 (document:length (buffers:document b)) (reverse spans))
           (loop (cdr texts) (+ at (string-length (car texts)))
                 (append (reverse (spans-of-line at (car texts) heavy?)) spans))))
-    (collect (collect-maximum-generation))
+    (collect-fully)
     b))
 
 (define (node-buffer lines)
-  (set! made (+ made 1))
-  (let ([b (buffers:make (format "bench-~a" made)
+  (set! %made (+ %made 1))
+  (let ([b (buffers:make (format "bench-~a" %made)
              (apply code '() (map (lambda (k) (paragraph '() (code-line k #f))) (iota lines))))])
-    (collect (collect-maximum-generation))
+    (collect-fully)
     b))
 
 (define desk (web:make-client 1))
 
 (define (report-of v client top) (scroll-report:make v client top 990 #f))
 
-(define (report! v client top) ((table-ref web:input-handlers "scroll") client (report-of v client top)))
+(define (report! v client top) ((tables:ref web:input-handlers "scroll") client (report-of v client top)))
 
 (define (scrolled-view b)
   (let* ([v (views:make b)] [doc (buffers:document b)]
@@ -95,7 +102,7 @@
 (define (report-cost v)
   (let* ([doc (buffers:document (views:buffer v))] [top (document:line doc (views:top v desk))]
          [items (vector (report-of v desk top) (report-of v desk (+ top 1)))]
-         [handle (table-ref web:input-handlers "scroll")])
+         [handle (tables:ref web:input-handlers "scroll")])
     (ns-per-op 200 (lambda (i) (handle desk (vector-ref items (mod i 2)))))))
 
 (define (draw-cost v)
@@ -108,19 +115,6 @@
     (ns-per-op 200 (lambda (i) (html->string (views:draw v desktop)) (html->string (views:draw v phone))))))
 
 (define (drawn-lines v) (length (scroll-report:lines-drawn (html->string (views:draw v desk)))))
-
-(define (big-map)
-  (let ([m (make-height-map 600000 22.0 #f (lambda (a z) (values (quotient (- z a) 10) (- z a) 0 0)))])
-    (do ([i 0 (fx+ i 1)]) ((fx= i 60000) m)
-      (height-map-measure! m (* i 10) (* (+ i 1) 10) 22.0 #f))))
-
-(define (map-edit-cost)
-  (let ([m (big-map)] [count (lambda (a z) (values (quotient (- z a) 10) (- z a) 0 0))])
-    (ns-per-op 2000 (lambda (i) (let ([p (* 10 (mod (* i 7919) 59000))]) (height-map-replace! m (+ p 3) (+ p 3) (+ p 4) count))))))
-
-(define (map-lookup-cost)
-  (let ([m (big-map)])
-    (ns-per-op 20000 (lambda (i) (height-map-position m (height-map-px m (* 10 (mod (* i 7919) 60000))))))))
 
 ;; Views drawn from atoms are saved after each batch that changed one;
 ;; the batch here moves one cursor among ten such views.
@@ -178,13 +172,13 @@
     (ns-per-op 2000 (lambda (i) (views:next-stop v (+ p (mod i 200)))))))
 
 (define (one-line-view)
-  (set! made (+ made 1))
-  (let* ([b (buffers:make (format "bench-~a" made) (string-append (make-string 1000000 #\a) "\n"))]
+  (set! %made (+ %made 1))
+  (let* ([b (buffers:make (format "bench-~a" %made) (string-append (make-string 1000000 #\a) "\n"))]
          [v (views:make b)])
     (views:set-option! v views:wrap-lines #f)
     (views:set-point! v 500001)
     (report! v desk 1)
-    (collect (collect-maximum-generation))
+    (collect-fully)
     v))
 
 (define matches (list->vector (map (lambda (k) (+ 1 (* 8 k))) (iota 125000))))
@@ -209,9 +203,9 @@
   (let ([line (one-line-view)])
     (show "draw-one-line" (draw-cost line))
     (let ([source (match-source line)])
-      (table-set! views:span-sources source 1000)
+      (tables:set! views:span-sources source 1000)
       (show "draw-one-line-source" (draw-cost line))
-      (table-remove! views:span-sources source)))
+      (tables:remove! views:span-sources source)))
   (let ([typical (scrolled-view (file-buffer 22000 #f))]
         [heavy (scrolled-view (file-buffer 10000 #t))]
         [nodes (scrolled-view (node-buffer 22000))]
@@ -232,7 +226,4 @@
     (show "edit-ten-views" (edit-cost (file-buffer 1000 #f) (file-buffer 1000 #f)))
     (show "edit-other-views" (other-views-cost (file-buffer 1000 #f) (file-buffer 1000 #f)
                                                (map (lambda (k) (file-buffer 10 #f)) (iota 10))))
-    (show "next-stop" (stop-cost typical))
-    (show "map-edit-60000" (map-edit-cost))
-    (show "map-lookup-60000" (map-lookup-cost))
-    (show "map-bytes-60000" (compute-size (big-map)))))
+    (show "next-stop" (stop-cost typical))))

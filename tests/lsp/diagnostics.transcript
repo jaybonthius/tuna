@@ -2,8 +2,8 @@
 > (define a-path (string-append project "/a.fk"))
 > (write-file! a-path "import os\nx = 1\n")
 > (configure! "types" '(capabilities ("textDocumentSync" . 2)) '(name . "types"))
-> (table-set! lsp:language-servers "fakelang" (list types))
-> (add-hook! fake-mode-hook lsp:ensure)
+> (tables:set! lsp:language-servers "fakelang" (list types))
+> (hooks:add! fake-mode-hook lsp:ensure)
 > (define a (visit! a-path))
 > (wait-for "types" "textDocument/didOpen")
 > (define c (car (lsp:connections)))
@@ -47,7 +47,7 @@
 > (configure! "lint" '(capabilities ("textDocumentSync" . 2) ("diagnosticProvider" ("interFileDependencies" . #f) ("workspaceDiagnostics" . #f)))
                       '(responses ("textDocument/diagnostic" ("kind" . "full") ("items" . #((("range" ("start" ("line" . 1) ("character" . 0)) ("end" ("line" . 1) ("character" . 6))) ("severity" . 1) ("message" . "F401") ("source" . "Ruff"))))))
                       '(name . "lint"))
-> (table-set! lsp:language-servers "fakelang" (list types lint))
+> (tables:set! lsp:language-servers "fakelang" (list types lint))
 > (buffers:with-buffer a (lsp:ensure))
 > (wait-for "lint" "textDocument/didOpen")
 > (buffers:replace! a 1 1 "")
@@ -93,7 +93,7 @@
 > (press! "RET")
 > (testing:wait-until (lambda () (session)))
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (ref (last-of "types" "textDocument/codeAction") "params" "context" "only")
 #("refactor.extract")
@@ -116,10 +116,10 @@
 "Slow (C-c a)"
 ; A reconnect leaves the buffer one docs entry of each kind per
 ; connection, not the replaced connection's as well.
-> (define (sources) (length (buffers:with-buffer a (hook-entries docs-at-point:sources))))
+> (define (sources) (length (buffers:with-buffer a (hooks:entries docs-at-point:sources))))
 > (define before (sources))
 > (for-each (lambda (c) (lsp:reconnect c)) (lsp:connections))
 > (testing:wait-until (lambda () (= 2 (length (lsp:buffer-connections a)))))
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (= before (sources))
 #t

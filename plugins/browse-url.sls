@@ -1,5 +1,5 @@
 #!tuna
-(import (web) (commands) (ask) (buffers) (document))
+(import (web) (commands) (ask) (buffers) (document) (tables))
 
 (define %schemes '("http:" "https:" "mailto:"))
 
@@ -62,5 +62,5 @@
       (condition (make-warning)
         (make-message-condition (format "The browser blocked the new tab for ~a" url))))))
 
-(table-set! web:scripts 'browse-url "browse-url/browse-url.js")
-(table-set! web:input-handlers "browse-url" %blocked)
+(tables:set! web:scripts 'browse-url "browse-url/browse-url.js")
+(tables:set! web:input-handlers "browse-url" %blocked)

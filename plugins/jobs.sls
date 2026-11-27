@@ -1,7 +1,5 @@
 #!tuna
-(import (rename (only (chezscheme) set-timer timer-interrupt-handler)
-                (set-timer chez:set-timer)
-                (timer-interrupt-handler chez:timer-interrupt-handler)))
+(import (rename (only (chezscheme) enable-interrupts) (enable-interrupts chez:enable-interrupts)))
 
 ;; The internals are in a module form, so that they stay private and a
 ;; job's thread runs no changeable definition: a job keeps running the code
@@ -12,7 +10,6 @@
   (define main-thread (get-thread-id))
 
   (define result-limit 64)
-  (define job-ticks 1000)
 
   (define-record-type (worker make-worker worker-record?)
     (sealed #t)
@@ -22,47 +19,36 @@
         (lambda (name imports source)
           (new name imports source #f)))))
 
-  ;; stoppable? is #f while the job's thread runs this module's code,
-  ;; which takes mutexes that a stop must not leave held. A quit can land
-  ;; in a delivery before it counts its value, so delivered is the number
-  ;; of the newest value delivered, not a count: a later delivery makes up
-  ;; for a lost one.
+  ;; A cancel can land in a delivery before it counts its value, so
+  ;; delivered is the number of the newest value delivered, not a count: a
+  ;; later delivery makes up for a lost one. task is the job's thread.
   (define-record-type (job make-job job-record?)
     (sealed #t)
     (fields worker owner on-result on-end mutex wake
             (mutable inputs-front) (mutable inputs-back) (mutable sent) (mutable delivered)
-            (mutable stop?) (mutable ended?) (mutable dropped?) (mutable stoppable?))
+            (mutable stop?) (mutable ended?) (mutable dropped?) (mutable task))
     (protocol
       (lambda (new)
         (lambda (worker owner on-result on-end)
           (new worker owner on-result on-end (make-mutex) (make-condition)
                '() '() 0 0 #f #f #f #f)))))
 
-  ;; A quit can land anywhere in code on the main thread, and one between a
-  ;; change to a job and its condition-signal would lose the wake-up, so the
-  ;; main thread holds a job's mutex only with interrupts disabled. A
-  ;; blocked acquire with interrupts disabled would keep a collection
-  ;; waiting for the main thread, so it only tries the mutex, which a job
-  ;; holds for a few instructions at a time.
+  ;; A change to a job and its condition-signal must not be split by a
+  ;; cancel, which would lose the wake-up.
   (define-syntax with-job-mutex
     (syntax-rules ()
       [(_ j e1 e2 ...)
-       (let ([m (job-mutex j)])
-         (if (eqv? (get-thread-id) main-thread)
-             (let retry ()
-               (unless (with-interrupts-disabled
-                         (and (mutex-acquire m #f)
-                              (begin e1 e2 ... (mutex-release m) #t)))
-                 (retry)))
-             (with-mutex m e1 e2 ...)))]))
+       (call-with-cancellation-masked
+         (lambda (restore) (with-mutex (job-mutex j) e1 e2 ...)))]))
 
   (define-syntax define-worker
     (lambda (x)
       (define (head? ids)
         (and (for-all identifier? ids) (fx<= (length ids) 4)))
-      (syntax-case x (import)
+      ;; import is matched by name: at the top level it is Tuna's own.
+      (syntax-case x ()
         [(_ (id input emit receive ...) (import spec ...) body1 body2 ...)
-         (head? #'(id input emit receive ...))
+         (and (head? #'(id input emit receive ...)) (identifier? #'import) (eq? (syntax->datum #'import) 'import))
          #'(define-public id
              (make-worker 'id '(spec ...) '(lambda (input emit receive ...) body1 body2 ...)))]
         [(_ (id input emit receive ...) body1 body2 ...)
@@ -117,7 +103,7 @@
           (walk v))
         (plain-atom? v)))
 
-  ;; plain-data? would walk a frozen vector every time; here it counts as
+  ;; plain-data:plain-data? would walk a frozen vector every time; here it counts as
   ;; walked. The first walk sets each immutable vector aside and looks
   ;; them all up at once, so a check takes the mutex once rather than once
   ;; per frozen vector, and holds it during no walk. A vector set aside is
@@ -157,27 +143,22 @@
            (hashtable-set! seen name #t)
            (exists walk (library-requirements name))]))))
 
-  ;; Tuna's dynamic-wind holds quits off while its in runs, and a quit
-  ;; requested meanwhile lands once it ends.
-  (define (without-quits thunk)
-    (let ([result #f])
-      (dynamic-wind (lambda () (set! result (thunk))) void void)
-      result))
+  (define (without-cancels thunk)
+    (call-with-cancellation-masked (lambda (restore) (thunk))))
 
   ;; A local import in Chez's own environment, because Chez never frees an
   ;; environment made by environment. Evaluating the import loads and
   ;; invokes the libraries here, on the main thread, the only thread that
-  ;; loads libraries. A body must be stoppable, whatever settings code on
-  ;; the main thread has left. Chez's compiler drops any condition raised
-  ;; while it folds constants, a quit included, so the compile holds quits
+  ;; loads libraries. A body must be safe, whatever settings code on the
+  ;; main thread has left. Chez's compiler drops any condition raised while
+  ;; it folds constants, a cancel included, so the compile holds cancels
   ;; off.
   (define (worker-procedure! w)
     (or (worker-procedure w)
         (let* ([specs (worker-imports w)]
-               [p (without-quits
+               [p (without-cancels
                     (lambda ()
                       (parameterize ([optimize-level 2]
-                                     [generate-interrupt-trap #t]
                                      [enable-unsafe-application #f]
                                      [enable-unsafe-variable-reference #f])
                         (eval (if (null? specs)
@@ -218,16 +199,13 @@
     (let ([jobs (hashtable-ref jobs-by-owner (job-owner j) #f)])
       (when jobs (eq-hashtable-delete! jobs j))))
 
-  ;; While a job's thread holds its mutex, the main thread retries for it,
-  ;; and a quit landing between tries would lose the count of every
-  ;; delivery until the job lets go; if those are the job's last values, it
-  ;; waits for room forever. A quit landing in on-result or on-end would
-  ;; lose a value or the end, and leave a task waiting for them paused
-  ;; forever, so they run with the count and with quits held off, as Emacs
-  ;; runs process filters and sentinels with quits inhibited.
+  ;; A cancel landing in on-result or on-end would lose a value or the end,
+  ;; and leave a task waiting for them paused forever, so they run with the
+  ;; count and with cancels held off, as Emacs runs process filters and
+  ;; sentinels with inhibit-quit bound.
   (define (deliver! j n v)
     (unless (job-dropped? j)
-      (without-quits
+      (without-cancels
         (lambda ()
           (with-job-mutex j
             (let ([half (fxsrl result-limit 1)] [before (fx- (job-sent j) (job-delivered j))])
@@ -239,7 +217,7 @@
   ;; What the body raised comes tagged, since it may be #f or stopped.
   (define (finish! j ended)
     (unless (job-dropped? j)
-      (without-quits
+      (without-cancels
         (lambda ()
           (forget! j)
           ((job-on-end j)
@@ -247,12 +225,11 @@
                (let ([raised (cdr ended)]) (report raised) raised)
                ended))))))
 
-  ;; Runs on the job's thread with stops held off, since it takes the
-  ;; job's mutex. A stopped job's value is still sent, since a stop does
-  ;; not undo the work the value reports; the job ends after it.
+  ;; A stopped job's value is still sent, since a stop does not undo the
+  ;; work the value reports; the job ends after it.
   (define (queue-result! j v)
     (let-values ([(n stopped?)
-                  (with-mutex (job-mutex j)
+                  (with-job-mutex j
                     (let wait ()
                       (when (and (fx>= (fx- (job-sent j) (job-delivered j)) result-limit) (not (job-stop? j)))
                         (condition-wait (job-wake j) (job-mutex j))
@@ -260,7 +237,7 @@
                     (let ([n (fx+ (job-sent j) 1)])
                       (job-sent-set! j n)
                       (values n (job-stop? j))))])
-      (post! (lambda () (deliver! j n v)))
+      (spawn-task (lambda (restore) (deliver! j n v)))
       (not stopped?)))
 
   (define (seconds->time-utc seconds)
@@ -270,10 +247,8 @@
 
   (define stop-mark (list 'stopped))
 
-  ;; Runs on the job's thread with stops held off, since it takes the
-  ;; job's mutex.
   (define (take-input! j until)
-    (with-mutex (job-mutex j)
+    (with-job-mutex j
       (let wait ()
         (cond
           [(job-stop? j) stop-mark]
@@ -289,71 +264,58 @@
           [(job-stop? j) stop-mark]
           [else (eof-object)]))))
 
-  ;; Chez cannot interrupt another thread, so the job's own timer ends it.
-  ;; Every way out of the body first turns stoppable? off and then escapes
-  ;; to end, so no stop lands as the job ends. The body sees Chez's exit,
-  ;; reset and abort, which end only the job. An emit or receive after a
-  ;; stop escapes from wherever it is, a critical wind included, so the
-  ;; job may end with interrupts disabled.
-  (define (run-job j p input)
-    (let ([ended
-           (call/cc
-             (lambda (end)
-               (define (end-with reason)
-                 (job-stoppable?-set! j #f)
-                 (end reason))
-               (define (end-raised c) (end-with (cons 'raised c)))
-               (define (emit v)
-                 (job-stoppable?-set! j #f)
-                 (cond
-                   [(not (sendable? v))
-                    (job-stoppable?-set! j #t)
-                    (assertion-violation 'emit "not plain data" v)]
-                   [(queue-result! j v) (job-stoppable?-set! j #t)]
-                   [else (end-with 'stopped)]))
-               (define (receive-until until)
-                 (job-stoppable?-set! j #f)
-                 (let ([v (take-input! j until)])
-                   (if (eq? v stop-mark)
-                       (end-with 'stopped)
-                       (begin (job-stoppable?-set! j #t) v))))
-               (define receive
-                 (case-lambda
-                   [() (receive-until #f)]
-                   [(seconds)
-                    (unless (and (real? seconds) (>= seconds 0))
-                      (assertion-violation 'receive "not a number of seconds" seconds))
-                    (receive-until (and (finite? seconds) (seconds->time-utc seconds)))]))
-               (chez:timer-interrupt-handler
-                 (lambda ()
-                   (if (and (job-stop? j) (job-stoppable? j))
-                       (end-with 'stopped)
-                       (chez:set-timer job-ticks))))
-               (parameterize ([exit-handler (lambda arguments (end-with #f))]
-                              [reset-handler (lambda () (end-with #f))]
-                              [abort-handler (case-lambda [() (end-with #f)] [(x) (end-with #f)])])
-                 ;; The outer handler takes the error raised when the inner
-                 ;; one returns from a warning raised with raise, which
-                 ;; cannot go on.
-                 (with-exception-handler end-raised
-                   (lambda ()
-                     (with-exception-handler
-                       (lambda (c)
-                         (cond
-                           [(and (warning? c) (not (serious-condition? c)))
-                            (job-stoppable?-set! j #f)
-                            (post! (lambda () (report c)))
-                            (job-stoppable?-set! j #t)]
-                           [else (end-raised c)]))
-                       (lambda ()
-                         (job-stoppable?-set! j #t)
-                         (chez:set-timer job-ticks)
-                         (p input emit receive)
-                         (end-with #f))))))))])
-      (chez:set-timer 0)
-      (let enable () (unless (fx= (enable-interrupts) 0) (enable)))
-      (with-mutex (job-mutex j) (job-ended?-set! j #t))
-      (post! (lambda () (finish! j ended)))))
+  ;; A stop is a stop of the job's thread, which no handler of the body
+  ;; catches and which ends the thread past the body; the job's end is
+  ;; recorded as the thread unwinds. The body sees Chez's exit, reset and
+  ;; abort, which end only the job. An emit or receive after a stop
+  ;; escapes from wherever it is, a critical wind of a library the body
+  ;; uses included, so the job may end with interrupts disabled.
+  (define (run-job j p input restore)
+    (define ended 'stopped)
+    (dynamic-wind
+      void
+      (lambda () (set! ended (run-body j p input restore)))
+      (lambda ()
+        (let enable () (unless (fx= (chez:enable-interrupts) 0) (enable)))
+        (with-job-mutex j (job-ended?-set! j #t))
+        (spawn-task (lambda (restore) (finish! j ended))))))
+
+  (define (run-body j p input restore)
+    (call/cc
+      (lambda (end)
+        (define (end-raised c) (end (cons 'raised c)))
+        (define (emit v)
+          (cond
+            [(not (sendable? v)) (assertion-violation 'emit "not plain data" v)]
+            [(queue-result! j v) (void)]
+            [else (end 'stopped)]))
+        (define (receive-until until)
+          (let ([v (take-input! j until)])
+            (if (eq? v stop-mark) (end 'stopped) v)))
+        (define receive
+          (case-lambda
+            [() (receive-until #f)]
+            [(seconds)
+             (unless (and (real? seconds) (>= seconds 0))
+               (assertion-violation 'receive "not a number of seconds" seconds))
+             (receive-until (and (finite? seconds) (seconds->time-utc seconds)))]))
+        (parameterize ([exit-handler (lambda arguments (end #f))]
+                       [reset-handler (lambda () (end #f))]
+                       [abort-handler (case-lambda [() (end #f)] [(x) (end #f)])])
+          ;; The outer handler takes the error raised when the inner
+          ;; one returns from a warning raised with raise, which
+          ;; cannot go on.
+          (with-exception-handler end-raised
+            (lambda ()
+              (with-exception-handler
+                (lambda (c)
+                  (cond
+                    [(and (warning? c) (not (serious-condition? c)))
+                     (spawn-task (lambda (restore) (report c)))]
+                    [else (end-raised c)]))
+                (lambda ()
+                  (restore (lambda () (p input emit receive)))
+                  (end #f)))))))))
 
   (define (start-job w input on-result on-end)
     (unless (worker-record? w)
@@ -367,7 +329,7 @@
     (check-sendable 'jobs:start input)
     (let ([p (worker-procedure! w)] [j (make-job w (current-owner) on-result on-end)])
       (remember! j)
-      (fork-thread (lambda () (run-job j p input)))
+      (job-task-set! j (fork-task (lambda (restore) (run-job j p input restore))))
       j))
 
   (define (send-to-job! j v)
@@ -384,7 +346,9 @@
       (assertion-violation 'jobs:stop! "not a job" j))
     (with-job-mutex j
       (job-stop?-set! j #t)
-      (condition-signal (job-wake j))))
+      (condition-signal (job-wake j)))
+    (let ([t (job-task j)])
+      (when t (stop-task t))))
 
   (record-writer (record-type-descriptor worker)
     (lambda (w p wr) (fprintf p "#<worker ~a>" (worker-name w))))

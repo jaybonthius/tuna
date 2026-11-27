@@ -1,4 +1,5 @@
 #!tuna
+(import (hooks) (tables))
 ;; Stands in for the web plugin, so no server starts: clients are records
 ;; the tests make, each a device of its own unless given one.
 (define-record-type client
@@ -9,14 +10,14 @@
         [(number) (new number (number->string number))]
         [(number device) (new number device)]))))
 
-(define-table input-handlers)
-(define-table scripts)
-(define-table stylesheets)
-(define-table early-scripts)
+(tables:define-table input-handlers)
+(tables:define-table scripts)
+(tables:define-table stylesheets)
+(tables:define-table early-scripts)
 
 (define (send-screen! client screen title) (void))
 
-(define-hook client-removed)
+(hooks:define-hook client-removed)
 
 (define current-client (make-thread-parameter #f))
 

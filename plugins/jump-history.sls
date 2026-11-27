@@ -1,9 +1,9 @@
 #!tuna
-(import (buffers) (document) (views) (layout) (commands) (keys) (pulse))
+(import (buffers) (document) (views) (layout) (commands) (keys) (pulse) (hooks) (options))
 
-(define-hook after-return "Called with the view after jump-history:go-back and jump-history:go-forward.")
+(hooks:define-hook after-return "Called with the view after jump-history:go-back and jump-history:go-forward.")
 
-(define-hook after-jump
+(hooks:define-hook after-jump
   "Called with the view by a command that jumps to a place the user chose from a list or a lookup, as M-s l does, after it records the place left with jump-history:push!, and by a picker's preview after it shows a place; jump-history:place-ranges holds the place's ranges.")
 
 (define place-ranges
@@ -15,7 +15,7 @@
 
 (define (recenter view) (views:scroll-to! view (views:point view) (views:align center)))
 
-(define-option history-key (lambda (view) #f) procedure?
+(options:define-option history-key (lambda (view) #f) procedure?
   "A procedure of the selected view that returns the key of the history to use, compared with eq?: #f for the one shared history, or jump-history:view-key for one per view.")
 
 (define (view-key view) view)
@@ -147,10 +147,10 @@
 (define (pulse view)
   (pulse:highlight! view (or (place-ranges) (pulse:line-ranges view))))
 
-(add-hook! after-jump recenter)
-(add-hook! after-jump pulse)
-(add-hook! after-return pulse:highlight-line!)
-(add-hook! layout:after-switch-to-buffer record-switch)
-(add-hook! buffers:killed %forget-buffer!)
+(hooks:add! after-jump recenter)
+(hooks:add! after-jump pulse)
+(hooks:add! after-return pulse:highlight-line!)
+(hooks:add! layout:after-switch-to-buffer record-switch)
+(hooks:add! buffers:killed %forget-buffer!)
 (keys:bind! keys:global "M-," go-back)
 (keys:bind! keys:global "C-M-," go-forward)

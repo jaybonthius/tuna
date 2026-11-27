@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins) (document) (haml) (web))
+(import (hooks) (options) (tables) (timers))
+(import (tuna) (document) (haml) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -45,7 +46,7 @@
          [s (apply search:scan b q (if (pair? range) (car range) 0) (if (pair? range) (cadr range) (end-of b))
                    (if (pair? range) (car range) 0) (lambda (s) (when (search:scan-done? s) (set! done #t)))
                    (if (and (pair? range) (pair? (cddr range))) (cddr range) '()))])
-    (let wait ([n 0]) (unless (or done (= n 500)) (sleep-for 0.01) (wait (+ n 1))))
+    (let wait ([n 0]) (unless (or done (= n 500)) (timers:sleep 0.01) (wait (+ n 1))))
     s))
 
 (define (scan-spans b s)

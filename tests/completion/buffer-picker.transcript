@@ -3,7 +3,7 @@
 > (views:set-buffer! (view) notes)
 > (define other (buffers:make "other" "x\n"))
 > (views:set-point! (view) 5)
-> (set-option! buffer-picker:sources (option-default buffer-picker:sources))
+> (options:set! buffer-picker:sources (options:default buffer-picker:sources))
 > (define t (start! (lambda () (press! "C-x" "b"))))
 > (type! "oth")
 > (wait-matches (session))
@@ -12,9 +12,9 @@
 > (views:buffer (car (layout:views)))
 #<buffer notes>
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
-> (remove-option! buffer-picker:sources)
+> (options:unset! buffer-picker:sources)
 ; With buffer-picker:buffers given the view, as this configuration sets,
 ; C-x b previews the selected buffer in the selected view and puts back
 ; the view's buffer and point when the read is quit.
@@ -29,7 +29,7 @@
 > (views:buffer (car (layout:views)))
 #<buffer other>
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (views:buffer (view))
 #<buffer notes>
@@ -69,7 +69,7 @@
 > (define t (start! (lambda () (press! "C-x" "b"))))
 > (wait-matches (session))
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (define t (start! (lambda () (press! "C-x" "b"))))
 > (wait-matches (session))
@@ -81,7 +81,7 @@
 ; past the last goes to the end.
 > (define a-path (string-append (getenv "HOME") "/notes/a.txt"))
 > (define (lines-source view) (completion:source (candidates (vector (cons "a.txt:2" (cons* a-path 2 0)) (cons "a.txt:9" (cons* a-path 9 0)))) (category completion:location-category)))
-> (set-option! buffer-picker:sources (list buffer-picker:buffers lines-source))
+> (options:set! buffer-picker:sources (list buffer-picker:buffers lines-source))
 > (define t (start! (lambda () (press! "C-x" "b"))))
 > (type! "a.txt:2")
 > (wait-matches (session))
@@ -103,7 +103,7 @@
 ; C-x b lists buffers used most recently first, those a view shows
 ; after them and the current buffer last, as Consult does, so C-x b RET
 ; goes back to the buffer left last.
-> (remove-option! buffer-picker:sources)
+> (options:unset! buffer-picker:sources)
 > (remp buffers:kill! (remp (lambda (b) (buffers:internal-name? (buffers:name b))) (buffers:all)))
 ()
 > (define one (buffers:make "one" "1\n"))
@@ -136,7 +136,7 @@
 > (texts (session))
 ("three" "one" "two" "sub" "a.txt")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 ; A quit puts the view back before its preview ends, and the buffer
 ; previewed records no use, so the order is as it was.
@@ -148,7 +148,7 @@
 > (list (views:previewing? left) (buffers:name (views:buffer left)))
 (#t "three")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (equal? (order) before)
 #t

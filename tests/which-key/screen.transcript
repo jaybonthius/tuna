@@ -2,41 +2,42 @@
 ; layout's screen and, while the popup shows, the popup after it, in one
 ; div.which-key-screen.
 > (map car (definition-changes keys:press!))
-((which-key) (minibuffer) (echo-area) (echo-area) (keys))
+(#<owner (which-key) 1> #<owner (minibuffer) 1> #<owner (echo-area) 1> #<owner (echo-area) 1> #<owner (keys) 1>)
 > (map car (definition-changes layout:screen))
-((which-key) (layout))
+(#<owner (which-key) 1> #<owner (layout) 1>)
 > (define (ends-with html end) (string=? end (substring html (- (string-length html) (string-length end)) (string-length html))))
 > (define wrapped "<div class=\"which-key-screen\"><div class=\"layout-screen\"")
 > (let ([html (screen-of client)]) (list (search html wrapped 0) (ends-with html "</div></div></div>")))
 (0 #t)
-> (set-option! which-key:delay 0)
+> (options:set! which-key:delay 0)
 > (press! "C-c")
 > (let ([html (screen-of client)]) (list (search html wrapped 0) (ends-with html "</span></button></li></ul></div></div>")))
 (0 #t)
 > (press! "z")
 ; A client that web removes takes its timer with it, and the echo
 ; area's.
-> (set-option! which-key:delay 0.5)
+> (options:set! which-key:delay 0.5)
 > (press-in! other-client "C-c")
-> (define before (length (timers)))
+> (define before (length (timers:live)))
 > (web:client-removed other-client)
-> (- before (length (timers)))
+> (- before (length (timers:live)))
 2
 ; Unloading it takes back its advice, its entry in web:client-removed
 ; and its timer.
 > (press! "C-c")
-> (set! before (length (timers)))
-> (define entries-before (length (hook-entries web:client-removed)))
-> (unload-module! '(which-key))
-> (list (- before (length (timers))) (- entries-before (length (hook-entries web:client-removed))))
+> (set! before (length (timers:live)))
+> (define entries-before (length (hooks:entries web:client-removed)))
+> (unload-owner! (module-owner '(which-key)))
+> (list (- before (length (timers:live))) (- entries-before (length (hooks:entries web:client-removed))))
 (1 1)
 > (map car (definition-changes layout:screen))
-((layout))
+(#<owner (layout) 1>)
 > (map car (definition-changes keys:press!))
-((minibuffer) (echo-area) (echo-area) (keys))
+(#<owner (minibuffer) 1> #<owner (echo-area) 1> #<owner (echo-area) 1> #<owner (keys) 1>)
 > (search (screen-of client) "<div class=\"layout-screen\"" 0)
 0
 > (press! "z")
 > (load-module! '(which-key))
+#<owner (which-key) 2>
 > (search (screen-of client) wrapped 0)
 0

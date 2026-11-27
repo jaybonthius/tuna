@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins))
+(import (tuna))
 (use-plugin jobs)
 (use-plugin web)
 (use-plugin design-tokens)

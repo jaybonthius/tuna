@@ -38,12 +38,12 @@
 ; Each key that leaves keys pending before the popup shows starts the
 ; timer again, for the keys pending then.
 > (press! "C-c")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (press! "q")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (shows?)
 #f
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (popup)
 ("C-c q" ("z" "harpo:squeak"))
 > (press! "z")
@@ -76,30 +76,30 @@
 > (press! "z")
 ; A delay of 0 shows the popup with the screen of the key that leaves
 ; keys pending.
-> (set-option! which-key:delay 0)
+> (options:set! which-key:delay 0)
 > (press! "C-c")
 > (car (popup))
 "C-c"
 > (press! "z")
-> (set-option! which-key:delay 0.5)
-> (raised (lambda () (set-option! which-key:delay -1)))
-(set-option! "-1 is not a valid value for which-key:delay")
-> (raised (lambda () (set-option! which-key:delay +inf.0)))
-(set-option! "+inf.0 is not a valid value for which-key:delay")
+> (options:set! which-key:delay 0.5)
+> (raised (lambda () (options:set! which-key:delay -1)))
+(options:set! "-1 is not a valid value for which-key:delay")
+> (raised (lambda () (options:set! which-key:delay +inf.0)))
+(options:set! "+inf.0 is not a valid value for which-key:delay")
 ; When no key can follow the pending keys, no popup shows.
-> (define-table empty)
+> (tables:define-table empty)
 > (keys:bind! keys:global "C-c e" empty)
-> (set-option! which-key:delay 0)
+> (options:set! which-key:delay 0)
 > (press! "C-c" "e")
 > (list (keys:pending client) (popup))
 ("C-c e" #f)
 > (press! "x")
 ! C-c e x is undefined
-> (set-option! which-key:delay 0.5)
+> (options:set! which-key:delay 0.5)
 ; After a lone ESC, which waits to make the next key Meta when ESC is
 ; neither a quit key nor bound, no popup shows, nor after one that
 ; follows a shown popup's keys.
-> (set-option! keys:quit-keys '("C-g"))
+> (options:set! keys:quit-keys '("C-g"))
 > (keys:unbind! keys:global "ESC")
 > (press! "ESC")
 > (wait-out)
@@ -116,7 +116,7 @@
 #f
 > (press! "C-g")
 ! C-c ESC C-g is undefined
-> (set-option! keys:quit-keys '("C-g" "ESC"))
+> (options:set! keys:quit-keys '("C-g" "ESC"))
 > (keys:bind! keys:global "ESC" keys:keyboard-quit)
 ; By default ESC is a quit key and ends the sequence, so the popup goes.
 > (press! "C-c")
@@ -144,7 +144,7 @@
 > (press! "a")
 ; The echo area shows the pending keys after its own pause, and the
 ; popup shows and follows them as before.
-> (set-option! echo-area:echo-keystrokes 0.3)
+> (options:set! echo-area:echo-keystrokes 0.3)
 > (press! "C-c")
 > (wait-out)
 > (list (car (popup)) (and (search (screen-of client) "<div class=\"echo-area-echo\">C-c-</div>" 0) #t))

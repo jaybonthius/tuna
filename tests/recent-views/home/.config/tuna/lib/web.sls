@@ -1,29 +1,29 @@
 #!tuna
-(import (haml))
+(import (haml) (hooks) (tables))
 
 ;; Stands in for the web plugin, so no server starts.
 (define-record-type client (fields number (mutable screen) (mutable title)))
 
-(define-table input-handlers)
-(define-table scripts)
-(define-table stylesheets)
-(define-table early-scripts)
+(tables:define-table input-handlers)
+(tables:define-table scripts)
+(tables:define-table stylesheets)
+(tables:define-table early-scripts)
 
-(define-hook client-added)
-(define-hook client-removed)
+(hooks:define-hook client-added)
+(hooks:define-hook client-removed)
 
-(define connected '())
+(define %connected '())
 
-(define (clients) connected)
+(define (clients) %connected)
 
 (define (add-client! n)
   (let ([c (make-client n #f #f)])
-    (set! connected (append connected (list c)))
+    (set! %connected (append %connected (list c)))
     (client-added c)
     c))
 
 (define (remove-client! c)
-  (set! connected (remq c connected))
+  (set! %connected (remq c %connected))
   (client-removed c))
 
 (define (send-screen! client screen title)

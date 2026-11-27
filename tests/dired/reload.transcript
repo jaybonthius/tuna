@@ -1,8 +1,6 @@
 ; Reloading the plugin keeps its listings, their marks and their mode,
 ; and its entry in files:folder-visitors comes back.
-> (import (tuna eval))
-> (define library (getenv "TUNA_LIBRARY"))
-> (define (reload! name) (eval-file (string-append library "/" name ".sls")))
+> (define (reload! name) (reload-modules! (list (list (string->symbol name)))))
 > (touch! "r/a.txt" "a\n")
 > (define b (dired:visit (at "r")))
 > (layout:switch-to-buffer b)

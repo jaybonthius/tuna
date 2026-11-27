@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins) (document) (haml) (web))
+(import (hooks) (options))
+(import (tuna) (document) (haml) (web))
 (use-plugin ui)
 (use-plugin layout)
 (use-plugin diff-sections)

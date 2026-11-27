@@ -1,21 +1,19 @@
-; Reloading during a read quits it; the part and the buffer come back.
+; Unloading the minibuffer during a read quits the read. The
+; configuration imports it, so its re-read loads a new instance at once:
+; the old instance's buffer and readers go, and the new one's come.
+> (define old (module-owner '(minibuffer)))
+> (define old-minibuf (buffers:find " *Minibuf*"))
 > (define t (start! (lambda () (minibuffer:read "Name: "))))
 > (type! "abc")
-> (unload-module! '(minibuffer))
-! &quit
+> (unload-owner! old)
+! &cancelled
 > (result t)
-(raised #<condition &quit>)
-> (buffers:find " *Minibuf*")
-#f
-> (datums layout:buffer)
-((layout:level () (layout-split:container ((direction . column)) (layout:level () #(views:view ((view . 1) (buffer . "*scratch*")))) #(views:view ((view . 3) (buffer . " *Echo Area*") (depth . 90) (size . content) (locked . #t))))))
+(raised #<condition &cancelled>)
+> (list (owner-live? old) (eq? (module-owner '(minibuffer)) old) (buffers:live? old-minibuf) (eq? (buffers:find " *Minibuf*") old-minibuf))
+(#f #f #f #f)
 > (views:buffer (view))
 #<buffer *scratch*>
-; ask's readers go with the minibuffer and come back with it.
-> (ask:line "Name: ")
-! ask:line-reader: no reader is loaded
-> (use-plugin minibuffer)
-> (eq? (ask:line-reader) (option-default ask:line-reader))
+> (eq? (ask:line-reader) (options:default ask:line-reader))
 #f
 > (eq? (ask:number-reader) minibuffer:read-number)
 #t
@@ -32,7 +30,7 @@
 > (minibuffer:history)
 ("x")
 ; Unloading undo leaves the minibuffer, which does not import it.
-> (unload-module! '(undo))
+> (unload-owner! (module-owner '(undo)))
 > (eq? (buffers:find " *Minibuf*") minibuf)
 #t
 > (define t (start! (lambda () (minibuffer:read "Name: "))))

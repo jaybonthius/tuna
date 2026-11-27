@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (document) (web))
+(import (hooks) (options) (timers))
+(import (tuna) (testing) (document) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)

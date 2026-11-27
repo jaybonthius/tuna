@@ -1,28 +1,30 @@
 #!tuna
-(import (completion) (completion rows) (buffers) (views) (keys) (commands) (editing) (modes) (layout) (layout-float) (web) (haml))
+(import (completion) (completion rows) (buffers) (views) (keys) (commands) (editing) (modes) (layout) (layout-float) (web) (haml) (hooks) (options) (tables) (timers))
 
-(define-option lines 10 (lambda (v) (and (fixnum? v) (fx> v 0)))
+(define %self (current-owner))
+
+(options:define-option lines 10 (lambda (v) (and (fixnum? v) (fx> v 0)))
   "How many lines a popup shows at most, its rows and their group titles.")
 
-(define-option min-width 15 (lambda (v) (and (fixnum? v) (fx> v 0)))
+(options:define-option min-width 15 (lambda (v) (and (fixnum? v) (fx> v 0)))
   "How many columns a popup is wide at least.")
 
-(define-option max-width 100 (lambda (v) (and (fixnum? v) (fx> v 0)))
+(options:define-option max-width 100 (lambda (v) (and (fixnum? v) (fx> v 0)))
   "How many columns a popup is wide at most.")
 
-(define-option auto-delay #f (lambda (v) (or (not v) (and (real? v) (>= v 0))))
+(options:define-option auto-delay #f (lambda (v) (or (not v) (and (real? v) (>= v 0))))
   "Seconds after a command of completion-popup:auto-commands before completion at point starts by itself; #f never.")
 
-(define-option auto-prefix 3 (lambda (v) (and (fixnum? v) (fx>= v 0)))
+(options:define-option auto-prefix 3 (lambda (v) (and (fixnum? v) (fx>= v 0)))
   "How many characters the completed text must hold before point for completion to start by itself.")
 
-(define-option auto-commands (list editing:self-insert editing:delete-backward-char editing:delete-char editing:delete-forward-char)
+(options:define-option auto-commands (list editing:self-insert editing:delete-backward-char editing:delete-char editing:delete-forward-char)
   (lambda (v) (and (list? v) (for-all commands:command? v)))
   "The commands after which completion at point starts by itself, once completion-popup:auto-delay has passed.")
 
-(define-table mode-keymap "Keys in a popup's rows' buffer: none, as in completion/rows:mode-keymap.")
+(tables:define-table mode-keymap "Keys in a popup's rows' buffer: none, as in completion/rows:mode-keymap.")
 
-(define-hook mode-hook
+(hooks:define-hook mode-hook
   "Called with a popup's rows' buffer current when its mode is set, after completion/rows:mode-hook; it changes the popup and not a read's list.")
 
 (modes:define-major-mode mode (parent completion/rows:mode) (keymap mode-keymap) (hook mode-hook) (plugin-only #t))
@@ -60,12 +62,13 @@
   (let* ([r (%shown-rows l)] [s (completion/rows:session r)] [view (completion:session-view s)])
     (if (or (fx= (completion:matches-count (completion:session-matches s)) 0) (not (%placed? view)))
         (%close-popup! l)
-        (as-module (this-module)
-          (%shown-popup-id-set! l
-            (views:id
-              (layout-float:show-at! view (completion:session-start s) (completion/rows:buffer r)
-                                     'content (list 'lines (fxmax 1 (%shown-lines l))))))
-          (completion/rows:follow-selection! r)))))
+        (call-as-owner %self
+          (lambda ()
+            (%shown-popup-id-set! l
+              (views:id
+                (layout-float:show-at! view (completion:session-start s) (completion/rows:buffer r)
+                                       'content (list 'lines (fxmax 1 (%shown-lines l))))))
+            (completion/rows:follow-selection! r))))))
 
 (define (%started s)
   (unless (completion:session-prompt s)
@@ -93,23 +96,24 @@
 
 (define (%maybe-start command)
   (when %timer
-    (cancel-timer! %timer)
+    (timers:cancel! %timer)
     (set! %timer #f))
   (let ([view (views:current)] [client (web:current-client)])
     (when (and view client (memq command (auto-commands)) (not (completion:current-session)))
       (let ([delay (auto-delay)] [minimum (auto-prefix)] [id (views:id view)])
         (when delay
-          (as-module (this-module)
-            (set! %timer
-              (run-with-timer delay
-                (lambda ()
-                  (set! %timer #f)
-                  (when (and (views:find id) (views:buffer view))
-                    (parameterize ([web:current-client client])
-                      (views:call-with-view view (lambda () (completion:start-at-point minimum))))))))))))))
+          (call-as-owner %self
+            (lambda ()
+              (set! %timer
+                (timers:run-after delay
+                  (lambda ()
+                    (set! %timer #f)
+                    (when (and (views:find id) (views:buffer view))
+                      (parameterize ([web:current-client client])
+                        (views:call-with-view view (lambda () (completion:start-at-point minimum)))))))))))))))
 
 (define (%unload)
-  (when %timer (cancel-timer! %timer))
+  (when %timer (timers:cancel! %timer))
   (for-each (lambda (l) (%ended (completion/rows:session (%shown-rows l)))) %popups))
 
 (keys:remap! completion:region-keymap editing:next-line completion:next)
@@ -120,9 +124,9 @@
 (keys:remap! completion:region-keymap views:scroll-down completion/rows:scroll-down)
 (keys:bind! completion:region-keymap "M-n" completion:next)
 (keys:bind! completion:region-keymap "M-p" completion:previous)
-(table-set! web:stylesheets 'completion-popup "completion-popup/completion-popup.css")
-(add-hook! completion:started %started)
-(add-hook! completion:updated %updated)
-(add-hook! completion:ended %ended)
-(add-hook! commands:after-command %maybe-start)
+(tables:set! web:stylesheets 'completion-popup "completion-popup/completion-popup.css")
+(hooks:add! completion:started %started)
+(hooks:add! completion:updated %updated)
+(hooks:add! completion:ended %ended)
+(hooks:add! commands:after-command %maybe-start)
 (on-unload %unload)

@@ -69,13 +69,13 @@
 ; pi refuses a Pi older than 1.5.0: it asks Pi's version when it loads
 ; and whenever pi:command changes.
 > (putenv "PI_FAKE_VERSION" "1.4.2")
-> (set-option! pi:command '("pi" "--approve"))
-> (sleep-for 0.5)
+> (options:set! pi:command '("pi" "--approve"))
+> (timers:sleep 0.5)
 ! (pi) Pi 1.4.2 is older than 1.5.0, the version pi supports
 > (pi:start "/tmp")
 ! pi:start: Pi 1.4.2 is older than 1.5.0, the version pi supports
 > (putenv "PI_FAKE_VERSION" "1.5.3")
-> (set-option! pi:command '("pi"))
-> (sleep-for 0.5)
+> (options:set! pi:command '("pi"))
+> (timers:sleep 0.5)
 > (pi:chat? (pi:start "/tmp"))
 #t

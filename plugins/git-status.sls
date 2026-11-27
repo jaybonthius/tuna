@@ -1,29 +1,31 @@
 #!tuna
 (import (git-mode) (git) (diff) (diff-sections) (ui) (buffers) (document) (views) (layout) (keys) (commands) (files)
-        (ask) (modes) (transient) (faces) (web) (haml))
+        (ask) (modes) (transient) (faces) (web) (haml) (hooks) (options) (tables))
 
-(define-option initial-section 1
+(define %self (current-owner))
+
+(options:define-option initial-section 1
   (lambda (v) (or (not v) (and (fixnum? v) (fx> v 0)) (and (list? v) (for-all list? v))))
   "Where point starts in a new status buffer: the Nth section after the headers, the first section whose identity is in a list of identities, or the first line with #f.")
 
-(define-option untracked-files #f (lambda (v) (or (not v) (memq v '(normal all no))))
+(options:define-option untracked-files #f (lambda (v) (or (not v) (memq v '(normal all no))))
   "How untracked files are listed, a value of git:untracked-listing; #f follows git's status.showUntrackedFiles.")
 
-(define-option file-list-limit 100 (lambda (v) (and (fixnum? v) (fx> v 0)))
+(options:define-option file-list-limit 100 (lambda (v) (and (fixnum? v) (fx> v 0)))
   "How many untracked files the list shows.")
 
-(define-option commit-count 10 (lambda (v) (and (fixnum? v) (fx> v 0)))
+(options:define-option commit-count 10 (lambda (v) (and (fixnum? v) (fx> v 0)))
   "How many commits Recent commits shows.")
 
-(define-hook headers
+(hooks:define-hook headers
   "Procedures of the repository and its status, each returning a list of header lines, each a list of inline content.")
 
-(define-hook sections
+(hooks:define-hook sections
   "Procedures of the repository and its status, each returning a list of section datums.")
 
-(define-table keymap "Keys in the status buffer.")
+(tables:define-table keymap "Keys in the status buffer.")
 
-(define-hook mode-hook "Called in each status buffer as its mode is set.")
+(hooks:define-hook mode-hook "Called in each status buffer as its mode is set.")
 
 (modes:define-major-mode mode
   (parent git-mode:mode)
@@ -212,13 +214,20 @@
 (define (%header-datum line) (apply %header '() (append line '("\n"))))
 
 (define (%in-tasks repository status entries)
-  (let ([tasks (map (lambda (entry) (as-module (this-module) (spawn-task (lambda () (entry repository status))))) entries)])
-    (apply append (map join-task tasks))))
+  (let ([tasks (map (lambda (entry) (call-as-owner %self (lambda () (spawn-task (lambda (restore) (entry repository status)))))) entries)])
+    (apply append
+      (map (lambda (t)
+             (let-values ([(how detail) (join-task t)])
+               (case how
+                 [(returned) (car detail)]
+                 [(raised) (raise detail)]
+                 [else '()])))
+           tasks))))
 
 (define (%contents repository)
   (let* ([status (git:status repository)]
-         [header-lines (%in-tasks repository status (hook-entries headers))]
-         [lists (%in-tasks repository status (hook-entries sections))])
+         [header-lines (%in-tasks repository status (hooks:entries headers))]
+         [lists (%in-tasks repository status (hooks:entries sections))])
     (append
       (if (null? header-lines)
           '()
@@ -330,8 +339,11 @@
                                         (string=? (substring path 0 (string-length root)) root))))
                      (filter buffer? (buffers:all)))])
         (when b
-          (as-module (this-module)
-            (spawn-task (lambda () (git-mode:refresh-repository (buffers:with-buffer b (git-mode:repository)))))))))))
+          (call-as-owner %self
+            (lambda ()
+              (spawn-task
+                (lambda (restore)
+                  (git-mode:refresh-repository (buffers:with-buffer b (git-mode:repository))))))))))))
 
 (define (%list-of b section)
   (let up ([s section])
@@ -845,9 +857,9 @@
   "Discards the row whose button was clicked, asking first."
   (%run-on-click! 'git-status:discard-button (lambda (v s) (%discard! v s))))
 
-(define-table stage-button-keys "Clicks on a row's stage button.")
-(define-table unstage-button-keys "Clicks on a row's unstage button.")
-(define-table discard-button-keys "Clicks on a row's discard button.")
+(tables:define-table stage-button-keys "Clicks on a row's stage button.")
+(tables:define-table unstage-button-keys "Clicks on a row's unstage button.")
+(tables:define-table discard-button-keys "Clicks on a row's discard button.")
 
 (define (%button keymap label title)
   (haml (:button.ui-button.git-status-button ([type "button"] [tabindex "-1"] [title title]
@@ -875,20 +887,20 @@
   (list stage-button-keys unstage-button-keys discard-button-keys)
   (list stage-button unstage-button discard-button))
 
-(add-hook! headers last-error-header -10)
-(add-hook! headers %head-header 0)
-(add-hook! headers %merge-header 10)
-(add-hook! headers %push-header 20)
-(add-hook! headers %tag-header 30)
-(add-hook! sections untracked-section 0)
-(add-hook! sections unstaged-section 10)
-(add-hook! sections staged-section 20)
-(add-hook! sections stashes-section 30)
-(add-hook! sections unpushed-section 40)
-(add-hook! sections unmerged-section 50)
-(add-hook! sections unpulled-from-push-section 60)
-(add-hook! sections unpulled-section 70)
-(add-hook! ui:section-heading-adornments %row-buttons)
+(hooks:add! headers last-error-header -10)
+(hooks:add! headers %head-header 0)
+(hooks:add! headers %merge-header 10)
+(hooks:add! headers %push-header 20)
+(hooks:add! headers %tag-header 30)
+(hooks:add! sections untracked-section 0)
+(hooks:add! sections unstaged-section 10)
+(hooks:add! sections staged-section 20)
+(hooks:add! sections stashes-section 30)
+(hooks:add! sections unpushed-section 40)
+(hooks:add! sections unmerged-section 50)
+(hooks:add! sections unpulled-from-push-section 60)
+(hooks:add! sections unpulled-section 70)
+(hooks:add! ui:section-heading-adornments %row-buttons)
 (keys:bind! keymap "s" stage)
 (keys:bind! keymap "u" unstage)
 (keys:bind! keymap "k" discard)
@@ -908,4 +920,4 @@
   (transient:command "U" "Unstage all" unstage-all))
 (transient:add! git-mode:dispatch-menu "Essential commands"
   (transient:command "RET" "Visit thing at point" visit))
-(table-set! web:stylesheets 'git-status "git-status/git-status.css")
+(tables:set! web:stylesheets 'git-status "git-status/git-status.css")

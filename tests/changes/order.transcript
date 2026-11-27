@@ -7,4 +7,4 @@
 > (spell:language)
 "prog2"
 > (definition-changes spell:language)
-(((prog2) override #f) ((groucho words) override #f) ((spell) define #f))
+((#<owner (prog2) 1> override #f) (#<owner (groucho words) 1> override #f) (#<owner (spell) 1> define #f))

@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins) (haml))
+(import (tuna) (haml))
 (use-plugin jobs)
 (use-plugin document)
 (use-plugin buffers)
@@ -44,10 +44,10 @@
 ;; does, so the test switches the theme without loading and unloading it.
 (define (theme! on?)
   (if on?
-      (table-set! web:stylesheets 'theme (string-append (getenv "TUNA_LIBRARY") "/modus/modus.css"))
-      (table-remove! web:stylesheets 'theme)))
+      (tables:set! web:stylesheets 'theme (string-append (getenv "TUNA_LIBRARY") "/modus/modus.css"))
+      (tables:remove! web:stylesheets 'theme)))
 
-(define (user-css! file) (table-set! web:stylesheets 'user file))
+(define (user-css! file) (tables:set! web:stylesheets 'user file))
 
 (define (sv) (layout:selected-view))
 (define (run-command c . args) (views:with-view (sv) (apply commands:run c args)))
@@ -166,4 +166,4 @@
   #t)
 
 ;; Matches are drawn in completion's faces under the any-order style.
-(set-option! completion:styles (list completion:any-order))
+(options:set! completion:styles (list completion:any-order))

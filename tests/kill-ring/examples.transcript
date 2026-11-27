@@ -5,7 +5,7 @@
 > (kill-ring:skip-duplicates)
 #t
 > (import (rectangle))
-> (table-set! kill-ring:yankers 'rectangle:block rectangle:yank-block)
+> (tables:set! kill-ring:yankers 'rectangle:block rectangle:yank-block)
 ; The documented push! of a piece reads the current buffer, which views
 ; would set; here with-buffer sets it.
 > (define notes (buffers:make "notes" "Buy milk.\n"))
@@ -35,5 +35,5 @@
 > (kill-ring:push! (list (buffers:piece grid 1 9)))
 > (kill-ring:insert! grid 10 (car (kill-ring:current)))
 ((10 . 16))
-> (list rectangle:yanks (root grid))
+> (list (rectangle:yanks) (root grid))
 ((10) (md:doc () (rectangle:block () "ab\ncd\n") (md:para () "ab\ncd\nend\n")))

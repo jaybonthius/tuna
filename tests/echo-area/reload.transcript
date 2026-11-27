@@ -1,12 +1,10 @@
-; Unloading the plugin removes its part; loading it again places it
-; again and keeps both buffers, so the log and the message stay.
+; Unloading the plugin removes its part; the configuration, which imports
+; it, loads a new instance at once, which places it again and keeps both
+; buffers, so the log and the message stay.
 > (echo-area:message! "Kept")
-> (unload-module! '(echo-area))
-> (tree)
-(layout:level () #(views:view ((view . 1) (buffer . "*scratch*"))))
+> (unload-owner! (module-owner '(echo-area)))
 > (map buffers:name (filter (lambda (b) (member (buffers:name b) '(" *Echo Area*" "*Messages*"))) (buffers:all)))
 (" *Echo Area*" "*Messages*")
-> (load-module! '(echo-area))
 > (tree)
 (layout:level () (layout-split:container ((direction . column)) (layout:level () #(views:view ((view . 1) (buffer . "*scratch*")))) #(views:view ((view . 4) (buffer . " *Echo Area*") (depth . 90) (size . content) (locked . #t)))))
 > (list (echo-area:current-message) (messages))
@@ -14,8 +12,7 @@
 > (eq? echo-buffer (buffers:find " *Echo Area*"))
 #t
 ; Reloading it does the same.
-> (import (tuna eval))
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/echo-area.sls"))
+> (reload-modules! '((echo-area)))
 > (list (tree) (echo-area:current-message) (messages))
 ((layout:level () (layout-split:container ((direction . column)) (layout:level () #(views:view ((view . 1) (buffer . "*scratch*")))) #(views:view ((view . 5) (buffer . " *Echo Area*") (depth . 90) (size . content) (locked . #t))))) "Kept" "Kept\n")
 ; The count of an equal message is read from the log, so it goes on

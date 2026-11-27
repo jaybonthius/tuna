@@ -1,7 +1,7 @@
 ; The console reads once the configuration's task pauses, so a form from
 ; standard input runs while a later form of the configuration is paused.
 configuration paused
-> (begin (display "from standard input") (newline) (sleep-for 0.3))
+> (begin (display "from standard input") (newline) (timers:sleep 0.3))
 from standard input
 configuration resumed
 ; Values, a pause and an error.
@@ -9,18 +9,18 @@ configuration resumed
 > (values x "five")
 5
 "five"
-> (begin (sleep-for 0.1) 'slept)
+> (begin (timers:sleep 0.1) 'slept)
 slept
 > (error 'check "bad value" 7)
 ! check: bad value with irritant 7
 ; A line may hold several forms, and the console reads the next once the
 ; form before has ended, pauses included.
-> (begin (sleep-for 0.1) 'first) 'second
+> (begin (timers:sleep 0.1) 'first) 'second
 first
 second
 ; Each form is evaluated as the REPL.
 > (current-owner)
-(repl)
+#<owner (repl) 1>
 ; Forms are read back as the same data, whatever the printer's settings.
 > (print-length 2)
 > (length (list 1 2 3 4 5))
@@ -31,13 +31,16 @@ second
 > (let ([v '#0=(a . #0#)]) (eq? v (cdr v)))
 #t
 ; Reloading the console keeps its place in standard input.
-> (eval-file console-file) 'after-reload
+> (reload-modules! '((console))) 'after-reload
+configuration paused
 after-reload
 > 'next
 next
-; Unloading it stops reading: Tuna runs on until something ends it.
-> (run-with-timer 0.2 (lambda () (display "still running") (exit)))
-#<timer>
-> (unload-module! '(console))
-still running
-> (display "never read")
+; Unloading it ends its instance's reading; the configuration, which
+; imports it, loads a new console that reads on.
+> (define old (module-owner '(console)))
+> (unload-owner! old)
+configuration resumed
+configuration paused
+> (list (owner-live? old) (eq? old (module-owner '(console))))
+(#f #f)

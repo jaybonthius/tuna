@@ -7,7 +7,7 @@
 "a NEW b c"
 > (kill-ring:push! (list p))
 > (define entry (kill-ring:current))
-> (let ([result #f]) (thread-join (fork-thread (lambda () (set! result (kill-ring:text entry))))) result)
+> (let ([result #f]) (join-task (fork-task (lambda (restore) (set! result (kill-ring:text entry))))) result)
 "a NEW b c"
 ; The text decides duplicates: pushing the same text again only moves the
 ; yank pointer.

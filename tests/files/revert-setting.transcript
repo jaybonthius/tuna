@@ -2,7 +2,8 @@
 ; global value files sets when it loads, and stays across files' reload.
 > (eq? (buffers:revert-function) files:not-modified)
 #t
-> (unload-module! '(files))
+> (unload-owner! (module-owner '(files)))
 > (load-module! '(files))
+#<owner (files) 2>
 > (eq? (buffers:revert-function) files:not-modified)
 #t

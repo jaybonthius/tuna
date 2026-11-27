@@ -1,10 +1,11 @@
 #!tuna
+(import (options))
 (define-syntax define-command
   (syntax-rules () [(_ (n . f) b ...) (define-public (n . f) b ...)]))
 (define-syntax define-point
   (syntax-rules () [(_ n) (define-record-type n (fields x))]))
 (define-syntax define-flag
-  (syntax-rules () [(_ n) (define-option n #f boolean?)]))
+  (syntax-rules () [(_ n) (options:define-option n #f boolean?)]))
 (define-syntax def-const
   (syntax-rules () [(_ n v) (define n v)]))
 (define-flag verbose)

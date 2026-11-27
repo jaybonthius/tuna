@@ -1,5 +1,5 @@
 #!tuna
-(import (web))
+(import (web) (tables))
 
 (define comment 'comment)
 (define comment.documentation 'comment.documentation)
@@ -79,4 +79,4 @@
 (define escape-glyph 'escape-glyph)
 (define key-binding 'key-binding)
 
-(table-set! web:stylesheets 'faces "faces/faces.css")
+(tables:set! web:stylesheets 'faces "faces/faces.css")

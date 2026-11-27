@@ -232,7 +232,6 @@
                             (substring text 0 (lexeme-end (vector-ref lexemes 0))))]
            [line-specs (cond
                          [(equal? first-line "#!tuna") '((tuna core replaced) (chezscheme) (tuna))]
-                         [(equal? first-line "#!tuna/base") '((tuna core replaced) (chezscheme) (tuna base))]
                          [else '()])]
            [module-file? (pair? line-specs)])
       (let loop ([i 0] [specs '()] [own #f] [found? module-file?] [configuration? #f])

@@ -54,7 +54,7 @@ cat > "$dir/plugin/tuna.deps" <<'END'
   (build "make" "build"))
 END
 cat > "$dir/home/.config/tuna/init.ss" <<END
-(import (tuna) (tuna plugins))
+(import (tuna))
 (use-plugin markdown-shell (local "$dir/plugin"))
 (write (list (markdown-shell:heading-level "## Hi\n") (markdown-shell:echo "hello")
              (markdown-shell:djot-html "_hi_\n")))

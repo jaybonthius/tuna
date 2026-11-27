@@ -1,5 +1,5 @@
 #!tuna
-(import (tuna eval))
+(import (eval) (timers))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -17,7 +17,7 @@
     'replace))
 
 (define small-text
-  "#!tuna\n(define-option width 70 fixnum? \"Width.\")\n(define-hook after-run)\n(define (greet name) (string-append \"Hello, \" name \"!\"))\n(define (count xs) (length xs))\n(add-hook! after-run count)\n")
+  "#!tuna\n(import (options) (hooks))\n(options:define-option width 70 fixnum? \"Width.\")\n(hooks:define-hook after-run)\n(define (greet name) (string-append \"Hello, \" name \"!\"))\n(define (count xs) (length xs))\n(hooks:add! after-run count)\n")
 
 ;; Sized as a typical plugin's file.
 (define big-text
@@ -34,10 +34,10 @@
   (median
     (map (lambda (i)
            (when edited?
-             (sleep-for 0.02)
+             (timers:sleep 0.02)
              (write-module! path text i))
            (let ([start (now-ns)])
-             (eval-file path)
+             (eval:eval-file path)
              (/ (- (now-ns) start) 1e6)))
          (iota runs))))
 
@@ -45,8 +45,8 @@
   (let ([small (library-file "small")] [big (library-file "big")])
     (write-module! small small-text 'first)
     (write-module! big big-text 'first)
-    (eval-file small)
-    (eval-file big)
+    (eval:eval-file small)
+    (eval:eval-file big)
     (printf "reload-unchanged-small ~,2f\n" (reload-ms small small-text #f 21))
     (printf "reload-edited-small ~,2f\n" (reload-ms small small-text #t 11))
     (printf "reload-edited-big ~,2f\n" (reload-ms big big-text #t 7))))

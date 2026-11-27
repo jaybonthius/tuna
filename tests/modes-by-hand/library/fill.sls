@@ -1,8 +1,8 @@
 #!tuna
-(import (modes))
+(import (modes) (options) (tables))
 
-(define-option column 70 fixnum? "Width of filled lines.")
-(define-table keymap "Keys while fill mode is on.")
+(options:define-option column 70 fixnum? "Width of filled lines.")
+(tables:define-table keymap "Keys while fill mode is on.")
 (modes:define-minor-mode mode
   "Whether typing past fill:column breaks the line."
   (lighter "Fill")

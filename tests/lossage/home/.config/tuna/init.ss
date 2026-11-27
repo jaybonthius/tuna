@@ -1,4 +1,7 @@
-(import (tuna) (testing) (tuna plugins) (web) (keys) (commands) (harpo))
+(import (hooks) (options) (timers) (plugins))
+(import (tuna) (testing) (web) (keys) (commands))
+;; Loaded, not imported, so its unload in a test stays an unload.
+(load-module! '(harpo))
 (use-plugin layout)
 (use-plugin editing)
 (use-plugin echo-area)
@@ -9,7 +12,7 @@
 (use-plugin command-picker)
 (use-plugin lossage
   (config
-    (set-option! lossage:size 1000)))
+    (options:set! lossage:size 1000)))
 
 (keys:bind! keys:global "<f5>" harpo:honk)
 (keys:bind! keys:global "C-c h" harpo:honk-twice)
@@ -36,14 +39,14 @@
 ;; A command's prompt pauses its task, so tests run it in a task of its
 ;; own and wait for the prompt.
 (define (start! thunk)
-  (let ([t (spawn-task (lambda () (in-client thunk)))])
-    (sleep-for 0.05)
+  (let ([t (spawn-task (lambda (restore) (in-client thunk)))])
+    (timers:sleep 0.05)
     t))
 
 
 (define (result t)
-  (testing:wait-until (lambda () (task-done? t)))
-  (if (task-done? t) (join-task t) 'waiting))
+  (testing:wait-until (lambda () (eq? (task-state t) 'done)))
+  (if (eq? (task-state t) 'done) (testing:join t) 'waiting))
 
 (define (raised thunk)
   (guard (c [#t (list (if (who-condition? c) (condition-who c) 'none)
@@ -52,7 +55,7 @@
 
 (define (on-thread thunk)
   (let ([done #f])
-    (fork-thread (lambda () (set! done (list (thunk)))))
+    (fork-task (lambda (restore) (set! done (list (thunk)))))
     (testing:wait-until (lambda () done))
     (car done)))
 

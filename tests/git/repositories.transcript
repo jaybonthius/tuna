@@ -21,5 +21,5 @@
 > (git:find-repository "repo")
 ! git:find-repository: not an absolute path with irritant "repo"
 ; A repository is plain data.
-> (plain-data? repo)
+> (plain-data:plain-data? repo)
 #t

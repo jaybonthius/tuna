@@ -2,7 +2,7 @@
 ; views:hand-scroll-moves-point to #f locally: a hand scroll at rest
 ; places the view and leaves point where it was.
 > (define b (buffers:make "rows" (lines 300)))
-> (buffers:with-buffer b (set-option-local! views:hand-scroll-moves-point #f))
+> (buffers:with-buffer b (options:set-local! views:hand-scroll-moves-point #f))
 > (define v (views:make b))
 > (report! desktop v 1 0 #f)
 > (report! desktop v 151 5 #f)
@@ -45,7 +45,7 @@
 > (list-head (placement v desktop) 2)
 (new follow)
 ; At #t, the default, a hand scroll at rest moves point into view.
-> (buffers:with-buffer b (set-option-local! views:hand-scroll-moves-point #t))
+> (buffers:with-buffer b (options:set-local! views:hand-scroll-moves-point #t))
 > (report! desktop v 20 0 #f)
 > (report! desktop v 100 0 #f)
 > (report! desktop v 100 0 #t)

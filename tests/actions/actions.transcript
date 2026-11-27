@@ -17,7 +17,7 @@ completion:buffer-category
 > (keys:reading-prompt client)
 "Act on foo: "
 > (press! "k")
-! &quit
+! &cancelled
 > (result a)
 > (result t)
 > (names)
@@ -35,37 +35,37 @@ completion:buffer-category
 > (result a)
 > (names)
 ("*scratch*" "*Messages*")
-> (list (task-done? t) (input))
+> (list (eq? (task-state t) 'done) (input))
 (#f "foo")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 ; actions:quit-after-action? set to #f keeps the read, and C-u quits it.
-> (set-option! actions:quit-after-action? #f)
+> (options:set! actions:quit-after-action? #f)
 > (define bar (buffers:make "bar" ""))
 > (define t (start! (lambda () (press! "C-x" "b"))))
 > (type! "bar")
 > (wait-matches (session))
 > (define a (act! "C-u" "C-."))
 > (press! "k")
-! &quit
+! &cancelled
 > (result a)
 > (result t)
 > (list (names) (prompt))
 (("*scratch*" "*Messages*") #f)
-> (remove-option! actions:quit-after-action?)
+> (options:unset! actions:quit-after-action?)
 ; A file name's whole text is its folder and its name, as the input
 ; holds it once chosen; f visits it.
 > (define t (start! (lambda () (press! "C-x" "C-f"))))
 > (type! "src/te")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (texts (session))
 ("text.txt")
 > (let ([s (session)]) (list (completion:whole-text s (completion:selected s)) (completion:category s (completion:selected s))))
 ("~/src/text.txt" completion:file-category)
 > (define a (act! "C-."))
 > (press! "f")
-! &quit
+! &cancelled
 > (result a)
 > (result t)
 > (files:path (views:buffer (view)))
@@ -78,7 +78,7 @@ completion:buffer-category
 "help:describe-command"
 > (define a (act! "C-."))
 > (press! "h")
-! &quit
+! &cancelled
 > (result a)
 > (result t)
 > (document:text (buffers:document (buffers:find "*Help*")) 2 23)
@@ -101,7 +101,7 @@ completion:buffer-category
 > (layout:switch-to-buffer draft)
 > (define t (start! (lambda () (press! "C-x" "C-w"))))
 > (minibuffer:set-input! (prompt) "~/src/draft.txt")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (define a (act! "C-;"))
 > (result a)
 > (result t)
@@ -111,7 +111,7 @@ completion:buffer-category
 > (layout:switch-to-buffer b)
 > (define t (start! (lambda () (press! "C-x" "C-w"))))
 > (minibuffer:set-input! (prompt) "~/src/notes.txt")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (define a (act! "C-;"))
 > (result a)
 > (press! "y")
@@ -131,17 +131,17 @@ completion:buffer-category
 > (keys:unbind! completion:file-action-keymap "RET")
 ; actions:default-actions gives C-; another command in a category's reads.
 > (define memo (buffers:make "memo" ""))
-> (table-set! actions:default-actions completion:buffer-category buffer-picker:kill-buffer)
+> (tables:set! actions:default-actions completion:buffer-category buffer-picker:kill-buffer)
 > (define t (start! (lambda () (press! "C-x" "b"))))
 > (type! "memo")
 > (wait-matches (session))
 > (define a (act! "C-;"))
-! &quit
+! &cancelled
 > (result a)
 > (result t)
 > (member "memo" (names))
 #f
-> (table-remove! actions:default-actions completion:buffer-category)
+> (tables:remove! actions:default-actions completion:buffer-category)
 ; A key the category does not bind is no action, and C-g cancels; the
 ; read stays in both.
 > (define t (start! (lambda () (press! "C-x" "b"))))
@@ -152,14 +152,14 @@ completion:buffer-category
 > (result a)
 > (define a (act! "C-."))
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result a)
 > (echo-area:current-message)
 "Quit"
-> (task-done? t)
+> (eq? (task-state t) 'done)
 #f
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 ; Outside a read there is no target.
 > (define a (act! "C-."))
@@ -171,7 +171,7 @@ completion:buffer-category
 > (define t (start! (lambda () (completion:read "Pick: " (list (completion:source (candidates (vector "one"))))))))
 > (define a (act! "C-."))
 > (press! "w")
-! &quit
+! &cancelled
 > (result a)
 > (result t)
 quit
@@ -182,7 +182,7 @@ quit
 > (keys:reading-prompt client)
 "Act on a.txt:1: "
 > (press! "w")
-! &quit
+! &cancelled
 > (result a)
 > (result t)
 quit
@@ -195,10 +195,10 @@ quit
 > (views:set-point! (view) 2)
 > (define t (start! (lambda () (press! "C-x" "C-f"))))
 > (type! "src/te")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (define a (act! "C-."))
 > (press! "i")
-! &quit
+! &cancelled
 > (result a)
 > (result t)
 > (list (buffers:name (views:buffer (view))) (document:text (buffers:document page) 0 (document:length (buffers:document page))) (views:point (view)))
@@ -213,7 +213,7 @@ quit
 > (press! "x")
 > (testing:wait-until (lambda () (keys:reading client)))
 > (press! "k")
-! &quit
+! &cancelled
 > (result a)
 > (result t)
 > (member "gone" (names))
@@ -227,7 +227,7 @@ quit
 ! actions:read-action: x z is not an action
 > (result a)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (keys:unbind! completion:buffer-action-keymap "x k")
 ; completion:answer-input! answers a prompt that is not a completion
@@ -246,11 +246,11 @@ quit
 > (define t (start! (lambda () (buffer-picker:read-buffer "Buffer: "))))
 > (minibuffer:set-input! (prompt) "nothing")
 > (completion:answer-input! (prompt))
-> (sleep-for 0.05)
-> (task-done? t)
+> (timers:sleep 0.05)
+> (eq? (task-state t) 'done)
 #f
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 quit
 ; Prefix keys typed between C-. and the action's key give the action its
@@ -265,31 +265,31 @@ quit
       (type! "prefixed")
       (wait-matches (session))
       (let ([a (act! "C-.")])
-        (for-each (lambda (key) (press! key) (testing:wait-until (lambda () (or (task-done? a) (keys:reading client))))) keys)
+        (for-each (lambda (key) (press! key) (testing:wait-until (lambda () (or (eq? (task-state a) 'done) (keys:reading client))))) keys)
         (result a)
         (result t)
         (echo-area:current-message))))
 > (define prefixed (buffers:make "prefixed" ""))
 > (prefix-of "p")
-! &quit
+! &cancelled
 "#f prefixed"
 > (prefix-of "C-u" "p")
-! &quit
+! &cancelled
 "(4) prefixed"
 > (prefix-of "C-u" "C-u" "p")
-! &quit
+! &cancelled
 "(16) prefixed"
 > (prefix-of "C-u" "2" "p")
-! &quit
+! &cancelled
 "2 prefixed"
 > (prefix-of "M-2" "3" "p")
-! &quit
+! &cancelled
 "23 prefixed"
 > (prefix-of "M--" "p")
-! &quit
+! &cancelled
 "- prefixed"
 > (prefix-of "C-u" "-" "4" "p")
-! &quit
+! &cancelled
 "-4 prefixed"
 > (define t (start! (lambda () (press! "C-x" "b"))))
 > (type! "prefixed")
@@ -299,10 +299,10 @@ quit
 > (testing:wait-until (lambda () (keys:reading client)))
 > (press! "p")
 > (result a)
-> (list (echo-area:current-message) (task-done? t))
+> (list (echo-area:current-message) (eq? (task-state t) 'done))
 ("(4) prefixed" #f)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (commands:define-command (say-prefix)
     "Says the prefix argument."
@@ -321,16 +321,16 @@ quit
 > (wait-matches (session))
 > (define a (act! "C-."))
 > (press! "k")
-! &quit
+! &cancelled
 > (result a)
 > (result t)
 > (list (echo-area:current-message) (and (member "prefixed" (names)) #t))
 ("Not killing prefixed" #t)
-> (table-remove! keys:global buffer-picker:kill-buffer)
+> (tables:remove! keys:global buffer-picker:kill-buffer)
 ; With empty input and nothing selected, the target is the read's
 ; default, as the read answers RET with it: C-. k in C-x k kills the
 ; current buffer, as C-; does.
-> (set-option! completion:read-preselect 'none)
+> (options:set! completion:read-preselect 'none)
 > (define bar (buffers:make "bar" ""))
 > (layout:switch-to-buffer bar)
 > (define t (start! (lambda () (press! "C-x" "k"))))
@@ -341,12 +341,12 @@ quit
 > (keys:reading-prompt client)
 "Act on bar: "
 > (press! "k")
-! &quit
+! &cancelled
 > (result a)
 > (result t)
 > (member "bar" (names))
 #f
-> (remove-option! completion:read-preselect)
+> (options:unset! completion:read-preselect)
 ; An action that keeps the read runs in the view the read was started
 ; from: b shows the buffer there, and i inserts there, at each cursor,
 ; not into the read's input. The read keeps the selection.
@@ -358,10 +358,10 @@ quit
 > (define a (act! "C-u" "C-."))
 > (press! "b")
 > (result a)
-> (list (task-done? t) (input) (buffers:name (views:buffer before)) (eq? (view) (minibuffer:prompt-view (prompt))))
+> (list (eq? (task-state t) 'done) (input) (buffers:name (views:buffer before)) (eq? (view) (minibuffer:prompt-view (prompt))))
 (#f "shown" "shown" #t)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (define two (buffers:make "two" "ab\n"))
 > (layout:switch-to-buffer two)
@@ -374,17 +374,17 @@ quit
 > (define a (act! "C-u" "C-."))
 > (press! "i")
 > (result a)
-> (list (task-done? t) (input) (document:text (buffers:document two) 0 (document:length (buffers:document two))))
+> (list (eq? (task-state t) 'done) (input) (document:text (buffers:document two) 0 (document:length (buffers:document two))))
 (#f "shown" "shownashownb\n")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (define t (start! (lambda () (press! "C-x" "b"))))
 > (type! "shown")
 > (wait-matches (session))
 > (define a (act! "C-."))
 > (press! "i")
-! &quit
+! &cancelled
 > (result a)
 > (result t)
 > (document:text (buffers:document two) 0 (document:length (buffers:document two)))
@@ -393,16 +393,16 @@ quit
 ; keymap binds them under its general keymap; K finds k by keys' shift
 ; translation, as keys:lookup would.
 > (list (prefix-of "2" "p") (prefix-of "2" "3" "p") (prefix-of "-" "p") (prefix-of "C-u" "2" "p") (prefix-of "P"))
-! &quit
-! &quit
-! &quit
-! &quit
-! &quit
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
 ("2 prefixed" "23 prefixed" "- prefixed" "2 prefixed" "#f prefixed")
 ; A category keymap's binding of a digit comes before the general one.
 > (keys:bind! completion:buffer-action-keymap "5" show-prefix)
 > (prefix-of "5")
-! &quit
+! &cancelled
 "#f prefixed"
 > (keys:unbind! completion:buffer-action-keymap "5")
 ; A warning an action raises continuably is reported and the action goes
@@ -418,7 +418,7 @@ quit
 > (wait-matches (session))
 > (define a (act! "C-."))
 > (press! "v")
-! &quit
+! &cancelled
 ! careful
 > (result a)
 > (result t)
@@ -431,10 +431,10 @@ quit
 > (press! "v")
 ! careful
 > (result a)
-> (list (task-done? t) (echo-area:current-message) (eq? (view) (minibuffer:prompt-view (prompt))))
+> (list (eq? (task-state t) 'done) (echo-area:current-message) (eq? (view) (minibuffer:prompt-view (prompt))))
 (#f "after warned" #t)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (keys:unbind! completion:buffer-action-keymap "v")
 ; With nothing selected, a read whose sources share a category targets its
@@ -442,22 +442,22 @@ quit
 ; name that does not exist yet.
 > (define t (start! (lambda () (press! "C-x" "C-f"))))
 > (minibuffer:set-input! (prompt) "~/src/")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (completion:selected (session))
 #f
 > (define a (act! "C-."))
 > (keys:reading-prompt client)
 "Act on ~/src/: "
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result a)
 > (type! "new.txt")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (completion:selected (session))
 #f
 > (define a (act! "C-."))
 > (press! "f")
-! &quit
+! &cancelled
 > (result a)
 > (result t)
 > (files:path (views:buffer (view)))
@@ -465,7 +465,7 @@ quit
 ; C-; with nothing selected answers as RET does.
 > (define t (start! (lambda () (completion:read-or-input "Fruit: " (list (completion:source (candidates (vector "apple")) (category completion:file-category)))))))
 > (type! "kiwi")
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (define a (act! "C-;"))
 > (result a)
 > (result t)
@@ -474,14 +474,14 @@ quit
 ; selected.
 > (define t (start! (lambda () (completion:read "Pick: " (list (completion:source (candidates (vector "one")) (category completion:file-category)) (completion:source (candidates (vector "two")) (category completion:buffer-category)))))))
 > (type! "zzz")
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (completion:session-categories (session))
 (completion:file-category completion:buffer-category)
 > (define a (act! "C-."))
 ! actions:act: No target found
 > (result a)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 quit
 ; actions:read-action is a changeable definition: advice can choose the
@@ -505,9 +505,9 @@ quit
 > (define a (start! (lambda () (press! "C-."))))
 > (testing:wait-until (lambda () (not (eq? (prompt) outer))))
 > (type! "show-pre")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (press! "RET")
-! &quit
+! &cancelled
 > (result a)
 > (result t)
 > (echo-area:current-message)
@@ -516,7 +516,7 @@ quit
 ; The completion page's example: a category of a plugin's own, with a
 ; keymap of its actions.
 > (completion:define-category fruit-category "Fruit names.")
-> (define-table fruit-action-keymap "The actions on fruit names.")
+> (tables:define-table fruit-action-keymap "The actions on fruit names.")
 > (commands:define-command (eat-fruit
                              [fruit (completion:read "Eat: "
                                       (list (completion:source
@@ -524,19 +524,19 @@ quit
                                               (category fruit-category))))])
     "Eats FRUIT."
     (echo-area:message! "Ate ~a" fruit))
-> (table-set! completion:action-keymaps fruit-category (list fruit-action-keymap))
+> (tables:set! completion:action-keymaps fruit-category (list fruit-action-keymap))
 > (keys:bind! fruit-action-keymap "e" eat-fruit)
 > (define t (start! (lambda () (completion:read "Fruit: " (list (completion:source (candidates (vector "apple" "pear")) (category fruit-category)))))))
 > (type! "pe")
 > (define a (act! "C-."))
 > (press! "e")
-! &quit
+! &cancelled
 > (result a)
 > (echo-area:current-message)
 "Ate pear"
 > (result t)
 quit
 ; The actions page's example.
-> (set-option! actions:quit-after-action? #f)
+> (options:set! actions:quit-after-action? #f)
 > (actions:quit-after-action?)
 #f

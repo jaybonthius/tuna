@@ -72,14 +72,14 @@
 > (messages)
 "No other view to select\nFirst\nHello\nSaved [3 times]\ntwo\nlines [2 times]\n"
 ; The log keeps echo-area:log-max lines, the oldest going first.
-> (set-option! echo-area:log-max 3)
+> (options:set! echo-area:log-max 3)
 > (echo-area:message! "Next")
 > (messages)
 "two\nlines [2 times]\nNext\n"
 > (echo-area:message! "Next")
 > (messages)
 "two\nlines [2 times]\nNext [2 times]\n"
-> (set-option! echo-area:log-max 16384)
+> (options:set! echo-area:log-max 16384)
 ; *Messages* refuses the user's edits; a killed *Messages* is made again
 ; by the next message; the echo area cannot be killed.
 > (define log (buffers:find "*Messages*"))
@@ -135,8 +135,8 @@ echo-area:show-messages
 (echo-area:message! "not a string")
 > (raised (lambda () (parameterize ([echo-area:face "red"]) #t)))
 (echo-area:face "not a face or #f")
-> (raised (lambda () (set-option! echo-area:log-max -1)))
-(set-option! "-1 is not a valid value for echo-area:log-max")
+> (raised (lambda () (options:set! echo-area:log-max -1)))
+(options:set! "-1 is not a valid value for echo-area:log-max")
 ; A killed log made again by another module's code keeps no undo after
 ; that module unloads, and one made again by code acting for no module,
 ; such as advice on batch-ended, is made all the same.
@@ -144,7 +144,7 @@ echo-area:show-messages
 #t
 > (import (poker))
 > (poker:poke)
-> (unload-module! '(poker))
+> (unload-owner! (module-owner '(poker)))
 > (list (messages) (buffers:silent? (buffers:find "*Messages*")))
 ("Poked\n" #t)
 > (buffers:kill! (buffers:find "*Messages*"))

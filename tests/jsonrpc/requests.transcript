@@ -24,16 +24,16 @@
 (timeout "wait")
 ; A quit of a waiting task calls the cancel clause with the request's id,
 ; and the answer, when it comes, is dropped.
-> (define waiting (spawn-task (lambda () (jsonrpc:request c "wait" '()))))
-> (sleep-for 0.1)
+> (define waiting (spawn-task (lambda (restore) (jsonrpc:request c "wait" '()))))
+> (timers:sleep 0.1)
 > cancels
 ()
-> (signal-task waiting (make-quit))
-! &quit
-> (sleep-for 0.05)
+> (cancel-task waiting)
+! &cancelled
+> (timers:sleep 0.05)
 > cancels
 (7)
-> (task-done? waiting)
+> (eq? (task-state waiting) 'done)
 #t
 ; jsonrpc:request-async calls one of its procedures in a task; cancelled
 ; first, it calls neither.
@@ -53,19 +53,19 @@
 ; A connection without a cancel clause sends nothing on a quit.
 > (define quiet (start-fake! "quiet" (jsonrpc:handlers)))
 > (define quiet-record last-record)
-> (define waiting-quietly (spawn-task (lambda () (jsonrpc:request quiet "wait" '()))))
-> (sleep-for 0.1)
-> (signal-task waiting-quietly (make-quit))
-! &quit
+> (define waiting-quietly (spawn-task (lambda (restore) (jsonrpc:request quiet "wait" '()))))
+> (timers:sleep 0.1)
+> (cancel-task waiting-quietly)
+! &cancelled
 > (jsonrpc:request quiet "echo" '#(1))
 #(1)
 > (map (lambda (line) (substring line 0 (min 40 (string-length line)))) (record-of quiet-record))
 ("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"wait\"," "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"echo\",")
 ; Two connections each read their own frames.
-> (define both (list (spawn-task (lambda () (jsonrpc:request c "echo" '#("c"))))
-                     (spawn-task (lambda () (jsonrpc:request quiet "echo" '#("quiet"))))))
-> (testing:wait-until (lambda () (for-all task-done? both)))
-> (map join-task both)
+> (define both (list (spawn-task (lambda (restore) (jsonrpc:request c "echo" '#("c"))))
+                     (spawn-task (lambda (restore) (jsonrpc:request quiet "echo" '#("quiet"))))))
+> (testing:wait-until (lambda () (for-all testing:done? both)))
+> (map testing:join both)
 (#("c") #("quiet"))
 ; Bad arguments raise.
 > (raised (lambda () (guard (e [(assertion-violation? e) (condition-message e)]) (jsonrpc:request c 'echo '()))))

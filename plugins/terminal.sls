@@ -1,48 +1,50 @@
 #!tuna
 (import (buffers) (document) (views) (keys) (commands) (modes) (editing) (kill-ring) (clipboard)
         (files) (layout) (web) (haml) (ask) (processes) (browse-url) (ansi-colors)
-        (prefix (ghostty) ghostty:) (prefix (terminal screens) screens:))
+        (prefix (ghostty) ghostty:) (prefix (terminal screens) screens:) (hooks) (options) (tables) (saved))
 
-(define-option shell #f (lambda (v) (or (not v) (and (pair? v) (list? v) (for-all string? v))))
+(define %self (current-owner))
+
+(options:define-option shell #f (lambda (v) (or (not v) (and (pair? v) (list? v) (for-all string? v))))
   "The program and arguments a terminal runs without a command, or #f for the program $SHELL names.")
 
-(define-option environment '()
+(options:define-option environment '()
   (lambda (v)
     (and (list? v)
          (for-all (lambda (e) (and (pair? e) (string? (car e)) (or (not (cdr e)) (string? (cdr e))))) v)))
   "Variables for new programs, an association list of names and values; #f removes a variable.")
 
-(define-option scrollback-lines 10000 (lambda (v) (and (fixnum? v) (fx>= v 0)))
+(options:define-option scrollback-lines 10000 (lambda (v) (and (fixnum? v) (fx>= v 0)))
   "How many lines of scrollback a terminal keeps, in its buffer and in libghostty's history."
   (lambda (v) (%limit-scrollback!)))
 
-(define-option kill-buffer-on-exit? #t boolean?
+(options:define-option kill-buffer-on-exit? #t boolean?
   "Whether a terminal's buffer is killed when its program ends.")
 
-(define-option program-copy? #t boolean?
+(options:define-option program-copy? #t boolean?
   "Whether a program's copy (OSC 52) pushes its text onto the kill ring and the clipboard.")
 
-(define-hook title-changed "Called with a terminal whose program set its title.")
-(define-hook directory-changed "Called with a terminal whose program reported a folder that exists here, which terminal:directory now gives.")
-(define-hook bell "Called with a terminal whose program rang the bell.")
-(define-hook notification "Called with a terminal, a title and a body when its program asks for a desktop notification.")
-(define-hook progress "Called with a terminal, a state and a percentage or #f when its program reports progress.")
-(define-hook program-status "Called with a terminal and an association list of the status its program reported.")
-(define-hook semantic-prompt "Called with a terminal, a mark, an exit code or #f and a command line or #f.")
-(define-hook screen-changed "Called once per batch with each terminal whose screen changed.")
-(define-hook exited "Called with a terminal and its program's exit status, after the last of its output.")
+(hooks:define-hook title-changed "Called with a terminal whose program set its title.")
+(hooks:define-hook directory-changed "Called with a terminal whose program reported a folder that exists here, which terminal:directory now gives.")
+(hooks:define-hook bell "Called with a terminal whose program rang the bell.")
+(hooks:define-hook notification "Called with a terminal, a title and a body when its program asks for a desktop notification.")
+(hooks:define-hook progress "Called with a terminal, a state and a percentage or #f when its program reports progress.")
+(hooks:define-hook program-status "Called with a terminal and an association list of the status its program reported.")
+(hooks:define-hook semantic-prompt "Called with a terminal, a mark, an exit code or #f and a command line or #f.")
+(hooks:define-hook screen-changed "Called once per batch with each terminal whose screen changed.")
+(hooks:define-hook exited "Called with a terminal and its program's exit status, after the last of its output.")
 
-(define-hook mode-hook "Called in each buffer that turns on terminal mode.")
-(define-table keymap "Keys in terminals in every input mode.")
-(define-table semi-char-keymap "Keys in a terminal in semi-char mode.")
-(define-table char-keymap "Keys in a terminal in char mode.")
-(define-table copy-keymap "Keys in a terminal in copy mode.")
-(define-table mouse-keymap "Mouse keys on the screen of a program that takes the mouse.")
-(define-table %link-keymap "Mouse keys on a link.")
+(hooks:define-hook mode-hook "Called in each buffer that turns on terminal mode.")
+(tables:define-table keymap "Keys in terminals in every input mode.")
+(tables:define-table semi-char-keymap "Keys in a terminal in semi-char mode.")
+(tables:define-table char-keymap "Keys in a terminal in char mode.")
+(tables:define-table copy-keymap "Keys in a terminal in copy mode.")
+(tables:define-table mouse-keymap "Mouse keys on the screen of a program that takes the mouse.")
+(tables:define-table %link-keymap "Mouse keys on a link.")
 
-(define-saved %folder #f (lambda (v) (or (not v) (string? v))))
+(saved:define-saved %folder #f (lambda (v) (or (not v) (string? v))))
 
-(define-saved %terminals '()
+(saved:define-saved %terminals '()
   (lambda (v)
     (and (list? v)
          (for-all (lambda (e)
@@ -104,7 +106,7 @@
 ;; Chez finds the module's source.
 (define %plugin-folder
   (let-values ([(source object found?)
-                ((library-search-handler) 'terminal '(terminal) (library-directories) (library-extensions))])
+                (default-library-search-handler 'terminal '(terminal) (library-directories) (library-extensions))])
     (string-append (path-parent source) "/terminal")))
 
 (define (%draw-root node view)
@@ -910,21 +912,22 @@
   (processes:set-buffer! (%terminal-process t) (%terminal-buffer t)))
 
 (define (%attach! t from)
-  (as-module (this-module)
-    (processes:attach! (%terminal-process t) from (%on-output t) (%on-exit t))))
+  (call-as-owner %self
+    (lambda ()
+      (processes:attach! (%terminal-process t) from (%on-output t) (%on-exit t)))))
 
 (define (%entry t)
   (vector (buffers:name (%terminal-buffer t)) (processes:id (%terminal-process t)) (%terminal-command t)
           (%terminal-directory t) (%terminal-input-mode t)))
 
 (define (%save-entries!)
-  (set-saved! %terminals
+  (saved:set! %terminals
     (map %entry (filter (lambda (t) (and (%terminal-process t) (not (%terminal-status t)))) (%all)))))
 
 (define (%forget-entry! t)
   (let ([p (%terminal-process t)])
     (when p
-      (set-saved! %terminals (remp (lambda (e) (string=? (%entry-id e) (processes:id p))) (%terminals)))
+      (saved:set! %terminals (remp (lambda (e) (string=? (%entry-id e) (processes:id p))) (%terminals)))
       (screens:delete-screen! (%screen-file (processes:id p))))))
 
 (define (%spawn command directory environment-changes size)
@@ -1279,7 +1282,7 @@
     [(wheel-right) 'seven]
     [else #f]))
 
-(define-table %drag-keymap)
+(tables:define-table %drag-keymap)
 
 (define (%follow-drag!)
   (keys:push-keymap! (web:current-client) %drag-keymap
@@ -1464,7 +1467,7 @@
   (or (%folder)
       (let ([folder (format "~a/.local/share/tuna/terminal/~a-~a" (or (getenv "HOME") "")
                       (time-second (current-time 'time-utc)) (random 1000000000))])
-        (set-saved! %folder folder)
+        (saved:set! %folder folder)
         folder)))
 
 (define (%screen-file id) (string-append (%screens-folder) "/" id ".screen"))
@@ -1590,17 +1593,17 @@
   (let ([gone (filter (lambda (entry) (not (processes:find (%entry-id entry)))) (%terminals))])
     (for-each
       (lambda (entry)
-        (guard (c [(not (quit-condition? c)) (report c)])
+        (guard (c [(not (cancelled? c)) (report c)])
           (let ([process (processes:find (%entry-id entry))])
             (when process (%reattach! entry process)))))
       (%terminals))
     (if (null? gone)
         (%save-entries!)
-        (post!
-          (lambda ()
+        (spawn-task
+          (lambda (restore)
             (for-each
               (lambda (entry)
-                (guard (c [(not (quit-condition? c)) (report c)])
+                (guard (c [(not (cancelled? c)) (report c)])
                   (if (%entry-command entry)
                       (screens:delete-screen! (%screen-file (%entry-id entry)))
                       (%revive-shell! entry))))
@@ -1686,7 +1689,7 @@
   (keys:bind! %link-keymap "<mouse-1>" open-link)
   (keys:bind! %link-keymap "C-<mouse-1>" open-link))
 
-(define (%tail) (set-option-local! views:tail #t))
+(define (%tail) (options:set-local! views:tail #t))
 
 (modes:define-major-mode mode
   (lighter "Terminal")
@@ -1694,19 +1697,19 @@
   (hook mode-hook)
   (plugin-only #t))
 
-(add-hook! mode-hook %tail)
+(hooks:add! mode-hook %tail)
 
-(table-set! views:span-properties 'terminal-cells %cells-attributes)
-(table-set! views:span-properties 'terminal-link %link-attributes)
-(table-set! web:stylesheets 'terminal "terminal/terminal.css")
-(table-set! web:scripts 'terminal "terminal/terminal.js")
-(table-set! web:input-handlers "terminal-colors" %colors-item)
-(add-hook! buffers:kill-queries kill-query)
-(add-hook! files:directory-finders %terminal-buffer-directory)
-(add-hook! commands:after-command %region-to-copy-mode)
+(tables:set! views:span-properties 'terminal-cells %cells-attributes)
+(tables:set! views:span-properties 'terminal-link %link-attributes)
+(tables:set! web:stylesheets 'terminal "terminal/terminal.css")
+(tables:set! web:scripts 'terminal "terminal/terminal.js")
+(tables:set! web:input-handlers "terminal-colors" %colors-item)
+(hooks:add! buffers:kill-queries kill-query)
+(hooks:add! files:directory-finders %terminal-buffer-directory)
+(hooks:add! commands:after-command %region-to-copy-mode)
 (advice-add! batch-ended
   (lambda (ended)
-    (guard (c [#t (report c)]) (as-module (this-module) (%after-batch)))
+    (guard (c [#t (report c)]) (call-as-owner %self (lambda () (%after-batch))))
     (ended)))
 (%bind-keys!)
 (%restore!)

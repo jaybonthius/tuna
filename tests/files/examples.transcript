@@ -26,7 +26,7 @@
                        (buffers:replace! buffer (+ j 1) (+ i 2) "")
                        (loop (- j 1) #f))))]
               [else (loop (- i 1) #f)]))))))
-> (add-hook! files:before-save delete-trailing-whitespace)
+> (hooks:add! files:before-save delete-trailing-whitespace)
 > (buffers:replace! notes 1 1 "Today: ")
 #<edit 1>
 > (buffers:modified? notes)
@@ -44,7 +44,7 @@
 > (buffers:with-buffer notes (commands:run files:save-buffer))
 > (disk-checks:read-text "~/notes.txt")
 "* Today: Buy milk.\nCall Bob.\n"
-> (map (lambda (k) (commands:command-name (table-ref keys:global k))) '("C-x C-s" "M-~" "C-x C-c"))
+> (map (lambda (k) (commands:command-name (tables:ref keys:global k))) '("C-x C-s" "M-~" "C-x C-c"))
 (files:save-buffer files:not-modified files:save-buffers-kill-tuna)
 ; The autosave example saves modified buffers after five seconds of
 ; idle, and leaves alone a file another program changed, and one the
@@ -64,8 +64,8 @@
 > (buffers:replace! later 1 1 "later")
 #<edit 1>
 > (disk-checks:write-text! "~/other.txt" "changed elsewhere\n")
-> (set-option! ask:yes-or-no-reader (lambda (question) #f))
-> (set-idle! #t)
+> (options:set! ask:yes-or-no-reader (lambda (question) #f))
+> (timers:set-idle! #t)
 > (testing:wait-until (lambda () (not (or (buffers:modified? notes) (buffers:modified? later)))))
 > (map buffers:modified? (list notes other locked later))
 (#f #t #t #f)
@@ -78,23 +78,23 @@
 ; C-x C-c asks before it exits with a modified file buffer whose edits
 ; no entry of files:unsaved-kept keeps.
 > (define asked '())
-> (set-option! ask:yes-or-no-reader (lambda (question) (set! asked (cons question asked)) #f))
+> (options:set! ask:yes-or-no-reader (lambda (question) (set! asked (cons question asked)) #f))
 > (commands:run files:save-buffers-kill-tuna)
 > asked
 ("Modified buffers exist; exit anyway? ")
-> (add-hook! files:unsaved-kept (lambda (buffer) (eq? buffer other)))
+> (hooks:add! files:unsaved-kept (lambda (buffer) (eq? buffer other)))
 ; With no edits to lose, it asks whether to exit only when
 ; files:confirm-exit? is on.
 > (files:confirm-exit?)
 #f
-> (set-option! files:confirm-exit? #t)
-> (set-option! ask:y-or-n-reader (lambda (question) (set! asked (cons question asked)) #f))
+> (options:set! files:confirm-exit? #t)
+> (options:set! ask:y-or-n-reader (lambda (question) (set! asked (cons question asked)) #f))
 > (commands:run files:save-buffers-kill-tuna)
 > asked
 ("Really exit Tuna? " "Modified buffers exist; exit anyway? ")
 ; Once it has asked about modified buffers, it asks nothing more.
 > (buffers:replace! notes 1 1 "! ")
 #<edit 6>
-> (set-option! ask:yes-or-no-reader (lambda (question) #t))
-> (set-option! ask:y-or-n-reader (lambda (question) (display question) #f))
+> (options:set! ask:yes-or-no-reader (lambda (question) #t))
+> (options:set! ask:y-or-n-reader (lambda (question) (display question) #f))
 > (commands:run files:save-buffers-kill-tuna)

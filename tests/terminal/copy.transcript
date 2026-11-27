@@ -20,7 +20,7 @@
 ; In copy mode the plugin writes nothing to the buffer; leaving it writes
 ; the newest screen.
 > (terminal:send! t "echo during-copy\r")
-> (sleep-for 0.5)
+> (timers:sleep 0.5)
 > (equal? before (text t))
 #t
 > (press! "q")

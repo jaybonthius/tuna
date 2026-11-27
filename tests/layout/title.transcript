@@ -22,30 +22,30 @@
 > (web:client-title c1)
 "sent - Tuna"
 ; layout:page-title makes the title from the buffer's name.
-> (set-option! layout:page-title (lambda (name) (string-append name " – Emacs")))
+> (options:set! layout:page-title (lambda (name) (string-append name " – Emacs")))
 > (web:client-title c1)
 "sent – Emacs"
-> (remove-option! layout:page-title)
+> (options:unset! layout:page-title)
 > (web:client-title c1)
 "sent - Tuna"
 ; A page-title that raises costs the pages their title, not their
 ; screens: it is reported once, and every client shows the program's name.
-> (set-option! layout:page-title (lambda (name) (car '())))
-! car: () is not a pair
-> (sleep-for 0)
-> (sleep-for 0)
+> (options:set! layout:page-title (lambda (name) (car '())))
+! (layout) car: () is not a pair
+> (timers:sleep 0)
+> (timers:sleep 0)
 > (list (web:client-title c1) (web:client-title c2) (substring (web:client-screen c1) 0 26))
 ("Tuna" "Tuna" "<div class=\"layout-screen\"")
-> (remove-option! layout:page-title)
+> (options:unset! layout:page-title)
 > (web:client-title c1)
 "sent - Tuna"
 ; So does one that returns what is not a string.
-> (set-option! layout:page-title (lambda (name) 42))
-! layout:page-title: returned what is not a string with irritant 42
-> (sleep-for 0)
-> (sleep-for 0)
+> (options:set! layout:page-title (lambda (name) 42))
+! (layout) layout:page-title: returned what is not a string with irritant 42
+> (timers:sleep 0)
+> (timers:sleep 0)
 > (list (web:client-title c1) (web:client-title c2))
 ("Tuna" "Tuna")
-> (remove-option! layout:page-title)
+> (options:unset! layout:page-title)
 > (web:client-title c1)
 "sent - Tuna"

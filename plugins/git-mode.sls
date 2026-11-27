@@ -1,6 +1,8 @@
 #!tuna
 (import (git) (processes) (ui) (buffers) (document) (views) (layout) (modes) (keys) (commands) (transient) (files)
-        (ask) (status-line))
+        (ask) (status-line) (hooks) (options) (tables))
+
+(define %self (current-owner))
 
 (define-enumeration saving (ask save never) %savings)
 
@@ -10,29 +12,29 @@
 
 (define (%one-of names) (lambda (v) (and (memq v (enum-set->list (enum-set-universe names))) #t)))
 
-(define-option repository #f (lambda (v) (or (not v) (git:repository? v)))
+(options:define-option repository #f (lambda (v) (or (not v) (git:repository? v)))
   "The buffer's repository, set locally in each Git buffer.")
 
-(define-option save-repository-buffers (saving ask) (%one-of (%savings))
+(options:define-option save-repository-buffers (saving ask) (%one-of (%savings))
   "Before a refresh, whether to save modified buffers visiting files of the repository: ask asks for each, save saves without asking, never leaves them.")
 
-(define-option revert-buffers? #t boolean?
+(options:define-option revert-buffers? #t boolean?
   "Whether, after a command, unmodified buffers whose files changed on disk are reverted.")
 
-(define-option no-confirm (list (confirmation set-and-push))
+(options:define-option no-confirm (list (confirmation set-and-push))
   (lambda (v) (and (list? v) (for-all (%one-of (%confirmations)) v)))
   "Actions done without asking, values of git-mode:confirmation.")
 
-(define-option %refresher #f (lambda (v) (or (not v) (procedure? v)))
+(options:define-option %refresher #f (lambda (v) (or (not v) (procedure? v)))
   "The procedure of a Git buffer that rebuilds it, set locally.")
 
-(define-hook before-refresh "Called with the repository before each refresh.")
+(hooks:define-hook before-refresh "Called with the repository before each refresh.")
 
-(define-hook after-refresh "Called with the repository after each refresh.")
+(hooks:define-hook after-refresh "Called with the repository after each refresh.")
 
-(define-table keymap "Keys in every Git buffer.")
+(tables:define-table keymap "Keys in every Git buffer.")
 
-(define-hook mode-hook "Called in each buffer that turns on git-mode:mode.")
+(hooks:define-hook mode-hook "Called in each buffer that turns on git-mode:mode.")
 
 (modes:define-major-mode mode
   (parent ui:section-mode)
@@ -41,9 +43,9 @@
   (hook mode-hook)
   (plugin-only #t))
 
-(define-table commands-keymap "Keys in the command log.")
+(tables:define-table commands-keymap "Keys in the command log.")
 
-(define-hook commands-mode-hook "Called in each command log as its mode is set.")
+(hooks:define-hook commands-mode-hook "Called in each command log as its mode is set.")
 
 (modes:define-major-mode commands-mode
   (parent mode)
@@ -99,7 +101,7 @@
         (buffers:set-silent! b #t)
         (modes:set-major-mode major-mode b)
         (buffers:with-buffer b
-          (set-option-local! repository repo %refresher rebuild buffers:revert-function refresh
+          (options:set-local! repository repo %refresher rebuild buffers:revert-function refresh
                              files:offer-save? #f))
         b)))
 
@@ -294,12 +296,13 @@
          (ask:message (string-append "Git error: " summary " [Type $ for details]")))])
     (eq-hashtable-delete! %background command)
     (unless (git:queued? repository)
-      (as-module (this-module)
-        (spawn-task
-          (lambda ()
-            (%finally
-              (lambda () (refresh-repository repository))
-              (lambda () (unless (git:queued? repository) (%mark-current! repository))))))))))
+      (call-as-owner %self
+        (lambda ()
+          (spawn-task
+            (lambda (restore)
+              (%finally
+                (lambda () (refresh-repository repository))
+                (lambda () (unless (git:queued? repository) (%mark-current! repository)))))))))))
 
 ;; A failed command a caller waited for has said Git error already, so
 ;; the caller stops without raising it again, as Magit's synchronous
@@ -447,6 +450,6 @@
   (transient:command "g" "Refresh current buffer" refresh)
   (transient:command "q" "Bury current buffer" quit)
   (transient:command "TAB" "Toggle section at point" ui:section-toggle))
-(table-set! status-line:segments running (status-line:left 60))
-(add-hook! git:command-updated %command-updated)
-(add-hook! git:command-ended %command-ended)
+(tables:set! status-line:segments running (status-line:left 60))
+(hooks:add! git:command-updated %command-updated)
+(hooks:add! git:command-ended %command-ended)

@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (web) (keys) (commands) (document) (buffers) (views) (modes) (haml) (files attributes))
+(import (hooks) (options) (tables) (timers) (plugins))
+(import (tuna) (testing) (web) (keys) (commands) (document) (buffers) (views) (modes) (haml) (files attributes))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -25,7 +26,7 @@
         (views:call-with-view (layout:selected-view) (lambda () (keys:press! client key)))))
     keys))
 
-(define (settle) (sleep-for 0.1))
+(define (settle) (timers:sleep 0.1))
 
 
 (define (view) (layout:selected-view))
@@ -85,7 +86,7 @@
 
 (define (mouse-in! v action place . fields)
   (parameterize ([web:current-client client])
-    ((table-ref web:input-handlers "mouse") client
+    ((tables:ref web:input-handlers "mouse") client
      (append fields
              `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
                ("view" . ,(views:id v)) ("version" . ,(buffers:version (views:buffer v)))

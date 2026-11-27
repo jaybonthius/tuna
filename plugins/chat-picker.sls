@@ -1,5 +1,7 @@
 #!tuna
-(import (chat) (projects) (completion) (commands) (keys) (views) (buffers) (document) (faces) (files))
+(import (chat) (projects) (completion) (commands) (keys) (views) (buffers) (document) (faces) (files) (hooks) (tables))
+
+(define %self (current-owner))
 
 (completion:define-category chat-category "Live chats, valued by the conversation.")
 
@@ -140,8 +142,9 @@
           [(projects:find folder)
            => (lambda (project)
                 (set! stop
-                  (as-module (this-module)
-                    (projects:list-files project (%mention-receiver emit (projects:root project) folder)))))]
+                  (call-as-owner %self
+                    (lambda ()
+                      (projects:list-files project (%mention-receiver emit (projects:root project) folder))))))]
           [else (emit 'done)])))))
 
 (define (%point-in-prompt c)
@@ -186,12 +189,12 @@
         (list (cons faces:shadow (%first-line (cdr command))))
         '())))
 
-(table-set! completion:annotators chat-category annotate-chat)
-(table-set! completion:annotators command-category annotate-command)
+(tables:set! completion:annotators chat-category annotate-chat)
+(tables:set! completion:annotators command-category annotate-command)
 
-(add-hook! completion:find-region complete-mention)
-(add-hook! completion:find-region complete-command)
+(hooks:add! completion:find-region complete-mention)
+(hooks:add! completion:find-region complete-command)
 
 (keys:bind! chat:prompt-keymap "TAB" completion:complete-at-point)
 
-(table-set! commands:region-commands add-region-to #t)
+(tables:set! commands:region-commands add-region-to #t)

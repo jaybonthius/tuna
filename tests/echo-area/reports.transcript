@@ -9,7 +9,7 @@
 ("() is not a pair" "<div class=\"echo-area-message\" role=\"status\" data-face=\"error\"><div class=\"line\" id=\"v3-2\" data-line=\"1\" data-before=\"0\" data-at=\"1\">() is not a pair</div></div>")
 > (define (report-line c)
     (let-values ([(port text) (open-string-output-port)])
-      (parameterize ([console-error-port port]) (as-module '(layout) (report c)))
+      (parameterize ([console-error-port port]) (call-as-owner (module-owner '(layout)) (lambda () (report c))))
       (text)))
 > (define (last-logged)
     (let* ([log (messages)] [end (- (string-length log) 1)])
@@ -93,12 +93,12 @@
 ; on report skips quits, as when C-g quits a paused command.
 > (commands:define-command (wait) "Waits until quit." (suspend (lambda (resume) #f)))
 > (keys:bind! keys:global "C-c w" wait)
-> (define waiting (spawn-task (lambda () (press! "C-c" "w"))))
-> (sleep-for 0.1)
+> (define waiting (spawn-task (lambda (restore) (press! "C-c" "w"))))
+> (timers:sleep 0.1)
 > (press! "C-g")
-! &quit
-> (testing:wait-until (lambda () (task-done? waiting)))
-> (task-done? waiting)
+! &cancelled
+> (testing:wait-until (lambda () (eq? (task-state waiting) 'done)))
+> (eq? (task-state waiting) 'done)
 #t
 > (echo-area:current-message)
 "Quit"
@@ -127,7 +127,7 @@
 ! first
 ! second
 ! third
-! notes:show: cannot show
+! (echo-area) notes:show: cannot show
 > (advice-remove! echo-area:message! refuse-second)
 > (let ([log (messages)]) (substring log (- (string-length log) 41) (string-length log)))
 "both\nfirst\nthird\nnotes:show: cannot show\n"
@@ -138,15 +138,15 @@
 > (keys:bind! keys:global "C-c f" fail)
 > (define seen #f)
 > (define (note-message command) (set! seen (echo-area:current-message)))
-> (add-hook! commands:after-command note-message)
+> (hooks:add! commands:after-command note-message)
 > (press! "C-c" "f")
 ! notes:fail: no
-> (remove-hook! commands:after-command note-message)
+> (hooks:remove! commands:after-command note-message)
 > seen
 "no"
 > (begin
     (report (condition (make-error) (make-message-condition "quiet")))
-    (with-options ([echo-area:log-max 0]) (echo-area:message! "unlogged"))
+    (options:with ([echo-area:log-max 0]) (echo-area:message! "unlogged"))
     (echo-area:current-message))
 ! quiet
 "unlogged"
@@ -155,7 +155,7 @@
 ; An error raised where the log is off is logged all the same, as Emacs
 ; logs a command's error once its bindings unwind.
 > (commands:define-command (quiet-fail) "Raises where nothing is logged."
-    (with-options ([echo-area:log-max 0]) (error 'notes:quiet "lost")))
+    (options:with ([echo-area:log-max 0]) (error 'notes:quiet "lost")))
 > (keys:bind! keys:global "C-c q" quiet-fail)
 > (press! "C-c" "q")
 ! notes:quiet: lost

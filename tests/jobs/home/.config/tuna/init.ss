@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (tuna eval) (jobs))
+(import (timers) (plugins))
+(import (tuna) (testing) (jobs))
 (use-plugin fuzzy (local "~/src/fuzzy"))
 
 (define log '())

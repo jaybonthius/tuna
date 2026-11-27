@@ -1,31 +1,31 @@
 ; An idle timer runs once each time Tuna has been idle for its seconds.
 > (define idle-runs 0)
-> (define idler (run-with-idle-timer 0.1 (lambda () (set! idle-runs (+ idle-runs 1)))))
-> (list (idle-seconds) (equal? (timers) (list idler)) (map car (module-changes '(repl))))
-(#f #t (timer))
-> (sleep-for 0.2)
+> (define idler (timers:run-when-idle 0.1 (lambda () (set! idle-runs (+ idle-runs 1)))))
+> (list (timers:idle-seconds) (equal? (timers:live) (list idler)))
+(#f #t)
+> (timers:sleep 0.2)
 > idle-runs
 0
-> (set-idle! #t)
-> (sleep-for 0.3)
-> (list idle-runs (>= (idle-seconds) 0.3))
+> (timers:set-idle! #t)
+> (timers:sleep 0.3)
+> (list idle-runs (>= (timers:idle-seconds) 0.3))
 (1 #t)
 ; Telling it again changes nothing; being busy then idle starts a new
 ; period.
-> (set-idle! #t)
-> (sleep-for 0.1)
+> (timers:set-idle! #t)
+> (timers:sleep 0.1)
 > idle-runs
 1
-> (begin (set-idle! #f) (set-idle! #t))
-> (sleep-for 0.2)
+> (begin (timers:set-idle! #f) (timers:set-idle! #t))
+> (timers:sleep 0.2)
 > idle-runs
 2
 ; Any thread may say whether Tuna is idle.
-> (on-thread (lambda () (set-idle! #f)))
-> (list (idle-seconds) (begin (sleep-for 0.2) idle-runs))
+> (on-thread (lambda () (timers:set-idle! #f)))
+> (list (timers:idle-seconds) (begin (timers:sleep 0.2) idle-runs))
 (#f 2)
-> (cancel-timer! idler)
-> (begin (set-idle! #t) (sleep-for 0.2) idle-runs)
+> (timers:cancel! idler)
+> (begin (timers:set-idle! #t) (timers:sleep 0.2) idle-runs)
 2
-> (set-idle! 'yes)
-! set-idle!: not a boolean with irritant yes
+> (timers:set-idle! 'yes)
+! timers:set-idle!: not a boolean with irritant yes

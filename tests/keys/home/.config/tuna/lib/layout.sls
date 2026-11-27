@@ -9,10 +9,12 @@
 
 (define (other-frame) (cadr frames))
 
-(define switches 0)
+(define %switches 0)
+
+(define (switches) %switches)
 
 (commands:define-command (other-view)
   "Selects the next view."
-  (set! switches (+ switches 1)))
+  (set! %switches (+ %switches 1)))
 
 (keys:bind! keys:global "C-x o" other-view)

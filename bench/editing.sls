@@ -1,5 +1,5 @@
 #!tuna
-(import (document) (buffers) (views) (commands) (keys) (undo) (editing) (layout) (web))
+(import (document) (buffers) (views) (commands) (keys) (undo) (editing) (layout) (web) (options))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -46,11 +46,11 @@
 (define mixed
   "The quick brown fox, née Müller, jumps over 13 lazy dogs; café-au-lait $5% (x+y)*z. ")
 
-(define made 0)
+(define %made 0)
 
 (define (view-of content . points)
-  (set! made (fx+ made 1))
-  (let* ([b (buffers:make (format "bench-~a" made) content)] [v (views:make b)])
+  (set! %made (fx+ %made 1))
+  (let* ([b (buffers:make (format "bench-~a" %made) content)] [v (views:make b)])
     (views:set-point! v (car points))
     (for-each (lambda (p) (views:add-cursor! v p)) (cdr points))
     v))
@@ -67,7 +67,7 @@
 ;; this benchmark is one batch, so the buffers it edits that way keep no
 ;; history.
 (define (without-history v)
-  (buffers:with-buffer (views:buffer v) (set-option-local! undo:limit 0))
+  (buffers:with-buffer (views:buffer v) (options:set-local! undo:limit 0))
   v)
 
 (define (typing-cost v command)
@@ -161,9 +161,9 @@
   ;; selected view's region becomes the primary selection.
   (for-each
     (lambda (content suffix)
-      (let ([v (layout:selected-view)] [b (buffers:make (format "bench-~a" (begin (set! made (fx+ made 1)) made)) content)])
+      (let ([v (layout:selected-view)] [b (buffers:make (format "bench-~a" (begin (set! %made (fx+ %made 1)) %made)) content)])
         (views:set-buffer! v b)
-        (buffers:with-buffer b (set-option-local! undo:limit 0))
+        (buffers:with-buffer b (options:set-local! undo:limit 0))
         (views:set-point! v (paragraph-text-start 1000))
         (views:set-mark! v 1)
         (views:with-view v

@@ -85,11 +85,12 @@ hup
 > (define orphan-buffer (buffers:make "*orphan*" ""))
 > (define orphan (processes:start-for-user "sleep" '("30")))
 > (processes:set-buffer! orphan orphan-buffer)
-> (unload-module! '(processes))
+> (unload-owner! (module-owner '(processes)))
 > (buffers:kill! orphan-buffer)
 #t
 > (load-module! '(processes))
-> (sleep-for 0.2)
+#<owner (processes) 2>
+> (timers:sleep 0.2)
 > (list (processes:status orphan) (processes:buffer orphan) (and (memq orphan (processes:all)) #t))
 (#f #f #t)
 > (processes:stop! orphan)

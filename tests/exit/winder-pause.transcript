@@ -1,7 +1,7 @@
 ; An after-thunk that pauses while exit leaves its task runs to its end
 ; before any module unloads: the exit waits for the task to end.
 > (import (user))
-> (dynamic-wind void (lambda () (exit)) (lambda () (sleep-for 0.1) (user:say-leaving)))
+> (dynamic-wind void (lambda () (exit)) (lambda () (timers:sleep 0.1) (user:say-leaving)))
 leaving the task
 configuration unloading
 user unloading

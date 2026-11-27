@@ -22,7 +22,7 @@ cp -R plugins/. "$dir/library/"
 cp tests/views/home/.config/tuna/lib/web.sls \
    tests/views/home/.config/tuna/lib/md.sls "$home/.config/tuna/lib/"
 cat > "$home/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins) (document) (md))
+(import (tuna) (document) (md))
 (use-plugin views)
 (define notes (buffers:make "notes" "one two\nthree four\nfive six\n"))
 (define layout

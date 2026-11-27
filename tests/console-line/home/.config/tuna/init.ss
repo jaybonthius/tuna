@@ -1,2 +1,2 @@
-(import (tuna) (tuna plugins))
+(import (tuna))
 (use-plugin console)

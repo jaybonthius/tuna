@@ -49,7 +49,7 @@ async function startTuna() {
   const library = path.join(home, "library");
   execFileSync("sh", [path.join(here, "../../boot/copy-library.sh"), path.join(path.dirname(bin), "plugins"), library]);
   const port = await freePort();
-  const child = spawn(bin, [`--eval=(set-option! web:port ${port})`],
+  const child = spawn(bin, [`--eval=(options:set! web:port ${port})`],
     { cwd: work, env: { ...gitEnv, TUNA_LIBRARY: library }, stdio: ["pipe", "pipe", "pipe"] });
   const tuna = { child, url: `http://127.0.0.1:${port}/`, out: "", waiters: [], n: 0 };
   const wake = () => { for (const w of [...tuna.waiters]) w(); };
@@ -79,7 +79,7 @@ async function repl(tuna, form) {
     const text = tuna.out.slice(start);
     const m = text.match(new RegExp(`@@${n} (.*)\\n`));
     if (m) { result = m[1]; return true; }
-    const e = text.match(/(^|\n)! (?!&quit)(.*)\n/);
+    const e = text.match(/(^|\n)! (?!&cancelled)(.*)\n/);
     if (e) { result = new Error(e[2]); return true; }
     return false;
   }, 60000);

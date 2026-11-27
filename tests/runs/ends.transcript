@@ -55,8 +55,8 @@ Run stopped at TIME
 > (testing:wait-until (lambda () (string=? (output long) "first\n")))
 > (define seen #f)
 > (define (look b end) (unless seen (set! seen (list end (runs:status b) (output b)))))
-> (add-hook! runs:ended look)
-> (set-option! ask:yes-or-no-reader (lambda (q) (set! asked q) #t))
+> (hooks:add! runs:ended look)
+> (options:set! ask:yes-or-no-reader (lambda (q) (set! asked q) #t))
 > (define asked #f)
 > (define again (runs:start-for-user "*long*" "echo second" home))
 > (list (eq? again long) asked seen)
@@ -65,13 +65,13 @@ Run stopped at TIME
 0
 > (output again)
 "second"
-> (remove-hook! runs:ended look)
+> (hooks:remove! runs:ended look)
 > (taken-ends)
 (("*long*" stopped stopped) ("*long*" 0 0))
 ; Killing a going run's buffer stops it without asking; its entries get
 ; the end, and nothing is written into the dying buffer.
 > (define doomed (runs:start-for-user "*doomed*" "sleep 30" home))
-> (set-option! ask:yes-or-no-reader (lambda (q) (set! asked q) #f))
+> (options:set! ask:yes-or-no-reader (lambda (q) (set! asked q) #f))
 > (set! asked #f)
 > (in-client (lambda () (commands:run buffer-picker:kill-buffer doomed)))
 > (list (buffers:live? doomed) asked (taken-ends) (message))
@@ -79,11 +79,11 @@ Run stopped at TIME
 ; The buffer refuses edits and is silent: output and an output-written
 ; entry's splice leave it unmodified, with no undo history.
 > (define (mark-lines b start end) (buffers:splice! b end end (document:from-datum "!")))
-> (add-hook! runs:output-written mark-lines)
+> (hooks:add! runs:output-written mark-lines)
 > (define quiet (runs:start-for-user "*quiet*" "echo x" home))
 > (ended? quiet)
 0
-> (remove-hook! runs:output-written mark-lines)
+> (hooks:remove! runs:output-written mark-lines)
 > (list (output quiet) (buffers:silent? quiet) (buffers:modified? quiet))
 ("x\n!" #t #f)
 > (buffers:insert! quiet 1 "typed")

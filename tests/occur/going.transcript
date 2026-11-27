@@ -5,7 +5,7 @@
 > (views:set-point! (view) 20)
 > (define jumped '())
 > (define (note-jump v) (set! jumped (cons (list (buffers:name (views:buffer v)) (views:point v)) jumped)))
-> (add-hook! jump-history:after-jump note-jump)
+> (hooks:add! jump-history:after-jump note-jump)
 > (occur! (search:make-query "foo" search:regexp) 0 #f)
 > (in-occur!)
 > (views:set-point! (view) (find-text (occur-buffer) "foo three"))
@@ -59,20 +59,20 @@
 > (marked)
 1
 ; The highlight ends after half a second.
-> (sleep-for 0.7)
+> (timers:sleep 0.7)
 > (filter (lambda (f) (string=? (car f) "pulse.highlight")) (faced (html->string (views:draw src-view client))))
 ()
 ; A second highlight lasts its own half second, whatever the first's
 ; timer.
 > (views:set-point! (view) (find-text (occur-buffer) "one foo"))
 > (press! "C-o")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (views:set-point! (view) (find-text (occur-buffer) "foo three"))
 > (press! "C-o")
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (filter (lambda (f) (string=? (car f) "pulse.highlight")) (faced (html->string (views:draw src-view client))))
 (("pulse.highlight" "foo") ("pulse.highlight" "foo"))
-> (sleep-for 0.4)
+> (timers:sleep 0.4)
 > (filter (lambda (f) (string=? (car f) "pulse.highlight")) (faced (html->string (views:draw src-view client))))
 ()
 ; The source's active region stays active and grows to the match.
@@ -106,7 +106,7 @@
 #t
 > (press! "RET")
 ! occur:goto-occurrence: Buffer for this occurrence was killed
-> (remove-hook! jump-history:after-jump note-jump)
+> (hooks:remove! jump-history:after-jump note-jump)
 ; A separator and an unmatched current line hold no occurrence either.
 > (define s (src "foo\na\nb\nc\nfoo\n"))
 > (occur! (search:make-query "foo" search:regexp) 1 #f)
@@ -117,9 +117,9 @@
 > (only!)
 > (define t (src "one foo\ntwo\n"))
 > (views:set-point! (view) 10)
-> (set-option! occur:jump-to-current-line #t)
+> (options:set! occur:jump-to-current-line #t)
 > (occur! (search:make-query "foo" search:regexp) 0 #f)
-> (set-option! occur:jump-to-current-line #f)
+> (options:set! occur:jump-to-current-line #f)
 > (in-occur!)
 > (where)
 (2 "two")

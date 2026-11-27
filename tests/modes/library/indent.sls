@@ -1,8 +1,8 @@
 #!tuna
-(import (prog))
+(import (prog) (hooks) (options))
 
-(define-option width 8 fixnum? "Columns of one level of indentation.")
+(options:define-option width 8 fixnum? "Columns of one level of indentation.")
 
-(define (setup) (set-option-local! width 2))
+(define (setup) (options:set-local! width 2))
 
-(add-hook! prog:mode-hook setup)
+(hooks:add! prog:mode-hook setup)

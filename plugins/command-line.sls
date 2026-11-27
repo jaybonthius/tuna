@@ -1,5 +1,5 @@
 #!tuna
-(import (tuna eval) (files) (layout) (views) (editing) (command-line handled))
+(import (plugins) (files) (layout) (views) (editing) (command-line handled))
 
 (define (%starts-with? prefix argument)
   (let ([n (string-length prefix)])
@@ -12,11 +12,18 @@
        (string->number (substring argument 1 (string-length argument)))))
 
 (define (%evaluate! argument)
-  (guard (c [(not (quit-condition? c)) (report c)])
-    (eval-text (substring argument 7 (string-length argument)))))
+  (guard (c [(not (cancelled? c)) (report c)])
+    (let ([p (open-input-string (substring argument 7 (string-length argument)))])
+      (call-as-owner (plugins:repl-owner)
+        (lambda ()
+          (let loop ()
+            (let ([form (read p)])
+              (unless (eof-object? form)
+                (plugins:eval-form form)
+                (loop)))))))))
 
 (define (%visit argument)
-  (guard (c [(not (quit-condition? c)) (report c) #f])
+  (guard (c [(not (cancelled? c)) (report c) #f])
     (files:visit argument)))
 
 (define (%show! b line)
@@ -43,4 +50,4 @@
        (let ([b (%visit (car arguments))])
          (loop (cdr arguments) #f (if b (cons b line) shown)))])))
 
-(spawn-task (lambda () (%handle-arguments! (take-arguments!))))
+(spawn-task (lambda (restore) (%handle-arguments! (take-arguments!))))

@@ -1,30 +1,31 @@
 #!tuna
+(import (options))
 
 (define (%no-reader who)
   (lambda (question . folder) (error who "no reader is loaded")))
 
-(define-option file-name-reader (%no-reader 'ask:file-name-reader) procedure?
+(options:define-option file-name-reader (%no-reader 'ask:file-name-reader) procedure?
   "A procedure of a question, and optionally the folder to start in, that reads a file name and returns it, as Emacs's read-file-name-function.")
 
-(define-option line-reader (%no-reader 'ask:line-reader) procedure?
+(options:define-option line-reader (%no-reader 'ask:line-reader) procedure?
   "A procedure of a question and a default or #f that reads a line of text and returns it, as Emacs's read-string.")
 
-(define-option choice-reader (%no-reader 'ask:choice-reader) procedure?
+(options:define-option choice-reader (%no-reader 'ask:choice-reader) procedure?
   "A procedure of a question and a list of choices, each a pair of a label and a value or a vector of a label, a value and an annotation, that returns the value of the choice picked, as Emacs's completing-read with a required match.")
 
-(define-option line-with-candidates-reader (%no-reader 'ask:line-with-candidates-reader) procedure?
+(options:define-option line-with-candidates-reader (%no-reader 'ask:line-with-candidates-reader) procedure?
   "A procedure of a question, the candidates and a default or #f that reads a line of text, offering the candidates, and returns it, as Emacs's completing-read without a required match.")
 
-(define-option number-reader (%no-reader 'ask:number-reader) procedure?
+(options:define-option number-reader (%no-reader 'ask:number-reader) procedure?
   "A procedure of a question that reads a number and returns it, as Emacs's read-number.")
 
-(define-option yes-or-no-reader (%no-reader 'ask:yes-or-no-reader) procedure?
+(options:define-option yes-or-no-reader (%no-reader 'ask:yes-or-no-reader) procedure?
   "A procedure of a question that asks for yes or no and returns true for yes.")
 
-(define-option y-or-n-reader (%no-reader 'ask:y-or-n-reader) procedure?
+(options:define-option y-or-n-reader (%no-reader 'ask:y-or-n-reader) procedure?
   "A procedure of a question that asks for y or n and returns true for y.")
 
-(define-option message-writer
+(options:define-option message-writer
   (lambda (text)
     (raise-continuable (condition (make-warning) (make-who-condition 'ask:message) (make-message-condition text))))
   procedure?

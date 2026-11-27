@@ -15,8 +15,8 @@
     (let ([s (word-start)])
       (and s (completion:region s (views:point (views:current))
                (list (completion:source (candidates (vector "zeta" "zero"))))))))
-> (add-hook! completion:find-region greek -2)
-> (add-hook! completion:find-region zeds -1)
+> (hooks:add! completion:find-region greek -2)
+> (hooks:add! completion:find-region zeds -1)
 > (type! "al")
 > (press! "C-M-i")
 > (texts (session))
@@ -59,7 +59,7 @@
     (let ([s (word-start)])
       (and s (completion:fallback-region s (views:point (views:current))
                (list (completion:source (job one-at-a-time 0)))))))
-> (add-hook! completion:find-region empty-stream -3)
+> (hooks:add! completion:find-region empty-stream -3)
 > (type! "al")
 > (press! "C-M-i")
 > (testing:wait-until (lambda () (let ([s (session)]) (and s (pair? (texts s))))))
@@ -68,8 +68,8 @@
 > (press! "C-g" "RET")
 ; When the last fallback gives way to no region, C-M-i says No match once
 ; the stream has said done; completion that starts by itself says nothing.
-> (remove-hook! completion:find-region zeds)
-> (remove-hook! completion:find-region words:complete-word)
+> (hooks:remove! completion:find-region zeds)
+> (hooks:remove! completion:find-region words:complete-word)
 > (type! "xy")
 > (press! "C-M-i")
 > (testing:wait-until (lambda () (equal? (echo-area:current-message) "No match")))
@@ -79,13 +79,13 @@
 > (type! "xy")
 > (in-client (lambda () (completion:start-at-point 0)))
 #t
-> (sleep-for 0.3)
+> (timers:sleep 0.3)
 > (list (session) (echo-area:current-message))
 (#f #f)
-> (add-hook! completion:find-region zeds -1)
-> (add-hook! completion:find-region words:complete-word 10)
+> (hooks:add! completion:find-region zeds -1)
+> (hooks:add! completion:find-region words:complete-word 10)
 > (press! "DEL" "DEL" "DEL" "DEL" "DEL" "C-g")
-> (remove-hook! completion:find-region empty-stream)
+> (hooks:remove! completion:find-region empty-stream)
 ; completion:start-from-entry uses one entry, ignoring the hook, and
 ; returns whether the entry gave a region; a fallback region that finds
 ; nothing, with no entry after it, starts no session and calls the
@@ -117,11 +117,11 @@
 > (raised (lambda () (completion:fallback-region 3 1 '())))
 (completion:fallback-region "not a start and an end")
 > (press! "RET")
-> (remove-hook! completion:find-region greek)
+> (hooks:remove! completion:find-region greek)
 ; A file name at point completes from its folder, and gives way where
 ; the folder does not exist; text before point without a slash is no
 ; file name.
-> (add-hook! completion:find-region file-picker:file-name-region -2)
+> (hooks:add! completion:find-region file-picker:file-name-region -2)
 > (type! "~/notes/")
 > (press! "C-M-i")
 > (testing:wait-until (lambda () (let ([s (session)]) (and s (not (completion:session-busy? s))))))
@@ -152,5 +152,5 @@
 > (press! "C-g")
 > (text b)
 "al\nze\nq\na\nal\nalq \n~/notes/sub/\n~/nothere/ze\n/nowhere/~/notes/\nze"
-> (remove-hook! completion:find-region zeds)
-> (remove-hook! completion:find-region file-picker:file-name-region)
+> (hooks:remove! completion:find-region zeds)
+> (hooks:remove! completion:find-region file-picker:file-name-region)

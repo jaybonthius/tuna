@@ -6,7 +6,7 @@
 > (commands:define-command (on-own) "Records a key in a diagnostic's own keymap." (set! pressed (cons 'own pressed)))
 > (commands:define-command (on-mark) "Records a key in the mark keymap." (set! pressed (cons 'mark pressed)))
 > (commands:define-command (on-global) "Records a global key." (set! pressed (cons 'global pressed)))
-> (define-table own-keys)
+> (tables:define-table own-keys)
 > (keys:bind! own-keys "C-c a" on-own)
 > (keys:bind! own-keys "<mouse-1>" on-own)
 > (keys:bind! diagnostics:mark-keymap "C-c a" on-mark)
@@ -76,7 +76,7 @@
 > (at)
 ("beta" warning "vague")
 ; Without wrap-around? it stops at the ends.
-> (set-option! diagnostics:wrap-around? #f)
+> (options:set! diagnostics:wrap-around? #f)
 > (views:set-point! (view) (word notes "zeta"))
 > (press! "M-n")
 ! diagnostics:next: No more diagnostics
@@ -84,7 +84,7 @@
 ! diagnostics:previous: No more diagnostics
 > (at)
 ("beta" warning "vague")
-> (set-option! diagnostics:wrap-around? #t)
+> (options:set! diagnostics:wrap-around? #t)
 ; Every diagnostic at the place reached is told, one per line.
 > (diagnostics:report! source notes
     (list (diagnostics:make-diagnostic (word notes "beta") (+ (word notes "beta") 4) (diagnostics:severity warning) "vague")
@@ -110,6 +110,6 @@
 > (press! "C-u" "3" "M-n")
 > (at)
 ("zeta" info "short")
-> (set-option! diagnostics:wrap-around? #f)
+> (options:set! diagnostics:wrap-around? #f)
 > (press! "C-u" "M-n")
 ! diagnostics:next: No more errors or warnings

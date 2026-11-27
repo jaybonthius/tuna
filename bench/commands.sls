@@ -1,5 +1,5 @@
 #!tuna
-(import (commands) (bench filler))
+(import (commands) (bench filler) (hooks))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -27,7 +27,7 @@
 (define (show name value)
   (printf "~a ~,2f\n" name value))
 
-(define seen 0)
+(define %seen 0)
 
 (commands:define-command (nothing) "Does nothing." #f)
 
@@ -44,8 +44,8 @@
 ;; add.
 (define (fill!)
   (do ([i 0 (fx+ i 1)]) ((fx= i 3))
-    (add-hook! commands:before-command (lambda (c) (set! seen (fx+ seen 1))))
-    (add-hook! commands:after-command (lambda (c) (set! seen (fx+ seen 1))))))
+    (hooks:add! commands:before-command (lambda (c) (set! %seen (fx+ %seen 1))))
+    (hooks:add! commands:after-command (lambda (c) (set! %seen (fx+ %seen 1))))))
 
 (define (run)
   (show "run-outermost-unhooked" (ns-per-op keystroke))

@@ -10,8 +10,8 @@ home=$dir/design-tokens-web/home/.config/tuna
 mkdir -p "$home/lib/dusk"
 cp tests/web/home/.config/tuna/lib/http.sls "$home/lib/"
 cat > "$home/init.ss" <<'END'
-(import (tuna) (tuna plugins) (http))
-(use-plugin web (config (set-option! web:port (http:free-port))))
+(import (tuna) (http))
+(use-plugin web (config (options:set! web:port (http:free-port))))
 (use-plugin design-tokens)
 (use-plugin faces)
 (import (console))
@@ -37,9 +37,9 @@ cat > "$home/init.ss" <<'END'
 END
 cat > "$home/lib/dusk.sls" <<'END'
 #!tuna
-(import (web))
+(import (web) (tables))
 
-(table-set! web:stylesheets 'theme "dusk/dusk.css")
+(tables:set! web:stylesheets 'theme "dusk/dusk.css")
 END
 cat > "$home/lib/dusk/dusk.css" <<'END'
 @layer defaults, themes, preferences;
@@ -78,11 +78,11 @@ Tuna is at http://127.0.0.1:PORT/
 ; A theme is a plugin that registers its file as theme; the user's
 ; tweaks are a file of the configuration's, beating any theme.
 > (import (dusk))
-> (table-set! web:stylesheets 'user "user.css")
+> (tables:set! web:stylesheets 'user "user.css")
 > (http:head-files)
 ("/files/1/design-tokens.css?v=1" "/files/2/faces.css?v=1" "/files/3/dusk.css?v=1" "/files/4/user.css?v=1")
 ; Turning the theme off takes its file back.
-> (unload-module! '(dusk))
+> (unload-owner! (module-owner '(dusk)))
 > (http:head-files)
 ("/files/1/design-tokens.css?v=1" "/files/2/faces.css?v=1" "/files/4/user.css?v=1")
 END

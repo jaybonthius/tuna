@@ -1,7 +1,7 @@
 Tuna is at http://127.0.0.1:PORT/
 > (http:wait-for-server)
-> (add-hook! web:client-added (lambda (client) (note! (list 'added client (web:client? client)))))
-> (add-hook! web:client-removed (lambda (client) (note! (list 'removed client))))
+> (hooks:add! web:client-added (lambda (client) (note! (list 'added client (web:client? client)))))
+> (hooks:add! web:client-removed (lambda (client) (note! (list 'removed client))))
 ; Serving the page adds a client, whose id is 128 random bits.
 > (define a (http:page))
 > (define b (http:page))
@@ -16,8 +16,8 @@ Tuna is at http://127.0.0.1:PORT/
 ((added #<client 4> #t))
 ; A client whose stream does not open is removed an hour after its page
 ; was served.
-> (testing:wait-until (lambda () (= 4 (length (timers)))))
-> (length (timers))
+> (testing:wait-until (lambda () (= 4 (length (timers:live)))))
+> (length (timers:live))
 4
 ; web:clients gives the connected clients, in the order they were added.
 > (http:connect! c)
@@ -25,8 +25,8 @@ Tuna is at http://127.0.0.1:PORT/
 > (web:clients)
 (#<client 1> #<client 3>)
 ; Opening its stream cancels a client's removal.
-> (testing:wait-until (lambda () (= 2 (length (timers)))))
-> (for-each (lambda (timer) (cancel-timer! timer) ((timer-procedure timer))) (timers))
+> (testing:wait-until (lambda () (= 2 (length (timers:live)))))
+> (for-each (lambda (timer) (timers:cancel! timer) ((timers:procedure timer))) (timers:live))
 > (taken!)
 ((removed #<client 2>) (removed #<client 4>))
 ; A second stream for a client, as when a hidden tab is shown again before
@@ -36,7 +36,7 @@ Tuna is at http://127.0.0.1:PORT/
 (#<client 1> #<client 3>)
 ; An idle stream stays open, and gets a comment every 15 seconds even
 ; while another client's stream is busy.
-> (sleep-for 6)
+> (timers:sleep 6)
 > (list (web:clients) (http:next a 0.1))
 ((#<client 1> #<client 3>) timeout)
 > (let ([seen (http:heartbeats c)])
@@ -45,7 +45,7 @@ Tuna is at http://127.0.0.1:PORT/
           (list (> (http:heartbeats c) seen) (= n (length (http:take a n))))
           (begin
             (web:call-page! (car (web:clients)) "ping" n)
-            (sleep-for 0.5)
+            (timers:sleep 0.5)
             (loop (+ n 1))))))
 (#t #t)
 ; A page that unloads says goodbye, which removes its client.
@@ -69,26 +69,26 @@ Tuna is at http://127.0.0.1:PORT/
         (for-each (lambda (client) (web:call-page! client "ping" 0)) (web:clients))
         (done?))))
 > (http:close! a)
-> (written-until (lambda () (pair? (timers))))
-> (list (web:clients) (length (timers)))
+> (written-until (lambda () (pair? (timers:live))))
+> (list (web:clients) (length (timers:live)))
 (() 1)
 > (http:connect! a)
-> (testing:wait-until (lambda () (null? (timers))))
-> (list (web:clients) (timers))
+> (testing:wait-until (lambda () (null? (timers:live))))
+> (list (web:clients) (timers:live))
 ((#<client 1>) ())
 > (http:close! a)
-> (written-until (lambda () (pair? (timers))))
-> (let ([timer (car (timers))])
-    (cancel-timer! timer)
-    ((timer-procedure timer)))
+> (written-until (lambda () (pair? (timers:live))))
+> (let ([timer (car (timers:live))])
+    (timers:cancel! timer)
+    ((timers:procedure timer)))
 > (taken!)
 ((removed #<client 1>))
 > (let ([first (http:show (http:connect-and-next! a))]) (list first (http:next a)))
 ((script "location.reload()") closed)
 ; Plugins keep per-client state in an eq hashtable keyed by the client.
 > (define names (make-eq-hashtable))
-> (add-hook! web:client-added (lambda (client) (hashtable-set! names client "a name")))
-> (add-hook! web:client-removed (lambda (client) (hashtable-delete! names client)))
+> (hooks:add! web:client-added (lambda (client) (hashtable-set! names client "a name")))
+> (hooks:add! web:client-removed (lambda (client) (hashtable-delete! names client)))
 > (define d (http:page))
 > (http:connect! d)
 > (hashtable-ref names (car (web:clients)) #f)

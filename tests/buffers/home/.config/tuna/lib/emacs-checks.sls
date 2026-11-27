@@ -17,11 +17,11 @@
 (define (fixture name)
   (with-input-from-file (string-append (getenv "HOME") "/emacs/" name) read))
 
-(define made 0)
+(define %made 0)
 
 (define (fresh-buffer size)
-  (set! made (+ made 1))
-  (buffers:make (format "emacs-~a" made) (make-string size #\x)))
+  (set! %made (+ %made 1))
+  (buffers:make (format "emacs-~a" %made) (make-string size #\x)))
 
 (define (overlay-type mode evaporate)
   (if (= evaporate 1)

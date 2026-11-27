@@ -3,7 +3,7 @@
 ; new matches and every command that updates the session send the view
 ; a placement that follows the selection, and a stream's round, which
 ; runs no command, sends none, so a list scrolled by hand stays.
-> (define-saved h '() list?)
+> (saved:define-saved h '() list?)
 > (define (placement v)
     (let* ([s (html->string (views:draw v client))] [key "data-placement=\""]
            [at (let find ([i 0]) (if (string=? (substring s i (+ i (string-length key))) key) i (find (+ i 1))))]
@@ -27,7 +27,7 @@
 > (define (lines from to) (list->vector (map (lambda (i) (format "item-~a" (+ from i))) (iota (- to from)))))
 > (define (stream-read preselect)
     (lambda ()
-      (with-options ([completion:read-preselect preselect])
+      (options:with ([completion:read-preselect preselect])
         (completion:read "Item: " (list (completion:source (stream fed-stream) (in-order))) h))))
 > (define (generation lv)
     (let* ([doc (buffers:document (views:buffer lv))] [l (ui-list lv)] [first (document:token doc (+ (document:node-start l) 1))])
@@ -43,7 +43,7 @@
                        (let loop ([i from]) (if (char-numeric? (string-ref html i)) (loop (+ i 1)) (string->number (substring html from i))))))]
            [at (lambda (k) (list (cons "at" (+ (document:node-start (ui-list lv)) 1 k))))])
       (set! reports (+ reports 1))
-      ((table-ref web:input-handlers "scroll") client
+      ((tables:ref web:input-handlers "scroll") client
        `(("type" . "scroll") ("view" . ,(views:id lv)) ("placement" . ,(number "data-placement=\""))
          ("report" . ,reports) ("version" . ,(buffers:version (views:buffer lv)))
          ("top" . ,(at row)) ("spacer" . #f) ("fraction" . 0) ("left" . null) ("past" . 0) ("sides" . #())
@@ -108,7 +108,7 @@
 > (list (selected-text s) (views:following? lv) (ui:selected-row (ui-list lv) lv))
 ("item-0" #t 0)
 > (press! "C-g")
-! &quit
+! &cancelled
 ; A stream that ends with few lines moves to the main thread to match
 ; them, and keeps its matches and the view's place there too.
 > (define t (start! (stream-read 'first)))
@@ -125,12 +125,12 @@
 > (equal? before (list (placement lv) (views:point lv) (row-at-top lv) (generation lv) (completion:session-matches s)))
 #t
 > (press! "C-g")
-! &quit
+! &cancelled
 ; The rows' buffers are in the display's own mode, derived from
 ; completion/rows:mode, whose entry keeps two rows of room around the
 ; selection, hides the cursor, and leaves point through a hand scroll. A
 ; user's entry in one display's hook changes that display alone.
-> (add-hook! completion-popup:mode-hook (lambda () (set-option-local! views:scroll-margin 3)))
+> (hooks:add! completion-popup:mode-hook (lambda () (options:set-local! views:scroll-margin 3)))
 > (define t (start! (lambda () (completion:read "Word: " (list (completion:source (candidates (vector "alpha" "apple")))) h))))
 > (define lb (views:buffer (list-view)))
 > (list (modes:major-mode lb) (modes:derived? (modes:major-mode lb) completion/rows:mode))
@@ -138,7 +138,7 @@
 > (buffers:with-buffer lb (list (views:scroll-margin) (views:cursor-visible) (views:hand-scroll-moves-point)))
 (2 #f #f)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (define notes (buffers:make "notes" "alpha almond apple\n"))
 > (views:set-buffer! (view) notes)
 > (press! "M->")
@@ -159,7 +159,7 @@
         (holds? (lines-html (list-view)) "completion-list-count"))
 (#t #f)
 > (press! "C-g")
-! &quit
+! &cancelled
 ; Column widths are those of the rows drawn in the session: written on
 ; the rows' own element after the rows, so every row of a screen lines
 ; up, and only growing.
@@ -183,4 +183,4 @@
 > (style-of (list-view))
 "--completion-column-1-size:2ch;--completion-rows-width:13ch"
 > (press! "C-g")
-! &quit
+! &cancelled

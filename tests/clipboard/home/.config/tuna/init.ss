@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins) (document) (web))
+(import (options) (tables))
+(import (tuna) (document) (web))
 (use-plugin clipboard)
 (use-plugin layout)
 
@@ -24,7 +25,7 @@
 
 (define (handle! client type . fields)
   (parameterize ([web:current-client client])
-    ((table-ref web:input-handlers type) client (cons (cons "type" type) fields))))
+    ((tables:ref web:input-handlers type) client (cons (cons "type" type) fields))))
 (define (copies)
   (filter (lambda (call) (equal? (cadr call) "copy")) (web:take-page-calls!)))
 (import (console))

@@ -45,7 +45,7 @@
 > (buffers:name (views:buffer (main-view)))
 "*pi: home*"
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (buffers:name (views:buffer (main-view)))
 "*pi: tuna*"
@@ -164,7 +164,7 @@
 > (list (minibuffer:input (minibuffer:current-prompt)) (texts (session)))
 ("Rev" ("Review the parser"))
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 ; pi-picker:fork chooses one of your messages, newest first, each on
 ; its first line, and forks there, that message in the prompt.
@@ -213,7 +213,7 @@
 > (texts (session))
 ("Second" "")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 > (filter (lambda (type) (string=? type "fork")) (asked f))
 ()
@@ -258,7 +258,7 @@
 > (list (minibuffer:input (minibuffer:current-prompt)) (length (texts (session))))
 ("" 3)
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 ; pi-picker:select-thinking-level chooses among the model's levels, in
 ; Pi's order, the current one first; /thinking takes a level.
@@ -421,7 +421,7 @@
 > (testing:wait-until (lambda () (equal? (opens (cadr (drawn chat))) '(#t))))
 > (list (chat:thinking-shown?) (opens (cadr (drawn chat))))
 (#t (#t))
-> (set-option! chat:thinking-shown? #f)
+> (options:set! chat:thinking-shown? #f)
 > (testing:wait-until (lambda () (equal? (opens (cadr (drawn chat))) '(#f))))
 > (opens (cadr (drawn chat)))
 (#f)

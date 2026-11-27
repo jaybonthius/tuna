@@ -1,4 +1,4 @@
-(import (tuna) (tuna plugins))
+(import (tuna))
 (use-plugin ansi-colors)
 (import (prefix (ghostty) ghostty:))
 

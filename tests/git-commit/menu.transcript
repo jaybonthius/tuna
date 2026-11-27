@@ -108,7 +108,7 @@
 ; and C-u inverts the option.
 > (sh "cd repo && GIT_COMMITTER_DATE='1600000000 +0000' git commit -q --amend --no-edit")
 > (define (date) (git-out "repo" "log" "-1" "--format=%ct"))
-> (set-option! git-commit:extend-override-date? #f)
+> (options:set! git-commit:extend-override-date? #f)
 > (press! "c" "e")
 > (settle!)
 > (list (take-said!) (git-out "repo" "status" "--short" "a.py") (date) (shown-buffer))
@@ -118,21 +118,21 @@
 > (settle!)
 > (date)
 "1767225600\n"
-> (set-option! git-commit:extend-override-date? #t)
+> (options:set! git-commit:extend-override-date? #t)
 ; c w keeps HEAD's date while git-commit:reword-override-date?
 ; is #f.
 > (sh "cd repo && GIT_COMMITTER_DATE='1600000000 +0000' git commit -q --amend --no-edit")
-> (set-option! git-commit:reword-override-date? #f)
+> (options:set! git-commit:reword-override-date? #f)
 > (press! "c" "w")
 > (define m (message!))
 > (press! "C-c" "C-c")
 > (settle!)
 > (date)
 "1600000000\n"
-> (set-option! git-commit:reword-override-date? #t)
+> (options:set! git-commit:reword-override-date? #t)
 ; amending, extending or rewording a commit of a published branch
 ; asks first.
-> (set-option! git-commit:published-branches '("origin/main"))
+> (options:set! git-commit:published-branches '("origin/main"))
 > (sh "cd repo && git push -q origin main")
 > (answer! #f)
 > (press! "c" "w")
@@ -140,21 +140,21 @@
 > (settle!)
 > (list (take-asked!) (shown-buffer))
 (("This commit has already been published to origin/main.\nDo you really want to modify it? ") "*git: repo*")
-> (set-option! git-commit:published-branches '("origin/master"))
+> (options:set! git-commit:published-branches '("origin/master"))
 ; git-commit:ask-to-stage stage commits everything without asking,
 ; refuse raises.
 > (sh "cd repo && echo h >> a.py")
-> (set-option! git-commit:ask-to-stage (git-commit:staging refuse))
+> (options:set! git-commit:ask-to-stage (git-commit:staging refuse))
 > (press! "c" "c")
 ! git-commit:create: Nothing staged
-> (set-option! git-commit:ask-to-stage (git-commit:staging stage))
+> (options:set! git-commit:ask-to-stage (git-commit:staging stage))
 > (press! "c" "c")
 > (define m (message!))
 > (list (take-asked!) (git:command-arguments (git:running repo)))
 (() ("commit" "--verbose" "--all"))
 > (press! "C-c" "C-k")
 > (settle!)
-> (set-option! git-commit:ask-to-stage (git-commit:staging ask))
+> (options:set! git-commit:ask-to-stage (git-commit:staging ask))
 ; amending before the first commit is git's refusal.
 > (sh "git init -q -b main empty && cd empty && echo x > x && git add x")
 > (git-status:show (git:find-repository (at "empty")))

@@ -7,7 +7,7 @@
 ; C-c C-c and its kin send the keys Tuna keeps, and C-q sends the next
 ; key whatever its bindings. C-q reads the key, which pauses the task it
 ; was pressed in, so it is pressed in a task of its own.
-> (define (in-task key) (lambda () (spawn-task (lambda () (press! key))) (sleep-for 0.02)))
+> (define (in-task key) (lambda () (spawn-task (lambda (restore) (press! key))) (timers:sleep 0.02)))
 > (bytes-read (list "C-c" "C-c" "C-c" "C-z" "C-c" "C-\\" "C-c" "C-d" (in-task "C-q") "C-x" "C-c" (in-task "C-q") "C-c") 6)
 "03 1a 1c 04 18 03"
 ; It reads with no prompt, as Emacs's terminals read the next event, so

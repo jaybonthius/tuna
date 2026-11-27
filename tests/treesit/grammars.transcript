@@ -1,11 +1,11 @@
 ; Python's grammar is tree-sitter-python at a pinned commit, built into
 ; Tuna's data folder, and Python's highlighter is the plugin's.
-> (define python-grammar (table-ref treesit:grammars "python" #f))
+> (define python-grammar (tables:ref treesit:grammars "python" #f))
 > (map (lambda (get) (get python-grammar)) (list treesit:grammar-name treesit:grammar-source treesit:grammar-commit))
 ("python" "https://github.com/tree-sitter/tree-sitter-python" "293fdc02038ee2bf0e2e206711b69c90ac0d413f")
 > (treesit:grammar-file python-grammar)
 "$HOME/.local/share/tuna/grammars/libtree-sitter-python-293fdc02038e.so"
-> (eq? (table-ref syntax-highlighting:highlighters "python" #f) treesit:highlighter)
+> (eq? (tables:ref syntax-highlighting:highlighters "python" #f) treesit:highlighter)
 #t
 ; A grammar's name is a C identifier's tail; a commit is a full one.
 > (treesit:make-grammar "py-thon" "https://example.org/x" python-commit)
@@ -26,7 +26,7 @@
 (("def" keyword.function) ("f" function) ("x" variable.parameter) ("return" keyword.return))
 ; A grammar from source whose file is missing draws its buffers plain,
 ; and tells nothing: getting the file is the installer's business.
-> (table-set! treesit:grammars "python"
+> (tables:set! treesit:grammars "python"
     (treesit:make-grammar "python" "https://github.com/tree-sitter/tree-sitter-python"
                           "0000000000000000000000000000000000000000"))
 > (syntax-highlighting:update!)
@@ -35,12 +35,12 @@
 (() () ())
 ; A grammar built elsewhere is loaded as it is.
 > (copy-file built-grammar (string-append home "/elsewhere/python.so"))
-> (table-set! treesit:grammars "python" (treesit:make-prebuilt-grammar "python" (string-append home "/elsewhere/python.so")))
+> (tables:set! treesit:grammars "python" (treesit:make-prebuilt-grammar "python" (string-append home "/elsewhere/python.so")))
 > (syntax-highlighting:update!)
 > (in-order (faces b) (faces c) (told-messages))
 ((("def" keyword.function) ("f" function) ("x" variable.parameter) ("return" keyword.return)) (("def" keyword.function) ("f" function) ("x" variable.parameter) ("return" keyword.return)) ())
 ; A prebuilt grammar's missing file is told, once a session.
-> (table-set! treesit:grammars "python" (treesit:make-prebuilt-grammar "python" (string-append home "/nowhere/python.so")))
+> (tables:set! treesit:grammars "python" (treesit:make-prebuilt-grammar "python" (string-append home "/nowhere/python.so")))
 > (syntax-highlighting:update!)
 > (in-order (faces b) (faces c) (told-messages))
 (() () ("No tree-sitter grammar for python at $HOME/nowhere/python.so"))
@@ -50,7 +50,7 @@
 ; A file that does not load is told once a session, and its buffers are
 ; plain.
 > (write-file (string-append home "/damaged/python.so") "not a shared object\n")
-> (table-set! treesit:grammars "python" (treesit:make-prebuilt-grammar "python" (string-append home "/damaged/python.so")))
+> (tables:set! treesit:grammars "python" (treesit:make-prebuilt-grammar "python" (string-append home "/damaged/python.so")))
 > (syntax-highlighting:update!)
 > (in-order (faces b) (faces c) (faces d) (told-messages))
 (() () () ("Loading the tree-sitter grammar for python failed: cannot load tree_sitter_python from $HOME/damaged/python.so: $HOME/damaged/python.so: file too short"))
@@ -58,7 +58,7 @@
 > (in-order (faces e) (told-messages))
 (() ())
 ; A table entry that is not a grammar is reported.
-> (table-set! treesit:grammars "python" "python")
+> (tables:set! treesit:grammars "python" "python")
 > (define f (python "f.py" "x = 1\n"))
 ! (syntax-highlighting) treesit:grammars: not a grammar with irritant "python"
 > (faces f)

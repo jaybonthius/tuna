@@ -22,14 +22,14 @@
 (#t #t #t #t #f)
 ; The newest save-place:limit places are kept.
 > (write-file! "b.txt" "b one\nb two\n")
-> (set-option! save-place:limit 1)
+> (options:set! save-place:limit 1)
 > (leave! "~/a.txt" 9)
 #t
 > (leave! "~/b.txt" 4)
 #t
 > (save-place:places)
 (("$HOME/b.txt" . 4))
-> (remove-option! save-place:limit)
+> (options:unset! save-place:limit)
 ; A file changed outside Tuna since opens at the nearest place it has.
 > (leave! "~/a.txt" 20)
 #t

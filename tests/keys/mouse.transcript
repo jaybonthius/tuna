@@ -112,9 +112,9 @@
 #f
 ; Mouse keys bind and look up as other named keys do, and keys:ignore
 ; stops one from reaching the keymaps searched later.
-> (define-table near)
+> (tables:define-table near)
 > (keys:bind! near "<mouse-1>" keys:ignore)
-> (add-hook! keys:find-keymaps (lambda (client posn) (if posn (list near) '())))
+> (hooks:add! keys:find-keymaps (lambda (client posn) (if posn (list near) '())))
 > (keys:press! one '("<mouse-1>" #(3 7)))
 > (take-seen!)
 ()
@@ -132,7 +132,7 @@
 ((("<mouse-1>" #(3 5)) "C-c <mouse-1>" #f))
 ; Entries of keys:find-keymaps get the event's start position.
 > (define posns '())
-> (add-hook! keys:find-keymaps (lambda (client posn) (set! posns (cons posn posns)) '()))
+> (hooks:add! keys:find-keymaps (lambda (client posn) (set! posns (cons posn posns)) '()))
 > (keys:press! one '("<drag-mouse-1>" #(3 2) #(3 4)))
 > (keys:press! one "C-x")
 > (keys:press! one "o")

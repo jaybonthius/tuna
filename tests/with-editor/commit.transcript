@@ -46,8 +46,8 @@
 > (layout:switch-to-buffer (buffers:make "draft" ""))
 > (define finished '())
 > (define canceled '())
-> (add-hook! with-editor:finished (lambda (path) (set! finished (cons path finished))))
-> (add-hook! with-editor:canceled (lambda (path) (set! canceled (cons path canceled))))
+> (hooks:add! with-editor:finished (lambda (path) (set! finished (cons path finished))))
+> (hooks:add! with-editor:canceled (lambda (path) (set! canceled (cons path canceled))))
 > (define editing (with-editor:output-wrapper))
 > (define commit
     (git:start repo '("commit") (lambda (c) (when (with-editor:canceled? editing) (git:set-command-canceled! c)))
@@ -74,8 +74,8 @@
 > (buffers:replace! message 1 1 "Third commit\n")
 #<edit 1>
 > (define (refuse buffer) #f)
-> (add-hook! with-editor:finish-checks refuse)
-> (add-hook! with-editor:cancel-checks refuse)
+> (hooks:add! with-editor:finish-checks refuse)
+> (hooks:add! with-editor:cancel-checks refuse)
 > (press! "C-c" "C-c")
 > (press! "C-c" "C-k")
 > (list (buffers:live? message) (git:command-exit commit))
@@ -84,8 +84,8 @@
 > (testing:wait-until (lambda () (git:command-exit commit)))
 > (list (git:command-exit commit) (subjects repo))
 (0 "Third commit\nFirst commit\n")
-> (remove-hook! with-editor:finish-checks refuse)
-> (remove-hook! with-editor:cancel-checks refuse)
+> (hooks:remove! with-editor:finish-checks refuse)
+> (hooks:remove! with-editor:cancel-checks refuse)
 > (equal? (car finished) (at "repo/.git/COMMIT_EDITMSG"))
 #t
 ; Killing the buffer another way cancels.
@@ -106,7 +106,7 @@
                    (processes:options [environment (with-editor:environment "GIT_EDITOR")]) editing))
 > (testing:wait-until (lambda () (equal? (shown) "COMMIT_EDITMSG")))
 > (define message (views:buffer (layout:selected-view)))
-> (add-hook! with-editor:cancel-checks refuse)
+> (hooks:add! with-editor:cancel-checks refuse)
 > (press! "C-c" "C-k")
 > (buffers:live? message)
 #t
@@ -114,7 +114,7 @@
 > (testing:wait-until (lambda () (git:command-exit commit)))
 > (list (git:command-exit commit) (buffers:live? message))
 (1 #f)
-> (remove-hook! with-editor:cancel-checks refuse)
+> (hooks:remove! with-editor:cancel-checks refuse)
 ; C-c C-c in a buffer no program waits for is an error.
 > (define plain (buffers:make "plain" "text\n"))
 > (buffers:with-buffer plain (with-editor:finish #f))

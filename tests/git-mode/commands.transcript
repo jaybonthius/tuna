@@ -55,7 +55,7 @@ failed
 > (press! "k")
 ! git-mode:stop-command: Process isn't running
 ; the log keeps git:command-log-size commands.
-> (set-option! git:command-log-size 3)
+> (options:set! git:command-log-size 3)
 > (git:run repo '("tag" "v3"))
 #vu8()
 > (settle!)
@@ -63,7 +63,7 @@ failed
 3
 > (length (filter (lambda (l) (and (> (string-length l) 3) (string=? (substring l 3 5) " g"))) (shown (view))))
 3
-> (set-option! git:command-log-size 32)
+> (options:set! git:command-log-size 32)
 ; q in the log quits its view; the view selected before is selected.
 > (press! "q")
 > (list (shown-buffer) (eq? (view) status-view))

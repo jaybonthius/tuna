@@ -1,10 +1,10 @@
 #!tuna
-(import (processes) (jobs) (buffers) (document) (modes) (json-rpc framing) (json-rpc) (jsonrpc log-lines))
+(import (processes) (jobs) (buffers) (document) (modes) (json-rpc framing) (json-rpc) (jsonrpc log-lines) (hooks) (options) (tables) (timers))
 
-(define-option request-timeout 10 (lambda (v) (and (real? v) (>= v 0)))
+(options:define-option request-timeout 10 (lambda (v) (and (real? v) (>= v 0)))
   "Seconds jsonrpc:request waits by default.")
 
-(define-option events-log-size 2000000 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
+(options:define-option events-log-size 2000000 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
   "How many characters each connection's events log keeps; the oldest lines go first, and with 0 nothing is logged."
   (lambda (size) (%events-log-size-changed size)))
 
@@ -14,9 +14,9 @@
 (define-condition-type &timeout &error %make-timeout timeout?
   (method timeout-method))
 
-(define-table events-keymap "Keys in events logs.")
+(tables:define-table events-keymap "Keys in events logs.")
 
-(define-hook events-mode-hook "Called in each buffer that turns on jsonrpc:events-mode.")
+(hooks:define-hook events-mode-hook "Called in each buffer that turns on jsonrpc:events-mode.")
 
 (modes:define-major-mode events-mode
   (parent modes:special)
@@ -26,7 +26,7 @@
   (plugin-only #t))
 
 (define (%no-revert)
-  (set-option-local! buffers:revert-function #f))
+  (options:set-local! buffers:revert-function #f))
 
 (define (%refuse-edits node edit) #f)
 
@@ -118,7 +118,7 @@
     (%pending-waiting?-set! p #f)
     (hashtable-delete! (%connection-pending (%pending-connection p)) (%pending-id p))
     (when (%pending-timer p)
-      (cancel-timer! (%pending-timer p))
+      (timers:cancel! (%pending-timer p))
       (%pending-timer-set! p #f)))
 
   (define connections '())
@@ -224,7 +224,7 @@
     (make-message-condition (format "~a ended" (%connection-name c)))))
 
 (define (%reporting thunk)
-  (guard (e [(not (quit-condition? e)) (report e)])
+  (guard (e [(not (cancelled? e)) (report e)])
     (thunk)))
 
 (define (%send! c message)
@@ -235,7 +235,7 @@
 (define (%call-cancel! c id)
   (let ([cancel (handlers-cancel (%connection-handlers c))])
     (when cancel
-      (%reporting (lambda () (as-module (%connection-owner c) (cancel c id)))))))
+      (%reporting (lambda () (call-as-owner (%connection-owner c) (lambda () (cancel c id))))))))
 
 (define start
   (case-lambda
@@ -310,7 +310,7 @@
       (vector-for-each (lambda (p) (%fail! p (%ended c))) waiting))
     (let ([on-exit (handlers-exit (%connection-handlers c))])
       (when on-exit
-        (%reporting (lambda () (as-module (%connection-owner c) (on-exit c (%connection-status c)))))))))
+        (%reporting (lambda () (call-as-owner (%connection-owner c) (lambda () (on-exit c (%connection-status c))))))))))
 
 (define (%answer! p value)
   (pending-done! p)
@@ -324,13 +324,12 @@
       ((%pending-resume p) (lambda () (raise condition)))
       (%run-for p (%pending-on-error p) condition)))
 
-;; The procedures of an async request run for the module that sent it; one
-;; that has been unloaded since gets nothing. The configuration and the
-;; REPL are never unloaded, and loaded-modules does not list them.
+;; The procedures of an async request run for the owner that sent it; one
+;; that has been unloaded since gets nothing.
 (define (%run-for p procedure value)
   (let ([owner (%pending-owner p)])
-    (when (or (member owner '((init) (repl))) (member owner (loaded-modules)))
-      (as-module owner (spawn-task (lambda () (procedure value)))))))
+    (when (owner-live? owner)
+      (call-as-owner owner (lambda () (spawn-task (lambda (restore) (procedure value))))))))
 
 (define (%parsed! c value)
   (case (vector-ref value 0)
@@ -370,10 +369,11 @@
        (when notification
          (%reporting
            (lambda ()
-             (as-module (%connection-owner c)
-               (notification c (json-rpc-notification-method message) (json-rpc-notification-params message)))))))]
+             (call-as-owner (%connection-owner c)
+               (lambda ()
+                 (notification c (json-rpc-notification-method message) (json-rpc-notification-params message))))))))]
     [(json-rpc-request? message)
-     (as-module (%connection-owner c) (spawn-task (lambda () (%answer-request! c message))))]))
+     (call-as-owner (%connection-owner c) (lambda () (spawn-task (lambda (restore) (%answer-request! c message)))))]))
 
 (define (%answer-request! c message)
   (let ([id (json-rpc-request-id message)] [method (json-rpc-request-method message)]
@@ -384,7 +384,7 @@
        (send-error! (make-json-rpc-error json-rpc-method-not-found-code (string-append "method not found: " method)))]
       [else
        (let ([result (guard (e [(json-rpc-error? e) (send-error! e) #f]
-                               [(quit-condition? e) (raise e)]
+                               [(cancelled? e) (raise e)]
                                [else
                                 (report e)
                                 (send-error! (make-json-rpc-error json-rpc-internal-error-code (%message-of e)))
@@ -431,7 +431,7 @@
                (%send! c message)
                (when timeout
                  (%pending-timer-set! p
-                   (run-with-timer timeout
+                   (timers:run-after timeout
                      (lambda ()
                        (when (%pending-waiting? p)
                          (%fail! p (condition (%make-timeout method) (make-who-condition 'jsonrpc:request)
@@ -509,4 +509,4 @@
         (jobs:stop! (%connection-job c)))
       connections)))
 
-(add-hook! events-mode-hook %no-revert)
+(hooks:add! events-mode-hook %no-revert)

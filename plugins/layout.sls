@@ -1,15 +1,15 @@
 #!tuna
-(import (buffers) (document) (views) (keys) (commands) (modes) (web) (haml) (ask))
+(import (buffers) (document) (views) (keys) (commands) (modes) (web) (haml) (ask) (hooks) (options) (tables) (saved))
 
 (define-enumeration direction (left right up down) directions)
 
-(define-table display-rules
+(tables:define-table display-rules
   "Maps a predicate on buffers to the action that shows the buffers it accepts.")
 
-(define-option page-title (lambda (name) (string-append name " - Tuna")) procedure?
+(options:define-option page-title (lambda (name) (string-append name " - Tuna")) procedure?
   "A procedure of the selected view's buffer name that returns the title of every client's page.")
 
-(define-option history-limit 10 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
+(options:define-option history-limit 10 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
   "How many window changes each level's history keeps to go back through; 0 keeps none.")
 
 (module %internals
@@ -45,9 +45,9 @@
     (sealed #t)
     (fields draw neighbour child-attributes collapse? show-focused? adopt))
 
-  (define-table containers)
+  (tables:define-table containers)
 
-  (define (container-entry kind) (table-ref containers kind #f))
+  (define (container-entry kind) (tables:ref containers kind #f))
 
   (define (register-container! kind draw neighbour child-attributes collapse? show-focused? adopt)
     (unless (procedure? draw)
@@ -57,9 +57,9 @@
     (unless (or (not adopt) (procedure? adopt))
       (assertion-violation 'layout:define-container "not a procedure or #f" adopt))
     (let ([keymap (buffers:kind-keymap (buffers:kind kind))])
-      (unless (or (not keymap) (table? keymap))
+      (unless (or (not keymap) (tables:table? keymap))
         (assertion-violation 'layout:define-container "not a keymap or #f" keymap)))
-    (table-set! containers kind (make-container draw neighbour child-attributes collapse? show-focused? adopt)))
+    (tables:set! containers kind (make-container draw neighbour child-attributes collapse? show-focused? adopt)))
 
   (define (attributes? a)
     (and (list? a) (for-all (lambda (p) (and (pair? p) (symbol? (car p)))) a)))
@@ -138,7 +138,7 @@
            (not (level-datum? (car datums)))
            (parts-fit? node edit #f))))
 
-  (define-saved saved-layout #f (lambda (v) (or (not v) (layout-datum? v))))
+  (saved:define-saved saved-layout #f (lambda (v) (or (not v) (layout-datum? v))))
 
   (define (positive-fixnum? v) (and (fixnum? v) (fx> v 0)))
 
@@ -150,7 +150,7 @@
          (list? (car v)) (for-all positive-fixnum? (car v))
          (or (not (cadr v)) (zoom? (cadr v)))))
 
-  (define-saved saved-selection '(() #f) selection-state?)
+  (saved:define-saved saved-selection '(() #f) selection-state?)
 
   ;; The views' ids are kept in the order they were last selected, the
   ;; selected one first, and nothing per container: a container's focused
@@ -220,7 +220,7 @@
         (make-index doc (reverse atoms) ids kids parents))))
 
   ;; The order and the zoom are checked against each new document when
-  ;; it is first read, not in an edit's hook, so a quit landing in the
+  ;; it is first read, not in an edit's hook, so a cancel landing in the
   ;; check leaves it to be made again at the next read.
   (define synced-doc #f)
   (define synced-popups-doc #f)
@@ -650,7 +650,7 @@
                                   (assertion-violation 'layout:screen "not a child to show" c))
                                 (draw c))])
              (if entry
-                 (guard (c [(not (quit-condition? c)) (report c) (draw-plain shown draw)])
+                 (guard (c [(not (cancelled? c)) (report c) (draw-plain shown draw)])
                    ((container-draw entry) n shown (focused-child ix n) draw-child client))
                  (draw-plain shown draw)))]))))
 
@@ -872,7 +872,7 @@
       (unless (and saved-key (eq? (car key) (car saved-key)) (equal? (cdr key) (cdr saved-key)))
         (let ([d (current-datum)])
           (unless (equal? d (saved-layout))
-            (set-saved! saved-layout d)))
+            (saved:set! saved-layout d)))
         (set! saved-key key)))
     ;; Popups are never saved, so neither are their places in the order.
     (when selection-dirty?
@@ -880,7 +880,7 @@
              [state (list (filter (lambda (id) (index-atom ix id)) view-order)
                           zoom-state)])
         (unless (equal? state (saved-selection))
-          (set-saved! saved-selection state)))
+          (saved:set! saved-selection state)))
       (set! selection-dirty? #f)))
 
   ;; Views whose atoms left the layout are dropped once the batch ends, so
@@ -1036,7 +1036,7 @@
   (define (mode-key? keymap client key)
     (and mode-on? (string? key)
          (let ([pending (keys:pending client)])
-           (and (table-ref keymap (if pending (string-append pending " " key) key) #f) #t))))
+           (and (tables:ref keymap (if pending (string-append pending " " key) key) #f) #t))))
 
   (define (parent-part ix n)
     (let ([p (parent-in ix n)]) (and p (parent-in ix p) p)))
@@ -1512,8 +1512,8 @@
                 (views:set-point! v (fxmin p (fx- (document:length (buffers:document b)) 1))))))
           (for-each walk (cddr d)))))
 
-  ;; A quit between the replace and the lists' update would lose an
-  ;; entry or keep one twice; Tuna's dynamic-wind holds quits off while
+  ;; A cancel between the replace and the lists' update would lose an
+  ;; entry or keep one twice; Tuna's dynamic-wind holds cancels off while
   ;; its in runs. A refused restore leaves the lists as they were, and
   ;; the views made for it, which no part names, go.
   (define (history-step! who back?)
@@ -1654,7 +1654,7 @@
   (check-main-thread 'layout:selection-order)
   (order-views))
 
-(define-table keymap "The layout's keymap, last on the focus path and for mouse keys on the layout's own drawing.")
+(tables:define-table keymap "The layout's keymap, last on the focus path and for mouse keys on the layout's own drawing.")
 
 (define (%draw-level node shown focused draw-child client)
   (haml (:div.layout-level ([class (drawn-part-class node)]) (map draw-child shown))))
@@ -1800,7 +1800,7 @@
                  (views:set-buffer! v b)
                  v))))))
 
-(define-option display-action use-other-view procedure?
+(options:define-option display-action use-other-view procedure?
   "The action layout:display-buffer tries after the rules and the caller's.")
 
 (define-record-type %display
@@ -1841,7 +1841,7 @@
                     (%check-action-result 'layout:display-buffer (action b))))
              (exists (lambda (rule)
                        (and ((car rule) b) (%check-action-result 'layout:display-buffer ((cdr rule) b))))
-                     (reverse (table-entries display-rules)))
+                     (reverse (tables:entries display-rules)))
              (and action (%check-action-result 'layout:display-buffer (action b)))
              (%check-action-result 'layout:display-buffer ((display-action) b))
              (let ([v (selected-view)])
@@ -1849,7 +1849,7 @@
                v))
          b before))]))
 
-(define-hook after-switch-to-buffer
+(hooks:define-hook after-switch-to-buffer
   "Called with the selected view, the buffer it showed and its point there, after layout:switch-to-buffer shows another buffer in it.")
 
 (define (switch-to-buffer b)
@@ -1971,7 +1971,7 @@
   "Selects the view n places back in layout:other-views."
   (%select-other (- n)))
 
-(define-table other-view-keymap "Keys that go on selecting views after C-x o or C-x O.")
+(tables:define-table other-view-keymap "Keys that go on selecting views after C-x o or C-x O.")
 
 (define (other-view-for-scrolling)
   (check-main-thread 'layout:other-view-for-scrolling)
@@ -2087,7 +2087,7 @@
       (unless (views:next-buffer! v)
         (error 'layout:next-buffer "No next buffer")))))
 
-(define-table buffer-navigation-keymap "Keys that go on through a view's buffers after C-x <left> or C-x <right>.")
+(tables:define-table buffer-navigation-keymap "Keys that go on through a view's buffers after C-x <left> or C-x <right>.")
 
 (commands:define-command (zoom [prefix (commands:prefix-argument)])
   "Zooms the selected view to fill its level; with a number n, the level n out; with C-u, the screen. When zoomed, shows the whole layout again."
@@ -2154,14 +2154,14 @@
                                 (not (or (same-node? x a) (locked-in? ix x) (not (same-level? ix x a)))))
                               (index-atoms)))])
     (set-zoom! #f)
-    ;; Each view goes in its own edit, and a quit between two would leave
-    ;; some; Tuna's dynamic-wind holds quits off while its in runs.
+    ;; Each view goes in its own edit, and a cancel between two would leave
+    ;; some; Tuna's dynamic-wind holds cancels off while its in runs.
     (dynamic-wind
       (lambda () (for-each (lambda (id) (let ([ix (current-index)]) (remove-part! ix (index-atom ix id)))) doomed))
       void void)
     (select! (view-of (index-atom (current-index) (atom-id a))))))
 
-(define-table part-mode-keymap
+(tables:define-table part-mode-keymap
   "The part mode's keymap. A key it does not bind leaves the mode and runs as it would outside it.")
 
 (define (part-mode?) (in-part-mode?))
@@ -2308,12 +2308,12 @@
 (define (%condition-text c)
   (call-with-string-output-port (lambda (p) (display-condition c p))))
 
-;; A quit is not a failure: the user asked to stop work, and the next
-;; batch draws this client again. The draw has succeeded once the screen
-;; is made; clearing the mark after the send instead would leave the
-;; client marked when a quit lands between the two.
+;; A cancel is not a failure: whoever cancelled asked to stop work, and
+;; the next batch draws this client again. The draw has succeeded once the
+;; screen is made; clearing the mark after the send instead would leave
+;; the client marked when a cancel lands between the two.
 (define (%draw client title)
-  (guard (c [(quit-condition? c) (void)]
+  (guard (c [(cancelled? c) (void)]
             [(not (%warning-only? c))
              (unless (hashtable-ref %failing client #f)
                (report c)
@@ -2328,7 +2328,7 @@
 ;; Every client shows the one title, so a failure to make it is reported
 ;; once and costs the pages their name, not their screens.
 (define (%page-title)
-  (guard (c [(not (or (quit-condition? c) (%warning-only? c)))
+  (guard (c [(not (or (cancelled? c) (%warning-only? c)))
              (unless %title-failing
                (report c)
                (set! %title-failing #t))
@@ -2359,7 +2359,7 @@
 (keys:bind! keys:global "C-x O" other-view-backward)
 (keys:bind! other-view-keymap "o" other-view)
 (keys:bind! other-view-keymap "O" other-view-backward)
-(table-set! keys:repeat-keymaps other-view-keymap)
+(tables:set! keys:repeat-keymaps other-view-keymap)
 (keys:bind! keys:global "C-x 4 4" other-view-prefix)
 (keys:bind! keys:global "C-x 4 1" same-view-prefix)
 (keys:bind! keys:global "C-x 4 0" kill-buffer-and-view)
@@ -2374,7 +2374,7 @@
 (keys:bind! keys:global "C-x C-<right>" next-buffer)
 (keys:bind! buffer-navigation-keymap "<left>" previous-buffer)
 (keys:bind! buffer-navigation-keymap "<right>" next-buffer)
-(table-set! keys:repeat-keymaps buffer-navigation-keymap)
+(tables:set! keys:repeat-keymaps buffer-navigation-keymap)
 (keys:bind! keys:global "s-i" select-up)
 (keys:bind! keys:global "s-j" select-left)
 (keys:bind! keys:global "s-k" select-down)
@@ -2412,14 +2412,14 @@
 (keys:bind! keymap "C-c <right>" history-forward)
 (keys:bind! keymap "<mouse-1>" mouse-select-view)
 (keys:bind! keymap "<down-mouse-1>" keys:ignore)
-(add-hook! keys:find-keymaps cursor-keymaps)
-(add-hook! keys:find-keymaps container-keymaps 90)
-(add-hook! commands:before-command %leave-on-other-input)
-(add-hook! commands:before-command %history-before)
-(add-hook! commands:after-command %history-after)
-(add-hook! buffers:kill-queries %keep-layout)
-(table-set! web:input-handlers "key" %handle-key)
-(table-set! web:stylesheets 'layout "layout/layout.css")
+(hooks:add! keys:find-keymaps cursor-keymaps)
+(hooks:add! keys:find-keymaps container-keymaps 90)
+(hooks:add! commands:before-command %leave-on-other-input)
+(hooks:add! commands:before-command %history-before)
+(hooks:add! commands:after-command %history-after)
+(hooks:add! buffers:kill-queries %keep-layout)
+(tables:set! web:input-handlers "key" %handle-key)
+(tables:set! web:stylesheets 'layout "layout/layout.css")
 (advice-add! batch-ended %end-batch)
 (on-unload save-now!)
 (on-unload (lambda () (views:drop! screen-view)))

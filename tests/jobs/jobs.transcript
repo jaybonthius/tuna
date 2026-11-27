@@ -18,7 +18,7 @@
 (#t #f #<job match-names>)
 > (testing:wait-until (lambda () (= (length log) 3)))
 > (taken!)
-(((repl) #t) ((repl) #t) (ended #f (repl)))
+((#<owner (repl) 1> #t) (#<owner (repl) 1> #t) (ended #f #<owner (repl) 1>))
 ; A worker that imports a library, and a task that waits for a job's
 ; values.
 > (jobs:define-worker (word-count text emit)
@@ -107,11 +107,11 @@
                     (loop (+ edits n) latest)
                     (newest more (+ n 1)))))))))
 > (define parsing (jobs:start parser "abc" note! (lambda (ended) (note! (list 'ended ended)))))
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (jobs:send! parsing "abcd")
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (begin (jobs:send! parsing "a") (jobs:send! parsing "ab") (jobs:send! parsing "abcdefg"))
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (jobs:send! parsing 'done)
 > (testing:wait-until (lambda () (= (length log) 5)))
 > (taken!)
@@ -128,14 +128,14 @@
 ; within its next thousand or so calls; on-end receives stopped. The
 ; values sent before the stop still run.
 > (define waiting (jobs:start parser "x" note! (lambda (ended) (note! (list 'ended ended)))))
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (jobs:stop! waiting)
 > (testing:wait-until (lambda () (= (length log) 2)))
 > (taken!)
 ((parsed 0 "x") (ended stopped))
 > (jobs:define-worker (spin x emit) (emit 'spinning) (let loop () (loop)))
 > (define spinning (jobs:start spin 0 note! (lambda (ended) (note! (list 'ended ended)))))
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (jobs:stop! spinning)
 > (testing:wait-until (lambda () (= (length log) 2)))
 > (taken!)
@@ -143,7 +143,7 @@
 > (jobs:stop! spinning)
 > (jobs:define-worker (sleeper x emit) (sleep (make-time 'time-duration 100000000 0)) (emit 'woke))
 > (define sleeping (jobs:start sleeper 0 note! (lambda (ended) (note! (list 'ended ended)))))
-> (begin (sleep-for 0.02) (jobs:stop! sleeping))
+> (begin (timers:sleep 0.02) (jobs:stop! sleeping))
 > (testing:wait-until (lambda () (= (length log) 1)))
 > (taken!)
 ((ended stopped))
@@ -158,7 +158,7 @@
       (lambda () (guard (c [#t (count!)]) (emit 'running) (let loop () (loop))))
       (lambda () (count!) (emit 'cleaned) (count!))))
 > (define cleaning (jobs:start cleans 0 note! (lambda (ended) (note! (list 'ended ended)))))
-> (sleep-for 0.05)
+> (timers:sleep 0.05)
 > (jobs:stop! cleaning)
 > (testing:wait-until (lambda () (= (length log) 3)))
 > (list (taken!) (counted))
@@ -185,18 +185,16 @@
 ! receive: not a number of seconds with irritant -1
 (() "not a number of seconds")
 > (let ([message #f])
-    (thread-join
-      (fork-thread
-        (lambda ()
-          (set! message (guard (c [#t (condition-message c)]) (jobs:start match-names "x" note!))))))
+    (join-task
+      (fork-task (lambda (restore) (set! message (guard (c [#t (condition-message c)]) (jobs:start match-names "x" note!))))))
     message)
 "not on the main thread"
 ; jobs:send! and jobs:stop! work from any thread.
 > (define echoing
     (jobs:start parser "" note! (lambda (ended) (note! (list 'ended ended)))))
-> (thread-join (fork-thread (lambda () (jobs:send! echoing "sent from a thread"))))
+> (testing:join (fork-task (lambda (restore) (jobs:send! echoing "sent from a thread"))))
 > (testing:wait-until (lambda () (= (length log) 2)))
-> (thread-join (fork-thread (lambda () (jobs:stop! echoing))))
+> (testing:join (fork-task (lambda (restore) (jobs:stop! echoing))))
 > (testing:wait-until (lambda () (= (length log) 3)))
 > (taken!)
 ((parsed 0 "") (parsed 1 "sent from a thread") (ended stopped))

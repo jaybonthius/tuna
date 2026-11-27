@@ -1,8 +1,6 @@
 ; Reloading files alone takes back its live buffers, unsaved edits and
 ; modified flags included.
-> (import (tuna eval))
-> (define library (getenv "TUNA_LIBRARY"))
-> (define (reload! name) (eval-file (string-append library "/" name ".sls")))
+> (define (reload! name) (reload-modules! (list (list (string->symbol name)))))
 > (disk-checks:write-text! "~/a.txt" "alpha\n")
 > (disk-checks:write-text! "~/b.txt" "beta\n")
 > (define a (files:visit "~/a.txt"))
@@ -45,11 +43,11 @@
 ; pauses, so the buffer does not start modified.
 > (define (slow-read read path)
     (let-values ([(doc length hash) (read path)])
-      (sleep-for 0.02)
+      (timers:sleep 0.02)
       (values doc length hash)))
 > (advice-add! files:read-document slow-read)
 > (disk-checks:write-text! "~/eps.txt" "epsilon\n")
-> (define eps (map join-task (map (lambda (i) (spawn-task (lambda () (files:visit "~/eps.txt")))) (iota 2))))
+> (define eps (map testing:join (map (lambda (i) (spawn-task (lambda (restore) (files:visit "~/eps.txt")))) (iota 2))))
 > (list (eq? (car eps) (cadr eps)) (buffers:modified? (car eps)))
 (#t #f)
 > (advice-remove! files:read-document slow-read)
@@ -57,9 +55,9 @@
 #t
 ; An after-visit entry may pause; the visit returns after it.
 > (define seen #f)
-> (define (slow-entry buffer) (sleep-for 0.05) (set! seen (buffers:name buffer)))
-> (add-hook! files:after-visit slow-entry)
+> (define (slow-entry buffer) (timers:sleep 0.05) (set! seen (buffers:name buffer)))
+> (hooks:add! files:after-visit slow-entry)
 > (disk-checks:write-text! "~/d.txt" "delta\n")
 > (list (buffers:name (files:visit "~/d.txt")) seen)
 ("d.txt" "d.txt")
-> (remove-hook! files:after-visit slow-entry)
+> (hooks:remove! files:after-visit slow-entry)

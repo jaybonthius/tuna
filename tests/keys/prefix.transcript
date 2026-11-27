@@ -72,9 +72,9 @@
 ; keys:lookup-in looks keys up in given keymaps by keys' one rule, as
 ; keys:lookup does in a client's: shift translation, <printing-char>, a
 ; keymap for a prefix, and the keymaps' remaps.
-> (define-table first-keymap)
-> (define-table second-keymap)
-> (define-table inner-keymap)
+> (tables:define-table first-keymap)
+> (tables:define-table second-keymap)
+> (tables:define-table inner-keymap)
 > (keys:bind! first-keymap "k" note)
 > (keys:bind! second-keymap "<printing-char>" count-three)
 > (keys:bind! second-keymap "x k" count-more)
@@ -118,6 +118,6 @@ count-three
         (typed-prefix counting "3" "2" "x") (typed-prefix active "x"))
 (((16) ("x")) (12 ("x")) (-5 ("x")) (-3 ("x")) (7 ("x")) (#f ("3" "x")) (32 ("x")) (#f ("x")))
 > (keys:prefix-after keys:digit-argument "M-x" 4)
-! keys:prefix-after: not a prefix command for the key with irritants (#<procedure> "M-x")
+! keys:prefix-after: not a prefix command for the key with irritants (#<procedure keys:digit-argument> "M-x")
 > (keys:prefix-after keys:universal-argument "C-u" 'x)
 ! keys:prefix-after: not a prefix argument with irritant x

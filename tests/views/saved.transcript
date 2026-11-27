@@ -1,7 +1,7 @@
 ; Views drawn from view atoms are saved data, written after each batch
 ; that changed one; the plugin's body makes them again from it, at
 ; start-up and at every reload.
-> (import (md) (tuna eval))
+> (import (md) (plugins))
 > (define notes (buffers:make "notes" "one two\nthree four\nfive\n"))
 > (define layout
     (buffers:make "*layout*" (md:doc '() (views:view '((view . 4) (buffer . "notes"))))))
@@ -22,7 +22,7 @@
 > (views:set-option! v fill:column 50)
 > (views:scroll-to! v 9 (views:align top))
 > (define applied (car (numbers-after (html-of v desktop) "data-placement=\"")))
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/views.sls"))
+> (reload-modules! '((views)))
 > (define v2 (views:find 4))
 ; A page compares placement numbers for equality, so a reload numbers
 ; them from another base, far from any the page may have applied.
@@ -44,7 +44,7 @@
 #t
 ; Reloading buffers closes every buffer and reloads views: a view whose
 ; buffer is not made yet draws empty, and shows it once it is made.
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/buffers.sls"))
+> (reload-modules! '((buffers)))
 > (define v3 (views:find 4))
 > (list (views:buffer v3) (views:point v3))
 (#f 10)
@@ -55,11 +55,11 @@
 (#t 10 3 #t)
 ; A view keeps the name its buffer has now.
 > (buffers:rename! notes "todo")
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/views.sls"))
+> (reload-modules! '((views)))
 > (eq? (views:buffer (views:find 4)) notes)
 #t
 ; Saved positions beyond a shorter buffer's end are clamped.
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/buffers.sls"))
+> (reload-modules! '((buffers)))
 > (define notes (buffers:make "todo" "one\n"))
 > (define v4 (views:find 4))
 > (list (views:point v4) (map views:cursor-point (views:cursors v4)) (call-with-values (lambda () (views:bounds v4)) list))
@@ -71,8 +71,8 @@
 > (advice-add! batch-ended counting)
 > (begin
     (set! batches 0)
-    (post! (lambda () (views:set-point! v4 2)))
-    (sleep-for 0.05)
+    (spawn-task (lambda (restore) (views:set-point! v4 2)))
+    (timers:sleep 0.05)
     batches)
 2
 > (advice-remove! batch-ended counting)

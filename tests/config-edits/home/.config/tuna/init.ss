@@ -1,9 +1,10 @@
-(import (tuna) (tuna plugins) (tuna eval)) ; spelling below
+(import (options) (plugins))
+(import (tuna)) ; spelling below
 (use-plugin spell (git "https://github.com/bob/spell") ; bob's fork
-  (commit "8a5b03d")   ; pinned
+  (commit "3693805")   ; pinned
   (config
     ;; British
-    (set-option! spell:language "en-GB")
+    (options:set! spell:language "en-GB")
     (display (list 'config (spell:check "w")))
     (newline)))
 (use-plugin dict (git "https://github.com/bob/dict") ; newest

@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (layout-split) (undo) (views) (buffers) (document) (keys) (web))
+(import (layout) (layout-split) (undo) (views) (buffers) (document) (keys) (web) (tables))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -32,7 +32,7 @@
     (if (vector? d) 1 (+ 1 (apply + (map count (cddr d)))))))
 
 (define (press! client key)
-  ((table-ref web:input-handlers "key") client
+  ((tables:ref web:input-handlers "key") client
    (list (cons "type" "key") (cons "key" (car key)) (cons "code" "") (cons "modifiers" (list->vector (cdr key))))))
 
 (define (swap-time client)

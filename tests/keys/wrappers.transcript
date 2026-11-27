@@ -53,19 +53,19 @@
     "Waits until resumed or quit."
     (suspend (lambda (resume) #f)))
 > (keys:bind! keys:global "C-c w" wait)
-> (define waiting (spawn-task (lambda () (press-all! one "C-c" "w"))))
-> (sleep-for 0.1)
+> (define waiting (spawn-task (lambda (restore) (press-all! one "C-c" "w"))))
+> (timers:sleep 0.1)
 > (press-all! one "C-c" "a")
 > (keys:prefix-description one)
 "C-c a"
 > (press-all! one "C-g")
-> (sleep-for 0.1)
-> (list (keys:prefix-description one) (task-done? waiting))
+> (timers:sleep 0.1)
+> (list (keys:prefix-description one) (eq? (task-state waiting) 'done))
 (#f #f)
 > (press-all! one "C-g")
-! &quit
-> (testing:wait-until (lambda () (task-done? waiting)))
-> (task-done? waiting)
+! &cancelled
+> (testing:wait-until (lambda () (eq? (task-state waiting) 'done)))
+> (eq? (task-state waiting) 'done)
 #t
 > (raised (lambda () (keys:wrap-next-command! (marking 'c) "C-c c")))
 (keys:wrap-next-command! "no key or click is being handled")

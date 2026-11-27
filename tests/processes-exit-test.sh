@@ -18,14 +18,14 @@ home=$dir/home
 mkdir -p "$home/.config/tuna" "$dir/library" "$dir/work"
 sh "$(dirname "$0")/test-home.sh" "$tuna" "$dir/library" "$home"
 cat > "$home/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins) (processes))
+(import (tuna) (processes))
 (define on-terminal
   (processes:start-for-user "sleep" '("30") (processes:options [terminal '(24 . 80)])))
 (define on-pipes (processes:start-for-user "sleep" '("30")))
 (define own (processes:start "sleep" '("30") (lambda (bytes end) #f)))
 (let wait ()
   (unless (for-all processes:pid (list on-terminal on-pipes own))
-    (sleep-for 0.01)
+    (timers:sleep 0.01)
     (wait)))
 (with-output-to-file (string-append (getenv "HOME") "/pids")
   (lambda () (for-each (lambda (p) (display (processes:pid p)) (newline)) (list on-terminal on-pipes own))))

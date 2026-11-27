@@ -1,7 +1,7 @@
 #!tuna
-(import (layout) (commands))
+(import (layout) (commands) (hooks) (options) (timers))
 
-(define-option delay 1.5 (lambda (v) (and (real? v) (finite? v) (not (negative? v))))
+(options:define-option delay 1.5 (lambda (v) (and (real? v) (finite? v) (not (negative? v))))
   "Seconds a view must stay selected to get its tick, which also ends the cycle of recent-views:select-recent-view.")
 
 ;; As switchy-window, the order is the plugin's own: a selection counts
@@ -25,8 +25,8 @@
   (let ([view (layout:selected-view)])
     (unless (eq? view %seen)
       (set! %seen view)
-      (when %timer (cancel-timer! %timer))
-      (set! %timer (run-with-timer (delay) (lambda () (set! %timer #f) (%end-cycle!)))))))
+      (when %timer (timers:cancel! %timer))
+      (set! %timer (timers:run-after (delay) (lambda () (set! %timer #f) (%end-cycle!)))))))
 
 (define (%pick views oldest?)
   (let ([tick (lambda (v) (eq-hashtable-ref %ticks v 0))])
@@ -52,4 +52,4 @@
     (%end-cycle!))
   (%select! oldest?))
 
-(add-hook! commands:after-command %note-selection)
+(hooks:add! commands:after-command %note-selection)

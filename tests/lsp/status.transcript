@@ -8,8 +8,8 @@
                                   ("textDocument/typeDefinition" . #((("uri" . ,(lsp:path->uri a-path)) ("range" ("start" ("line" . 0) ("character" . 2)) ("end" ("line" . 0) ("character" . 3)))))))
                       '(name . "types"))
 > (configure! "style" '(capabilities ("textDocumentSync" . 2)) '(name . "style"))
-> (table-set! lsp:language-servers "fakelang" (list types style))
-> (add-hook! fake-mode-hook lsp:ensure)
+> (tables:set! lsp:language-servers "fakelang" (list types style))
+> (hooks:add! fake-mode-hook lsp:ensure)
 > (define a (visit! a-path))
 > (wait-for "types" "textDocument/didOpen")
 > (wait-for "style" "textDocument/didOpen")
@@ -29,20 +29,20 @@
     '(("message" ("jsonrpc" . "2.0") ("method" . "$/progress")
        ("params" ("token" . "t") ("value" ("kind" . "begin") ("title" . "Indexing") ("percentage" . 10))))))
 > (testing:wait-until (lambda () (equal? (status) "<span class=\"lsp-status\">types Indexing 10% style </span>")))
-> (set-option! lsp:report-progress? #f)
+> (options:set! lsp:report-progress? #f)
 > (status)
 "<span class=\"lsp-status\">types style </span>"
-> (set-option! lsp:report-progress? #t)
+> (options:set! lsp:report-progress? #t)
 ; initialize carries Tuna's process id, or null with
 ; lsp:send-process-id? off.
 > (integer? (ref (last-of "types" "initialize") "params" "processId"))
 #t
-> (set-option! lsp:send-process-id? #f)
+> (options:set! lsp:send-process-id? #f)
 > (lsp:reconnect (cadr (lsp:buffer-connections a)))
 > (testing:wait-until (lambda () (= 2 (length (of-method "style" "initialize")))))
 > (ref (last-of "style" "initialize") "params" "processId")
 null
-> (set-option! lsp:send-process-id? #t)
+> (options:set! lsp:send-process-id? #t)
 > (wait-for "style" "textDocument/didOpen" 2)
 ; The declaration, implementation and type definition go as M-. does.
 > (for-each (lambda (pair) (in-client (lambda () (views:set-point! (view) 1) (commands:run (car pair))))
@@ -74,7 +74,7 @@ null
 > (question)
 "Connection: "
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 ; What a server writes to its standard error goes to its events log.
 > (lsp:notify (car (lsp:buffer-connections a)) "fake/stderr" '(("line" . "warming up")))
@@ -94,7 +94,7 @@ null
     (for-each
       (lambda (action)
         (parameterize ([web:current-client client])
-          ((table-ref web:input-handlers "mouse") client
+          ((tables:ref web:input-handlers "mouse") client
            `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
              ("view" . ,(views:id s)) ("version" . ,(buffers:version layout:buffer))
              ("showing" . ,(views:shown-count s)) ("token" . ,at)
@@ -105,10 +105,10 @@ null
 ; A server that does not answer initialize within lsp:connect-timeout is
 ; stopped.
 > (lsp:define-server mute '("sleep" "30"))
-> (table-set! lsp:language-servers "fakelang" (list mute))
-> (set-option! lsp:connect-timeout 0.3)
+> (tables:set! lsp:language-servers "fakelang" (list mute))
+> (options:set! lsp:connect-timeout 0.3)
 > (define b (visit! (begin (write-file! (string-append project "/b.fk") "x\n") (string-append project "/b.fk"))))
-> (sleep-for 1)
+> (timers:sleep 1)
 ! (lsp) jsonrpc:request: mute gave no answer to initialize in 0.3 s
 > (lsp:buffer-connections b)
 ()

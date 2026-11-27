@@ -17,7 +17,7 @@
 ; terminal becomes the selected view, or stops being it.
 > (define r (reader 6 "printf '\\033[?1004h'; "))
 > (in-client (lambda () (layout:switch-to-buffer r)))
-> (sleep-for 0.1)
+> (timers:sleep 0.1)
 > (in-client (lambda () (layout:switch-to-buffer (buffers:make "notes" ""))))
 > (read-by r)
 "1b 5b 49 1b 5b 4f"
@@ -85,25 +85,25 @@
 ; output that carried it is applied.
 > (define reports '())
 > (define (note! . x) (set! reports (cons x reports)))
-> (add-hook! terminal:bell (lambda (t) (note! 'bell)))
-> (add-hook! terminal:notification (lambda (t title body) (note! 'notification title body)))
-> (add-hook! terminal:progress (lambda (t state percent) (note! 'progress state percent)))
-> (add-hook! terminal:program-status (lambda (t report) (note! 'status report)))
-> (add-hook! terminal:screen-changed (lambda (t) (note! 'screen-changed (buffers:name t))))
+> (hooks:add! terminal:bell (lambda (t) (note! 'bell)))
+> (hooks:add! terminal:notification (lambda (t title body) (note! 'notification title body)))
+> (hooks:add! terminal:progress (lambda (t state percent) (note! 'progress state percent)))
+> (hooks:add! terminal:program-status (lambda (t report) (note! 'status report)))
+> (hooks:add! terminal:screen-changed (lambda (t) (note! 'screen-changed (buffers:name t))))
 > (define t (shell!))
 > (set! reports '())
 > (terminal:send! t "printf '\\a\\e]9;Done\\a\\e]777;notify;Build;It passed\\a\\e]9;4;1;40\\a\\e]7501;state=blocked:kind=permission:app=claude\\a'\r")
 > (testing:wait-until (lambda () (assq 'status reports)))
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (reverse reports)
 ((screen-changed "*terminal*") (bell) (notification "" "Done") (notification "Build" "It passed") (progress set 40) (status ((state . blocked) (kind . permission) (app . "claude"))) (screen-changed "*terminal*"))
 ; Killing a terminal whose shell runs a job asks first, through ask.
 > (terminal:send! t "sleep 30\r")
-> (sleep-for 0.3)
-> (set-option! ask:y-or-n-reader (lambda (question) (display question) (newline) #f))
+> (timers:sleep 0.3)
+> (options:set! ask:y-or-n-reader (lambda (question) (display question) (newline) #f))
 > (buffers:kill! t)
 *terminal* runs a job; kill it and the job? 
 #f
-> (set-option! ask:y-or-n-reader (lambda (question) #t))
+> (options:set! ask:y-or-n-reader (lambda (question) #t))
 > (buffers:kill! t)
 #t

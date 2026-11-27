@@ -76,7 +76,7 @@
 > (texts s)
 ("p/m1")
 > (press! "C-g")
-! &quit
+! &cancelled
 > (result t)
 ; Pi's commands are three menus, by source, each shown above the chat's
 ; menu, so C-g comes back to it; each computes its entries from the

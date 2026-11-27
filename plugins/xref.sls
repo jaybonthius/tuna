@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (layout) (editing) (files) (commands) (keys) (ask) (jump-history))
+(import (buffers) (document) (views) (layout) (editing) (files) (commands) (keys) (ask) (jump-history) (hooks) (options))
 
 (define-record-type (%backend %make-backend %backend?)
   (sealed #t)
@@ -34,7 +34,7 @@
                              [else (invalid c)])
                            given)))))])))
 
-(define-hook backends
+(hooks:define-hook backends
   "Called with the current view, in order, until an entry returns a backend.")
 
 (define-record-type (%item %make-item item?)
@@ -64,7 +64,7 @@
                   (unless (or (not b) (%backend? b))
                     (assertion-violation 'xref:backends "an entry returned neither a backend nor #f" b))
                   b))
-              (views:call-with-view view (lambda () (hook-entries backends))))
+              (views:call-with-view view (lambda () (hooks:entries backends))))
       (error who "No xref backend")))
 
 (define (%ask-of who b field what)
@@ -105,19 +105,19 @@
     (assertion-violation 'xref:apropos "not a string" pattern))
   (%items 'xref:apropos (%backend-in 'xref:apropos view) %backend-apropos "search identifiers" pattern))
 
-(define-option definitions-display choose-and-go procedure?
+(options:define-option definitions-display choose-and-go procedure?
   "Shows the items of xref:find-definitions: a procedure of a list of one or more items and a title.")
 
-(define-option references-display choose-and-go procedure?
+(options:define-option references-display choose-and-go procedure?
   "Shows the items of xref:find-references, xref:find-apropos and xref:show-items, as xref:definitions-display shows definitions.")
 
-(define-option auto-jump-to-first-definition? #f boolean?
+(options:define-option auto-jump-to-first-definition? #f boolean?
   "Whether xref:find-definitions goes to the first of several definitions without asking.")
 
-(define-option auto-jump-to-first-reference? #f boolean?
+(options:define-option auto-jump-to-first-reference? #f boolean?
   "Whether xref:find-references goes to the first of several references without asking.")
 
-;; The place is recorded once the display returns, so a quit while
+;; The place is recorded once the display returns, so a cancel while
 ;; choosing records nothing.
 (define (%show! items title display auto-jump?)
   (let* ([view (layout:selected-view)] [left (views:buffer view)] [at (views:point view)])
@@ -172,7 +172,7 @@
       (error 'xref:find-apropos (string-append "No matches for: " pattern)))
     (%show! items (string-append "Symbols matching " pattern) (references-display) #f)))
 
-(define-option prompt-for-identifier (list find-references)
+(options:define-option prompt-for-identifier (list find-references)
   (lambda (v) (or (boolean? v) (and (list? v) (for-all commands:command? v))))
   "Which commands ask for the identifier when there is one at point: #t for all, #f for none, or a list of commands.")
 

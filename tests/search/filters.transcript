@@ -3,7 +3,7 @@
 > (define b (text-buffer "f" "aaaa one two one two\n"))
 > (define one (search:make-query "one"))
 > (define (not-first? buffer start end) (> start 7))
-> (table-set! search:filters not-first? #t)
+> (tables:set! search:filters not-first? #t)
 > (all-in b one)
 ((14 17 "one"))
 > (define s (scanned b one))
@@ -11,7 +11,7 @@
 (((14 17 "one")) 1)
 > (all-in b (search:query-with-filter one (lambda (buffer start end) (< start 10))))
 ()
-> (table-remove! search:filters not-first?)
+> (tables:remove! search:filters not-first?)
 ; Past a refused match a find goes on from its end, so from inside a
 ; refused match it gives the match a find from there gives, even after
 ; a scan covers the text.

@@ -1,5 +1,5 @@
-(import (tuna) (tuna eval))
+(import (tuna) (plugins))
 (import (spell) (files))
 
-(set! spell:dictionary-path (lambda () "/home/groucho/other-words"))
+(define spell:dictionary-path (lambda () "/home/groucho/other-words"))
 (on-unload (lambda () (display "configuration unloading")))

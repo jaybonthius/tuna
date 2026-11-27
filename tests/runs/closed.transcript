@@ -28,8 +28,8 @@ Run finished at TIME, after S s
 ; A run in a mode derived from runs:mode comes back in runs:mode, since
 ; its mode's plugin may not be loaded yet; g starts the next run in the
 ; run's own mode.
-> (define-table build-keymap)
-> (define-hook build-hook)
+> (tables:define-table build-keymap)
+> (hooks:define-hook build-hook)
 > (modes:define-major-mode build (parent runs:mode) (keymap build-keymap) (hook build-hook))
 > (define built (runs:start-for-user "*build*" "echo built" home build))
 > (ended? built)
@@ -48,9 +48,11 @@ runs:mode
 (build "built")
 ; A buffer made again while a plain buffer holds its name takes the
 ; first free NAME<N>.
-> (unload-module! '(runs))
-> (reload! "buffers")
+> (unload-owner! (module-owner '(runs)))
+> (buffers:kill! (buffers:find "*build*"))
+#t
 > (define plain (buffers:make "*build*" "plain\n"))
 > (load-module! '(runs))
+#<owner (runs) 5>
 > (list (runs:run-buffer? plain) (runs:command (buffers:find "*build*<2>")))
 (#f "echo built")

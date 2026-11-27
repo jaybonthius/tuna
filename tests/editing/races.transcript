@@ -1,8 +1,8 @@
 ; Editing across threads, quits and reloads.
-> (import (rename (only (chezscheme) sleep) (sleep chez:sleep)) (tuna eval))
+> (import (rename (only (chezscheme) sleep) (sleep chez:sleep)) (plugins))
 > (define (on-thread thunk)
     (let ([result #f])
-      (fork-thread (lambda () (set! result (raised thunk))))
+      (fork-task (lambda (restore) (set! result (raised thunk))))
       (testing:wait-until (lambda () result))
       result))
 > (start! "one two" 1)
@@ -23,8 +23,7 @@
 ; Reloading the plugin keeps its commands and bindings and starts its
 ; passing state afresh: a kill after the reload makes a new entry, and
 ; yank-pop has nothing to replace.
-> (define library (getenv "TUNA_LIBRARY"))
-> (define (reload! name) (eval-file (string-append library "/" name ".sls")))
+> (define (reload! name) (reload-modules! (list (list (string->symbol name)))))
 > (start! "alpha beta gamma" 1)
 ("alpha beta gamma" ((1 #f)))
 > (press! "M-d")
@@ -44,18 +43,18 @@
 ; after each batch. Afterwards every cursor rests on a stop, an edit
 ; still clears every view's marks, undo returns to the first text, and
 ; every report is a quit or one of the commands' own refusals.
-> (set-option! editing:delete-selection #t)
+> (options:set! editing:delete-selection #t)
 > (start! "alpha beta\ngamma delta\nepsilon zeta\n" 1 12 24)
 ("alpha beta\ngamma delta\nepsilon zeta\n" ((1 #f) (12 #f) (24 #f)))
 > (define storm (views:buffer (view)))
 ; The yanks grow the text with every step, and how many steps run
 ; depends on the machine, so the history is unbounded here to keep the
 ; first state.
-> (buffers:with-buffer storm (set-option-local! undo:limit (greatest-fixnum)))
+> (buffers:with-buffer storm (options:set-local! undo:limit (greatest-fixnum)))
 > (define quits 0)
 > (define others '())
 > (define (count-quits report c)
-    (if (quit-condition? c)
+    (if (cancelled? c)
         (set! quits (+ quits 1))
         (let ([m (condition-message c)])
           (unless (member m others) (set! others (cons m others))))))
@@ -68,24 +67,24 @@
       (when (unbox quitting)
         (chez:sleep (make-time 'time-duration 100000 0))
         (when (box-cas! armed #t #f)
-          (request-quit!)
+          (testing:request-quit!)
           (set! requests (+ requests 1)))
         (loop))))
 > (define steps 0)
 > (define keys '("a" "S-<left>" "b" "C-SPC" "M-b" "M-w" "C-y" "M-y" "C-k" "C-y" "DEL" "M-f" "C-t" "M-u" "C-n" "C-a"))
 > (define (stress until)
     (let again ()
-      (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (again)])
+      (guard (c [(cancelled? c) (set! quits (+ quits 1)) (again)])
         (let loop ()
           (when (< (real-time) until)
             (for-each (lambda (k) (set-box! armed #t) (press! k)) keys)
-            (sleep-for 0)
+            (timers:sleep 0)
             (set! steps (+ steps 1))
             (loop)))
         (set-box! armed #f)
-        (sleep-for 0.05))))
+        (timers:sleep 0.05))))
 > (begin
-    (fork-thread quitter)
+    (fork-task (lambda (restore) (quitter)))
     (stress (+ (real-time) 1500))
     (set-box! quitting #f)
     (list (> steps 10) (> requests 30) (> quits 30)))

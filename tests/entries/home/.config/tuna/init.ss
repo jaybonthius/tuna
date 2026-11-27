@@ -1,10 +1,11 @@
-(import (tuna) (tuna eval))
+(import (hooks) (options) (tables) (timers) (plugins))
+(import (tuna))
 
 ;; Chez judges an object stale by file times, which the file system keeps
 ;; to its clock tick, so a source written in the tick its object was
 ;; compiled in would count as compiled.
 (define (put-version! version path)
-  (sleep-for 0.01)
+  (timers:sleep 0.01)
   (let ([home (getenv "HOME")])
     (with-output-to-file (string-append home "/" path)
       (lambda ()

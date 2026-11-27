@@ -1,7 +1,7 @@
 ; A candidate may carry details, a third element, which its category's
 ; annotator receives with its value; a candidate without them gives #f.
 > (completion:define-category probe-category "Candidates whose details the test shows.")
-> (table-set! completion:annotators probe-category
+> (tables:set! completion:annotators probe-category
     (lambda (session) (lambda (value details) (list (format "~s ~s" value details)))))
 > (define (read-probe candidates)
     (start! (lambda () (completion:read "Probe: " (list (completion:source (candidates candidates) (category probe-category) (in-order)))))))
@@ -10,7 +10,7 @@
 > (rows (session))
 (("alpha" "a (1 . 2)") ("beta" "\"beta\" #f") ("gamma" "g #f"))
 > (press! "C-g")
-! &quit
+! &cancelled
 ; Details from a job arrive with their candidates; a later emission
 ; without details adds none.
 > (jobs:define-worker (details-stream n emit)
@@ -21,7 +21,7 @@
 > (rows (session))
 (("one" "1 first") ("two" "\"two\" #f"))
 > (press! "C-g")
-! &quit
+! &cancelled
 ; A file read shows each entry's size and age, as Marginalia does, read
 ; in file-picker's job.
 > (define t (start! (lambda () (press! "C-x" "C-f"))))
@@ -32,7 +32,7 @@
     (list (cdr (cadr a)) (let ([age (cdr (caddr a))]) (substring age (- (string-length age) 4) (string-length age)))))
 ("38" " ago")
 > (press! "C-g")
-! &quit
+! &cancelled
 ; A link to a folder is listed as a folder, a link to a file as a file.
 > (system (string-append "ln -s " (getenv "HOME") "/notes/sub " (getenv "HOME") "/notes/sublink"))
 0
@@ -45,7 +45,7 @@
 > (filter (lambda (text) (member text '("sub/" "sublink/" "alink" "a.txt"))) (texts (session)))
 ("sub/" "a.txt" "alink" "sublink/")
 > (press! "C-g")
-! &quit
+! &cancelled
 ; The size as ls -lh writes it, and the time as an age for two weeks,
 ; then a date.
 > (define file-annotator (completion-annotations:file #f))

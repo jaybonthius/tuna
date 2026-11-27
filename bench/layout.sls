@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (layout-split) (views) (buffers) (document) (keys) (web) (haml))
+(import (layout) (layout-split) (views) (buffers) (document) (keys) (web) (haml) (tables))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -40,7 +40,7 @@
     (build! notes)
     (show "parts" (parts))
     (do ([i 0 (fx+ i 1)]) ((fx= i 20))
-      (table-set! layout:display-rules (lambda (b) (eq? b 'never)) declining))
+      (tables:set! layout:display-rules (lambda (b) (eq? b 'never)) declining))
     (show "focus-keymaps" (ns-per-op 2000 (lambda () (keys:active-keymaps client))))
     (show "call-with-selected-view" (ns-per-op 2000 (lambda () (views:call-with-view (layout:selected-view) void))))
     (show "display-buffer" (ns-per-op 2000 (lambda () (layout:display-buffer notes))))
@@ -62,6 +62,6 @@
                  (batch-ended))))
            2)))
     (show "zoom" (/ (ns-per-op 2000 (lambda () (layout:zoom #f) (layout:views) (layout:zoom #f) (layout:views))) 2))
-    (show "other-view" (ns-per-op 2000 (lambda () (layout:other-view))))
+    (show "other-view" (ns-per-op 2000 (lambda () (layout:other-view 1))))
     (advice-add! views:draw (lambda (draw view client) (haml (:div))))
     (show "screen-parts" (ns-per-op 200 (lambda () (html->bytevector (layout:screen client)))))))

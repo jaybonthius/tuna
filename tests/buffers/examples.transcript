@@ -9,7 +9,7 @@
 > (buffers:name notes)
 "notes"
 > (import (fill))
-> (buffers:with-buffer notes (set-option-local! fill:column 60))
+> (buffers:with-buffer notes (options:set-local! fill:column 60))
 > (list (buffers:with-buffer notes (fill:column)) (fill:column))
 (60 70)
 > (buffers:replace! notes 1 1 "Today: ")
@@ -25,7 +25,7 @@
 (1 1)
 > (import (forms))
 > (buffers:kind-draw (buffers:kind 'forms:field))
-#<procedure>
+#<procedure forms:draw-field>
 > (define form
     (buffers:make "*form*"
       (form:form '()
@@ -61,12 +61,11 @@
 "Hello.How can I help?Thanks"
 ; Reloading the chat alone keeps its buffer; reloading buffers closes
 ; every buffer, and the chat makes its own again from its saved data.
-> (import (tuna eval))
-> (eval-file "~/.config/tuna/lib/chat.sls")
+> (reload-modules! '((chat)))
 > (eq? chat:chat (buffers:find "*chat*"))
 #t
 > (define old-chat chat:chat)
-> (eval-file (string-append (getenv "TUNA_LIBRARY") "/buffers.sls"))
+> (reload-modules! '((buffers)))
 > (list (buffers:live? old-chat) (buffers:live? notes) (eq? old-chat chat:chat))
 (#f #f #f)
 > (document:text (buffers:document chat:chat))

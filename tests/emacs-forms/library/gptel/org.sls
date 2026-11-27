@@ -1,2 +1,3 @@
 #!tuna
-(define-option branching-context #f boolean?)
+(import (options))
+(options:define-option branching-context #f boolean?)

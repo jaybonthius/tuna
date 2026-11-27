@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (buffers) (document) (views) (keys) (commands) (web) (haml))
+(import (layout) (buffers) (document) (views) (keys) (commands) (web) (haml) (tables))
 
 (module %internals
   (parts tabs-node? holding-tabs holds-locked? same-part? leads-to-locked? place-attribute?)
@@ -36,9 +36,9 @@
 
 (import %internals)
 
-(define-table keymap "The keymap of the tabs in a tabs container's strip.")
+(tables:define-table keymap "The keymap of the tabs in a tabs container's strip.")
 
-(define-table close-keymap "The keymap of a tab's close button.")
+(tables:define-table close-keymap "The keymap of a tab's close button.")
 
 ;; A tab is drawn as two buttons side by side, since a button may not
 ;; hold another; the tab's element carries its child's marks, so a click
@@ -219,4 +219,4 @@
 (keys:bind! close-keymap "<down-mouse-1>" keys:ignore)
 (keys:bind! close-keymap "<mouse-1>" mouse-close-tab)
 (keys:bind! layout:part-mode-keymap "w t" wrap-in-tabs)
-(table-set! web:stylesheets 'layout-tabs "layout-tabs/layout-tabs.css")
+(tables:set! web:stylesheets 'layout-tabs "layout-tabs/layout-tabs.css")

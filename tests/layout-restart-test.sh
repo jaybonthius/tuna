@@ -22,7 +22,7 @@ mkdir -p "$home/.config/tuna/lib" "$dir/work"
 sh tests/test-home.sh "$tuna" "$dir/library" "$home"
 cp tests/layout/home/.config/tuna/lib/web.sls "$home/.config/tuna/lib/"
 cat > "$home/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins) (document) (buffers))
+(import (tuna) (document) (buffers))
 (define notes (if (getenv "NO_BUFFERS") #f (buffers:make "notes" "one\ntwo\nthree\n")))
 (when (getenv "INTERNAL_BUFFER") (buffers:make " *internal*" "x\n"))
 (use-plugin layout-split)

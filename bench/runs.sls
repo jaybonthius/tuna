@@ -1,5 +1,5 @@
 #!tuna
-(import (runs) (processes))
+(import (runs) (processes) (timers))
 
 (define (now-ms)
   (let ([t (current-time 'time-monotonic)])
@@ -15,16 +15,16 @@
          [b (runs:start-for-user "*bench*" line (processes:options [directory "~/"]))]
          [start (now-ms)])
     (spawn-task
-      (lambda ()
+      (lambda (restore)
         (let loop ()
           (unless done?
             (let ([asked (now-ms)])
-              (sleep-for 0.01)
+              (timers:sleep 0.01)
               (set! latest (max latest (- (now-ms) asked 10.0)))
               (loop))))))
     (let loop ()
       (unless (runs:status b)
-        (sleep-for 0.005)
+        (timers:sleep 0.005)
         (loop)))
     (set! done? #t)
     (values (- (now-ms) start) latest)))

@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (minibuffer) (ui) (buffers) (document) (views) (commands) (modes) (web) (haml))
+(import (completion) (minibuffer) (ui) (buffers) (document) (views) (commands) (modes) (web) (haml) (hooks) (options) (tables))
 
 ;; Point rests before an atom that draws nothing while nothing is
 ;; selected, since a list's selected row is the row at point: the start
@@ -13,10 +13,10 @@
 
 (define %list-kind (buffers:kind-name (buffers:constructor-kind ui:list)))
 
-(define-table mode-keymap
+(tables:define-table mode-keymap
   "Keys in the rows' buffers. Their views are never selected, so keys reach them only as mouse keys, which ui:row-keys and ui:list-click-keys bind.")
 
-(define-hook mode-hook
+(hooks:define-hook mode-hook
   "Called with a rows' buffer current when its mode is set, before the hook of the display's own mode.")
 
 (modes:define-major-mode mode (lighter "Completions") (keymap mode-keymap) (hook mode-hook) (plugin-only #t))
@@ -24,9 +24,9 @@
 ;; Only the session moves a rows' view's point, so a hand scroll must leave
 ;; it, or the row drawn as selected would not be the one RET chooses.
 (define (%rows-settings)
-  (set-option-local! views:scroll-margin 2)
-  (set-option-local! views:cursor-visible #f)
-  (set-option-local! views:hand-scroll-moves-point #f))
+  (options:set-local! views:scroll-margin 2)
+  (options:set-local! views:cursor-visible #f)
+  (options:set-local! views:hand-scroll-moves-point #f))
 
 ;; The widths are of the rows drawn in the session, and only grow, so a
 ;; screen's columns line up and nothing jitters as the rows scroll.
@@ -219,6 +219,6 @@
   (%move-page 'completion/rows:scroll-down (fx- 0 n)))
 
 ;; The path is relative to this module's own folder, completion/.
-(table-set! web:stylesheets 'completion-rows "rows.css")
-(table-set! views:span-properties 'completion-match %match-attributes)
-(add-hook! mode-hook %rows-settings)
+(tables:set! web:stylesheets 'completion-rows "rows.css")
+(tables:set! views:span-properties 'completion-match %match-attributes)
+(hooks:add! mode-hook %rows-settings)

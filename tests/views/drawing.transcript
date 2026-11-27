@@ -31,7 +31,7 @@
 ; A node whose kind is undefined draws as its content, as a block or
 ; inline where it sits.
 > (define u (buffers:make "u" (md:doc '() (md:para '() "x " (lists:item '() "y") "\n"))))
-> (unload-module! '(lists))
+> (unload-owner! (module-owner '(lists)))
 > (show v)
 <div class="view nowrap" id="view-1" data-view="1" data-version="0" data-showing="0" data-placement="*" data-place-kind="follow" data-place-edge="top" data-lead data-scroll-margin="2" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end data-lines="5" data-chars="45"><div class="view-bars" data-preserve-attr="data-shown" aria-hidden="true"><div class="view-scroll-bar" data-scroll-bar="vertical" data-keymap="1" data-preserve-attr="style data-fits data-held"><div class="view-thumb"></div></div></div><div class="view-lines"><article><div class="node" id="v1-2" data-at="1" data-to="9"><div class="heading"><div class="line" id="v1-1" data-line="1" data-before="0" data-at="2">Title</div></div></div><div class="node" id="v1-4" data-at="9" data-to="31"><div class="line" id="v1-3" data-line="2" data-before="6" data-at="10">Alp<span class="region">ha </span><span class="node" data-at="16" data-to="22"><a href="https://x"><span data-at="17"><span class="region">bet</span><span class="cursor-on primary">a</span></span></a></span><span class="cursor-on"> </span>gamma.</div></div><div class="node" id="v1-9" data-at="31" data-to="45"><div class="undefined-kind"><div class="node" id="v1-6" data-at="32" data-to="38"><div class="undefined-kind"><div class="line" id="v1-5" data-line="3" data-before="24" data-at="33">one</div></div></div><div class="node" id="v1-8" data-at="38" data-to="44"><div class="undefined-kind"><div class="line" id="v1-7" data-line="4" data-before="28" data-at="39">two</div></div></div></div></div><div class="node" id="v1-11" data-at="45" data-to="60"><div class="line" id="v1-10" data-line="5" data-before="32" data-at="46">Last <span class="node" data-at="51" data-to="52"><img src="a.png"></span> line.</div></div></article></div></div>
 > (show (views:make u))
@@ -68,7 +68,7 @@
 <div class="view nowrap" id="view-7" data-view="7" data-version="0" data-showing="0" data-placement="*" data-place-kind="position" data-lead data-place-item="1" data-place-fraction="0.0" data-place-column="0" data-scroll-margin="2" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end data-lines="2" data-chars="27"><div class="view-bars" data-preserve-attr="data-shown" aria-hidden="true"><div class="view-scroll-bar" data-scroll-bar="vertical" data-keymap="1" data-preserve-attr="style data-fits data-held"><div class="view-thumb"></div></div></div><div class="view-lines"><div class="line" id="v7-1" data-line="1" data-before="0" data-at="1"><span data-face="verb"><span class="cursor-on primary">B</span><span data-face="mark" title="a &quot;quote&quot; &amp; &lt;tag&gt;"><span data-face="strong">uy</span></span></span><span data-face="mark" title="a &quot;quote&quot; &amp; &lt;tag&gt;"><span data-face="strong"><span class="datum" data-at="4" data-to="4"><img src="b.png"></span> <span class="datum" data-at="5" data-to="5">[x] </span>milk</span></span> <span data-face="date"><span class="datum" data-at="10" data-to="15">now</span></span>.</div><div class="line" id="v7-2" data-line="2" data-before="16">And bread.</div><div class="line" id="v7-3" data-line="3" data-before="27"><br></div></div></div>
 ; A span-properties entry that raises goes to report, and its span draws
 ; without it.
-> (table-set! views:span-properties 'bad (lambda (v) (car v)))
+> (tables:set! views:span-properties 'bad (lambda (v) (car v)))
 > (buffers:add-span! (buffers:layer notes marks) 18 19 '((bad . 1)))
 > (show n)
 ! car: 1 is not a pair
@@ -130,7 +130,7 @@
 <div class="view nowrap" id="view-75" data-view="75" data-version="0" data-showing="0" data-placement="*" data-place-kind="follow" data-place-edge="top" data-lead data-scroll-margin="2" data-reported="0" data-drawn-screens="2.0" data-run-at-start data-run-at-end data-lines="5" data-chars="24"><div class="view-bars" data-preserve-attr="data-shown" aria-hidden="true"><div class="view-scroll-bar" data-scroll-bar="vertical" data-keymap="1" data-preserve-attr="style data-fits data-held"><div class="view-thumb"></div></div></div><div class="view-lines"><article><div class="node" id="v75-2" data-at="1" data-to="11"><div class="line" id="v75-1" data-line="1" data-before="0" data-at="2">one</div></div><div class="line" id="v75-3" data-line="2" data-before="4"><span class="fold" data-at="6" data-to="21">…</span></div><div class="node" id="v75-6" data-at="19" data-to="31"><div class="line" id="v75-4" data-line="4" data-before="15" data-at="21">our</div><div class="line" id="v75-5" data-line="5" data-before="19">five</div></div></article></div></div>
 ; A span-properties entry that returns no list of attribute names and
 ; values goes to report once a draw, and its span draws without it.
-> (table-set! views:span-properties 'odd (lambda (v) (list 5 (cons "ok" "y"))))
+> (tables:set! views:span-properties 'odd (lambda (v) (list 5 (cons "ok" "y"))))
 > (buffers:add-span! (buffers:layer notes marks) 17 18 '((odd . 1)))
 > (buffers:add-span! (buffers:layer notes marks) 19 20 '((odd . 2)))
 > (html? (views:draw n #f))

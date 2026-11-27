@@ -1,10 +1,12 @@
-(import (tuna) (tuna plugins) (document) (haml))
+(import (hooks) (options) (tables) (timers))
+(import (tuna) (document) (haml))
 (use-plugin modes)
 (use-plugin views)
 (use-plugin chez-scheme)
-(use-plugin rainbow-delimiters)
-(add-hook! chez-scheme:mode-hook
-  (lambda () (set-option-local! rainbow-delimiters:mode #t)))
+;; Loaded, not imported, so its unload in a test stays an unload.
+(load-module! '(rainbow-delimiters))
+(hooks:add! chez-scheme:mode-hook
+  (lambda () (options:set-local! rainbow-delimiters:mode #t)))
 
 (define (scheme-buffer name content)
   (let ([b (buffers:make name content)])
@@ -19,7 +21,7 @@
       (if (or (= same 15) (= n 500))
           now
           (begin
-            (sleep-for 0.02)
+            (timers:sleep 0.02)
             (loop (+ n 1) (if (equal? now last) (+ same 1) 0) now))))))
 
 (define (search s sub from)

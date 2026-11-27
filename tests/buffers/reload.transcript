@@ -11,8 +11,7 @@
     (set-port-position! p (port-length p))
     (put-string p "\n(define (extra) 1)\n")
     (close-port p))
-> (import (tuna eval))
-> (eval-file path)
+> (reload-modules! '((buffers)))
 > (buffers:extra)
 1
 > (list (buffers:buffer? b) (buffers:live? b) (buffers:name b) (buffers:edit? e) (buffers:anchor? a))

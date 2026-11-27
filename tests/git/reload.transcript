@@ -1,7 +1,7 @@
 ; A reload of git keeps each repository's queue and log: a command
 ; called after the reload waits for the one running from before it, and
 ; both stay in the log.
-> (define (reload! name) (eval-file (string-append (getenv "TUNA_LIBRARY") "/" name ".sls")))
+> (define (reload! name) (reload-modules! (list (list (string->symbol name)))))
 > (sample-repository! "repo")
 > (define repo (git:find-repository (at "repo")))
 > (define old-ended #f)

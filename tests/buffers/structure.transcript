@@ -94,7 +94,7 @@ md:para
 ; A kind that is not loaded refuses edits inside its nodes; its node can
 ; still be deleted whole.
 > (define md (fresh md-datum))
-> (unload-module! '(lists))
+> (unload-owner! (module-owner '(lists)))
 > (refusal (lambda () (buffers:replace! md (at md "t|wo") (at md "t|wo") "x")))
 (refused "inside a node whose kind is not loaded")
 > (define the-list (document:enclosing (buffers:document md) (document:node-start (document:enclosing (buffers:document md) (at md "t|wo")))))
@@ -103,6 +103,7 @@ md:para
 > (length (children md))
 4
 > (load-module! '(lists))
+#<owner (lists) 2>
 ; A form: labels are read-only and have no stops, fields hold one line.
 > (define form (fresh form-datum))
 > (define stops (all-stops form))

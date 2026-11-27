@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins) (web) (keys) (commands) (document) (buffers) (views) (modes) (haml))
+(import (hooks) (options) (tables) (timers) (saved) (plugins))
+(import (tuna) (web) (keys) (commands) (document) (buffers) (views) (modes) (haml))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -12,8 +13,9 @@
 (use-plugin help
   (config
     (keys:bind! keys:global "C-c ?" help:describe-bindings)
-    (table-set! layout:display-rules help:buffer? layout-split:display-below)))
-(import (harpo))
+    (tables:set! layout:display-rules help:buffer? layout-split:display-below)))
+;; Loaded, not imported, so its unload in a test stays an unload.
+(load-module! '(harpo))
 
 (define client (web:add-client! 1))
 
@@ -31,10 +33,10 @@
 ;; A command that reads pauses its task, so tests start it in a task of
 ;; its own and wait for the read.
 (define (start! . keys)
-  (spawn-task (lambda () (apply press! keys)))
-  (sleep-for 0.05))
+  (spawn-task (lambda (restore) (apply press! keys)))
+  (timers:sleep 0.05))
 
-(define (settle) (sleep-for 0.05))
+(define (settle) (timers:sleep 0.05))
 
 (define (view) (layout:selected-view))
 

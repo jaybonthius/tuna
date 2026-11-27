@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (web) (keys) (commands) (haml) (harpo))
+(import (hooks) (options) (tables) (timers))
+(import (tuna) (testing) (web) (keys) (commands) (haml) (harpo))
 (use-plugin layout)
 (use-plugin editing)
 (use-plugin echo-area)
@@ -6,21 +7,21 @@
 (use-plugin completion)
 (use-plugin files)
 (use-plugin file-picker)
-(use-plugin which-key
-  (config
-    (set-option! which-key:delay 0.5)
-    (table-set! which-key:labels "C-c a" "agents")
-    (table-set! which-key:labels "C-c b" "buffers")
-    (table-set! which-key:labels "C-c e" "workspaces")
-    (table-set! which-key:labels "C-c f" "files")
-    (table-set! which-key:labels "C-c g" "AI / system")
-    (table-set! which-key:labels "C-c l" "language")
-    (table-set! which-key:labels "C-c n" "notes")
-    (table-set! which-key:labels "C-c o" "open")
-    (table-set! which-key:labels "C-c p" "completion")
-    (table-set! which-key:labels "C-c s" "search")
-    (table-set! which-key:labels "C-c t" "TODO")
-    (table-set! which-key:labels "C-c w" "windows")))
+;; Loaded, not imported, so its unload in a test stays an unload.
+(load-module! '(which-key))
+(options:set! which-key:delay 0.5)
+(tables:set! which-key:labels "C-c a" "agents")
+(tables:set! which-key:labels "C-c b" "buffers")
+(tables:set! which-key:labels "C-c e" "workspaces")
+(tables:set! which-key:labels "C-c f" "files")
+(tables:set! which-key:labels "C-c g" "AI / system")
+(tables:set! which-key:labels "C-c l" "language")
+(tables:set! which-key:labels "C-c n" "notes")
+(tables:set! which-key:labels "C-c o" "open")
+(tables:set! which-key:labels "C-c p" "completion")
+(tables:set! which-key:labels "C-c s" "search")
+(tables:set! which-key:labels "C-c t" "TODO")
+(tables:set! which-key:labels "C-c w" "windows")
 
 (keys:bind! keys:global "C-c f f" file-picker:find-file)
 (keys:bind! keys:global "C-c l r" harpo:honk)
@@ -57,14 +58,14 @@
 ;; A command's prompt pauses its task, so tests run it in a task of its
 ;; own and wait for the prompt.
 (define (start! thunk)
-  (let ([t (spawn-task (lambda () (in-client thunk)))])
-    (sleep-for 0.05)
+  (let ([t (spawn-task (lambda (restore) (in-client thunk)))])
+    (timers:sleep 0.05)
     t))
 
 
 (define (result t)
-  (testing:wait-until (lambda () (task-done? t)))
-  (if (task-done? t) (join-task t) 'waiting))
+  (testing:wait-until (lambda () (eq? (task-state t) 'done)))
+  (if (eq? (task-state t) 'done) (testing:join t) 'waiting))
 
 (define (raised thunk)
   (guard (c [#t (list (if (who-condition? c) (condition-who c) 'none)
@@ -117,5 +118,5 @@
 (define (shows?) (and (popup) #t))
 
 ;; Long enough for which-key:delay set to 0.5 to run out.
-(define (wait-out) (sleep-for 0.7))
+(define (wait-out) (timers:sleep 0.7))
 (import (console))

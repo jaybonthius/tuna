@@ -1,19 +1,19 @@
 #!tuna
 (import (keys) (commands) (lossage) (buffers) (document) (views) (layout) (modes) (completion)
-        (echo-area) (ui) (web) (haml) (syntax) (chez-scheme))
+        (echo-area) (ui) (web) (haml) (syntax) (chez-scheme) (hooks) (options) (tables) (saved))
 
-(define-option select-view? #f boolean?
+(options:define-option select-view? #f boolean?
   "Whether a describing command selects the view showing *Help*.")
 
-(define-saved name-history '() (lambda (v) (and (list? v) (for-all string? v))))
+(saved:define-saved name-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
-(define-saved command-history '() (lambda (v) (and (list? v) (for-all string? v))))
+(saved:define-saved command-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
-(define-table keymap "The help commands, bound to C-h.")
+(tables:define-table keymap "The help commands, bound to C-h.")
 
-(define-table mode-keymap "Keys in *Help*.")
+(tables:define-table mode-keymap "Keys in *Help*.")
 
-(define-hook mode-hook "Called with *Help* current when a description makes it, or finds it for the first time after help loads.")
+(hooks:define-hook mode-hook "Called with *Help* current when a description makes it, or finds it for the first time after help loads.")
 
 (modes:define-major-mode mode (parent modes:special) (lighter "Help") (keymap mode-keymap) (hook mode-hook) (plugin-only #t))
 
@@ -147,9 +147,9 @@
 (define (%keymap-heading keymap)
   (cond
     [(eq? keymap keys:global) "keys:global"]
-    [(find (lambda (entry) (eq? (cdr entry) keymap)) (table-entries modes:keymaps))
+    [(find (lambda (entry) (eq? (cdr entry) keymap)) (tables:entries modes:keymaps))
      => (lambda (entry) (%mode-label (car entry)))]
-    [(documentation keymap)]
+    [(%documentation keymap)]
     [else "A keymap with no documentation"]))
 
 (define (%sections-datums sections)
@@ -169,8 +169,16 @@
     (map (lambda (section) (cons (car section) (filter (lambda (b) (%starts-with? (car b) start)) (cdr section))))
          sections)))
 
+(define (%documentation v)
+  (cond
+    [(hooks:hook? v) (hooks:documentation v)]
+    [(options:option? v) (options:documentation v)]
+    [(tables:table? v) (tables:documentation v)]
+    [(%changeable? v) (definition-documentation v)]
+    [else #f]))
+
 (define (%documentation-datum v)
-  (%text '() (string-append (or (documentation v) "No documentation.") "\n")))
+  (%text '() (string-append (or (%documentation v) "No documentation.") "\n")))
 
 (define (%library-of name)
   (let ([names (chez-scheme:repl-names)])
@@ -180,23 +188,24 @@
         [(eq? (chez-scheme:name-export (vector-ref names i)) name) (chez-scheme:name-library (vector-ref names i))]
         [else (loop (fx+ i 1))]))))
 
-(define (%environment library) (environment '(tuna) library))
+;; The kernel offers no test of a changeable procedure; its readers
+;; refuse any other value.
+(define (%changeable? v)
+  (and (procedure? v)
+       (guard (c [(assertion-violation? c) #f])
+         (definition-changes v)
+         #t)))
 
-;; A changeable definition's name is syntax to Chez, so its module's
-;; definitions tell it from syntax.
-(define (%changeable? name library)
-  (exists (lambda (change) (and (eq? (car change) 'define) (eq? (cadr change) name)))
-          (module-changes library)))
-
-(define (%changes-datums name library)
+(define (%changes-datums v)
   (let ([changes (filter (lambda (change) (memq (cadr change) '(override advice)))
-                         (eval (list 'definition-changes name) (%environment library)))])
+                         (definition-changes v))])
     (if (null? changes)
         '()
         (list (%heading-datum "Changes")
               (apply %text '()
                 (map (lambda (change)
-                       (format "~a by ~s\n" (if (eq? (cadr change) 'override) "Override" "Advice") (car change)))
+                       (format "~a by ~s\n" (if (eq? (cadr change) 'override) "Override" "Advice")
+                         (owner-name (car change))))
                      changes))))))
 
 (define (%entries n) (if (= n 1) "1 entry" (format "~a entries" n)))
@@ -207,7 +216,7 @@
 (define (%command-body command view)
   (let* ([name (commands:command-name command)] [library (%library-of name)]
          [keys (keys:where-is (web:current-client) command)]
-         [modes (table-ref commands:command-modes command #f)])
+         [modes (tables:ref commands:command-modes command #f)])
     (append
       (list (%text '() (%link-to name)
               (if library
@@ -226,7 +235,7 @@
                          (%joined (map (lambda (m) (if (symbol? m) (%link-to m) (%mode-label m))) modes) ", ")
                          (list ".\n"))))])
       (list (%documentation-datum command))
-      (if library (%changes-datums name library) '()))))
+      (if library (%changes-datums command) '()))))
 
 (define (%command-content name)
   (lambda (view)
@@ -236,11 +245,11 @@
           (list (%title-datum (format "~a is not a loaded command" name)))))))
 
 (define (%option-datums v library)
-  (let ([settings (option-settings v)])
+  (let ([settings (options:settings v)])
     (append
       (list (%text '() (format "An option in ~s.\n" library))
             (%text '() (format "Its value here is ~a; its setting is ~a and its default ~a.\n"
-                         (%written (v)) (%written (option-setting v)) (%written (option-default v)))))
+                         (%written (v)) (%written (options:setting v)) (%written (options:default v)))))
       (if (null? settings)
           '()
           (list (%heading-datum "Settings")
@@ -252,14 +261,14 @@
   (append
     (cond
       [(commands:command? v) (%command-body v view)]
-      [(option? v) (%option-datums v library)]
-      [(hook? v)
-       (list (%text '() (format "A hook in ~s with ~a.\n" library (%entries (length (hook-entries v)))))
+      [(options:option? v) (%option-datums v library)]
+      [(hooks:hook? v)
+       (list (%text '() (format "A hook in ~s with ~a.\n" library (%entries (length (hooks:entries v)))))
              (%documentation-datum v))]
-      [(table? v)
-       (list (%text '() (format "A table in ~s with ~a.\n" library (%entries (length (table-entries v)))))
+      [(tables:table? v)
+       (list (%text '() (format "A table in ~s with ~a.\n" library (%entries (length (tables:entries v)))))
              (%documentation-datum v))]
-      [(saved? v)
+      [(saved:saved? v)
        (list (%text '() (format "Saved data in ~s.\n" library))
              (%text '() (format "Its value is ~a.\n" (%written (v)))))]
       [(procedure? v)
@@ -267,18 +276,29 @@
       [else
        (list (%text '() (format "A value in ~s.\n" library))
              (%text '() (format "Its value is ~a.\n" (%written v))))])
-    (if (and changeable? (not (commands:command? v))) (%changes-datums name library) '())))
+    (if (and changeable? (not (commands:command? v))) (%changes-datums v) '())))
 
 (define (%name-content name)
   (lambda (view)
     (let ([library (%library-of name)])
       (if library
-          (let ([env (environment library)] [changeable? (%changeable? name library)])
+          (let ([env (environment library)])
             (cons (%title-datum (symbol->string name))
-                  (if (or changeable? (top-level-bound? name env))
-                      (%value-datums name (eval name env) library changeable? view)
-                      (list (%text '() (format "Syntax in ~s, which keeps no documentation.\n" library))))))
+                  (cond
+                    [(top-level-bound? name env)
+                     (let ([v (eval name env)])
+                       (%value-datums name v library (%changeable? v) view))]
+                    [(%helper library name) => (lambda (v) (%value-datums name v library #t view))]
+                    [else (list (%text '() (format "Syntax in ~s, which keeps no documentation.\n" library)))])))
           (list (%title-datum (format "~a is not an exported name" name)))))))
+
+;; A module's % procedures are not exported; its owner's definitions name
+;; them.
+(define (%helper library name)
+  (let ([owner (and (for-all symbol? library) (module-owner library))])
+    (and owner
+         (let ([change (find (lambda (c) (and (eq? (car c) 'define) (eq? (caddr c) name))) (owner-changes owner))])
+           (and change (cadr change))))))
 
 (define (%last-key keys)
   (let loop ([i (fx- (string-length keys) 1)])
@@ -297,13 +317,13 @@
 ;; The table that binds a sequence itself, rather than through
 ;; <printing-char>, shift or Meta, knows who bound it.
 (define (%owner-in keymap seq)
-  (if (table-ref keymap seq #f)
-      (table-owner keymap seq)
+  (if (tables:ref keymap seq #f)
+      (tables:owner keymap seq)
       (let loop ([i 0])
         (cond
           [(fx= i (string-length seq)) #f]
-          [(and (char=? (string-ref seq i) #\space) (table? (table-ref keymap (substring seq 0 i) #f)))
-           (%owner-in (table-ref keymap (substring seq 0 i) #f) (substring seq (fx+ i 1) (string-length seq)))]
+          [(and (char=? (string-ref seq i) #\space) (tables:table? (tables:ref keymap (substring seq 0 i) #f)))
+           (%owner-in (tables:ref keymap (substring seq 0 i) #f) (substring seq (fx+ i 1) (string-length seq)))]
           [else (loop (fx+ i 1))]))))
 
 (define (%binding-owner keys)
@@ -316,17 +336,17 @@
     (let ([found (keys:lookup (web:current-client) keys)])
       (cond
         [(not found) (list (%title-datum (string-append (%where keys) " is undefined")))]
-        [(table? found)
+        [(tables:table? found)
          (let ([prefix (%sequence-of keys)])
            (cons (%title-datum (string-append "Key bindings starting with " prefix))
                  (%sections-datums (%after-prefix prefix (keys:active-bindings (web:current-client) (%posn-of keys))))))]
         [else
          (let ([owner (%binding-owner keys)])
            (cons (%title-datum (format "~a runs the command ~a~a" (%where keys) (%command-label found)
-                                 (if owner (format ", bound by ~s" owner) "")))
+                                 (if owner (format ", bound by ~s" (owner-name owner)) "")))
                  (if (commands:command? found) (%command-body found view) '())))]))))
 
-(define %make-quit (record-constructor (record-constructor-descriptor &quit)))
+(define (%make-quit) (make-cancelled #f))
 
 ;; A read returns quit keys as data, so a sequence ended by one cancels
 ;; here, and says so, as a quit key does outside a read.
@@ -407,7 +427,7 @@
     (echo-area:message! "~a"
       (cond
         [(not found) (string-append (%where keys) " is undefined")]
-        [(table? found) (string-append (%where keys) " is a prefix")]
+        [(tables:table? found) (string-append (%where keys) " is a prefix")]
         [else (string-append (%where keys) " runs " (%command-label found))]))))
 
 (commands:define-command (where-is [command (%read-command "Where is command: ")] [view (views:current)])
@@ -461,13 +481,13 @@
         (fold-right
           (lambda (b acc)
             (let ([seq (if prefix (string-append prefix " " (car b)) (car b))])
-              (if (table? (cdr b))
+              (if (tables:table? (cdr b))
                   (append (walk (cdr b) seq (cons keymap path)) acc)
                   (cons (cons seq (cdr b)) acc))))
           '() (keys:bindings keymap)))))
 
 (define (%mode-datums mode)
-  (let ([keymap (table-ref modes:keymaps mode #f)] [lighter (modes:lighter mode)])
+  (let ([keymap (tables:ref modes:keymaps mode #f)] [lighter (modes:lighter mode)])
     (append
       (list (%heading-datum (%mode-label mode)))
       (if (and lighter (symbol? mode)) (list (%text '() (format "Its lighter is ~a.\n" lighter))) '())
@@ -553,7 +573,7 @@
         (describe-key (substring keys 0 (fx- (string-length keys) (fx+ (string-length last) 1))) view)
         (undefined))))
 
-(define (%set-revert) (set-option-local! buffers:revert-function refresh))
+(define (%set-revert) (options:set-local! buffers:revert-function refresh))
 
 (keys:bind! keys:global "C-h" keymap)
 (keys:bind! keymap "a" apropos-command)
@@ -573,6 +593,6 @@
 (keys:bind! mode-keymap "r" forward)
 (keys:bind! modes:special-keymap "?" describe-mode)
 (keys:bind! modes:special-keymap "h" describe-mode)
-(add-hook! mode-hook %set-revert)
-(table-set! web:stylesheets 'help "help/help.css")
+(hooks:add! mode-hook %set-revert)
+(tables:set! web:stylesheets 'help "help/help.css")
 (advice-add! keys:undefined %describe-prefix)

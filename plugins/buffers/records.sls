@@ -15,9 +15,9 @@
           layer-type-evaporate? layer-type-travels? layer-type-read-only? layer-type-keymap
           make-layer buffer-layer? buffer-layer-buffer buffer-layer-type buffer-layer-key buffer-layer-store
           buffer-layer-seen buffer-layer-seen-set!
-          make-anchor buffer-anchor? buffer-anchor-buffer buffer-anchor-after? buffer-anchor-position
-          buffer-anchor-position-set! buffer-anchor-version buffer-anchor-version-set!
-          buffer-anchor-deleted? buffer-anchor-deleted?-set!
+          make-anchor buffer-anchor? buffer-anchor-buffer buffer-anchor-after? buffer-anchor-place
+          buffer-anchor-place-set! make-anchor-place anchor-place-version anchor-place-position
+          anchor-place-deleted?
           &refused make-refused-condition refused-condition?)
   (import (chezscheme))
 
@@ -60,7 +60,13 @@
 
   (define-record-type (buffer-anchor make-anchor buffer-anchor?)
     (sealed #t)
-    (fields buffer after? (mutable position) (mutable version) (mutable deleted?)))
+    (fields buffer after? (mutable place)))
+
+  ;; Where an anchor is at a version, in one value, so an anchor moves by
+  ;; one write, which a cancel cannot split.
+  (define-record-type anchor-place
+    (sealed #t)
+    (fields version position deleted?))
 
   (define-condition-type &refused &error make-refused-condition refused-condition?)
 

@@ -67,8 +67,8 @@
 > (buffers:define-kind wrong (text cards:row))
 ! buffers:define-kind: a text clause needs (content atom) (text cards:row) in (buffers:define-kind wrong (text cards:row))
 > (let ([doc (buffers:document r)] [result #f])
-    (let ([t (fork-thread (lambda () (set! result (guard (c [#t (condition-message c)]) (buffers:text-between doc 0 4)))))])
-      (thread-join t))
+    (let ([t (fork-task (lambda (restore) (set! result (guard (c [#t (condition-message c)]) (buffers:text-between doc 0 4)))))])
+      (join-task t))
     result)
 "not on the main thread"
 ; Stops after a block's last line break: none, except at the root's end

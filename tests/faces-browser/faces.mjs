@@ -51,7 +51,7 @@ async function startTuna() {
   const library = path.join(home, "library");
   execFileSync("sh", [path.join(here, "../../boot/copy-library.sh"), path.join(path.dirname(bin), "plugins"), library]);
   const port = await freePort();
-  const child = spawn(bin, [`--eval=(set-option! web:port ${port})`],
+  const child = spawn(bin, [`--eval=(options:set! web:port ${port})`],
     { cwd: work, env: { ...process.env, HOME: home, TUNA_LIBRARY: library }, stdio: ["pipe", "pipe", "pipe"] });
   const tuna = { child, url: `http://127.0.0.1:${port}/`, out: "", waiters: [], n: 0 };
   const wake = () => { for (const w of [...tuna.waiters]) w(); };
@@ -94,7 +94,7 @@ async function repl(tuna, form) {
     const m = text.match(new RegExp(`@@${n} (.*)\\n`));
     if (m) { result = m[1]; return true; }
     // A quit from C-g pressed in the page is reported on the console too.
-    const e = text.match(/(^|\n)! (?!&quit)(.*)\n/);
+    const e = text.match(/(^|\n)! (?!&cancelled)(.*)\n/);
     if (e) { result = new Error(e[2]); return true; }
     return false;
   }, 60000);
@@ -466,7 +466,7 @@ async function runChecks() {
   }
   if (want("strong-stays-bold")) check("strong-stays-bold", baseUa.weight === "700", baseUa.weight);
   if (want("method-call")) {
-    await repl(tuna, `(set-option! treesit:excluded-captures '())`);
+    await repl(tuna, `(options:set! treesit:excluded-captures '())`);
     await repl(tuna, `(visit "${path.join(work, "look.py")}")`);
     await page.waitForFunction(() => window.__item("exists", "function.method.call"), null, { timeout: 60000 });
     const ex = await at("exists", "function.method.call");
@@ -475,7 +475,7 @@ async function runChecks() {
     await setCase({ theme: true });
     const callModus = await at("call", "function.call"), getModus = await at("get", "function.method.call");
     check("method-call", ex.color === call.color && getModus.color === callModus.color, `exists ${ex.color}, function.call ${call.color}; modus ${getModus.color}/${callModus.color}`);
-    await repl(tuna, "(set-option! treesit:excluded-captures default-excluded)");
+    await repl(tuna, "(options:set! treesit:excluded-captures default-excluded)");
     await setCase();
   }
   if (want("key-binding")) {
@@ -639,14 +639,14 @@ async function m13() {
     for (const scheme of ["light", "dark"]) {
       await setCase({ theme: true, scheme, css: constructs === "bold" ? ":root { --modus-bold-constructs: bold; }" : "" });
       for (const [level, excluded] of [[3, null], [4, "'()"]]) {
-        if (excluded) await repl(tuna, `(set-option! treesit:excluded-captures ${excluded})`);
+        if (excluded) await repl(tuna, `(options:set! treesit:excluded-captures ${excluded})`);
         await repl(tuna, '(let ([b (buffers:find "look.py")]) (when b (buffers:kill! b)) #t)');
         const drawn = await chars("look.py");
         const got = drawn.map(([, c, w, f]) => c ? [rgb(c), bold(w) ? "bold" : "normal", f] : null);
         const same = drawn.map(([ch]) => ch).join("").startsWith(text.py.trimEnd());
         const diffs = compare(got, stock(`stock-${scheme}-${constructs}-${level}-py.tsv`), text.py);
         check(`stock-modus python level ${level} ${constructs} ${scheme}`, same && diffs.length === 0, `${same ? "" : "drawn text differs; "}${diffs.join("; ")}`);
-        if (excluded) await repl(tuna, "(set-option! treesit:excluded-captures default-excluded)");
+        if (excluded) await repl(tuna, "(options:set! treesit:excluded-captures default-excluded)");
       }
       const drawn = await chars("look.sls");
       const got = drawn.map(([, c, w, f]) => c ? [rgb(c), bold(w) ? "bold" : "normal", f] : null);

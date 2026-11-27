@@ -1,4 +1,5 @@
-(import (tuna) (tuna plugins) (document) (web) (keys) (buffers) (views) (commands))
+(import (tables) (plugins))
+(import (tuna) (document) (web) (keys) (buffers) (views) (commands))
 (use-plugin repeat)
 (use-plugin layout-split)
 (use-plugin layout)

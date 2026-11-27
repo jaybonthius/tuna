@@ -16,8 +16,11 @@ dir=$(mktemp -d "${TMPDIR:-/tmp}/tuna-views-races-test.XXXXXX")
 trap 'rm -rf "$dir"' EXIT
 mkdir -p "$dir/home" "$dir/library" "$dir/work"
 cp -RL tests/views/home/. "$dir/home/"
+mkdir -p "$dir/home/.config/tuna/lib"
+cp -R tests/modules/. "$dir/home/.config/tuna/lib/"
 cp -R plugins/. "$dir/library/"
 cat > "$dir/input" <<'END'
+(import (testing))
 (import (md) (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 (define text (buffers:make "text" (lines 400)))
 (define layout (buffers:make "*layout*" (md:doc '() (views:view '((view . 50) (buffer . "text"))))))
@@ -31,7 +34,7 @@ cat > "$dir/input" <<'END'
     (let loop ()
       (if quitting
           (begin
-            (request-quit!)
+            (testing:request-quit!)
             (chez:sleep (make-time 'time-duration 1000000 0))
             (loop))
           (set! stopped #t))))
@@ -44,10 +47,10 @@ cat > "$dir/input" <<'END'
 ; before it enters the guard again.
 (define (stress until)
     (let again ()
-      (guard (c [(quit-condition? c) (set! quits (+ quits 1)) (again)])
+      (guard (c [(cancelled? c) (set! quits (+ quits 1)) (again)])
         (unless forked
           (set! forked #t)
-          (fork-thread quitter))
+          (fork-task (lambda (restore) (quitter))))
         (let loop ([k 0])
           (when (< (real-time) until)
             (let* ([v (list-ref all (mod k 2))]
@@ -79,12 +82,11 @@ cat > "$dir/input" <<'END'
     all)
 (for-all (lambda (v) (string? (html->string (views:draw v desktop)))) all)
 (define before (list (views:point atom) (map views:cursor-point (views:cursors atom))))
-(import (tuna eval))
-(eval-file (string-append (getenv "TUNA_LIBRARY") "/views.sls"))
+(reload-modules! '((views)))
 (equal? before (let ([v (views:find 50)]) (list (views:point v) (map views:cursor-point (views:cursors v)))))
 END
 output=$(cd "$dir/work" && HOME="$dir/home" TUNA_LIBRARY="$dir/library" "$tuna" < "$dir/input" 2>&1 |
-  grep -v -E '^! (\(views\) )?&quit$' || true)
+  grep -v -E '^! (\(views\) )?&cancelled$' || true)
 expected='#t
 #t
 #t

@@ -1,5 +1,5 @@
 #!tuna
-(import (document) (buffers) (views) (layout) (undo) (dired) (web) (haml))
+(import (document) (buffers) (views) (layout) (undo) (dired) (web) (haml) (timers))
 
 (define (now-ns)
   (let ([t (current-time 'time-monotonic)])
@@ -36,7 +36,7 @@
   (let ([b (dired:visit folder)] [v (layout:selected-view)])
     (let wait ([n 0])
       (unless (or (fx>= (entries b) 62) (fx= n 1000))
-        (sleep-for 0.01)
+        (timers:sleep 0.01)
         (wait (fx+ n 1))))
     (unless (fx>= (entries b) 62) (printf "the folder was not read\n"))
     (views:set-buffer! v b)

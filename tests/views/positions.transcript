@@ -8,7 +8,7 @@
 "L2"
 > (views:with-view v (views:describe-at-point v))
 "L2"
-> (set-option! views:column-number #t)
+> (options:set! views:column-number #t)
 > (views:describe-line (root-of v) v)
 "2:1"
 ; Within a node, its own lines and columns count, from the node's start.
@@ -22,8 +22,8 @@
 ; The kind at point describes it: the atom right after point, else the
 ; innermost node holding point whose kind has an entry, else the root's
 ; line and column.
-> (table-set! views:position-describers md:para (lambda (node view) (format "para at ~a" (document:node-start node))))
-> (table-set! views:position-describers md:image (lambda (node view) "an image"))
+> (tables:set! views:position-describers md:para (lambda (node view) (format "para at ~a" (document:node-start node))))
+> (tables:set! views:position-describers md:image (lambda (node view) "an image"))
 > (views:describe-at-point w)
 "para at 7"
 > (define pictures (buffers:make "pictures" (md:doc '() (md:heading '() "a\n") (md:image '()) (md:image '()) (md:heading '() "b\n"))))
@@ -36,18 +36,18 @@
 "1:0"
 ; A describer's #f shows nothing, and a key that is no kind's constructor
 ; is left out.
-> (table-set! views:position-describers md:doc (lambda (node view) #f))
-> (table-set! views:position-describers (lambda (attributes) 'md:heading) (lambda (node view) "never"))
+> (tables:set! views:position-describers md:doc (lambda (node view) #f))
+> (tables:set! views:position-describers (lambda (attributes) 'md:heading) (lambda (node view) "never"))
 > (views:describe-at-point x)
 #f
-> (table-remove! views:position-describers md:doc)
+> (tables:remove! views:position-describers md:doc)
 ; The option is read in the view, so a buffer's local value applies.
 > (views:with-view x ((views:position-description) x))
 "1:0"
-> (buffers:with-buffer pictures (set-option-local! views:position-description (lambda (view) "page 1 of 1")))
+> (buffers:with-buffer pictures (options:set-local! views:position-description (lambda (view) "page 1 of 1")))
 > (views:with-view x ((views:position-description) x))
 "page 1 of 1"
-> (buffers:with-buffer pictures (set-option-local! views:position-description #f))
+> (buffers:with-buffer pictures (options:set-local! views:position-description #f))
 > (views:with-view x (views:position-description))
 #f
 ; A view with no buffer describes nothing.

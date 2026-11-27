@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (web) (keys) (views) (buffers) (document) (modes) (json))
+(import (hooks) (options) (tables) (timers))
+(import (tuna) (testing) (web) (keys) (views) (buffers) (document) (modes) (json))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -13,11 +14,11 @@
 (use-plugin auto-mode)
 (use-plugin docs-at-point
   (config
-    (set-option! docs-at-point:delay 0.05)))
+    (options:set! docs-at-point:delay 0.05)))
 (use-plugin docs-at-point-display)
 (use-plugin lsp
   (config
-    (set-option! lsp:send-changes-delay 0.05 lsp:highlight-delay 0.05)
+    (options:set! lsp:send-changes-delay 0.05 lsp:highlight-delay 0.05)
     (keys:bind! keys:global "C-c a" lsp:code-actions)
     (keys:bind! keys:global "C-c r" lsp:rename)
     (keys:bind! keys:global "C-c s" lsp:start)))
@@ -41,16 +42,16 @@
 ;; A command's prompt pauses its task, so tests run it in a task of its
 ;; own.
 (define (start! thunk)
-  (let ([t (spawn-task (lambda () (in-client thunk)))])
-    (sleep-for 0.05)
+  (let ([t (spawn-task (lambda (restore) (in-client thunk)))])
+    (timers:sleep 0.05)
     t))
 
 
 (define (result t)
-  (testing:wait-until (lambda () (task-done? t)))
-  (if (task-done? t)
+  (testing:wait-until (lambda () (eq? (task-state t) 'done)))
+  (if (eq? (task-state t) 'done)
       (guard (c [#t (list 'raised (if (message-condition? c) (condition-message c) c))])
-        (join-task t))
+        (testing:join t))
       'waiting))
 
 (define (raised thunk)
@@ -62,7 +63,7 @@
 
 (define (mouse! view . fields)
   (parameterize ([web:current-client client])
-    ((table-ref web:input-handlers "mouse") client
+    ((tables:ref web:input-handlers "mouse") client
      (append fields
              `(("type" . "mouse") ("clicks" . 1) ("modifiers" . #())
                ("view" . ,(views:id view)) ("version" . ,(buffers:version (views:buffer view)))
@@ -81,7 +82,7 @@
 (define (text b) (document:text (buffers:document b)))
 
 (define said '())
-(set-option! ask:message-writer (lambda (s) (set! said (cons s said))))
+(options:set! ask:message-writer (lambda (s) (set! said (cons s said))))
 (define (take-said!) (let ([s (reverse said)]) (set! said '()) s))
 
 (define tuna-program (car (command-line)))
@@ -129,10 +130,10 @@
   (let ([n (if (null? count) 1 (car count))])
     (testing:wait-until (lambda () (>= (length (of-method name method)) n)))))
 
-(define-table fake-keymap)
-(define-hook fake-mode-hook)
+(tables:define-table fake-keymap)
+(hooks:define-hook fake-mode-hook)
 (modes:define-major-mode fake-mode (keymap fake-keymap) (hook fake-mode-hook) (language "fakelang"))
-(table-set! auto-mode:file-names "fk" fake-mode)
+(tables:set! auto-mode:file-names "fk" fake-mode)
 
 (define (write-file! path content)
   (let ([dir (path-parent path)]) (unless (file-exists? dir) (system (format "mkdir -p '~a'" dir))))
@@ -146,5 +147,5 @@
 (define project (format "~a/project" home))
 (system (format "mkdir -p '~a/.git'" project))
 
-(set-idle! #t)
+(timers:set-idle! #t)
 (import (console))

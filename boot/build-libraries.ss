@@ -1,9 +1,14 @@
 ;; The copies Tuna comes with are never installed, so they are built here
 ;; as an install builds a library, except that Tuna's own checkout has
 ;; fetched their submodules.
-(import (tuna installs))
-
 (define-values (program libraries deps logs) (apply values (command-line-arguments)))
+
+;; The plugin manager's own libraries are in the start folder beside the
+;; program.
+(library-directories
+  (cons (let ([start (string-append (path-parent program) "/start")]) (cons start start))
+        (library-directories)))
+(import (plugins installs))
 
 (call-with-input-file deps
   (lambda (p)

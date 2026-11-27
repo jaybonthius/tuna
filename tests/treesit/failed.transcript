@@ -2,8 +2,8 @@
 ; running job's input again, and starts no failed job again. Fixing the
 ; cause and calling update! colours it.
 > (define text (grown-text 60000))
-> (define python-grammar (table-ref treesit:grammars "python" #f))
-> (table-set! treesit:grammars "python" "python")
+> (define python-grammar (tables:ref treesit:grammars "python" #f))
+> (tables:set! treesit:grammars "python" "python")
 > (define b (buffers:make "bad.py" text))
 > (define v (views:make b))
 > (begin (show! desktop v) (modes:set-major-mode python:mode b))
@@ -17,14 +17,14 @@
 > (settle b)
 > (in-order (drawn-lines v) (spans-of b) (job-events))
 (((564 661)) () ())
-> (table-set! treesit:grammars "python" python-grammar)
+> (tables:set! treesit:grammars "python" python-grammar)
 > (syntax-highlighting:update! b)
 > (in-order (null? (faces b)) (job-events))
 (#f (start))
 ; A scroll reads the input of a running job again, so a grammar entry
 ; changed meanwhile reaches it: here one that raises, reported for that
 ; buffer once.
-> (table-set! treesit:grammars "python" "python")
+> (tables:set! treesit:grammars "python" "python")
 > (report! desktop v 900)
 ! (treesit) treesit:grammars: not a grammar with irritant "python"
 > (settle b)

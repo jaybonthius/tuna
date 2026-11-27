@@ -8,30 +8,30 @@
 > (html (bar))
 "<div class=\"minibuffer-prompts\"><div class=\"node\" id=\"v4-60\" data-at=\"258\" data-to=\"271\"><div class=\"minibuffer-prompt\"><span class=\"minibuffer-depth\">[20] </span><div class=\"line\" id=\"v4-58\" data-line=\"20\" data-before=\"0\" data-at=\"259\"><span class=\"node\" data-at=\"259\" data-to=\"265\"><span class=\"minibuffer-question\"><span data-at=\"260\">Q1: </span></span></span><span class=\"node\" data-at=\"265\" data-to=\"267\"><span class=\"minibuffer-input\"><span data-at=\"266\"><span class=\"cursor primary\"></span></span></span></span><br></div><div class=\"node\" id=\"v4-59\" data-at=\"268\" data-to=\"270\"><div class=\"minibuffer-content\"></div></div></div></div></div>"
 > (define order '(7 0 19 3 12 5 18 1 9 14 2 16 6 11 4 17 8 13 10 15))
-> (for-each (lambda (i) (signal-task (list-ref tasks i) (make-message-condition "stop"))) order)
-! stop
-! stop
-! stop
-! stop
-! stop
-! stop
-! stop
-! stop
-! stop
-! stop
-! stop
-! stop
-! stop
-! stop
-! stop
-! stop
-! stop
-! stop
-! stop
-! stop
-> (testing:wait-until (lambda () (for-all task-done? tasks)))
+> (for-each (lambda (i) (cancel-task (list-ref tasks i) (make-message-condition "stop"))) order)
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+! &cancelled
+> (testing:wait-until (lambda () (for-all testing:done? tasks)))
 > (map (lambda (t) (result t)) (list-head tasks 3))
-((raised "stop") (raised "stop") (raised "stop"))
+((raised #<condition &cancelled>) (raised #<condition &cancelled>) (raised #<condition &cancelled>))
 > (datums minibuf)
 ((minibuffer:%prompts ()))
 > (prompt)
@@ -44,13 +44,12 @@
 ; answer stands, and the prompt ends once.
 > (define ended 0)
 > (define (count-end p) (set! ended (+ ended 1)))
-> (add-hook! minibuffer:prompt-ended count-end)
+> (hooks:add! minibuffer:prompt-ended count-end)
 > (define t (start! (lambda () (minibuffer:read "Name: "))))
 > (type! "x")
-> (begin (press! "RET") (signal-task t (make-message-condition "late")) (void))
-! late
+> (begin (press! "RET") (cancel-task t (make-message-condition "late")) (void))
 > (result t)
-(raised "late")
+"x"
 > ended
 1
 ; Answering an outer prompt while an inner one waits leaves the inner one
@@ -71,33 +70,29 @@ early
 "i"
 > (datums minibuf)
 ((minibuffer:%prompts ()))
-> (remove-hook! minibuffer:prompt-ended count-end)
+> (hooks:remove! minibuffer:prompt-ended count-end)
 ; A storm of quits while prompts start and end: the buffer stays well
 ; formed and no prompt is left behind.
 > (define stop #f)
 > (define askers
     (map (lambda (i)
-           (spawn-task
-             (lambda ()
-               (let loop ([n 0])
+           (spawn-task (lambda (restore) (let loop ([n 0])
                  (unless (or stop (= n 200))
                    (guard (c [#t #f])
                      (in-client (lambda () (minibuffer:read "Storm: "))))
                    (loop (+ n 1)))))))
          (iota 3)))
 > (define quitter
-    (spawn-task
-      (lambda ()
-        (let loop ([n 0])
+    (spawn-task (lambda (restore) (let loop ([n 0])
           (unless (= n 300)
-            (for-each (lambda (t) (signal-task t (make-message-condition "q"))) askers)
-            (sleep-for 0.001)
+            (for-each (lambda (t) (cancel-task t (make-message-condition "q"))) askers)
+            (timers:sleep 0.001)
             (loop (+ n 1)))))))
-> (testing:wait-until (lambda () (task-done? quitter)))
+> (testing:wait-until (lambda () (eq? (task-state quitter) 'done)))
 > (set! stop #t)
-> (for-each (lambda (t) (signal-task t (make-message-condition "q"))) askers)
-> (testing:wait-until (lambda () (for-all task-done? askers)))
-> (for-all task-done? askers)
+> (for-each (lambda (t) (cancel-task t (make-message-condition "q"))) askers)
+> (testing:wait-until (lambda () (for-all testing:done? askers)))
+> (for-all testing:done? askers)
 #t
 > (datums minibuf)
 ((minibuffer:%prompts ()))

@@ -8,7 +8,7 @@
 > (dynamic-wind void (lambda () (exit 4)) (lambda () (car '())))
 ! car: () is not a pair
 > (press! "C-g")
-! (exit-errors) &quit
+! (exit-errors) &cancelled
 > (display "still running")
 still running
 configuration unloading

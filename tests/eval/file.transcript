@@ -1,0 +1,68 @@
+; eval:eval-file evaluates a file that is no module form by form as the
+; REPL's owner; eval:eval-text does so with text and no path.
+> (import (plugins))
+> (write-file! "scratch.ss" "(define scratch-owner (current-owner))\n(define scratch-value 1)\n")
+> (eval:eval-file "~/scratch.ss")
+> (list (eq? scratch-owner (plugins:repl-owner)) scratch-value)
+(#t 1)
+> (eval:eval-text "(define text-owner (current-owner)) (+ 1 2)")
+3
+> (eq? text-owner (plugins:repl-owner))
+#t
+; Text with the path of a file that is no module evaluates the same way,
+; returning the last form's values.
+> (call-with-values (lambda () (eval:eval-text "1 (values 2 (current-owner))" "~/notes.ss"))
+    (lambda (n owner) (list n (eq? owner (plugins:repl-owner)))))
+(2 #t)
+> (eval:eval-text "")
+> (eval:eval-file "~/nothere.ss")
+! call-with-input-file: failed for $HOME/nothere.ss: no such file or directory
+> (eval:eval-file 'scratch)
+! eval:eval-file: not a path with irritant scratch
+> (eval:eval-text 'scratch)
+! eval:eval-text: not a string with irritant scratch
+; A module's file that no import has loaded loads it, and text with its
+; path evaluates in its scope.
+> (write-file! ".config/tuna/lib/fresh.sls" "#!tuna\n(define (x) 'fresh)\n")
+> (eval:eval-file "~/.config/tuna/lib/fresh.sls")
+> (fresh:x)
+fresh
+> (eval:eval-text "(define (x) 'assigned)" "~/.config/tuna/lib/fresh.sls")
+> (fresh:x)
+assigned
+; A loaded module's file reloads it, by any path to it.
+> (define loads '())
+> (define (note-load load instance) (set! loads (cons (owner-name instance) loads)) (load instance))
+> (advice-add! module-loaded note-load)
+> (eval:eval-file "~/.config/tuna/lib//fresh.sls")
+> (eval:eval-file "~/.config/tuna/../tuna/lib/./fresh.sls")
+> (eval:eval-file "../home/.config/tuna/lib/fresh.sls")
+> (advice-remove! module-loaded note-load)
+> (list loads (fresh:x))
+(((fresh) (fresh) (fresh)) fresh)
+; A #!tuna file that its name's lookup does not find is not a module.
+> (write-file! ".config/tuna/lib/shadow.sls" "#!tuna\n(define (x) 'lib)\n")
+> (eval:eval-file "~/.local/share/tuna/plugins/shadow/shadow.sls")
+! eval:eval-file: $HOME/.local/share/tuna/plugins/shadow/shadow.sls is not a module: module (shadow) is $HOME/.config/tuna/lib/shadow.sls
+> (delete-file (at ".config/tuna/lib/shadow.sls"))
+#t
+; A module whose name has two parts reloads like any other.
+> (mkdir (at ".config/tuna/lib/slice"))
+> (write-file! ".config/tuna/lib/slice/highlight.sls" "#!tuna\n(define (color) 'red)\n")
+> (import (slice highlight))
+> (slice/highlight:color)
+red
+> (write-file! ".config/tuna/lib/slice/highlight.sls" "#!tuna\n(define (color) 'blue)\n")
+> (eval:eval-file "~/.config/tuna/lib/slice/highlight.sls")
+> (slice/highlight:color)
+blue
+; The configuration's file is read again, by a new owner of its name;
+; text with its path evaluates as that owner.
+> (define before (plugins:configuration-owner))
+> (eval:eval-file "~/.config/tuna/init.ss")
+> (let ([after (plugins:configuration-owner)])
+    (list (owner-live? before) (owner-live? after) (equal? (owner-name before) (owner-name after))))
+(#f #t #t)
+> (eval:eval-text "(define configured (current-owner))" "~/.config/tuna/init.ss")
+> (eq? configured (plugins:configuration-owner))
+#t

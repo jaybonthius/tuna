@@ -58,7 +58,7 @@
 > (for-each
     (lambda (action)
       (parameterize ([web:current-client desktop])
-        ((table-ref web:input-handlers "mouse") desktop
+        ((tables:ref web:input-handlers "mouse") desktop
          `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
            ("view" . ,(views:id layout:screen-view)) ("version" . ,(buffers:version layout:buffer))
            ("showing" . ,(views:shown-count layout:screen-view)) ("token" . 3)

@@ -1,7 +1,7 @@
 ; A crash can cut the log at any byte, or leave zeros after it. Reading
 ; keeps exactly the records written whole.
-> (import (undo-log disk) (tuna eval))
-> (define (reload! name) (eval-file (string-append (getenv "TUNA_LIBRARY") "/" name ".sls")))
+> (import (undo-log disk) (plugins))
+> (define (reload! name) (reload-modules! (list (list (string->symbol name)))))
 > (define (logged path n)
     (testing:wait-until (lambda () (= (length (checks:log-records path)) n)))
     (length (checks:log-records path)))

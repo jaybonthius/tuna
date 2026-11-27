@@ -92,7 +92,7 @@ commit
 ; git-status:initial-section as identities, and #f.
 > (for-each buffers:kill! (filter git-status:buffer? (buffers:all)))
 #t
-> (set-option! git-status:initial-section '(((unstaged . #f))))
+> (options:set! git-status:initial-section '(((unstaged . #f))))
 > (layout:switch-to-buffer (files:visit (at "repo/b.txt")))
 > (press! "C-x" "g")
 > (settle!)
@@ -100,7 +100,7 @@ commit
 "Unstaged changes (3)"
 > (for-each buffers:kill! (filter git-status:buffer? (buffers:all)))
 #t
-> (set-option! git-status:initial-section #f)
+> (options:set! git-status:initial-section #f)
 > (layout:switch-to-buffer (files:visit (at "repo/b.txt")))
 > (press! "C-x" "g")
 > (settle!)
@@ -109,10 +109,10 @@ commit
 ; C-x g where git cannot run raises, rather than asking for a folder as
 ; it does outside a repository.
 > (layout:switch-to-buffer (files:visit (at "repo/b.txt")))
-> (set-option! git:program "no-such-git")
+> (options:set! git:program "no-such-git")
 > (press! "C-x" "g")
 ! spawn-process: cannot run no-such-git: No such file or directory with irritants ("no-such-git" ("--no-optional-locks" "--no-pager" "--literal-pathspecs" "-c" "core.preloadindex=true" "-c" "log.showSignature=false" "-c" "color.ui=false" "-c" "color.diff=false" "-c" "diff.noPrefix=false" "-c" "diff.mnemonicPrefix=false" "-c" "diff.srcPrefix=a/" "-c" "diff.dstPrefix=b/" "-c" "diff.suppressBlankEmpty=false" "-c" "core.quotePath=false" "rev-parse" "--show-toplevel" "--absolute-git-dir"))
 > (settle!)
 > (take-asked!)
 ()
-> (set-option! git:program "git")
+> (options:set! git:program "git")

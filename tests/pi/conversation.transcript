@@ -36,7 +36,7 @@
 > (append-entry! f (entry "a1" "m1" (assistant-message "stop" (text-block "Hello **there**"))))
 > (say! f (event "message_end" (cons "message" (assistant-message "stop" (text-block "Hello **there**"))))
         (event "agent_end"))
-> (sleep-for 0.2)
+> (timers:sleep 0.2)
 > (pi:chat-activity chat)
 replying
 > (say! f (event "agent_settled" '("aborted" . #f)))

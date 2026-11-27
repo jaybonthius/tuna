@@ -1,4 +1,4 @@
 #!tuna
-(import (web))
+(import (web) (tables))
 
-(table-set! web:stylesheets 'design-tokens "design-tokens/design-tokens.css")
+(tables:set! web:stylesheets 'design-tokens "design-tokens/design-tokens.css")

@@ -1,11 +1,13 @@
-(import (tuna) (testing) (tuna plugins) (document))
+(import (hooks) (options) (timers) (plugins))
+(import (tuna) (testing) (document))
 ;; ask's own writer raises each message as a warning, whose handler runs
 ;; outside the guards of the code that said it.
 (use-plugin ask
   (config
-    (set-option! ask:message-writer (lambda (text) (void)))))
-(use-plugin undo-log)
-(import (checks))
+    (options:set! ask:message-writer (lambda (text) (void)))))
+;; Loaded, not imported, so an unload in a test stays an unload.
+(load-module! '(undo-log))
+(load-module! '(checks))
 
 (define (text b) (document:text (buffers:document b)))
 

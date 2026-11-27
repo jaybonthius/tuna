@@ -1,4 +1,5 @@
 #!tuna
+(import (testing))
 (define (f) 2)
-(request-quit!)
+(testing:request-quit!)
 (let loop () (loop))

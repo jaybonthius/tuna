@@ -1,4 +1,5 @@
-(import (tuna) (testing) (tuna plugins) (tuna eval) (document) (haml) (web))
+(import (options) (tables) (timers) (plugins))
+(import (tuna) (testing) (document) (haml) (web))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)
@@ -29,10 +30,10 @@
 
 (define (shown c) (document:text (buffers:document (chat:buffer c))))
 
-(define (settle) (sleep-for 0.05))
+(define (settle) (timers:sleep 0.05))
 
 (define (raised thunk)
-  (guard (c [(not (quit-condition? c)) (list 'raised (if (message-condition? c) (condition-message c) c))])
+  (guard (c [(not (cancelled? c)) (list 'raised (if (message-condition? c) (condition-message c) c))])
     (thunk)))
 
 ;; The page sends a marked keymap's number, before its state.
@@ -43,7 +44,7 @@
     (for-each
       (lambda (action)
         (parameterize ([web:current-client client])
-          ((table-ref web:input-handlers "mouse") client
+          ((tables:ref web:input-handlers "mouse") client
            `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
              ("view" . ,(views:id s)) ("version" . ,(buffers:version layout:buffer))
              ("showing" . ,(views:shown-count s)) ("token" . ,at)

@@ -1,8 +1,8 @@
 #!tuna
 (import (completion) (minibuffer) (files) (jobs) (ask) (layout) (commands) (keys) (buffers) (document) (views) (faces)
-        (only (file-picker folders) discarded-length restarted-name))
+        (only (file-picker folders) discarded-length restarted-name) (hooks) (options) (tables) (saved))
 
-(define-saved file-name-history '() (lambda (v) (and (list? v) (for-all string? v))))
+(saved:define-saved file-name-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
 (define (%home) (or (getenv "HOME") "/"))
 
@@ -84,7 +84,7 @@
   (let ([entries (h)])
     (when (and (pair? entries) (fx> (discarded-length (car entries)) 0))
       (let ([name (substitute-file-name (car entries))])
-        (set-saved! h (cons name (remove name (cdr entries))))))))
+        (saved:set! h (cons name (remove name (cdr entries))))))))
 
 (define read-file-name
   (case-lambda
@@ -162,12 +162,12 @@
   "Visits PATH and shows its buffer in another view, which it selects."
   (layout:call-with-overriding-action layout:display-in-other-view (lambda () (find-file path))))
 
-(set-option! ask:file-name-reader read-file-name)
-(add-hook! minibuffer:input-changed %mark-discarded)
+(options:set! ask:file-name-reader read-file-name)
+(hooks:add! minibuffer:input-changed %mark-discarded)
 ;; A candidate under a folder part that does not exist carries that
 ;; part, such as c/t/m's code/tuna/main.sls, which only partial matches.
-(table-set! completion:category-styles completion:file-category (list completion:partial))
+(tables:set! completion:category-styles completion:file-category (list completion:partial))
 (keys:bind! keys:global "C-x C-f" find-file)
 (keys:bind! keys:global "C-x 4 f" find-file-other-view)
 (keys:bind! completion:file-action-keymap "f" find-file)
-(add-hook! completion:target-finders file-name-target -10)
+(hooks:add! completion:target-finders file-name-target -10)

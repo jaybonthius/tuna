@@ -18,7 +18,7 @@ mkdir -p "$home/.config/tuna/lib" "$dir/library" "$dir/work"
 sh tests/test-home.sh "$tuna" "$dir/library" "$home"
 cp -RL tests/dired/home/.config/tuna/lib/. "$home/.config/tuna/lib/"
 cat > "$home/.config/tuna/init.ss" <<'END'
-(import (tuna) (tuna plugins) (document))
+(import (tuna) (document))
 (use-plugin files)
 (use-plugin command-line)
 (use-plugin echo-area)
@@ -26,7 +26,7 @@ cat > "$home/.config/tuna/init.ss" <<'END'
 (define (wait-until done?)
   (let loop ([n 0])
     (unless (or (done?) (= n 1000))
-      (sleep-for 0.01)
+      (timers:sleep 0.01)
       (loop (+ n 1)))))
 (define (listings)
   (list-sort string<? (map buffers:name (filter dired:folder (buffers:all)))))

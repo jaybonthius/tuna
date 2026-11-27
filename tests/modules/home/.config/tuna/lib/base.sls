@@ -1,2 +1,2 @@
-#!tuna/base
+#!tuna
 (define (name) (this-module))

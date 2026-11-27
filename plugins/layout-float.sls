@@ -1,5 +1,7 @@
 #!tuna
-(import (layout) (buffers) (document) (views) (keys) (commands) (web) (haml))
+(import (layout) (buffers) (document) (views) (keys) (commands) (web) (haml) (tables))
+
+(define %self (current-owner))
 
 (module %internals
   (parts float-node? holding-float place-of base-of base-child? length-css view-datum by-use)
@@ -77,7 +79,15 @@
 
 (import %internals)
 
-(define (%kind) (buffers:kind-name (buffers:constructor-kind container)))
+;; Read while the plugin is live and kept: from the first step of its
+;; unload its kind is out of effect, and the unload still finds its popups.
+(define %kind
+  (let ([name #f])
+    (lambda ()
+      (or name
+          (begin
+            (set! name (buffers:kind-name (buffers:constructor-kind container)))
+            name)))))
 
 ;; Each module that shows popups has an entry of the numbers of their
 ;; views, so that they go when it unloads; a number outlives a view
@@ -154,7 +164,7 @@
                    (if (eq? direction 'left) previous (and (pair? (cdr fs)) (cadr fs)))]
                   [else (loop (cdr fs) (car fs))]))))))
 
-(define-table keymap "The keymap of float containers: keys that act on the floats around the selected view.")
+(tables:define-table keymap "The keymap of float containers: keys that act on the floats around the selected view.")
 
 ;; A part moved into a desktop without a base would otherwise become its
 ;; base and fill it.
@@ -230,7 +240,7 @@
   (for-each (lambda (id) (let ([a (%popup-atom-of id)]) (when a (%remove-popup! a)))) (cdr e)))
 
 ;; Called before the popup is added, and the unload action is registered
-;; before its entry is kept, so a quit between any two steps leaves at
+;; before its entry is kept, so a cancel between any two steps leaves at
 ;; worst a number or an action with nothing to remove.
 (define (%note-made! v)
   (let ([e (or (assoc (current-owner) %made)
@@ -367,8 +377,8 @@
 (keys:bind! keys:global "s-v" toggle)
 (keys:bind! layout:part-mode-keymap "w f" wrap-in-float)
 (keys:bind! keymap "s-V" cycle)
-(table-set! web:stylesheets 'layout-float "layout-float/layout-float.css")
+(tables:set! web:stylesheets 'layout-float "layout-float/layout-float.css")
 (advice-add! batch-ended
   (lambda (ended)
-    (guard (c [#t (report c)]) (as-module (this-module) (%sweep)))
+    (guard (c [#t (report c)]) (call-as-owner %self (lambda () (%sweep))))
     (ended)))
