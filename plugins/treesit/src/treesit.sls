@@ -152,7 +152,9 @@
          [grammar (and language (tables:ref grammars language #f))])
     (when (and grammar (not (grammar? grammar)))
       (assertion-violation 'treesit:grammars "not a grammar" grammar))
-    (when problems
+    ;; A job's problems outlive its buffer's language, as when the mode's
+    ;; plugin unloads, until the job stops at the end of the batch.
+    (when (and language problems)
       (for-each
         (lambda (problem)
           (tell-once! (if (eq? (car problem) 'grammar-error) (list 'grammar (cadr problem)) problem)

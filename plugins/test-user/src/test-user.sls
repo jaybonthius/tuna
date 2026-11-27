@@ -286,6 +286,17 @@
           (assertion-violation who "an element that stands for no tokens" element))
         (values (car (last-pair own)) (list (cons "token" (%number token "data-at"))) (%keymaps own))))))
 
+(define (%modifier-names event)
+  (list->vector
+    (fold-right (lambda (m names)
+                  (case m
+                    [(control) (cons "control" names)]
+                    [(meta) (cons "alt" names)]
+                    [(shift) (cons "shift" names)]
+                    [(super) (cons "super" names)]
+                    [else names]))
+                '() (keys:event-modifiers event))))
+
 ;; keys reads a mouse key's parts only from an event, so the key is put
 ;; in one; the item made of them must name the key back.
 (define (%button-fields who key action)
@@ -295,16 +306,7 @@
     (let* ([type (symbol->string (keys:event-basic-type event))]
            [fields (list (cons "button" (string->number (substring type 6 (string-length type))))
                          (cons "clicks" (keys:event-clicks event))
-                         (cons "modifiers"
-                               (list->vector
-                                 (fold-right (lambda (m names)
-                                               (case m
-                                                 [(control) (cons "control" names)]
-                                                 [(meta) (cons "alt" names)]
-                                                 [(shift) (cons "shift" names)]
-                                                 [(super) (cons "super" names)]
-                                                 [else names]))
-                                             '() (keys:event-modifiers event)))))])
+                         (cons "modifiers" (%modifier-names event)))])
       (unless (equal? key (keys:item-key (cons* (cons "type" "mouse") (cons "action" (symbol->string action)) fields)))
         (assertion-violation who "not a mouse key a page sends" key))
       fields)))
@@ -362,6 +364,77 @@
                       (list (cons "modifiers" (vector)) (cons "report" (%page-reports page)))))
        (web:post-input! client (%mouse-item view-element "drag" (%text-place to) fields))
        (settle))]))
+
+(define (%check-cell who column row)
+  (unless (and (fixnum? column) (fx>= column 0) (fixnum? row) (fx>= row 0))
+    (assertion-violation who "not a cell's column and row" column row)))
+
+;; A page counts the pointer's cell in the element's own cell size; a
+;; code page has none, so its cells are 10 px wide and 20 px high, and the
+;; pointer is at a cell's middle.
+(define (%cell-fields column row)
+  (list (cons "x" (fx+ (fx* column 10) 5)) (cons "y" (fx+ (fx* row 20) 10)) (cons "column" column) (cons "row" row)))
+
+(define click-cell!
+  (case-lambda
+    [(element column row) (click-cell! %first element column row "<mouse-1>")]
+    [(element column row key) (click-cell! %first element column row key)]
+    [(client element column row key)
+     (%check-cell 'test-user:click-cell! column row)
+     (let-values ([(view-element place keymaps) (%element-press 'test-user:click-cell! client element)])
+       (%post-click! client view-element place
+                     (append (%press-fields (%button-fields 'test-user:click-cell! key 'click) keymaps)
+                             (%cell-fields column row))))]))
+
+(define drag-cells!
+  (case-lambda
+    [(element from-column from-row to-column to-row)
+     (drag-cells! %first element from-column from-row to-column to-row "<drag-mouse-1>")]
+    [(element from-column from-row to-column to-row key)
+     (drag-cells! %first element from-column from-row to-column to-row key)]
+    [(client element from-column from-row to-column to-row key)
+     (%check-cell 'test-user:drag-cells! from-column from-row)
+     (%check-cell 'test-user:drag-cells! to-column to-row)
+     (let-values ([(view-element place keymaps) (%element-press 'test-user:drag-cells! client element)])
+       (let ([fields (%press-fields (%button-fields 'test-user:drag-cells! key 'drag) keymaps)]
+             [page (%page-of 'test-user:drag-cells! client)])
+         (%page-reports-set! page (fx+ (%page-reports page) 1))
+         (web:post-input! client (%mouse-item view-element "down" place (append fields (%cell-fields from-column from-row))))
+         (web:post-input! client
+           (%mouse-item view-element "move" place
+                        (append (list (cons "modifiers" (vector)) (cons "report" (%page-reports page)))
+                                (%cell-fields to-column to-row))))
+         (web:post-input! client (%mouse-item view-element "drag" place (append fields (%cell-fields to-column to-row))))
+         (settle)))]))
+
+(define (%wheel-fields who key)
+  (let ([event (and (string? key) (list key #t))])
+    (unless (and event (keys:event? event)
+                 (memq (keys:event-basic-type event) '(wheel-up wheel-down wheel-left wheel-right)))
+      (assertion-violation who "not a wheel key" key))
+    (let* ([type (symbol->string (keys:event-basic-type event))]
+           [fields (list (cons "direction" (substring type 6 (string-length type)))
+                         (cons "modifiers" (%modifier-names event)))])
+      (unless (equal? key (keys:item-key (cons* (cons "type" "mouse") (cons "action" "wheel") fields)))
+        (assertion-violation who "not a wheel key a page sends" key))
+      fields)))
+
+;; A page sends a wheel key only from inside an element that takes the
+;; wheel, and names the node that element stands for, as a grid's events
+;; do.
+(define wheel!
+  (case-lambda
+    [(element column row key) (wheel! %first element column row key)]
+    [(client element column row key)
+     (%check-cell 'test-user:wheel! column row)
+     (let ([fields (%wheel-fields 'test-user:wheel! key)])
+       (let ([chain (and (%element? element) (%ancestry (%sxml 'test-user:wheel! client) element))])
+         (unless (and chain (exists (lambda (e) (%attribute e "data-wheel")) (or (%out-to-view chain) '())))
+           (assertion-violation 'test-user:wheel! "an element in none that takes the wheel" element)))
+       (let-values ([(view-element place keymaps) (%element-press 'test-user:wheel! client element)])
+         (web:post-input! client
+           (%mouse-item view-element "wheel" place (append fields (%press-fields '() keymaps) (%cell-fields column row))))
+         (settle)))]))
 
 (define take-page-calls!
   (case-lambda

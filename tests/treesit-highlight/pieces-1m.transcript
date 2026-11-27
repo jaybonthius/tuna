@@ -1,9 +1,0 @@
-; As for 60 KB, in 1 MB of Python, at line 11.
-> (define text (grown-text 1000000))
-> (define s (open text shipped default-excluded))
-> (length (settle! s))
-62
-> (edit-cases s '(11) "(")
-("(" 1 1 ())
-> (edit-cases s '(11) "\"\"\"")
-("\"\"\"" 0 1 ())

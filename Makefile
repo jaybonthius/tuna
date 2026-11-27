@@ -32,15 +32,16 @@ $(BROWSER_TESTS:%=run/%): run/%: exe
 $(TRANSCRIPTS:%=run/%): run/%: exe
 	@TEST_TIMEOUT=$(TEST_TIMEOUT) sh tests/run-transcript.sh build/bin/tuna $*
 
-# The treesit tests highlight with tree-sitter-python at the commit Tuna
-# pins, built from the copy chez-treesitter vendors, so no test fetches it.
+# faces' browser test highlights with tree-sitter-python at the commit
+# Tuna pins, built from the copy chez-treesitter vendors, so no test
+# fetches it.
 PYTHON_GRAMMAR := build/test-grammars/libtree-sitter-python-293fdc02038e.so
 
 $(PYTHON_GRAMMAR): | exe
 	sh tests/build-grammar.sh build/bin/libraries/chez-treesitter/vendor/tree-sitter-python \
 	  293fdc02038ee2bf0e2e206711b69c90ac0d413f $@
 
-$(filter run/tests/treesit-highlight/% run/tests/treesit/%,$(TRANSCRIPTS:%=run/%)) run/tests/faces-browser-test.sh: $(PYTHON_GRAMMAR)
+run/tests/faces-browser-test.sh: $(PYTHON_GRAMMAR)
 
 repl: build
 	$(SCHEME) --libdirs $(LIBDIRS) --compile-imported-libraries
