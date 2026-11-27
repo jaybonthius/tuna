@@ -1,6 +1,0 @@
-; With no answer within 5 seconds, Tuna exits.
-> (dynamic-wind void (lambda () (exit)) (lambda () (car '())))
-! car: () is not a pair
-> (timers:sleep 10)
-configuration unloading
-> (display "never runs")

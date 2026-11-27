@@ -42,6 +42,19 @@
     (check-equal? '(next) (data-in output))
     (check-equal? '((check "bad value" (7))) (recorded home "reports"))))
 
+(test "a form written over several lines is read whole"
+  (let-values ([(status output errors home) (console-run "lines" "(string-append \"multi\"\n  \"line\")\n")])
+    (check-equal? 0 status)
+    (check-equal? "" errors)
+    (check-equal? '("multiline") (data-in output))))
+
+(test "a warning is reported and the form goes on to its value"
+  (let-values ([(status output errors home) (console-run "warning" "(begin (warning 'check \"careful\") 5)\n")])
+    (check-equal? 0 status)
+    (check-equal? "" errors)
+    (check-equal? '(5) (data-in output))
+    (check-equal? '((check "careful" ())) (recorded home "reports"))))
+
 (test "a read error is reported, and reading goes on after the characters that failed"
   (let-values ([(status output errors home) (console-run "read-error" "#< 'after\n")])
     (check-equal? 0 status)
