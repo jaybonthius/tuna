@@ -1,0 +1,145 @@
+(import (quiet) (tuna) (test) (test-user) (test-runner) (options) (tables) (keys) (commands) (faces) (buffers) (views) (layout) (layout-float)
+        (timers) (editing) (echo-area) (minibuffer) (reading))
+
+(define (logged)
+  (let* ([log (reading:buffer-text (buffers:find "*Messages*"))] [n (string-length log)])
+    (let loop ([i (- n 1)])
+      (if (or (= i 0) (char=? (string-ref log (- i 1)) #\newline))
+          (substring log i (- n 1))
+          (loop (- i 1))))))
+
+(define (state) (list (echo-area:hidden?) (reading:echo-drawn?) (reading:bracket)))
+
+(test "while no prompt waits the echo area draws its message; a prompt clears it and takes its place"
+  (echo-area:message! "Saved")
+  (test-user:settle)
+  (check-equal? '(#f #t #f) (state))
+  (let ([r (reading:start! (lambda () (minibuffer:read "Name: ")))])
+    (check-equal? #f (echo-area:current-message))
+    (check-equal? '(#t #f #f) (state))
+    (reading:quit! r)))
+
+(test "a message while a prompt waits shows in brackets after the input, in its face and spans, logged; the next typed key clears it"
+  (let ([r (reading:start! (lambda () (minibuffer:read "Name: ")))])
+    (echo-area:message! "Wrote ~a" "notes.org")
+    (test-user:settle)
+    (check-equal? " [Wrote notes.org]" (reading:bracket))
+    (parameterize ([echo-area:face faces:warning]) (echo-area:message! "Low on disk"))
+    (test-user:settle)
+    (check-equal? (list " [Low on disk]" "warning" "Low on disk") (list (reading:bracket) (reading:bracket-face) (logged)))
+    (test-user:type! "a")
+    (check-equal? (list #f #f "a") (list (echo-area:current-message) (reading:bracket) (reading:input)))
+    (parameterize ([echo-area:spans (list (list 0 5 faces:highlight))]) (echo-area:message! "total(items)"))
+    (test-user:settle)
+    (let ([spans (test-user:elements-with (car (test-user:elements (test-user:screen) "minibuffer-message")) "data-face")])
+      (check-equal? '(("total" "highlight")) (map (lambda (e) (list (test-user:element-text e) (test-user:element-attribute e "data-face"))) spans)))
+    (reading:quit! r)))
+
+(test "a command's error shows after the input in the error face"
+  (let ([r (reading:start! (lambda () (minibuffer:read "Name: " #f)))])
+    (quiet:silence! #t)
+    (test-user:press! "M-p")
+    (quiet:silence! #f)
+    (check-equal? (list " [beginning of history]" "error") (list (reading:bracket) (reading:bracket-face)))
+    (reading:quit! r)))
+
+(test "the prompt's own message clears the echo area's and shows until the next key; a message meanwhile is only logged"
+  (let ([r (reading:start! (lambda () (minibuffer:read "Name: ")))])
+    (echo-area:message! "Before")
+    (minibuffer:message! (reading:prompt) "No match")
+    (test-user:settle)
+    (check-equal? (list #f " [No match]") (list (echo-area:current-message) (reading:bracket)))
+    (echo-area:message! "After")
+    (test-user:settle)
+    (check-equal? (list " [No match]" "After") (list (reading:bracket) (logged)))
+    (test-user:press! "C-a")
+    (check-equal? (list #f #f) (list (echo-area:current-message) (reading:bracket)))
+    (reading:quit! r)))
+
+(test "a nested prompt clears the echo area and shows messages after its input; the outer one shows them again when it is back"
+  (let ([outer (reading:start! (lambda () (minibuffer:read "Outer: ")))])
+    (echo-area:message! "Outer")
+    (let ([inner (reading:start! (lambda () (minibuffer:read "Inner: ")))])
+      (check-equal? (list #f #t) (list (echo-area:current-message) (echo-area:hidden?)))
+      (echo-area:message! "Inner")
+      (test-user:settle)
+      (check-equal? " [Inner]" (reading:bracket))
+      (test-user:press! "RET")
+      (check-equal? "" (reading:result inner)))
+    (echo-area:message! "Back")
+    (test-user:settle)
+    (check-equal? (list #t " [Back]") (list (echo-area:hidden?) (reading:bracket)))
+    (reading:quit! outer)))
+
+(test "a prompt left with C-x o keeps the echo area's place; when the last prompt ends the echo area draws again, empty"
+  (test-user:show! "notes|")
+  (let ([r (reading:start! (lambda () (minibuffer:read "Name: ")))])
+    (test-user:press! "C-x o")
+    (echo-area:message! "Elsewhere")
+    (test-user:settle)
+    (check-equal? '(#t #f " [Elsewhere]") (state))
+    (test-user:press! "C-x o RET")
+    (check-equal? "" (reading:result r))
+    (check-equal? '(#f #t #f) (list (echo-area:hidden?) (reading:echo-drawn?) (echo-area:current-message)))))
+
+(commands:define-command (greet [name (minibuffer:read "Name: ")])
+  "Greets NAME."
+  (echo-area:message! "Hello, ~a" name))
+
+(test "what a command shows after reading shows in the echo area"
+  (keys:bind! keys:global "C-c g" greet)
+  (test-user:press! "C-c g")
+  (check-equal? #t (echo-area:hidden?))
+  (test-user:type! "Zeppo")
+  (test-user:press! "RET")
+  (check-equal? (list #f "Hello, Zeppo") (list (echo-area:hidden?) (echo-area:current-message)))
+  (keys:unbind! keys:global "C-c g"))
+
+(test "a prompt in a palette leaves the echo area at the bottom; only its own message shows in the palette"
+  (tables:set! layout:display-rules minibuffer:buffer? layout-float:display-palette)
+  (let ([r (reading:start! (lambda () (minibuffer:read "Name: ")))])
+    (echo-area:message! "Saved")
+    (test-user:settle)
+    (check-equal? '(#f #t #f) (state))
+    (minibuffer:message! (reading:prompt) "No match")
+    (test-user:settle)
+    (check-equal? (list #f " [No match]") (list (echo-area:current-message) (reading:bracket)))
+    (reading:quit! r))
+  (tables:remove! layout:display-rules minibuffer:buffer?))
+
+(test "advice that keeps the echo area shown keeps messages there, and the prompt draws no copy"
+  (let ([keep-echo-area (lambda (hidden?) #f)])
+    (advice-add! echo-area:hidden? keep-echo-area)
+    (let ([r (reading:start! (lambda () (minibuffer:read "Name: ")))])
+      (echo-area:message! "Saved")
+      (test-user:settle)
+      (check-equal? '(#f #t #f) (state))
+      (reading:quit! r))
+    (advice-remove! echo-area:hidden? keep-echo-area)))
+
+(test "a prompt whose part is removed while it waits gives the echo area back"
+  (let ([r (reading:start! (lambda () (minibuffer:read "Name: ")))])
+    (check-equal? #t (echo-area:hidden?))
+    (layout:delete-part! (layout:view-node (minibuffer:prompt-view (reading:prompt))))
+    (test-user:settle)
+    (check-equal? #f (echo-area:hidden?))
+    (views:call-with-view (layout:selected-view) (lambda () (commands:run minibuffer:abort)))
+    (test-user:settle)
+    (check-raises cancelled? (reading:result r))))
+
+(commands:define-command (ask-name)
+  "Reads a name."
+  (minibuffer:read "Name: "))
+
+(test "the keys that ran a command that prompts are not echoed again once the prompt is answered"
+  (options:set! echo-area:echo-keystrokes 0.2)
+  (keys:bind! keys:global "C-x r" ask-name)
+  (test-user:press! "C-x")
+  (test-runner:wait-until (lambda () (equal? "C-x-" (echo-area:keys-text (test-user:client)))))
+  (test-user:press! "r")
+  (test-user:type! "abc")
+  (test-user:press! "RET")
+  (timers:sleep 0.3)
+  (check-equal? (list #f #f) (list (minibuffer:current-prompt) (echo-area:keys-text (test-user:client))))
+  (keys:unbind! keys:global "C-x r")
+  (options:unset! echo-area:echo-keystrokes))

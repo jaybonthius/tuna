@@ -409,8 +409,11 @@
     (when (and (fx<= 1 k (length entries)) (string=? (input-text p) (list-ref entries (fx- k 1))))
       (prompt-chosen-set! p (fx- k 1)))))
 
+;; As Emacs's read_minibuf, an empty input that takes the default adds
+;; the default, so M-p recalls what was answered.
 (define (%add-to-history! p)
-  (let ([h (history-of p)] [text (input-text p)])
+  (let* ([h (history-of p)] [typed (input-text p)] [default (default-of p)]
+         [text (if (and default (string=? typed "")) default typed)])
     (when (and h (not (prompt-chosen p)) (not (string=? text "")))
       (let loop ([entries (cons text (remove text (h)))] [n (history-length)] [acc '()])
         (if (or (null? entries) (fx= n 0))
@@ -557,7 +560,11 @@
                       (add-keymap! p y-or-n-keymap)
                       (when complaint (message! p complaint)))
                     (lambda () (%read (string-append question "(y or n) ") #f #f)))])
-      (if (boolean? answer) answer (loop "Please answer y or n")))))
+      (cond
+        [(boolean? answer)
+         (echo-area:message! "~a(y or n) ~a" question (if answer "y" "n"))
+         answer]
+        [else (loop "Please answer y or n")]))))
 
 (define (%input-edited b e)
   (when (and (eq? b buffer) (not (buffers:edit-silent? e)))
@@ -581,10 +588,11 @@
     (exit! p (if (and default (string=? text "")) default text))))
 
 (commands:define-command (abort)
-  "Quits the innermost prompt: its read raises a quit."
+  "Quits the innermost prompt: its read raises a quit, and the echo area says Quit."
   (let ([p (%innermost 'minibuffer:abort)])
     (end-prompt! p)
-    (cancel-task (prompt-task p))))
+    (cancel-task (prompt-task p))
+    (echo-area:message! "Quit")))
 
 (define (%recall! p n who)
   (let* ([h (history-of p)] [entries (append (entries-of p) (if h (h) '()))] [k (+ (prompt-recalled p) n)] [default (default-of p)])

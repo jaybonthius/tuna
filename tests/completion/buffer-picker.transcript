@@ -71,6 +71,8 @@
 > (press! "C-g")
 ! &cancelled
 > (result t)
+; The quit's message made *Messages* again, which C-x b would list first.
+> (begin (buffers:kill! (buffers:find "*Messages*")) (void))
 > (define t (start! (lambda () (press! "C-x" "b"))))
 > (wait-matches (session))
 > (press! "RET")

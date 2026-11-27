@@ -29,16 +29,16 @@
 #t
 > (list (buffers:modified? notes) (guard (c [#t 'unbound]) (eval 'k)) (message))
 (#t unbound "Evaluated the notes.ss buffer")
-; C-g at the question saves and evaluates nothing. A prompt's C-g quits
-; without the message Quit.
+; C-g at the question saves and evaluates nothing, and says Quit, which
+; is the one line the log gains.
 > (define evaluated (length (log-tail 100)))
 > (define t (start! "C-c" "C-k"))
 > (press! "C-g")
 ! &cancelled
 > (finish t)
 #t
-> (list (buffers:modified? notes) (= evaluated (length (log-tail 100))) (message))
-(#t #t #f)
+> (list (buffers:modified? notes) (= (+ evaluated 1) (length (log-tail 100))) (message))
+(#t #t "Quit")
 > (files:save-buffer notes)
 ; A raise stops a file that is no module: what it wrote is logged before
 ; the report, the forms after it do not run, and no Evaluated line shows.

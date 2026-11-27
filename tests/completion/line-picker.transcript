@@ -58,7 +58,7 @@ waiting
 > (views:point (view))
 1
 > (line-picker:goto-line-history)
-("1" "x" "3")
+("1" "x" "3" "2")
 ; M-n past the input inserts the default, the current line.
 > (views:set-point! (view) 7)
 > (define t (start! (lambda () (press! "M-g" "g"))))

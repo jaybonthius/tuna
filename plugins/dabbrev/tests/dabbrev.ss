@@ -56,12 +56,14 @@
   (let ([ms (completion:session-matches s)])
     (map (lambda (k) (completion:text s (completion:matches-ref ms k))) (iota (completion:matches-count ms)))))
 
+;; The sources' first answer ends a session that found nothing, so a
+;; session still busy at the key may have ended once it settles.
 (define (settled-texts)
   (let ([s (session)])
     (and s
          (begin
-           (test-runner:wait-until (lambda () (not (completion:session-busy? s))))
-           (texts s)))))
+           (test-runner:wait-until (lambda () (or (not (eq? s (session))) (not (completion:session-busy? s)))))
+           (and (eq? s (session)) (texts s))))))
 
 (define (with-setting option value thunk)
   (options:set! option value)
@@ -182,8 +184,11 @@
       (show! (buffers:make "asking far" "x\n"))
       (modes:set-major-mode chez-scheme:mode (buffers:make "faraway" "alfalfa"))
       (test-user:type! "alf")
+      (take-said!)
       (test-user:press! "C-u C-M-/")
       (check-equal? #f (settled-texts))
+      (test-runner:wait-until (lambda () (pair? said)))
+      (check-equal? '("No dynamic expansion for ‘alf’ found") (take-said!))
       (test-user:press! "C-g C-u 1 6 C-M-/")
       (check-equal? '("alfalfa") (settled-texts))
       (test-user:press! "C-g"))))

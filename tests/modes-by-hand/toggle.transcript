@@ -146,7 +146,7 @@
 > (list (local fill:mode b) (equal? before (t10-state)))
 (#f #t)
 ; An input that names no mode leaves the prompt waiting, saying No
-; match; C-g then quits, leaving the echo area empty; nothing changes.
+; match; C-g then quits, saying Quit; nothing changes.
 > (define t (ask-minor!))
 > (answer! "zz")
 > (list (result-now t) (bracket))
@@ -155,7 +155,7 @@
 ! &cancelled
 > (result t)
 > (list (echo) (equal? before (t10-state)))
-(#f #t)
+("Quit" #t)
 ; A switch of the major mode takes the toggled value away.
 > (toggle! "fill:mode")
 > (local fill:mode b)

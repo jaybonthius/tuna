@@ -31,8 +31,8 @@
 #t
 > (message)
 "3"
-; C-g closes the prompt and evaluates nothing; the history does not
-; gain the input. A prompt's C-g quits without the message Quit.
+; C-g closes the prompt, evaluates nothing and says Quit; the history
+; does not gain the input.
 > (define t (start! "M-:"))
 > (type! "(+ 1")
 > (press! "C-g")
@@ -40,7 +40,7 @@
 > (finish t)
 #t
 > (list (prompt) (message) (eval:expression-history))
-(#f #f ("(+ 1 2)" "1 ;; one"))
+(#f "Quit" ("(+ 1 2)" "1 ;; one"))
 ; M-p recalls the newest input first. M-: has a history of its own, which
 ; other prompts' inputs do not reach, and which is saved.
 > (saved:set! minibuffer:history '("from another prompt"))

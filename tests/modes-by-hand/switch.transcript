@@ -86,14 +86,14 @@ python:mode
 > (answer! "zz")
 > (list (result-now t) (bracket) (modes:major-mode b))
 (waiting "<span class=\"minibuffer-message\" role=\"status\"> [No match]</span>" modes:fundamental)
-; C-g quits, leaving the echo area empty; the mode and the local values
+; C-g quits, saying Quit; the mode and the local values
 ; are as before.
 > (buffers:with-buffer b (options:set-local! fill:column 60))
 > (press! "C-g")
 ! &cancelled
 > (result t)
 > (list (echo) (modes:major-mode b) (local fill:column b))
-(#f modes:fundamental 60)
+("Quit" modes:fundamental 60)
 ; With no reader for choices, the command reports that none is
 ; loaded and changes nothing.
 > (options:with ([ask:choice-reader (options:default ask:choice-reader)])

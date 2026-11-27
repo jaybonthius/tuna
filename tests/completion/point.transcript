@@ -69,12 +69,12 @@
 > (press! "C-a")
 > (session)
 #f
-; Typing the only match's whole text ends the session.
+; Typing the only match's whole text keeps the session, as Corfu does.
 > (press! "C-e")
 > (press! "C-M-i")
 > (type! "ple")
-> (session)
-#f
+> (texts (session))
+("apple")
 ; C-g ends it.
 > (press! "SPC" "a")
 > (press! "C-M-i")

@@ -1667,7 +1667,11 @@
 (define-record-type %point-state
   (sealed #t)
   (fields session entry client start end give-way (mutable found-nothing) (mutable end-keymap)
-          (mutable end-selected-keymap) (mutable tabbed)))
+          (mutable end-region-keymap) (mutable end-selected-keymap) (mutable tabbed)))
+
+;; A session at point with no matches shows nothing, so it holds no key;
+;; this keymap carries only its end, so C-g still ends it.
+(tables:define-table %held-keymap "Binds no key: a session at point's end, while its matches come and go.")
 
 (define-record-type %tabbed
   (sealed #t)
@@ -1724,10 +1728,10 @@
                                          (found-nothing))))])
                  (if (and give-way (%found-nothing? s))
                      (begin (end-session! s) (give-way found-nothing))
-                     (let ([p (make-%point-state s entry client start end give-way found-nothing #f #f #f)])
+                     (let ([p (make-%point-state s entry client start end give-way found-nothing #f #f #f #f)])
                        (set! %points (cons p %points))
                        (%point-state-end-keymap-set! p
-                         (keys:push-keymap! client region-keymap (lambda (found command) #t)
+                         (keys:push-keymap! client %held-keymap (lambda (found command) #t)
                                             (lambda () (end-session! s))))
                        (%sync-keymaps! s)
                        (%report-first-answer! p)
@@ -1770,19 +1774,24 @@
                 (views:call-with-view view (lambda () ((%point-state-give-way p) found-nothing))))))
           (%report-first-answer! p)))))
 
+(define (%sync-keymap! p wanted? keymap pushed set-pushed!)
+  (cond
+    [(and wanted? (not pushed))
+     (set-pushed! p
+       (call-as-owner %self
+         (lambda () (keys:push-keymap! (%point-state-client p) keymap (lambda (found command) #t)))))]
+    [(and (not wanted?) pushed)
+     (set-pushed! p #f)
+     (pushed)]))
+
 (define (%sync-keymaps! s)
   (let ([p (%point-of s)])
     (when (and p (not (session-record-ended? s)) (%point-state-end-keymap p))
-      (let ([pushed (%point-state-end-selected-keymap p)])
-        (cond
-          [(and (session-record-selected s) (not pushed))
-           (%point-state-end-selected-keymap-set! p
-             (call-as-owner %self
-               (lambda ()
-                 (keys:push-keymap! (%point-state-client p) region-selected-keymap (lambda (found command) #t)))))]
-          [(and (not (session-record-selected s)) pushed)
-           (%point-state-end-selected-keymap-set! p #f)
-           (pushed)])))))
+      (let ([matches (session-record-matches s)])
+        (%sync-keymap! p (and matches (fx> (match-list-count matches) 0)) region-keymap
+                       (%point-state-end-region-keymap p) %point-state-end-region-keymap-set!))
+      (%sync-keymap! p (and (session-record-selected s) #t) region-selected-keymap
+                     (%point-state-end-selected-keymap p) %point-state-end-selected-keymap-set!))))
 
 ;; A key that ends the session, as SPC, has already typed past the
 ;; region's end, so only the region's start is compared.
@@ -1805,18 +1814,22 @@
   (let ([p (%point-of s)])
     (when p
       (set! %points (remq p %points))
-      (let ([a (%point-state-end-selected-keymap p)] [b (%point-state-end-keymap p)])
+      (let ([pushed (list (%point-state-end-selected-keymap p) (%point-state-end-region-keymap p) (%point-state-end-keymap p))])
         (%point-state-end-selected-keymap-set! p #f)
+        (%point-state-end-region-keymap-set! p #f)
         (%point-state-end-keymap-set! p #f)
-        (when a (a))
-        (when b (b)))
+        (for-each (lambda (pop) (when pop (pop))) pushed))
       (when (%region-starts-with-tabbed? p)
         ((%tabbed-exit (%point-state-tabbed p)) 'exact)))))
 
-;; Emacs's rule for completion in a region: the session goes on while the
+;; Corfu's rule for completion in a region: the session goes on while the
 ;; entry that gave the region gives one with the same start, holding
-;; point, in the same view and buffer. The view is the selected one, not
-;; the current one, since a click on the popup runs in the popup's view.
+;; point, and point stays within the first region, whose end only edits
+;; move; an end taken from the entry again shrinks to point after C-b,
+;; and RET would then keep the word's rest. Typing up to the only match
+;; ends nothing, since a source's exit may expand a snippet the user did
+;; not choose. The view is the selected one, not the current one, since
+;; a click on the popup runs in the popup's view.
 (define (%continue-at-point command)
   (for-each
     (lambda (p)
@@ -1824,16 +1837,15 @@
         (unless (session-record-ended? s)
           (let ([r (and (eq? (layout:selected-view) view)
                         (guard (c [(not (cancelled? c)) (report c) #f])
-                          (views:call-with-view view (%point-state-entry p))))])
+                          (views:call-with-view view (%point-state-entry p))))]
+                [point (views:point view)])
             (if (and (%region? r)
                      (fx= (region-start r) (buffers:anchor-position (%point-state-start p)))
-                     (fx<= (region-start r) (views:point view) (region-end r)))
+                     (fx<= (region-start r) point (region-end r))
+                     (fx<= point (buffers:anchor-position (%point-state-end p))))
                 (begin
-                  (buffers:set-anchor! (%point-state-end p) (region-end r))
                   (rematch! s #f)
-                  (cond
-                    [(sole-match? s) (%end-sole! s)]
-                    [(not (%region-is-tabbed? p)) (%point-state-tabbed-set! p #f)]))
+                  (unless (%region-is-tabbed? p) (%point-state-tabbed-set! p #f)))
                 (end-session! s))))))
     %points))
 
