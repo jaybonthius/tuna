@@ -323,7 +323,10 @@
              (loop (fx+ e 1) (fx+ line 1) #t)]
             [(fx>= p end) (loop (fx+ e 1) (fx+ line 1) scissors?)]
             [(fx= line 1)
-             (let ([cut (fxmin e (fx+ p (summary-max-length)))])
+             ;; The first line starts with the root's own token, which is
+             ;; no character of the summary.
+             (let* ([first (let skip ([q p]) (if (and (fx< q e) (not (char? (document:token doc q)))) (skip (fx+ q 1)) q))]
+                    [cut (fxmin e (fx+ first (summary-max-length)))])
                (span! p cut "git-commit.summary")
                (span! cut e "git-commit.overlong-summary"))
              (loop (fx+ e 1) (fx+ line 1) scissors?)]

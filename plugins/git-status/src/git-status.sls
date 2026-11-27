@@ -652,7 +652,11 @@
                     (let ([path (string-append root (ui:section-value s))])
                       (when (or (file-exists? path #f) (file-directory? path))
                         (if (files:delete-by-moving-to-trash?) (files:move-to-trash path) (files:delete-file path)))))
-                  delete))
+                  delete)
+        ;; Deleting an untracked file runs no git command, so nothing
+        ;; else refreshes the repository's buffers.
+        (unless (eq? side 'staged)
+          (git-mode:refresh-repository repository)))
       (for-each
         (lambda (s)
           (let* ([f (diff-sections:file s b)] [old (diff:file-old-path f)] [new (diff:file-new-path f)])
@@ -763,9 +767,20 @@
             [(null? hunks) (+ line shift)]
             [(< line (diff:hunk-old-start (car hunks))) (+ line shift)]
             [(< line (+ (diff:hunk-old-start (car hunks)) (diff:hunk-old-count (car hunks))))
-             (diff:hunk-new-start (car hunks))]
+             (%new-line (car hunks) line)]
             [else (loop (cdr hunks) (+ shift (- (diff:hunk-new-count (car hunks)) (diff:hunk-old-count (car hunks)))))]))
         line)))
+
+;; A removed line's new line is the one that follows it.
+(define (%new-line hunk line)
+  (let ([lines (diff:hunk-lines hunk)])
+    (let loop ([i 0] [next (diff:hunk-new-start hunk)])
+      (if (fx= i (vector-length lines))
+          next
+          (let-values ([(old new) (diff:line-numbers hunk i)])
+            (if (and old (= old line))
+                (or new next)
+                (loop (fx+ i 1) (if new (+ new 1) next))))))))
 
 (define (%line-of hunk index)
   (let ([lines (diff:hunk-lines hunk)])

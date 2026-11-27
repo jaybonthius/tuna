@@ -1,0 +1,121 @@
+(import (tuna) (test) (test-user) (test-runner) (hooks) (timers) (buffers) (views) (layout) (files) (processes) (git) (with-editor)
+        (with-editor-test))
+
+(define repo (with-editor-test:repository! "repo"))
+
+(define finished '())
+
+(define canceled '())
+
+(hooks:add! with-editor:finished (lambda (path) (set! finished (cons path finished))))
+
+(hooks:add! with-editor:canceled (lambda (path) (set! canceled (cons path canceled))))
+
+(define message-path (with-editor-test:home-path "repo/.git/COMMIT_EDITMSG"))
+
+(define (refuse buffer) #f)
+
+(test "git commit through a pipe opens its message in the selected view, in with-editor:mode, and the request is taken out of git's output"
+  (with-editor-test:show-buffer! "other")
+  (with-editor-test:show-buffer! "notes")
+  (with-editor-test:take-said!)
+  (let-values ([(commit editing) (with-editor-test:commit! repo)])
+    (let ([message (with-editor-test:wait-until-shown "COMMIT_EDITMSG")])
+      (check-equal? '("Type C-c C-c to finish, C-c C-k to cancel") (with-editor-test:take-said!))
+      (check-equal? message-path (files:path message))
+      (check (buffers:with-buffer message (with-editor:mode)))
+      (check (not (with-editor:mode)))
+      (check-equal? "" (git:command-output commit))
+      (check-equal? 1 (length (with-editor-test:request-folders)))
+      (buffers:replace! message 1 1 "First commit\n")
+      (test-user:press! "C-c C-c")
+      (check-equal? 0 (with-editor-test:ended commit))
+      (check-equal? '(#f "First commit\n" "notes") (list (buffers:live? message) (with-editor-test:subjects repo) (with-editor-test:shown)))
+      (check-equal? (list message-path) finished)
+      (check (not (with-editor:canceled? editing)))
+      (check-equal? '() (with-editor-test:request-folders)))))
+
+(test "C-c C-k answers cancel: git gives up, naming the script in one line, and the view shows the buffer it showed before"
+  (with-editor-test:staged! repo "b.txt")
+  (with-editor-test:show-buffer! "draft")
+  (let-values ([(commit editing) (with-editor-test:commit! repo)])
+    (let ([message (with-editor-test:wait-until-shown "COMMIT_EDITMSG")])
+      (buffers:replace! message 1 1 "Second commit\n")
+      (with-editor-test:take-asked!)
+      (test-user:press! "C-c C-k")
+      (check-equal? 1 (with-editor-test:ended commit))
+      (check (with-editor:canceled? editing))
+      (check (git:command-canceled? commit))
+      (check-equal? '(#f "First commit\n" "draft") (list (buffers:live? message) (with-editor-test:subjects repo) (with-editor-test:shown)))
+      (check-equal? (list message-path) canceled)
+      (check-equal? '() (with-editor-test:take-asked!))
+      (check-equal? (string-append "error: there was a problem with the editor 'sh '" (with-editor-test:home-path ".cache/tuna/with-editor.sh")
+                                   "''\nPlease supply the message using either -m or -F option.\n")
+                    (git:command-output commit))
+      (check-equal? '() (with-editor-test:request-folders)))))
+
+(test "a finish or cancel check that returns #f keeps the buffer open and git waiting; C-u skips the checks"
+  (let-values ([(commit editing) (with-editor-test:commit! repo)])
+    (let ([message (with-editor-test:wait-until-shown "COMMIT_EDITMSG")])
+      (buffers:replace! message 1 1 "Third commit\n")
+      (hooks:add! with-editor:finish-checks refuse)
+      (hooks:add! with-editor:cancel-checks refuse)
+      (test-user:press! "C-c C-c")
+      (test-user:press! "C-c C-k")
+      (check-equal? '(#t #f) (list (buffers:live? message) (git:command-exit commit)))
+      (test-user:press! "C-u C-c C-c")
+      (check-equal? 0 (with-editor-test:ended commit))
+      (hooks:remove! with-editor:finish-checks refuse)
+      (hooks:remove! with-editor:cancel-checks refuse)
+      (check-equal? "Third commit\nFirst commit\n" (with-editor-test:subjects repo))))
+  (with-editor-test:staged! repo "c.txt")
+  (let-values ([(commit editing) (with-editor-test:commit! repo)])
+    (let ([message (with-editor-test:wait-until-shown "COMMIT_EDITMSG")])
+      (hooks:add! with-editor:cancel-checks refuse)
+      (test-user:press! "C-c C-k")
+      (check (buffers:live? message))
+      (test-user:press! "C-u C-c C-k")
+      (check-equal? 1 (with-editor-test:ended commit))
+      (check (not (buffers:live? message)))
+      (hooks:remove! with-editor:cancel-checks refuse))))
+
+(test "killing the buffer another way cancels"
+  (set! canceled '())
+  (let-values ([(commit editing) (with-editor-test:commit! repo)])
+    (buffers:kill! (with-editor-test:wait-until-shown "COMMIT_EDITMSG"))
+    (check-equal? 1 (with-editor-test:ended commit))
+    (check (with-editor:canceled? editing))
+    (check-equal? (list message-path) canceled)))
+
+(test "C-c C-c and C-c C-k in a buffer no program waits for raise"
+  (let ([plain (buffers:make "plain" "text\n")])
+    (check-raises (lambda (c) (and (error? c) (string=? "no program waits for this buffer" (condition-message c))))
+      (buffers:with-buffer plain (with-editor:finish #f)))
+    (check-raises (lambda (c) (and (error? c) (string=? "no program waits for this buffer" (condition-message c))))
+      (buffers:with-buffer plain (with-editor:cancel #f)))))
+
+(define (committing options)
+  (let* ([editing (with-editor:output-wrapper)] [status #f]
+         [process (processes:start "git" '("commit" "-q") (editing (lambda (bytes end) (void)))
+                    (lambda (s) (set! status s)) options)])
+    (values process (lambda () status))))
+
+(define (not-answered-by! key options subject)
+  (let-values ([(process status) (committing options)])
+    (let ([message (with-editor-test:wait-until-shown "COMMIT_EDITMSG")])
+      (processes:send! process key)
+      ;; The claim is that nothing happens, so only a pause can show it.
+      (timers:sleep 0.3)
+      (check-equal? '("COMMIT_EDITMSG" #f) (list (with-editor-test:shown) (status)))
+      (buffers:replace! message 1 1 (string-append subject "\n"))
+      (test-user:press! "C-c C-c")
+      (test-runner:wait-until status)
+      (check-equal? 0 (status)))))
+
+(test "neither a newline on git's standard input nor RET typed on its terminal answers for the user"
+  (let ([folder (with-editor-test:home-path "repo")] [environment (with-editor:environment "GIT_EDITOR")])
+    (with-editor-test:staged! repo "d.txt")
+    (not-answered-by! "\n" (processes:options [directory folder] [environment environment]) "Through a pipe")
+    (with-editor-test:staged! repo "e.txt")
+    (not-answered-by! "\r" (processes:options [directory folder] [environment environment] [terminal '(24 . 80)]) "On a terminal"))
+  (check-equal? "On a terminal\nThrough a pipe\nThird commit\nFirst commit\n" (with-editor-test:subjects repo)))

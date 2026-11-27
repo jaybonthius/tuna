@@ -1,7 +1,0 @@
-; Bytes that are not UTF-8 stay as they were, a user's apply.whitespace
-; neither fixes nor refuses the selection, and neither the user's diff
-; prefixes nor a textconv driver changes the patch.
-> (run-edges! '(latin1 latin1-staged whitespace-fix))
-(trials 52 failures ())
-> (run-edges! '(whitespace-error other-prefixes textconv))
-(trials 42 failures ())

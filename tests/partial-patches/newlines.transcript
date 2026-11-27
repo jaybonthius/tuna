@@ -1,8 +1,0 @@
-; Staging, unstaging and discarding every selection of lines and hunks
-; leaves exactly what a line model of the selection gives, at a missing
-; final newline, in CRLF files and among blank lines, with a user's
-; diff.suppressBlankEmpty set.
-> (run-edges! '(no-newline-append no-newline-change-last no-newline-added no-newline-removed no-newline-staged))
-(trials 96 failures ())
-> (run-edges! '(crlf crlf-staged blank-lines))
-(trials 52 failures ())

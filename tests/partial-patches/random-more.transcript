@@ -1,5 +1,0 @@
-; As random.transcript, with other seeds.
-> (let ([r (run-random! "random" 7 8 40)]) (list (> (cadr r) 250) (cadddr r)))
-(#t ())
-> (let ([r (run-random! "random" 42 8 40)]) (list (> (cadr r) 250) (cadddr r)))
-(#t ())

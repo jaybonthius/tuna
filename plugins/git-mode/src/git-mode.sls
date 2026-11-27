@@ -140,17 +140,35 @@
 (define (%mark-current! repository)
   (let ([waiters (hashtable-ref %stale (%root repository) '())])
     (hashtable-delete! %stale (%root repository))
-    (for-each (lambda (resume) (resume void)) (reverse waiters))))
+    (for-each (lambda (w) ((cdr w) void)) (list-sort (lambda (a b) (< (car a) (car b))) waiters))))
+
+;; A task waits in the order it first waited: a command that ran git and
+;; waits again to put point back goes before a later key's command, which
+;; must act on the buffer that command left.
+(define %tickets (make-weak-eq-hashtable))
+
+(define %last-ticket 0)
+
+(define (%ticket task)
+  (or (eq-hashtable-ref %tickets task #f)
+      (begin
+        (set! %last-ticket (+ %last-ticket 1))
+        (eq-hashtable-set! %tickets task %last-ticket)
+        %last-ticket)))
 
 (define (wait-until-current b)
   (unless (buffers:buffer? b)
     (assertion-violation 'git-mode:wait-until-current "not a buffer" b))
-  (let ([r (%repository-of b)])
-    (when (and r (%stale? r))
-      (%check-task 'git-mode:wait-until-current)
-      (suspend
-        (lambda (resume)
-          (hashtable-update! %stale (%root r) (lambda (ws) (cons resume ws)) '()))))))
+  (let ([r (%repository-of b)] [ticket (and (current-task) (%ticket (current-task)))])
+    ;; A task resumed before this one may have queued a command, so the
+    ;; repository is checked again after each wait.
+    (let loop ()
+      (when (and r (%stale? r))
+        (%check-task 'git-mode:wait-until-current)
+        (suspend
+          (lambda (resume)
+            (hashtable-update! %stale (%root r) (lambda (ws) (cons (cons ticket resume) ws)) '())))
+        (loop)))))
 
 (define-record-type %refreshing
   (sealed #t)
