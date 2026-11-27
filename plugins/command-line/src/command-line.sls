@@ -11,8 +11,13 @@
        (for-all char-numeric? (cdr (string->list argument)))
        (string->number (substring argument 1 (string-length argument)))))
 
+(define (%failure? c)
+  (not (or (cancelled? c) (and (warning? c) (not (serious-condition? c))))))
+
+;; A warning, such as a message with no echo area to show it, is reported
+;; by the task's handler and the argument goes on.
 (define (%evaluate! argument)
-  (guard (c [(not (cancelled? c)) (report c)])
+  (guard (c [(%failure? c) (report c)])
     (let ([p (open-input-string (substring argument 7 (string-length argument)))])
       (call-as-owner (plugins:repl-owner)
         (lambda ()
@@ -23,7 +28,7 @@
                 (loop)))))))))
 
 (define (%visit argument)
-  (guard (c [(not (cancelled? c)) (report c) #f])
+  (guard (c [(%failure? c) (report c) #f])
     (files:visit argument)))
 
 (define (%show! b line)

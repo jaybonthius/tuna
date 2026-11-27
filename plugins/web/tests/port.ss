@@ -1,19 +1,13 @@
-(import (tuna) (test) (test-runner) (web) (options))
+(import (tuna) (test) (test-runner) (web) (options) (web-test http) (web-test tasks))
 
 ;; The server starts in a task queued at the end of the batch web loads
 ;; in.
-(define (settle)
-  (suspend (lambda (resume) (spawn-task (lambda (restore) (resume void))))))
-
-(define (url-port url)
-  (string->number (substring url (string-length "http://127.0.0.1:") (- (string-length url) 1))))
-
-(settle)
+(web-test/tasks:settle)
 
 (test "web:port is #f by default, and web listens on 7337 or a port above it, which web:url names"
   (check-equal? #f (web:port))
-  (check (>= (url-port (web:url)) 7337))
-  (check-equal? (format "http://127.0.0.1:~a/" (url-port (web:url))) (web:url)))
+  (check (>= (web-test/http:url-port (web:url)) 7337))
+  (check-equal? (format "http://127.0.0.1:~a/" (web-test/http:url-port (web:url))) (web:url)))
 
 (test "a Tuna started while this one listens passes over its port, and a set port in use is reported"
   (let ([home (string-append (getenv "HOME") "/second")])
@@ -24,10 +18,10 @@
       (check-equal? "" errors))))
 
 (test "a set port is listened on exactly, and #f moves web back to a free port"
-  (let ([p (url-port (web:url))])
+  (let ([p (web-test/http:url-port (web:url))])
     (options:set! web:port p)
-    (settle)
+    (web-test/tasks:settle)
     (check-equal? (format "http://127.0.0.1:~a/" p) (web:url))
     (options:set! web:port #f)
-    (settle)
-    (check (>= (url-port (web:url)) 7337))))
+    (web-test/tasks:settle)
+    (check (>= (web-test/http:url-port (web:url)) 7337))))

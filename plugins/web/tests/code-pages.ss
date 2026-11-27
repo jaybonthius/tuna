@@ -1,4 +1,4 @@
-(import (tuna) (test) (web) (haml) (hooks) (tables))
+(import (tuna) (test) (test-runner) (web) (haml) (hooks) (tables) (web-test tasks))
 
 (define seen '())
 (define (note! x) (set! seen (cons x seen)))
@@ -16,12 +16,9 @@
 
 ;; A file of web's tests imports no plugin above web, since layout's own
 ;; draws would reach every code page a test opens.
-(define (settle)
-  (suspend (lambda (resume) (spawn-task (lambda (restore) (resume void))))))
-
 (define (paused-asker client name value)
   (let ([t (spawn-task (lambda (restore) (web:ask-page client name value)))])
-    (settle)
+    (web-test/tasks:settle)
     t))
 
 (define (task-values t)
@@ -29,13 +26,7 @@
     (check-equal? 'returned how)
     detail))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (settle)
-    (advice-remove! report keep)
-    (map condition-message (reverse reported))))
+(define (reported-messages thunk) (map condition-message (web-test/tasks:reports-during thunk)))
 
 (test "a code page's client is listed by web:clients, after the clients before it, and client-added runs as it opens"
   (let* ([added '()] [entry (lambda (c) (set! added (cons c added)))])
@@ -86,7 +77,7 @@
     (web:call-page! c "first" 1)
     (web:call-page! c "second" '#("two"))
     (join-task (fork-task (lambda (restore) (web:call-page! c "third" 3))))
-    (settle)
+    (web-test/tasks:settle)
     (check-equal? '(("first" 1 #t) ("second" #("two") #t) ("third" 3 #t)) (taken!))
     (web:close-client! c)))
 
@@ -119,7 +110,7 @@
                              (lambda (client question value) 'null))]
          [asker (paused-asker c "size" 1)])
     (hooks:add! web:client-removed entry)
-    (check-equal? '("cannot draw") (reports-during (lambda () (web:send-screen! c (haml (:p "one")) "One"))))
+    (check-equal? '("cannot draw") (reported-messages (lambda () (web:send-screen! c (haml (:p "one")) "One"))))
     (hooks:remove! web:client-removed entry)
     (check-equal? '(#f) (task-values asker))
     (check (not (memq c (web:clients))))
@@ -129,7 +120,7 @@
   (let ([c (web:open-client (lambda (client screen title) (void))
                             (lambda (client call value) (error 'page "no such call"))
                             (lambda (client question value) 'null))])
-    (check-equal? '("no such call") (reports-during (lambda () (web:call-page! c "missing" 1))))
+    (check-equal? '("no such call") (reported-messages (lambda () (web:call-page! c "missing" 1))))
     (check (not (memq c (web:clients))))))
 
 (test "a raise in answer is reported and closes the client, and the asking task gets #f"
@@ -137,7 +128,7 @@
                              (lambda (client call value) (void))
                              (lambda (client question value) (error 'page "cannot answer")))]
          [asker (paused-asker c "size" 1)])
-    (check-equal? '("cannot answer") (reports-during (lambda () (web:send-screen! c (haml (:p "one")) "One"))))
+    (check-equal? '("cannot answer") (reported-messages (lambda () (web:send-screen! c (haml (:p "one")) "One"))))
     (check-equal? '(#f) (task-values asker))
     (check (not (memq c (web:clients))))))
 
@@ -159,7 +150,7 @@
                              (lambda (client call value) (void))
                              (lambda (client question value) car))]
          [asker (paused-asker c "size" 1)])
-    (check-equal? 1 (length (reports-during (lambda () (web:send-screen! c (haml (:p "one")) "One")))))
+    (check-equal? 1 (length (reported-messages (lambda () (web:send-screen! c (haml (:p "one")) "One")))))
     (check-equal? '(#f) (task-values asker))
     (check (not (memq c (web:clients))))))
 
@@ -185,7 +176,7 @@
     (tables:set! web:input-handlers "number"
       (lambda (client item) (note! (list (eq? client (web:current-client)) (cdr (assoc "n" item))))))
     (for-each (lambda (n) (web:post-input! c (list (cons "type" "number") (cons "n" n)))) '(1 2 3))
-    (settle)
+    (web-test/tasks:settle)
     (check-equal? '((#t 1) (#t 2) (#t 3)) (taken!))
     (tables:remove! web:input-handlers "number")
     (web:close-client! c)))
@@ -198,9 +189,9 @@
           (suspend (lambda (resume) (void))))))
     (tables:set! web:input-handlers "other" (lambda (client item) (note! 'other)))
     (web:post-input! c '(("type" . "wait")))
-    (settle)
+    (web-test/tasks:settle)
     (web:post-input! c '(("type" . "other") ("quit" . #t)))
-    (settle)
+    (web-test/tasks:settle)
     (check-equal? '((cancelled quit) other) (taken!))
     (tables:remove! web:input-handlers "wait")
     (tables:remove! web:input-handlers "other")
@@ -215,9 +206,9 @@
     (tables:set! web:input-handlers "key"
       (lambda (client item) (reader (lambda () (cdr (assoc "name" item))))))
     (web:post-input! c '(("type" . "read")))
-    (settle)
+    (web-test/tasks:settle)
     (web:post-input! c '(("type" . "key") ("name" . "C-g") ("quit" . #t)))
-    (settle)
+    (web-test/tasks:settle)
     (check-equal? '("C-g") (taken!))
     (check-raises (lambda (e) (and (who-condition? e) (eq? 'web:suspend-for-input (condition-who e))))
       (web:suspend-for-input 'receiver))
@@ -238,7 +229,7 @@
     (advice-add! report keep)
     (fork-task
       (lambda (restore)
-        (let wait () (unless spun (pause-thread 1) (wait)))
+        (test-runner:wait-until (lambda () spun))
         (web:post-input! c '(("type" . "other") ("quit" . #t)))
         (let wait ([ms 0])
           (cond
@@ -246,8 +237,8 @@
             [(< ms 5000) (pause-thread 10) (wait (+ ms 10))]
             [else (web:post-input! c '(("type" . "other") ("quit" . #t)))]))))
     (post-spin!)
-    (let wait () (unless (ended?) (settle) (wait)))
-    (settle)
+    (test-runner:wait-until ended?)
+    (web-test/tasks:settle)
     (advice-remove! report keep)
     (tables:remove! web:input-handlers "spin")
     (tables:remove! web:input-handlers "other")
@@ -267,18 +258,18 @@
     (tables:set! web:input-handlers "fail" (lambda (client item) (note! 'fail) (car '())))
     (tables:set! web:input-handlers "note" (lambda (client item) (note! (cdr (assoc "n" item)))))
     (web:post-input! c '(("type" . "ask")))
-    (settle)
+    (web-test/tasks:settle)
     (for-each (lambda (item) (web:post-input! c item)) '((("type" . "note") ("n" . 1)) (("type" . "fail")) (("type" . "note") ("n" . 2))))
-    (settle)
+    (web-test/tasks:settle)
     (check-equal? '() (taken!))
     (check-equal? '("~s is not a pair")
-      (reports-during
+      (reported-messages
         (lambda ()
           (web:send-screen! c (haml (:p "one")) "One")
-          (settle))))
+          (web-test/tasks:settle))))
     (check-equal? '((a screen "One") (a ask "size" 1) #("answer" 1) 1 fail 2) (taken!))
     (web:post-input! c '(("type" . "note") ("n" . 3)))
-    (settle)
+    (web-test/tasks:settle)
     (check-equal? '(3) (taken!))
     (for-each (lambda (type) (tables:remove! web:input-handlers type)) '("ask" "fail" "note"))
     (web:close-client! c)))
@@ -287,12 +278,12 @@
   (let ([c (open-noting 'a)])
     (tables:set! web:input-handlers "ask" (lambda (client item) (web:ask-page client "size" 1)))
     (web:post-input! c '(("type" . "ask")))
-    (settle)
+    (web-test/tasks:settle)
     (check-equal? '(cancelled quit (#t))
       (spin-and-quit! c
         (lambda ()
           (web:post-input! c '(("type" . "spin")))
-          (settle)
+          (web-test/tasks:settle)
           (web:send-screen! c (haml (:p "one")) "One"))))
     (check-equal? '((a screen "One") (a ask "size" 1) other) (taken!))
     (tables:remove! web:input-handlers "ask")

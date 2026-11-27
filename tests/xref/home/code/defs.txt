@@ -1,3 +1,0 @@
-def total
-def average
-def tally

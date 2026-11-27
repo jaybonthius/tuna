@@ -772,14 +772,21 @@
         (for-each sync-head! connected))))
 
   ;; Caller holds the lock. A browser cannot unload a module it has run,
-  ;; so a page whose scripts changed reloads.
+  ;; so a page whose scripts changed reloads. Its stream closes then, so
+  ;; the client is disconnected at once, as when a stream closes: a screen
+  ;; given meanwhile would fail on the closed stream.
   (define (sync-head! c)
     (let ([stream (client-stream c)])
       (cond
         [(not (fx= (client-scripts-version c) scripts-version))
          (client-scripts-version-set! c scripts-version)
          (client-links-set! c links)
-         (enqueue! (lambda () (reload-page stream)))]
+         (client-stream-set! c #f)
+         (client-waiting-set! c #f)
+         (client-calls-set! c '())
+         (set! connected (remq c connected))
+         (wake-applied! c)
+         (enqueue! (lambda () (reload-page stream) (post-as-web (lambda () (schedule-removal! c)))))]
         [(not (eq? (client-links c) links))
          (let ([old (client-links c)] [new links])
            (client-links-set! c new)
