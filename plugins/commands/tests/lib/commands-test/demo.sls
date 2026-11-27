@@ -1,0 +1,38 @@
+#!tuna
+(import (commands) (timers))
+
+(define %order '())
+
+(define (order) %order)
+
+(define (note! x)
+  (set! %order (cons x %order))
+  x)
+
+(commands:define-command (hello [name "you"])
+  "Says hello to NAME."
+  (string-append "Hello, " name "!"))
+
+(commands:define-command (add a b)
+  "Adds A and B."
+  (+ a b))
+
+(commands:define-command (ordered [a (note! 'a)] [b (note! 'b)] [c (note! 'c)])
+  "Returns its arguments, read in order."
+  (list a b c))
+
+(commands:define-command (slow [x (begin (timers:sleep 0.01) 'slept)])
+  "Reads its argument after a pause."
+  x)
+
+(commands:define-command (which-task [t (current-task)])
+  "Returns the task its argument was read in."
+  t)
+
+(commands:define-command (pair-of [(a b) (values 1 2)] [c 3])
+  "Several names from one reader."
+  (list a b c))
+
+(commands:define-command (%hidden)
+  "A command kept out of the interface."
+  'hidden)

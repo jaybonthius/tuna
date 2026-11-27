@@ -1,8 +1,0 @@
-(import (timers) (plugins))
-(import (tuna))
-(import (console))
-(display "configuration paused")
-(newline)
-(timers:sleep 0.2)
-(display "configuration resumed")
-(newline)
