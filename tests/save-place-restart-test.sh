@@ -19,7 +19,7 @@ fail() {
 home=$dir/home
 mkdir -p "$home/.config/tuna/lib" "$dir/library" "$dir/work"
 cp -R plugins/. "$dir/library/"
-cp tests/views/home/.config/tuna/lib/web.sls "$home/.config/tuna/lib/"
+cp tests/stand-ins/web.sls "$home/.config/tuna/lib/"
 printf 'one\ntwo\nthree\nfour\nfive\nsix\n' > "$home/a.txt"
 printf 'b one\nb two\nb three\n' > "$home/b.txt"
 cat > "$home/.config/tuna/init.ss" <<'END'

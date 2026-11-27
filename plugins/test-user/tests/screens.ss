@@ -20,6 +20,19 @@
       (check-equal? '() (test-user:elements (test-user:screen c) "outer b")))
     (web:close-client! c)))
 
+(test "elements-with finds the elements that carry an attribute, whatever its value, in document order"
+  (let ([c (test-user:open-client)])
+    (web:send-screen! c
+      (haml (:div ([data-face "outer"]) (:p "one") (:span ([data-face ""] [title "t"]) "two" (:em ([data-face "inner"]) "three"))))
+      "Title")
+    (let ([found (test-user:elements-with (test-user:screen c) "data-face")])
+      (check-equal? '(div span em) (map car found))
+      (check-equal? '("outer" "" "inner") (map (lambda (e) (test-user:element-attribute e "data-face")) found))
+      (check-equal? '() (test-user:elements-with (test-user:screen c) "data-missing")))
+    (check-raises (raised-by 'test-user:elements-with) (test-user:elements-with "text" "data-face"))
+    (check-raises (raised-by 'test-user:elements-with) (test-user:elements-with '(p "x") 'data-face))
+    (web:close-client! c)))
+
 (test "what haml writes is read back: escapes, attributes with and without values, void elements and scripts"
   (let ([c (test-user:open-client)])
     (web:send-screen! c

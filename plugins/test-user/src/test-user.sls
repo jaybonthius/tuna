@@ -153,15 +153,27 @@
         [(char-whitespace? (car chars)) (loop (cdr chars) '() (add))]
         [else (loop (cdr chars) (cons (car chars) word) words)]))))
 
+(define (%elements-where sxml keep?)
+  (let walk ([node sxml])
+    (if (%element? node)
+        (let ([below (apply append (map walk (%children node)))])
+          (if (keep? node) (cons node below) below))
+        '())))
+
 (define (elements sxml class)
   (%check-element 'test-user:elements sxml)
   (unless (string? class)
     (assertion-violation 'test-user:elements "not a string" class))
-  (let walk ([node sxml])
-    (if (%element? node)
-        (let ([below (apply append (map walk (%children node)))] [value (%attribute node "class")])
-          (if (and value (member class (%class-names value))) (cons node below) below))
-        '())))
+  (%elements-where sxml
+    (lambda (node)
+      (let ([value (%attribute node "class")])
+        (and value (member class (%class-names value)))))))
+
+(define (elements-with sxml name)
+  (%check-element 'test-user:elements-with sxml)
+  (unless (string? name)
+    (assertion-violation 'test-user:elements-with "not a string" name))
+  (%elements-where sxml (lambda (node) (%attribute node name))))
 
 (define (element-text element)
   (%check-element 'test-user:element-text element)
