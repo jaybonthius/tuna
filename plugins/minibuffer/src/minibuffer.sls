@@ -457,7 +457,7 @@
          (start-prompt! p question)
          (%run-setups! p)
          (prompt-started p)
-         (let ([v (suspend
+         (let ([v (web:suspend-for-input
                     (lambda (resume)
                       (let ([answer (prompt-answer p)])
                         (if answer (resume answer) (prompt-resume-set! p resume)))))])

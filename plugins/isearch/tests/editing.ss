@@ -32,6 +32,14 @@
   (check (isearch-test:cancelling! "C-g"))
   (check-equal? '(1 #f #f) (here)))
 
+(test "a quit in M-e's prompt of a failing search quits the prompt once: the part that failed is rubbed out and the search goes on"
+  (isearch-test:show! "e" "Foo bar foo baz Bar\n")
+  (test-user:press! "C-s f o o z M-e")
+  (let ([reports (isearch-test:reports-during (lambda () (test-user:press! "C-g")))])
+    (check-equal? '(#t) (map cancelled? reports)))
+  (check-equal? '(4 "I-search: foo" "Foo") (here))
+  (test-user:press! "RET"))
+
 (test "with no text typed, RET reads the text and searches once"
   (isearch-test:show! "e" "Foo bar foo baz Bar\n")
   (test-user:press! "C-s RET")

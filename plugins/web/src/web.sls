@@ -9,7 +9,7 @@
   (client-record? code-client? connected-clients give-screen! call-page ask-and-wait start-server! restart-server!
    stop-server! allow-hosts! refresh-head-files! refresh-upload-handlers! post-start! release-first-screens!
    home-path? valid-name? on-main-thread? open-code-client! post-code-input! close-code-client! close-owner-clients!
-   wait-until-applied listening-url as-page-would)
+   wait-until-applied listening-url as-page-would suspend-for-client-input)
 
   (define main-thread (get-thread-id))
   (define lock (make-mutex))
@@ -35,12 +35,12 @@
             (mutable last) (mutable count) (mutable in-flight) (mutable sent-at) (mutable unconfirmed)
             (mutable waiting) (mutable calls) (mutable links) (mutable scripts-version) (mutable title) (mutable first)
             (mutable asks) (mutable held) (mutable deferred) (mutable item-tasks) (mutable quit-cancelled)
-            (mutable applied-waiters))
+            (mutable input-readers) (mutable applied-waiters))
     (protocol
       (lambda (new)
         (lambda (id number code links scripts-version)
           (new id number code (make-eqv-hashtable) 1 #f #f 0 #f #f 0 #f 0 '() #f '() links scripts-version "Tuna" #f
-               '() 0 '() '() #f '())))))
+               '() 0 '() '() #f '() '())))))
 
   (define-record-type code-page
     (sealed #t)
@@ -121,21 +121,41 @@
   ;; the items queued behind a busy command, the quit's own among them, are
   ;; not what it stops. The first quit cancels the task, and a second for
   ;; the same task stops it, as a third C-g overrides inhibit-quit in
-  ;; Emacs. Request threads and the main thread both reach these, under
-  ;; the lock.
+  ;; Emacs. A task paused for its client's input is left to read the quit
+  ;; as input, as Emacs reads C-g as a key while it waits for one;
+  ;; cancelling it too would make one key act twice. Request threads and
+  ;; the main thread both reach these, under the lock.
+  (define (live-tasks-of tasks)
+    (filter (lambda (t) (not (eq? (task-state t) 'done))) tasks))
+
   (define (live-item-tasks c)
-    (filter (lambda (t) (not (eq? (task-state t) 'done))) (client-item-tasks c)))
+    (live-tasks-of (client-item-tasks c)))
+
+  (define (reading-input? c t)
+    (and (eq? (task-state t) 'paused) (memq t (client-input-readers c)) #t))
 
   (define (quit-item-task! c)
     (let ([tasks (live-item-tasks c)])
       (client-item-tasks-set! c tasks)
       (let ([t (find (lambda (t) (memq (task-state t) '(running paused))) tasks)])
-        (when t
+        (when (and t (not (reading-input? c t)))
           (if (eq? t (client-quit-cancelled c))
               (stop-task t)
               (begin
                 (client-quit-cancelled-set! c t)
                 (cancel-task t 'quit)))))))
+
+  ;; A handler, not dynamic-wind, forgets the reader: a wind's after
+  ;; thunk would run at the pause itself. A stop passes every handler, so
+  ;; ended readers are dropped at the next mark.
+  (define (suspend-for-client-input c receiver)
+    (let* ([t (current-task)]
+           [forget! (lambda () (with-lock (client-input-readers-set! c (remq t (client-input-readers c)))))])
+      (with-lock (client-input-readers-set! c (cons t (live-tasks-of (client-input-readers c)))))
+      (guard (e [#t (forget!) (raise e)])
+        (call-with-values
+          (lambda () (suspend receiver))
+          (lambda vs (forget!) (apply values vs))))))
 
   (define (post-item c procedure)
     (let ([t (spawn-as-web procedure)])
@@ -1205,6 +1225,12 @@
       (unless (or (not v) (client-record? v))
         (assertion-violation 'web:current-client "not a client or #f" v))
       v)))
+
+(define (suspend-for-input receiver)
+  (unless (procedure? receiver)
+    (assertion-violation 'web:suspend-for-input "not a procedure" receiver))
+  (let ([c (current-client)])
+    (if c (suspend-for-client-input c receiver) (suspend receiver))))
 
 (define (clients) (connected-clients))
 

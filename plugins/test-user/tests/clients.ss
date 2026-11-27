@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (web) (keys) (commands) (editing) (layout) (options) (views) (buffers) (hooks))
+(import (tuna) (test) (test-user) (web) (keys) (commands) (editing) (layout) (options) (views) (buffers) (hooks) (minibuffer))
 
 (define (raised-by who)
   (lambda (e) (and (who-condition? e) (eq? who (condition-who e)))))
@@ -13,6 +13,12 @@
   (guard (e [(cancelled? e) (set! waiting (list 'cancelled (cancelled-reason e)))])
     (set! waiting 'paused)
     (suspend (lambda (resume) (void)))))
+
+(commands:define-command (read-a-line)
+  "Reads a line in a prompt until cancelled."
+  (guard (e [(cancelled? e) (set! waiting (list 'cancelled (cancelled-reason e)))])
+    (set! waiting 'paused)
+    (minibuffer:read "Line: ")))
 
 (define pressed-by '())
 
@@ -43,6 +49,7 @@
 (keys:bind! keys:global "C-c w" wait-for-ever)
 (keys:bind! keys:global "C-c n" note-client)
 (keys:bind! keys:global "C-c a" ask-the-page)
+(keys:bind! keys:global "C-c l" read-a-line)
 
 (test "test-user:client is a client of web, opened when test-user loads, that web:clients lists"
   (check (web:client? (test-user:client)))
@@ -64,7 +71,7 @@
     (check-equal? 40 asked)
     (web:close-client! other)))
 
-(test "a quit key is posted as a quit, so it stops a command that is still running"
+(test "a quit key is posted as a quit, so it stops a command paused for anything but input"
   (test-user:press! "C-c w")
   (check-equal? 'paused waiting)
   (test-user:press! "C-g")
@@ -96,6 +103,20 @@
   (check-equal? '() (keys:page-quit-keys (test-user:client)))
   (test-user:press! "C-g")
   (check-equal? "\x7;\x7;|" (test-user:text)))
+
+(test "a key posted as a quit to a command that reads a key, as by a page not yet told of the read, is the key it reads"
+  (test-user:show! "|")
+  (test-user:press! "C-q")
+  (web:post-input! (test-user:client) '(("type" . "key") ("name" . "C-g") ("quit" . #t)))
+  (test-user:settle)
+  (check-equal? "\x7;|" (test-user:text)))
+
+(test "a quit key typed in a prompt is read as a key, whose binding quits the prompt, and cancels nothing as it arrives"
+  (test-user:press! "C-c l")
+  (check-equal? 'paused waiting)
+  (check-equal? (keys:quit-keys) (keys:page-quit-keys (test-user:client)))
+  (test-user:press! "C-g")
+  (check-equal? '(cancelled #f) waiting))
 
 (test "keys go to the client named, and a client test-user did not open is refused"
   (let ([other (test-user:open-client)])

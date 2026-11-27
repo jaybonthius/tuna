@@ -190,7 +190,7 @@
     (tables:remove! web:input-handlers "number")
     (web:close-client! c)))
 
-(test "an item marked as a quit cancels the client's running item with the reason quit"
+(test "an item marked as a quit cancels the client's item paused for anything but its input, with the reason quit"
   (let ([c (open-noting 'a)])
     (tables:set! web:input-handlers "wait"
       (lambda (client item)
@@ -204,6 +204,25 @@
     (check-equal? '((cancelled quit) other) (taken!))
     (tables:remove! web:input-handlers "wait")
     (tables:remove! web:input-handlers "other")
+    (web:close-client! c)))
+
+(test "a quit item cancels no item paused in web:suspend-for-input, which takes the quit as input in its turn"
+  (let ([c (open-noting 'a)] [reader #f])
+    (tables:set! web:input-handlers "read"
+      (lambda (client item)
+        (guard (e [(cancelled? e) (note! (list 'cancelled (cancelled-reason e)))])
+          (note! (web:suspend-for-input (lambda (resume) (set! reader resume)))))))
+    (tables:set! web:input-handlers "key"
+      (lambda (client item) (reader (lambda () (cdr (assoc "name" item))))))
+    (web:post-input! c '(("type" . "read")))
+    (settle)
+    (web:post-input! c '(("type" . "key") ("name" . "C-g") ("quit" . #t)))
+    (settle)
+    (check-equal? '("C-g") (taken!))
+    (check-raises (lambda (e) (and (who-condition? e) (eq? 'web:suspend-for-input (condition-who e))))
+      (web:suspend-for-input 'receiver))
+    (tables:remove! web:input-handlers "read")
+    (tables:remove! web:input-handlers "key")
     (web:close-client! c)))
 
 ;; The spinning item holds the main thread, so the quit comes from a

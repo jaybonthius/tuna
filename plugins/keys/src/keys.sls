@@ -730,7 +730,7 @@
         (assertion-violation who "a key is already being read for this client"))
       (let ([r (make-waiting-read s sequence? (current-task) (current-keys) prompt #f)])
         (guard (c [#t (forget-read! r) (raise c)])
-          (let ([key (suspend
+          (let ([key (web:suspend-for-input
                        (lambda (resume)
                          (waiting-read-resume-set! r resume)
                          (unless sequence? (session-pending-set! s #f))
