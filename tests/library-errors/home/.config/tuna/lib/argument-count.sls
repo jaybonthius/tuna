@@ -1,5 +1,0 @@
-(library (argument-count)
-  (export h)
-  (import (chezscheme))
-  (define (g x) x)
-  (define (h) (g 1 2)))

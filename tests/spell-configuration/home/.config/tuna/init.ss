@@ -1,6 +1,0 @@
-(import (options) (plugins))
-(import (tuna))
-(use-plugin spell (git "https://github.com/bob/spell") (commit "7de8ade"))
-(options:set! spell:language "en-GB")
-(define spell:dictionary-path (lambda () "/home/groucho/words"))
-(import (console))

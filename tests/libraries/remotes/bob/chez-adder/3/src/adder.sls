@@ -1,6 +1,0 @@
-(library (adder)
-  (export adder-sum adder-version adder-built-with)
-  (import (chezscheme))
-  (include "adder/built.ss")
-  (define (adder-sum a b) (+ a b))
-  (define (adder-version) "3"))

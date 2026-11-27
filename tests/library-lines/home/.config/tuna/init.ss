@@ -1,5 +1,0 @@
-(import (tuna))
-(library chez-adder (commit "3fb7025"))
-(use-plugin sum (git "https://github.com/bob/sum"))
-(use-plugin odd (git "https://github.com/bob/odd"))
-(import (console))

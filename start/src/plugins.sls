@@ -1478,21 +1478,28 @@
 (define (call-reporting form thunk after-report)
   (unless (procedure? thunk) (assertion-violation 'plugins:call-reporting "not a procedure" thunk))
   (unless (procedure? after-report) (assertion-violation 'plugins:call-reporting "not a procedure" after-report))
-  (call/cc
-    (lambda (k)
-      (with-exception-handler
-        (lambda (c)
-          (cond
-            [(cancelled? c) (raise-continuable c)]
-            [(and (warning? c) (not (serious-condition? c))) (report c)]
-            [else
-             (report
-               (if (or (not form) (not (condition? c)) (source-condition? c) (syntax-violation? c)
-                       (not (syntax->annotation form)))
-                   c
-                   (condition c (make-source-condition form))))
-             (k (after-report))]))
-        thunk))))
+  (let ([warned '()])
+    (call/cc
+      (lambda (k)
+        (with-exception-handler
+          (lambda (c)
+            (cond
+              [(cancelled? c) (raise-continuable c)]
+              ;; Compiling a library compiles its body twice, so one warning
+              ;; can be raised twice; report each message once.
+              [(and (warning? c) (not (serious-condition? c)))
+               (let ([text (condition-text c)])
+                 (unless (member text warned)
+                   (set! warned (cons text warned))
+                   (report c)))]
+              [else
+               (report
+                 (if (or (not form) (not (condition? c)) (source-condition? c) (syntax-violation? c)
+                         (not (syntax->annotation form)))
+                     c
+                     (condition c (make-source-condition form))))
+               (k (after-report))]))
+          thunk)))))
 
 (define (%read-annotated-forms path consume)
   (let ([sfd (call-with-port (open-file-input-port path) (lambda (p) (make-source-file-descriptor path p)))])

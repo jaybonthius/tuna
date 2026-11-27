@@ -1,2 +1,0 @@
-#!tuna
-(define (text) "one")

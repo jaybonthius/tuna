@@ -1,2 +1,0 @@
-#!tuna
-(define (x) 'fresh)

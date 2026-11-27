@@ -1,5 +1,0 @@
-(library chez-base
-  (git "https://github.com/bob/chez-base")
-  (commit "dac5fd2")
-  (library-directories "src")
-  (build))

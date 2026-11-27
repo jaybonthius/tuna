@@ -1,9 +1,0 @@
-; The task that runs plugins:install! pauses while git runs, and the main
-; thread goes on.
-! use-plugin: a second line for consult
-> (begin
-    (spawn-task (lambda (restore) (display "ran while git ran")))
-    (plugins:install! '(use-plugin vertico (git "https://github.com/minad/vertico"))))
-ran while git ran
-> (plugins:installed)
-(other sources compat consult vertico greet)

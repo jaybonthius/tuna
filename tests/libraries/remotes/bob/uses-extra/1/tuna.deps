@@ -1,5 +1,0 @@
-(library chez-extra
-  (git "https://github.com/bob/chez-extra")
-  (commit "809ad8a")
-  (library-directories ("src" . "build/obj/src"))
-  (build))

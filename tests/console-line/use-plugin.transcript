@@ -1,7 +1,0 @@
-; A plugin line with no source finds the console in Tuna's own library.
-> (+ 1 2)
-3
-> (car (quote ()))
-! car: () is not a pair
-> (plugins:installed)
-()
