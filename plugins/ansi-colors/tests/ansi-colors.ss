@@ -1,9 +1,4 @@
-(import (tuna) (test) (options) (tables) (views) (web) (ansi-colors) (prefix (ghostty) ghostty:))
-
-;; ansi-colors loads web, which listens on 7337 by default; other tests'
-;; Tunas may hold it, so this one takes a port of its own before web
-;; starts listening, after the batch it loaded in.
-(options:set! web:port (+ 20000 (mod (get-process-id) 20000)))
+(import (tuna) (test) (tables) (views) (web) (ansi-colors) (prefix (ghostty) ghostty:))
 
 (define (read-stretches . texts)
   (let* ([stretches '()] [filter (ansi-colors:filter (lambda (text value) (set! stretches (cons (cons text value) stretches))))])

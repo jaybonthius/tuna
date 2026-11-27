@@ -1,10 +1,5 @@
 (import (tuna) (test) (test-runner) (options) (web) (buffers) (modes) (jsonrpc) (servers))
 
-;; jsonrpc loads web through modes and keys; web listens on 7337 by
-;; default, which other tests' Tunas may hold, so this one takes a port of
-;; its own before web starts listening, after the batch it loaded in.
-(options:set! web:port (+ 20000 (mod (get-process-id) 20000)))
-
 (define (starts? prefix line)
   (and (>= (string-length line) (string-length prefix)) (string=? prefix (substring line 0 (string-length prefix)))))
 

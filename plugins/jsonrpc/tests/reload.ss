@@ -1,9 +1,4 @@
-(import (tuna) (test) (test-runner) (options) (web) (processes) (jsonrpc) (servers))
-
-;; jsonrpc loads web through modes and keys; web listens on 7337 by
-;; default, which other tests' Tunas may hold, so this one takes a port of
-;; its own before web starts listening, after the batch it loaded in.
-(options:set! web:port (+ 20000 (mod (get-process-id) 20000)))
+(import (tuna) (test) (test-runner) (web) (processes) (jsonrpc) (servers))
 
 (test "unloading jsonrpc stops the programs of its connections, whichever module started them, and their waiting requests get jsonrpc:&ended"
   (let*-values ([(owner) (make-owner '(starter))]
