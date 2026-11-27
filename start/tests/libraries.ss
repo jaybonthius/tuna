@@ -1,11 +1,11 @@
-(import (tuna) (test) (plugins) (fixtures) (remotes))
+(import (tuna) (test) (test-runner) (plugins) (fixtures) (remotes))
 
 (define adder-commits (remotes:commits "chez-adder"))
 (define libraries-folder (fixtures:home-path ".local" "share" "tuna" "libraries"))
-(define (warnings-during thunk) (map fixtures:message (fixtures:reports-during thunk)))
+(define (warnings-during thunk) (map fixtures:message (test-runner:reports-during thunk)))
 
 (define first-reports
-  (fixtures:reports-during
+  (test-runner:reports-during
     (lambda ()
       (fixtures:load-configuration!
         `((import (tuna))

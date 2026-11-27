@@ -126,6 +126,6 @@
     (buffers:replace! b 1 1 "(x) ")
     (test-user:settle)
     (check-equal? '() (depths b))
-    (check-equal? '() (buffers-test:reports-during (lambda () (chez-scheme-test/scheme-buffers:scheme-buffer "z.ss" "(q)\n"))))
+    (check-equal? '() (test-runner:reports-during (lambda () (chez-scheme-test/scheme-buffers:scheme-buffer "z.ss" "(q)\n"))))
     (load-module! '(rainbow-delimiters))
     (depths-become b '(1 1 1 2 2 2 3 3 2 1))))

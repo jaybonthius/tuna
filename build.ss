@@ -95,10 +95,28 @@
           (with-warnings-as-errors (lambda () (maybe-compile src obj))))))
     sources))
 
+;; Written only when it changes: a newer include makes Chez compile the
+;; library again, and everything that imports it.
+(define (write-version! file)
+  (let ([described (let-values ([(to from errors pid)
+                                  (open-process-ports "git describe --always --dirty" (buffer-mode block)
+                                    (native-transcoder))])
+                     (close-port to)
+                     (let* ([line (get-line from)] [said (get-string-all errors)])
+                       (close-port from)
+                       (close-port errors)
+                       (if (or (eof-object? line) (string=? line ""))
+                           (errorf 'build "git describe gave no version: ~a" (if (eof-object? said) "" said))
+                           line)))])
+    (unless (and (file-exists? file) (equal? described (call-with-input-file file read)))
+      (call-with-output-file file (lambda (p) (write described p) (newline p)) 'replace))))
+
+;; Not version.ss: Chez looks for a library in a .ss file before a .sls,
+;; so it would take that file for (tuna version).
+(write-version! "src/tuna/version.txt")
+
 (build-each maybe-compile-library
   (apply append (map (lambda (root) (find-files root "sls")) source-roots)))
-
-(build-each maybe-compile-program '("bin/tuna.sps"))
 
 (printf "build: ~a compiled, ~a problems\n" compiled problems)
 (exit (if (= problems 0) 0 1))

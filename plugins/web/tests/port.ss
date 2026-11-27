@@ -1,8 +1,8 @@
-(import (tuna) (test) (test-runner) (web) (options) (web-test http) (web-test tasks))
+(import (tuna) (test) (test-runner) (web) (options) (web-test http))
 
 ;; The server starts in a task queued at the end of the batch web loads
 ;; in.
-(web-test/tasks:settle)
+(test-runner:wait-for-batch)
 
 (test "web:port is #f by default, and web listens on 7337 or a port above it, which web:url names"
   (check-equal? #f (web:port))
@@ -29,8 +29,8 @@
 
 (test "a port set to the one web listens on keeps its listener, and #f moves web back to a free port"
   (let ([p (web-test/http:url-port (web:url))])
-    (check-equal? "" (output-of (lambda () (options:set! web:port p) (web-test/tasks:settle))))
+    (check-equal? "" (output-of (lambda () (options:set! web:port p) (test-runner:wait-for-batch))))
     (check-equal? (format "http://127.0.0.1:~a/" p) (web:url))
-    (let ([said (output-of (lambda () (options:set! web:port #f) (web-test/tasks:settle)))])
+    (let ([said (output-of (lambda () (options:set! web:port #f) (test-runner:wait-for-batch)))])
       (check-equal? (format "Tuna is at ~a\n" (web:url)) said))
     (check (>= (web-test/http:url-port (web:url)) 7337))))

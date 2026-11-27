@@ -1,4 +1,4 @@
-(import (tuna) (test) (views) (buffers) (document) (options) (tables) (haml) (test-user)
+(import (tuna) (test) (test-runner) (views) (buffers) (document) (options) (tables) (haml) (test-user)
         (views-test page) (views-test md) (views-test lists) (views-test magit))
 
 (options:set! views:scroll-margin 2 views:wrap-lines #f)
@@ -10,13 +10,6 @@
   (lambda (e)
     (and (who-condition? e) (eq? who (condition-who e))
          (message-condition? e) (string=? message (condition-message e)))))
-
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
 
 (define (drawn v) (views-test/page:element-for-no-client v))
 
@@ -96,7 +89,7 @@
 (test "a draw procedure that raises is reported, and the node draws as its content"
   (let* ([v (views:make (make-buffer "b" (views-test/md:doc '() (views-test/md:broken '() "oops\n"))))]
          [e #f]
-         [reported (reports-during (lambda () (set! e (drawn v))))])
+         [reported (test-runner:reports-during (lambda () (set! e (drawn v))))])
     (check-equal? 1 (length reported))
     (check-equal? 'car (condition-who (car reported)))
     (check-equal? '("oops") (texts (test-user:elements e "undefined-kind")))))
@@ -145,7 +138,7 @@
     (add-spans! notes n)
     (tables:set! views:span-properties 'bad (lambda (v) (car v)))
     (buffers:add-span! (buffers:layer notes marks) 18 19 '((bad . 1)))
-    (let* ([e #f] [reported (reports-during (lambda () (set! e (drawn n))))])
+    (let* ([e #f] [reported (test-runner:reports-during (lambda () (set! e (drawn n))))])
       (check-equal? 1 (length reported))
       (check-equal? 'car (condition-who (car reported)))
       (check-equal? "And bread." (test-user:element-text (cadr (lines-of e)))))
@@ -156,7 +149,7 @@
     (tables:set! views:span-properties 'odd (lambda (v) (list 5 (cons "ok" "y"))))
     (buffers:add-span! (buffers:layer notes marks) 17 18 '((odd . 1)))
     (buffers:add-span! (buffers:layer notes marks) 19 20 '((odd . 2)))
-    (let* ([e #f] [reported (reports-during (lambda () (set! e (drawn n))))])
+    (let* ([e #f] [reported (test-runner:reports-during (lambda () (set! e (drawn n))))])
       (check-equal? 1 (length reported))
       (check ((raised-with 'views:span-properties "not a list of attribute names and values") (car reported)))
       (check-equal? '(odd (5 ("ok" . "y"))) (condition-irritants (car reported)))

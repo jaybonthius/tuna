@@ -12,13 +12,6 @@
     (join-task (fork-task (lambda (restore) (set! result (guard (c [(assertion-violation? c) (list 'raised (condition-message c))]) (thunk))))))
     result))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (define ended '())
 
 (define (note-end c) (set! ended (cons c ended)))
@@ -70,13 +63,13 @@
 (test "a raise or a cancel reaching a paused command is reported when it resumes, and its run ends"
   (set! ended '())
   (let* ([paused (start-waiting)]
-         [reported (reports-during
+         [reported (test-runner:reports-during
                      (lambda ()
                        (resume-waiting (lambda () (raise 'cancelled)))
                        (check-equal? '() (call-with-values (lambda () (test-runner:join paused)) list))))])
     (check-equal? '(cancelled) reported))
   (let* ([paused (start-waiting)]
-         [reported (reports-during
+         [reported (test-runner:reports-during
                      (lambda ()
                        (cancel-task paused 'stop)
                        (check-equal? '() (call-with-values (lambda () (test-runner:join paused)) list))))])

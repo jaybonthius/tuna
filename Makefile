@@ -2,30 +2,20 @@ SCHEME ?= /usr/lib/csv10.4.1/ta6le/scheme
 CHEZ_DIR := $(patsubst %/,%,$(dir $(SCHEME)))
 OBJ := build/obj
 LIBDIRS := src::$(OBJ)/src:lib/chez-lang/src::$(OBJ)/lib/chez-lang/src
-TEST_TIMEOUT ?= 60
-SCRIPT_TESTS := $(sort $(wildcard tests/*-test.sh))
-TRANSCRIPTS := $(sort $(wildcard tests/*/*.transcript))
-RUNS := run/test-files $(SCRIPT_TESTS:%=run/%) $(TRANSCRIPTS:%=run/%)
 
-.PHONY: build test repl exe clean $(RUNS)
+.PHONY: build test check-rebuild repl exe clean
 
 # Phony so that Chez, which tracks what each object was built against,
 # decides what is stale.
 build:
 	$(SCHEME) -q --script build.ss
 
-# One process per test, so a crash, a stuck thread or leaked global state
-# stays inside its test.
-test: $(RUNS)
+test: exe
+	build/bin/tuna --test tests start plugins/*
 
-run/test-files: exe
-	@timeout 1800 build/bin/tuna --test tests start plugins/*
-
-$(SCRIPT_TESTS:%=run/%): run/%: exe
-	@timeout $(TEST_TIMEOUT) sh $* build/bin/tuna
-
-$(TRANSCRIPTS:%=run/%): run/%: exe
-	@TEST_TIMEOUT=$(TEST_TIMEOUT) sh tests/run-transcript.sh build/bin/tuna $*
+# Not part of test, since it builds Tuna a second time.
+check-rebuild: exe
+	sh boot/check-rebuild.sh
 
 repl: build
 	$(SCHEME) --libdirs $(LIBDIRS) --compile-imported-libraries

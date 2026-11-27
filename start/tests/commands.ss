@@ -1,4 +1,4 @@
-(import (tuna) (test) (plugins) (options) (fixtures) (remotes))
+(import (tuna) (test) (test-runner) (plugins) (options) (fixtures) (remotes))
 
 (define spell-commits (remotes:commits "spell"))
 (define plugins-folder (fixtures:home-path ".local" "share" "tuna" "plugins"))
@@ -31,7 +31,7 @@
 (define tail "\n(define after-lines #t)\n")
 
 (fixtures:write-file! (fixtures:configuration-path) (string-append head tail))
-(define first-reports (fixtures:reports-during plugins:load-configuration!))
+(define first-reports (test-runner:reports-during plugins:load-configuration!))
 
 
 (test "at start the line installs its plugin at the line's commit, and the configuration sets and overrides its definitions, with no report"
@@ -85,7 +85,7 @@
 (test "when a module fails to load, the update is reported and the plugin goes back to its commit, its line unchanged"
   (plugins:install! `(use-plugin flaky (git ,(remotes:url "flaky")) (commit ,(fixtures:short (car flaky-commits)))))
   (fixtures:at-repl '(use-plugin flaky))
-  (check-equal? '(flaky) (map condition-who (fixtures:reports-during (lambda () (plugins:update! 'flaky)))))
+  (check-equal? '(flaky) (map condition-who (test-runner:reports-during (lambda () (plugins:update! 'flaky)))))
   (check-equal? 1 (fixtures:at-repl '(flaky:version)))
   (check-equal? (car flaky-commits) (plugins:commit 'flaky))
   (check-equal? flaky-line (line-of 'flaky))
@@ -96,7 +96,7 @@
   (fixtures:write-file! (fixtures:home-path "src" "notes" "src" "notes.sls") (fixtures:module-text '((define (where) "notes"))))
   (let* ([before (lines)]
          [installing (spawn-task (lambda (restore) (plugins:install! '(use-plugin notes (local "~/src/notes")))))])
-    (check-equal? '(flaky) (map condition-who (fixtures:reports-during (lambda () (plugins:update! 'flaky)))))
+    (check-equal? '(flaky) (map condition-who (test-runner:reports-during (lambda () (plugins:update! 'flaky)))))
     (join-task installing)
     (check-equal? (append before '((use-plugin notes (local "~/src/notes")))) (lines))))
 
@@ -104,7 +104,7 @@
   (plugins:remove! 'flaky)
   (fixtures:at-repl `(use-plugin flaky (git ,(remotes:url "flaky")) (commit ,(fixtures:short (car flaky-commits)))))
   (let ([before (fixtures:read-file (fixtures:configuration-path))])
-    (check-equal? '(flaky) (map condition-who (fixtures:reports-during (lambda () (plugins:update! 'flaky)))))
+    (check-equal? '(flaky) (map condition-who (test-runner:reports-during (lambda () (plugins:update! 'flaky)))))
     (check-equal? before (fixtures:read-file (fixtures:configuration-path))))
   (check-equal? 1 (fixtures:at-repl '(flaky:version)))
   (check-equal? (car flaky-commits) (plugins:commit 'flaky)))

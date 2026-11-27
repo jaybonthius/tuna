@@ -29,11 +29,7 @@
       (and start (document:text (buffers:document b) start p)))))
 
 (define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (map (lambda (c) (list (condition-who c) (condition-message c))) (reverse reported))))
+  (map (lambda (c) (list (condition-who c) (condition-message c))) (test-runner:reports-during thunk)))
 
 ;; M-/ pauses until its job has read words, so its key returns before it
 ;; ends.

@@ -1,5 +1,5 @@
 #!tuna
-(import (options) (ask) (timers) (commands) (buffers) (document) (undo))
+(import (test-runner) (options) (ask) (timers) (commands) (buffers) (document) (undo))
 
 (define (end b) (fx- (document:length (buffers:document b)) 1))
 
@@ -40,14 +40,10 @@
          (message-condition? c) (string=? message (condition-message c)))))
 
 (define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (map (lambda (c)
-           (list (and (who-condition? c) (condition-who c))
-                 (if (message-condition? c) (condition-message c) c)))
-         (reverse reported))))
+  (map (lambda (c)
+         (list (and (who-condition? c) (condition-who c))
+               (if (message-condition? c) (condition-message c) c)))
+       (test-runner:reports-during thunk)))
 
 ;; ask's own writer reports each message as a warning, which would fail
 ;; the test file.

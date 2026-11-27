@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (web) (keys) (options) (tables) (buffers) (document) (ask) (browse-url) (web-test tasks))
+(import (tuna) (test) (test-runner) (test-user) (web) (keys) (options) (tables) (buffers) (document) (ask) (browse-url))
 
 (define laptop (test-user:client))
 
@@ -38,14 +38,14 @@
   (check-equal? '() (opened laptop)))
 
 (test "a browser that blocks the new tab says so, and the plugin warns with the address"
-  (let ([reported (web-test/tasks:reports-during
-                    (lambda () (web:post-input! phone '(("type" . "browse-url") ("url" . "https://tuna.example/guide")))))])
+  (let ([reported (test-runner:reports-during
+                    (lambda () (web:post-input! phone '(("type" . "browse-url") ("url" . "https://tuna.example/guide"))) (test-runner:wait-for-batch)))])
     (check-equal? 1 (length reported))
     (check (warning? (car reported)))
     (check-equal? "The browser blocked the new tab for https://tuna.example/guide" (condition-message (car reported)))))
 
 (test "a browse-url item without an address is reported as not one"
-  (let ([reported (web-test/tasks:reports-during (lambda () (web:post-input! phone '(("type" . "browse-url")))))])
+  (let ([reported (test-runner:reports-during (lambda () (web:post-input! phone '(("type" . "browse-url"))) (test-runner:wait-for-batch)))])
     (check-equal? 1 (length reported))
     (check-equal? '(browse-url "not a browse-url item")
                   (list (condition-who (car reported)) (condition-message (car reported))))))

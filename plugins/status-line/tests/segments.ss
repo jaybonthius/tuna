@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (layout) (views) (buffers) (document) (options) (tables) (modes)
+(import (tuna) (test) (test-runner) (test-user) (layout) (views) (buffers) (document) (options) (tables) (modes)
         (status-line) (status-line-test lighters) (status-line-test cards) (status-line-test))
 
 (define view status-line-test:view)
@@ -71,7 +71,7 @@
 
 (test "a value that is not a place goes to report once and its segment is not shown; a key that is not a segment is left out"
   (status-line:define-segment seg-a (show (lambda (view) "a")))
-  (let ([reported (status-line-test:reports-during
+  (let ([reported (test-runner:reports-during
                     (lambda ()
                       (tables:set! status-line:segments seg-a 'left)
                       (test-user:settle)
@@ -94,7 +94,7 @@
 (status-line:define-segment number (show show-number))
 
 (test "a show procedure that raises, or returns what is not HTML, a string or #f, goes to report once for its window, and the segment shows nothing until it shows again"
-  (let ([reported (status-line-test:reports-during
+  (let ([reported (test-runner:reports-during
                     (lambda ()
                       (tables:set! status-line:segments flaky (status-line:left 40))
                       (tables:set! status-line:segments number (status-line:left 41))
@@ -107,7 +107,7 @@
   (set! failing? #f)
   (check-equal? "fine" (text flaky))
   (set! failing? #t)
-  (check-equal? '(car) (map condition-who (status-line-test:reports-during (lambda () (test-user:settle) (test-user:settle)))))
+  (check-equal? '(car) (map condition-who (test-runner:reports-during (lambda () (test-user:settle) (test-user:settle)))))
   (check-equal? "" (text flaky))
   (tables:remove! status-line:segments flaky)
   (tables:remove! status-line:segments number))

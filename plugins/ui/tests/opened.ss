@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (layout) (views) (buffers) (document) (modes) (editing) (isearch) (ui) (ui-test))
+(import (tuna) (test) (test-runner) (test-user) (layout) (views) (buffers) (document) (modes) (editing) (isearch) (ui) (ui-test))
 
 (define view ui-test:view)
 (define visible ui-test:visible)
@@ -59,7 +59,7 @@
 (test "a search cancelled in a hidden body leaves the section hidden"
   (hide-b!)
   (views:set-point! v 1)
-  (check (for-all cancelled? (ui-test:reports-during (lambda () (test-user:press! "C-s b 2 C-g")))))
+  (check (for-all cancelled? (test-runner:reports-during (lambda () (test-user:press! "C-s b 2 C-g")))))
   (check-equal? (list #t 2) (list (b-hidden?) (views:point v))))
 
 (test "a search that moves from one match to another in the same hidden body and ends there leaves it open"

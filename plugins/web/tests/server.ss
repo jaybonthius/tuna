@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (web) (options) (web-test http) (web-test tasks))
+(import (tuna) (test) (test-runner) (web) (options) (web-test http))
 
 (web-test/http:use-url! (lambda () (web:url)))
 (test-runner:wait-until (lambda () (web:url)))
@@ -69,10 +69,11 @@
 (test "a port in use is reported, nothing is listened on, and the server starts when the port is set again"
   (let ([before (port)] [taken (web-test/http:free-port)] [next (web-test/http:free-port)])
     (web-test/http:occupy! taken)
-    (let ([reported (web-test/tasks:reports-during
+    (let ([reported (test-runner:reports-during
                       (lambda ()
                         (options:set! web:port taken)
-                        (test-runner:wait-until (lambda () (not (web:url))))))])
+                        (test-runner:wait-until (lambda () (not (web:url))))
+                        (test-runner:wait-for-batch)))])
       (check-equal? 1 (length reported))
       (check-equal? (list "127.0.0.1" taken) (list-head (condition-irritants (car reported)) 2)))
     (check-equal? "cannot connect" (refused (lambda () (web-test/http:on-port before status))))

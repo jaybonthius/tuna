@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (buffers) (document) (views) (layout) (keys) (commands) (options) (tables) (web) (editing)
+(import (tuna) (test) (test-runner) (test-user) (buffers) (document) (views) (layout) (keys) (commands) (options) (tables) (web) (editing)
         (kill-ring) (echo-area) (undo) (markdown) (buffers-test) (markdown-test page) (markdown-test notes))
 
 (keys:bind! markdown:link-keys "C-c C-o" markdown:follow-link)
@@ -103,7 +103,7 @@
   (views:set-point! (view) 3)
   (check-equal? '((ui:pushed-button "no button is at the click or at point"))
                 (map (lambda (c) (list (condition-who c) (condition-message c)))
-                     (buffers-test:reports-during (lambda () (views:call-with-view (view) (lambda () (commands:run markdown:follow-link)))))))
+                     (test-runner:reports-during (lambda () (views:call-with-view (view) (lambda () (commands:run markdown:follow-link)))))))
   (check-raises (buffers-test:raised? 'markdown:follow-link "not a Markdown link") (markdown:follow-link (document:token (buffers:document l) 1))))
 
 (test "an atom drawn with markdown:html shows the drawing's elements"

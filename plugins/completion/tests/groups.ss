@@ -151,7 +151,7 @@
   (keys:bind! keys:global "C-c b" completion:narrow-by-input)
   (let ([r (narrowable)])
     (check-equal? '("the input is not one narrow character")
-      (map condition-message (completion-test/sessions:reports-during (lambda () (test-user:press! "C-c b")))))
+      (map condition-message (test-runner:reports-during (lambda () (test-user:press! "C-c b")))))
     (quit! r))
   (keys:unbind! keys:global "C-c b"))
 
@@ -187,7 +187,7 @@
     (check-equal? '((#\b . "Buffers") (#\f . "Files")) (completion:narrow-characters s))
     (check-equal? '("not a character" "no character was typed")
       (map condition-message
-           (completion-test/sessions:reports-during
+           (test-runner:reports-during
              (lambda ()
                (for-each (lambda (arg) (views:call-with-view (layout:selected-view) (lambda () (commands:run completion:narrow arg))))
                  '("b" #f))))))

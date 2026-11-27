@@ -3,7 +3,7 @@
 (define t (terminal-test:shell!))
 
 (define (refusals thunk)
-  (map (lambda (c) (list (condition-who c) (condition-message c) (condition-irritants c))) (buffers-test:reports-during thunk)))
+  (map (lambda (c) (list (condition-who c) (condition-message c) (condition-irritants c))) (test-runner:reports-during thunk)))
 
 (test "the plugin writes the buffer and refuses the user's edits, in copy mode as in any other"
   (terminal-test:show! t)

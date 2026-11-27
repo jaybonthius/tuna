@@ -20,16 +20,6 @@
   (saved:set! datum value)
   (saved-test/files:wait-for-stored! (mine name) value))
 
-;; A report from the writer thread reaches report on the main thread a
-;; little later, so the reports a test expects are waited for.
-(define (reports-during expected thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (test-runner:wait-until (lambda () (>= (length reported) expected)))
-    (advice-remove! report keep)
-    (reverse reported)))
-
 ;; Chez finds a module stale when its source is newer than its object, and
 ;; file times step with the kernel's clock tick, 1 to 10 ms, so a rewrite
 ;; in the tick of the last compile would look unchanged.
@@ -71,10 +61,11 @@
 
 (test "a reload whose check the value fails moves the value aside, with a warning"
   (saved-test/files:wait-for-stored! (again-file) '(1 2 3))
-  (let ([reported (reports-during 1
+  (let ([reported (test-runner:reports-during
                     (lambda ()
                       (write-module! "again" "#!tuna\n(import (saved))\n(saved:define-saved kind 0 fixnum?)\n")
-                      (reload-modules! '((again)))))])
+                      (reload-modules! '((again))))
+                    1)])
     (check-equal? 1 (length reported))
     (check (warning? (car reported))))
   (check-equal? 0 (kind))
@@ -129,7 +120,7 @@
       (lambda (name text) (saved-test/files:write-text! (hist (string-append name ".ss")) text))
       '("stored" "broken" "trailing" "empty" "boxed" "cyclic" "wrong")
       '("42" "(unclosed" "1 2" "" "#&1" "#0=(1 . #0#)" "\"text\""))
-    (let ([reported (reports-during 6 (lambda () (load-module! '(saved-test hist))))])
+    (let ([reported (test-runner:reports-during (lambda () (load-module! '(saved-test hist))) 6)])
       (check-equal? 6 (length reported))
       (check (for-all warning? reported)))
     (let ([env (environment '(saved-test hist))])
@@ -154,7 +145,7 @@
     (saved-test/files:write-text! x "1")
     (let ([t (spawn-task (lambda (restore) (load-module! '(saved-test looping))))])
       (fork-task (lambda (restore) (when (on-thread-wait (lambda () (getprop 'saved-test 'checking #f)) t) (cancel-task t))))
-      (let ([reported (reports-during 1 (lambda () (join-task t)))])
+      (let ([reported (test-runner:reports-during (lambda () (join-task t)) 1)])
         (check-equal? 1 (length reported))
         (check (cancelled? (car reported)))))
     (check (file-exists? x))))
@@ -281,8 +272,9 @@
     (load-module! '(saved-test locked))
     (check-equal? 1 ((eval 'saved-test/locked:hits (environment '(saved-test locked)))))
     (chmod (path-parent hits) #o555)
-    (let ([reported (reports-during 1
-                      (lambda () (saved:remove! (eval 'saved-test/locked:hits (environment '(saved-test locked))))))])
+    (let ([reported (test-runner:reports-during
+                      (lambda () (saved:remove! (eval 'saved-test/locked:hits (environment '(saved-test locked)))))
+                      1)])
       (chmod (path-parent hits) #o755)
       (check-equal? 1 (length reported))
       (check (i/o-error? (car reported))))

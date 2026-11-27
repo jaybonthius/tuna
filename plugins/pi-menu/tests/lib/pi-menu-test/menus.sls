@@ -43,11 +43,6 @@
              (substring t 0 (- (string-length t) 1))))))
 
 (define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (guard (c [#t (advice-remove! report keep) (raise c)])
-      (thunk))
-    (advice-remove! report keep)
-    (map (lambda (c) (cond [(cancelled? c) 'quit] [(message-condition? c) (condition-message c)] [else c])) (reverse reported))))
+  (map (lambda (c) (cond [(cancelled? c) 'quit] [(message-condition? c) (condition-message c)] [else c])) (test-runner:reports-during thunk)))
 
 (define (press! keys) (reports-during (lambda () (test-user:press! keys))))

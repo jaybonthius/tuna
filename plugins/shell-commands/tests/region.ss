@@ -68,7 +68,7 @@
                                              (processes:command-line p)))
                          (processes:all))))
     (test-runner:wait-until (lambda () (file-exists? (shell-commands-test:home-path "seen"))))
-    (check (for-all cancelled? (shell-commands-test:reports-during (lambda () (test-user:press! "C-g")))))
+    (check (for-all cancelled? (test-runner:reports-during (lambda () (test-user:press! "C-g")))))
     (check-equal? "aa bb cc\n" (text three))
     (test-runner:wait-until (lambda () (null? (processes:all))))))
 

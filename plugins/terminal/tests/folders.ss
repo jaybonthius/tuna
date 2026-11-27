@@ -10,7 +10,7 @@
   (terminal:start (list "sh" "-c" (string-append "printf '\\033]7;file://localhost" (at "proj/src/../") "\\007'; sleep 30"))))
 
 (define (quit!)
-  (check (for-all cancelled? (completion-test/sessions:reports-during (lambda () (test-user:press! "C-g"))))))
+  (check (for-all cancelled? (test-runner:reports-during (lambda () (test-user:press! "C-g"))))))
 
 (test "a terminal's buffer gives files:directory the folder its program last reported with OSC 7"
   (test-runner:wait-until (lambda () (equal? (at "proj/") (terminal:directory t))))

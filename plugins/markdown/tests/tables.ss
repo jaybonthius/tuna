@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (buffers) (document) (views) (layout) (keys) (commands) (options) (editing) (kill-ring)
+(import (tuna) (test) (test-runner) (test-user) (buffers) (document) (views) (layout) (keys) (commands) (options) (editing) (kill-ring)
         (echo-area) (markdown) (buffers-test) (markdown-test page))
 
 (define (view) (layout:selected-view))
@@ -15,7 +15,7 @@
 ;; A key whose command raises is reported; each test names the reports
 ;; its keys cause.
 (define (reported keys)
-  (map (lambda (c) (list (condition-who c) (condition-message c))) (buffers-test:reports-during (lambda () (press! keys)))))
+  (map (lambda (c) (list (condition-who c) (condition-message c))) (test-runner:reports-during (lambda () (press! keys)))))
 
 (define (at text)
   (let* ([b (views:buffer (view))] [s (document:text (buffers:document b))])
@@ -138,7 +138,7 @@
 
 (define (on-sheet point keys)
   (let ([b (fresh-sheet point)])
-    (buffers-test:reports-during (lambda () (press! keys)))
+    (test-runner:reports-during (lambda () (press! keys)))
     (list (cddr (car (datums b))) (views:point (view)))))
 
 (define (row a b) `(markdown:table ((columns . 2)) (markdown:table-row () (markdown:table-cell () ,a) (markdown:table-cell () ,b))))

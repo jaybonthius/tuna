@@ -1,12 +1,5 @@
 (import (tuna) (test) (test-runner) (processes) (processes-test recorder) (processes-test setting))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (define (violation thunk)
   (guard (c [(assertion-violation? c) (list (condition-who c) (condition-message c))])
     (thunk)
@@ -51,7 +44,7 @@
 
 (test "a program that cannot start goes to report, then to on-exit as its condition, after the end of output"
   (let* ([r (processes-test/recorder:make)] [missing #f]
-         [reported (reports-during
+         [reported (test-runner:reports-during
                      (lambda ()
                        (set! missing (processes:start "no-such-program" '() (processes-test/recorder:on-output r) (processes-test/recorder:on-exit r)))
                        (processes-test/recorder:wait-for-exit r)))])
@@ -69,7 +62,7 @@
       (start-recorded "sh" '("-c" "echo \"$GREETING-$HOME-$0\"")
         (processes:options [environment '(("GREETING" . "hi") ("HOME" . #f))]))))
   (let* ([r #f]
-         [reported (reports-during
+         [reported (test-runner:reports-during
                      (lambda ()
                        (set! r (start-recorded "printf" '("x") (processes:options [environment '(("PATH" . "/nowhere"))])))
                        (processes-test/recorder:wait-for-exit r)))])
@@ -100,12 +93,12 @@
          [joined (processes:start "sh" '("-c" "echo err >&2") ignore-output (processes-test/recorder:on-exit joined-recorder))])
     (check-equal? '((eof 0) (exit 2)) (processes-test/recorder:wait-for-exit r))
     (processes-test/recorder:wait-for-exit joined-recorder)
-    (let ([reported (reports-during (lambda () (processes:report-error-output complaining 'my-lister)))])
+    (let ([reported (test-runner:reports-during (lambda () (processes:report-error-output complaining 'my-lister)))])
       (check-equal? 1 (length reported))
       (check (warning? (car reported)))
       (check-equal? 'my-lister (condition-who (car reported)))
       (check-equal? "bad flag" (condition-message (car reported))))
-    (check-equal? '() (reports-during (lambda () (processes:report-error-output joined 'my-lister))))
+    (check-equal? '() (test-runner:reports-during (lambda () (processes:report-error-output joined 'my-lister))))
     (check-equal? '(processes:report-error-output "not a symbol or string")
       (violation (lambda () (processes:report-error-output complaining 3))))
     (check-equal? '(processes:report-error-output "not a process")
@@ -132,7 +125,7 @@
 (test "a raise in on-output or on-exit goes to report, and delivery goes on"
   (let* ([r (processes-test/recorder:make)]
          [record-output (processes-test/recorder:on-output r)]
-         [reported (reports-during
+         [reported (test-runner:reports-during
                      (lambda ()
                        (processes:start "printf" '("x")
                          (lambda (bytes end) (if (eof-object? bytes) (record-output bytes end) (car bytes)))
@@ -142,7 +135,7 @@
     (check-equal? 1 (length reported))
     (check-equal? 'car (condition-who (car reported))))
   (let* ([status #f]
-         [reported (reports-during
+         [reported (test-runner:reports-during
                      (lambda ()
                        (processes:start "true" '() ignore-output (lambda (s) (set! status s) (cdr s)))
                        (test-runner:wait-until (lambda () status))))])

@@ -1,4 +1,4 @@
-(import (tuna) (test) (plugins) (fixtures) (remotes))
+(import (tuna) (test) (test-runner) (plugins) (fixtures) (remotes))
 
 (define loaded-calls 0)
 (define (count-loaded next) (set! loaded-calls (+ loaded-calls 1)) (next))
@@ -21,12 +21,12 @@
 (test "call-reporting reports a raise with the form's position and returns after-report's value, and reports a warning and goes on"
   (let ([form (car (plugins:file-forms (fixtures:configuration-path)))])
     (let* ([value #f]
-           [reports (fixtures:reports-during
+           [reports (test-runner:reports-during
                       (lambda () (set! value (plugins:call-reporting form (lambda () (car '())) (lambda () 'after)))))])
       (check-equal? 'after value)
       (check-equal? '(1) (map fixtures:reported-line reports)))
     (let* ([value #f]
-           [reports (fixtures:reports-during
+           [reports (test-runner:reports-during
                       (lambda () (set! value (plugins:call-reporting form (lambda () (warning 'here "careful") 'went-on) (lambda () 'after)))))])
       (check-equal? 'went-on value)
       (check-equal? '("careful") (map fixtures:message reports)))))

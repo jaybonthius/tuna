@@ -164,7 +164,7 @@
          [warned (lambda (client posn) (warning 'warned "careful") (list warned-keymap))]
          [reported (begin
                      (hooks:add! keys:find-keymaps warned 5)
-                     (keys-test:reports-during (lambda () (set! found (memq warned-keymap (keys:active-keymaps client))))))])
+                     (test-runner:reports-during (lambda () (set! found (memq warned-keymap (keys:active-keymaps client))))))])
     (hooks:remove! keys:find-keymaps warned)
     (check-equal? 1 (length reported))
     (check (warning? (car reported)))

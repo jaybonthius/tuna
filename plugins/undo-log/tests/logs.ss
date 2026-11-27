@@ -72,7 +72,7 @@
 (test "when the file changed outside Tuna a new history starts, and a log that held unsaved edits is set aside with a warning"
   (set! a (visit-again! a-path))
   (undo-log-test/logs:write-text! a-path "changed\n")
-  (let ([reports (undo-log-test/edits:reports-during (lambda () (set! a (visit-again! a-path))))])
+  (let ([reports (test-runner:reports-during (lambda () (set! a (visit-again! a-path))))])
     (check-equal? 1 (length reports))
     (check (warning? (car reports)))
     (check-equal? (list (files:abbreviated-path (string-append (undo-log-test/logs:log-of a-path) ".stale")))
@@ -86,7 +86,7 @@
   (files:save-buffer a)
   (undo-log-test/logs:write-text! a-path "again\n")
   (buffers:kill! a)
-  (check-equal? '() (undo-log-test/edits:reports-during (lambda () (set! a (files:visit a-path)))))
+  (check-equal? '() (test-runner:reports-during (lambda () (set! a (files:visit a-path)))))
   (check-equal? '("again\n" (0 0 (0 #f))) (list (text a) (undo-log-test/edits:tree a))))
 
 (test "loading undo, and so undo-log, attaches a modified file buffer at its log's current state"
@@ -160,7 +160,7 @@
   (check-equal? '(undo-history group saved at) (undo-log-test/logs:logged-kinds c-path 4))
   (set! unreadable-records (undo-log-test/logs:records c-path))
   (chmod (undo-log-test/logs:log-of c-path) 0)
-  (let ([reports (undo-log-test/edits:awaited-reports 1 (lambda () (set! c (visit-again! c-path))))])
+  (let ([reports (test-runner:reports-during (lambda () (set! c (visit-again! c-path))) 1)])
     (check-equal? '(#t) (map permission-denied? reports)))
   (check-equal? '("gamma\n" (0 0 (0 #f))) (list (text c) (undo-log-test/edits:tree c)))
   (in-c undo-log-test/edits:insert 1 "x "))
@@ -168,7 +168,7 @@
 (test "neither a save nor a reload of undo-log starts a log in place of one that cannot be read"
   (files:save-buffer c)
   (in-c undo-log-test/edits:insert 1 "y ")
-  (let ([reports (undo-log-test/edits:awaited-reports 1 (lambda () (reload-modules! '((undo-log)))))])
+  (let ([reports (test-runner:reports-during (lambda () (reload-modules! '((undo-log)))) 1)])
     (check-equal? '(#t) (map permission-denied? reports)))
   (in-c undo-log-test/edits:insert 1 "z ")
   (test-user:settle)

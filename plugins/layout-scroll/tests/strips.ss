@@ -1,4 +1,4 @@
-(import (tuna) (test) (layout) (layout-split) (layout-scroll) (layout-tabs) (views) (buffers) (document) (commands)
+(import (tuna) (test) (test-runner) (layout) (layout-split) (layout-scroll) (layout-tabs) (views) (buffers) (document) (commands)
         (tables) (keys) (web) (test-user))
 
 (define (raised-with who message)
@@ -41,11 +41,7 @@
 (define (press! client keys) (test-user:press! client keys))
 
 (define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (map (lambda (c) (list (condition-who c) (condition-message c))) reported)))
+  (map (lambda (c) (list (condition-who c) (condition-message c))) (reverse (test-runner:reports-during thunk))))
 
 (define (refusals keys) (reports-during (lambda () (press! desktop keys))))
 

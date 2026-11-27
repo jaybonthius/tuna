@@ -53,6 +53,40 @@
   (test-user:drag! (layout:selected-view) 1 5)
   (check-equal? '(("<down-mouse-1>" 1 1) ("<mouse-movement>" 5 5) ("<drag-mouse-1>" 1 5)) (take-seen!)))
 
+(test "press-button!, move-pointer! and release-button! hold the button between them; a release with no move is a click, one outside the view has no place"
+  (test-user:show! "|one two")
+  (test-user:settle)
+  (take-seen!)
+  (let ([v (layout:selected-view)])
+    (test-user:press-button! v 1)
+    (check-equal? '(("<down-mouse-1>" 1 1)) (take-seen!))
+    (test-user:move-pointer! 3)
+    (test-user:move-pointer! 5)
+    (check-equal? '(("<mouse-movement>" 3 3) ("<mouse-movement>" 5 5)) (take-seen!))
+    (test-user:release-button! 6)
+    (check-equal? '(("<drag-mouse-1>" 1 6)) (take-seen!))
+    (test-user:press-button! (test-user:client) v 2 "<down-mouse-1>")
+    (test-user:release-button! (test-user:client) 2)
+    (check-equal? '(("<down-mouse-1>" 2 2) ("<mouse-1>" 2 2)) (take-seen!))
+    (test-user:press-button! v 1)
+    (test-user:move-pointer! 4)
+    (test-user:release-button! #f)
+    (check-equal? '("<down-mouse-1>" "<mouse-movement>" "<drag-mouse-1>") (map car (take-seen!)))))
+
+(test "a held button is pressed once and released once"
+  (test-user:show! "|one")
+  (test-user:settle)
+  (take-seen!)
+  (let ([v (layout:selected-view)])
+    (check-raises (raised-by 'test-user:move-pointer!) (test-user:move-pointer! 1))
+    (check-raises (raised-by 'test-user:release-button!) (test-user:release-button! 1))
+    (check-raises (raised-by 'test-user:press-button!) (test-user:press-button! v 1 "<mouse-1>"))
+    (test-user:press-button! v 1)
+    (check-raises (raised-by 'test-user:press-button!) (test-user:press-button! v 2))
+    (check-raises (raised-by 'test-user:click!) (test-user:click! v 2))
+    (test-user:release-button! 1)
+    (check-equal? '(("<down-mouse-1>" 1 1) ("<mouse-1>" 1 1)) (take-seen!))))
+
 (test "click-element! clicks an element of the last screen: its view's, at the tokens it stands for, with the keymaps marked around it"
   (test-user:show! "|one two")
   (test-user:settle)
@@ -66,6 +100,22 @@
     (take-seen!)
     (test-user:click-element! c (car (test-user:elements (test-user:screen c) "target")) "<mouse-2>")
     (check-equal? '(("<mouse-2>" 3 3)) (take-seen!))
+    (web:close-client! c)))
+
+(test "click-element! on an element off any tokens and text, in a view that draws no line, sends no place, as the page does"
+  (test-user:show! "|one two")
+  (test-user:settle)
+  (let* ([v (layout:selected-view)] [c (test-user:open-client)])
+    (web:send-screen! c
+      (haml (:div ([data-view (number->string (views:id v))] [data-version (number->string (buffers:version (views:buffer v)))]
+                   [data-showing (number->string (views:shown-count v))])
+              (:ul ([data-keymap (views:keymap-mark marked-keymap)])
+                (:li.heading "Heading")
+                (:div ([data-at "1"] [data-to "3"]) (:li "one")))))
+      "Title")
+    (take-seen!)
+    (test-user:click-element! c (car (test-user:elements (test-user:screen c) "heading")) "<mouse-2>")
+    (check-equal? '(("<mouse-2>" #f #f)) (take-seen!))
     (web:close-client! c)))
 
 (tables:define-table cell-keymap "The keymap of a grid the tests mark.")

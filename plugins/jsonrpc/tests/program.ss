@@ -1,11 +1,8 @@
 (import (tuna) (test) (test-runner) (timers) (web) (jsonrpc) (json-rpc) (jsonrpc-test servers))
 
 (define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (let ([result (thunk)])
-      (advice-remove! report keep)
-      (values result (reverse reported)))))
+  (let* ([result #f] [reported (test-runner:reports-during (lambda () (set! result (thunk))))])
+    (values result reported)))
 
 (test "the program's requests are answered by the request clause in a task of its own that may pause; a &json-rpc-error it raises is sent back"
   (let* ([asked '()]

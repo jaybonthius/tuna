@@ -1,4 +1,4 @@
-(import (tuna) (test) (plugins) (fixtures))
+(import (tuna) (test) (test-runner) (plugins) (fixtures))
 
 (define (lib-file name) (fixtures:home-path ".config" "tuna" "lib" (string-append name ".sls")))
 
@@ -22,7 +22,7 @@
     (check-equal? (list (lib-file "unknown-language") 1 3) (fixtures:reported-position c))))
 
 (test "a compile warning raised twice, as Chez's source optimizer runs twice, is reported once, and the library loads"
-  (let ([reports (fixtures:reports-during (lambda () (fixtures:load-configuration! '((import (tuna) (argument-count))))))])
+  (let ([reports (test-runner:reports-during (lambda () (fixtures:load-configuration! '((import (tuna) (argument-count))))))])
     (check-equal? '(compile) (map condition-who reports))
     (check (warning? (car reports))))
   (check (fixtures:at-repl '(procedure? h))))

@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (web) (haml) (tables) (timers) (web-test http) (web-test tasks))
+(import (tuna) (test) (test-runner) (web) (haml) (tables) (timers) (web-test http))
 
 (web-test/http:use-url! (lambda () (web:url)))
 (test-runner:wait-until (lambda () (web:url)))
@@ -82,8 +82,8 @@
   (check-equal? (list 'script (format "tuna.call(~s, 1)" (make-string 64 #\a))) (next)))
 
 (test "a screen larger than the stream can hold is not sent and is reported, and the page keeps its last"
-  (let ([reported (web-test/tasks:reports-during
-                    (lambda () (web:send-screen! c (make-bytevector (* 5 1024 1024) (char->integer #\x)) "Tuna"))
+  (let ([reported (test-runner:reports-during
+                    (lambda () (web:send-screen! c (make-bytevector (* 5 1024 1024) (char->integer #\x)) "Tuna") (test-runner:wait-for-batch))
                     1)])
     (check-equal? 1 (length reported))
     (check (warning? (car reported)))
@@ -106,7 +106,7 @@
 
 (test "a question to the page goes after the screen of its batch, and the page's answer, on its own route, resumes the asking task"
   (let ([asker (spawn-task (lambda (restore) (web:ask-page c "size" 5)))])
-    (web-test/tasks:settle)
+    (test-runner:wait-for-batch)
     (web:send-screen! c (haml (:p "asked")) "Tuna")
     (check-equal? '((screen 9 2 ((p "asked"))) (script "tuna.ask(1, \"size\", 5)")) (web-test/http:take p 2))
     (check-equal? 204

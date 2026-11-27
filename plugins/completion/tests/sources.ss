@@ -260,7 +260,7 @@
 
 (test "a stream that returns no receiver is reported at the read's first match, and the read waits"
   (let* ([r #f]
-         [reported (completion-test/sessions:reports-during
+         [reported (test-runner:reports-during
                      (lambda () (set! r (completion-test/sessions:start! (lambda () (completion:read "? " (list (completion:source (stream (lambda (emit) 5)))) #f))))))])
     (check-equal? '("a stream returned what is not a receiver") (map condition-message reported))
     (check-equal? 0 (completion:matches-count (completion:session-matches (completion-test/sessions:session))))

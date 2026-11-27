@@ -1,5 +1,5 @@
 #!tuna
-(import (test-runner) (options) (ask) (commands) (buffers) (document) (undo))
+(import (options) (ask) (commands) (buffers) (document) (undo))
 
 (define (end b) (fx- (document:length (buffers:document b)) 1))
 
@@ -33,18 +33,6 @@
   (lambda (c)
     (and (who-condition? c) (eq? who (condition-who c))
          (message-condition? c) (string=? message (condition-message c)))))
-
-(define (reports-during thunk)
-  (awaited-reports 0 thunk))
-
-;; For reports made later, as by a log read on the writer's thread.
-(define (awaited-reports n thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (test-runner:wait-until (lambda () (>= (length reported) n)))
-    (advice-remove! report keep)
-    (reverse reported)))
 
 ;; ask's own writer reports each message as a warning, which would fail
 ;; the test file.

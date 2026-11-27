@@ -76,7 +76,7 @@
   (test-user:type! "shell-commands:recompile")
   (test-user:press! "RET")
   (check-equal? "echo bar" (shell-commands-test:input))
-  (check (for-all cancelled? (shell-commands-test:reports-during (lambda () (test-user:press! "C-g"))))))
+  (check (for-all cancelled? (test-runner:reports-during (lambda () (test-user:press! "C-g"))))))
 
 (test "with no run in the build's buffer, the folder is the current buffer's"
   (buffers:kill! (compilation))
@@ -160,7 +160,7 @@
   ;; A local value a mode hook sets while a key's command runs is the
   ;; key's owner's, not the hook entry's plugin's, so the reload finds it
   ;; holding a command of an unloaded plugin and takes it back loudly.
-  (check (for-all warning? (shell-commands-test:reports-during (lambda () (reload-modules! '((buffers)))))))
+  (check (for-all warning? (test-runner:reports-during (lambda () (reload-modules! '((buffers)))))))
   (let ([build (compilation)] [before saved])
     (check-equal? 'runs:mode (modes:major-mode build))
     (layout:switch-to-buffer build)

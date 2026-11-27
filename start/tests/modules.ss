@@ -1,4 +1,4 @@
-(import (tuna) (test) (plugins) (fixtures))
+(import (tuna) (test) (test-runner) (plugins) (fixtures))
 
 (define (lib-file name) (fixtures:home-path ".config" "tuna" "lib" (string-append name ".sls")))
 (define plugins-folder (fixtures:home-path ".local" "share" "tuna" "plugins"))
@@ -19,7 +19,7 @@
 (fixtures:write-lib-module! '(jobs-test words) '((define (where) "lib/")))
 
 (define start-reports
-  (fixtures:reports-during (lambda () (fixtures:load-configuration! '((import (tuna)))))))
+  (test-runner:reports-during (lambda () (fixtures:load-configuration! '((import (tuna)))))))
 
 (test "a module in lib/ that replaces an installed plugin's is reported when the configuration is read"
   (check-equal? (list (format "(shadowed) in lib/ replaces ~a/shadowed/src/shadowed.sls" plugins-folder))

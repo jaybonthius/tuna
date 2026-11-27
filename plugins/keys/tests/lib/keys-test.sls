@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (keys) (commands) (hooks) (tables) (test-user))
+(import (test-runner) (layout) (keys) (commands) (hooks) (tables) (test-user))
 
 (define (raised-by who message)
   (lambda (c)
@@ -16,15 +16,8 @@
               (thunk))))))
     result))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (define (report-messages thunk)
-  (map (lambda (c) (if (message-condition? c) (condition-message c) c)) (reports-during thunk)))
+  (map (lambda (c) (if (message-condition? c) (condition-message c) c)) (test-runner:reports-during thunk)))
 
 (tables:define-table capture-keymap "Catches the click that posn-at makes.")
 

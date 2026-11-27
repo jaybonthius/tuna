@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (layout-split) (buffers) (document) (views) (test-user))
+(import (test-runner) (layout) (layout-split) (buffers) (document) (views) (test-user))
 
 (define (tree) (car (document:datums (buffers:document layout:buffer))))
 
@@ -80,17 +80,10 @@
   (let* ([n (layout:selected-part)] [doc (buffers:document layout:buffer)])
     (outline-of (car (document:datums (document:slice doc (document:node-start n) (document:node-end n)))))))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (define (refusals-during thunk)
   (map (lambda (c)
          (list (and (who-condition? c) (condition-who c)) (if (message-condition? c) (condition-message c) c)))
-       (reports-during thunk)))
+       (test-runner:reports-during thunk)))
 
 (define (raised-with who message)
   (lambda (e)

@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (views) (buffers) (layout) (tables) (commands) (keys) (transient) (transient-test)
+(import (tuna) (test) (test-runner) (test-user) (views) (buffers) (layout) (tables) (commands) (keys) (transient) (transient-test)
         (transient-test magit) (transient-test computed))
 
 (define log '())
@@ -14,16 +14,9 @@
 (define (raised-by who message)
   (lambda (c) (and (who-condition? c) (eq? who (condition-who c)) (message-condition? c) (string=? message (condition-message c)))))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (define (report-messages thunk)
   (map (lambda (c) (if (irritants-condition? c) (cons (condition-message c) (condition-irritants c)) (condition-message c)))
-       (reports-during thunk)))
+       (test-runner:reports-during thunk)))
 
 (test-user:show! "|one\ntwo\n")
 
@@ -93,7 +86,7 @@
 
 (test "a key bound in a menu with keys:bind! wins over its entry, shows in a last group, closes the menu and runs without the menu's arguments"
   (keys:bind! m "b" note)
-  (reports-during (lambda () (test-user:press! "C-c t")))
+  (test-runner:reports-during (lambda () (test-user:press! "C-c t")))
   (check-equal? '(("Arguments" ("- v" "Verbose" "--verbose") ("a" "Again")) ("Level 2" ("l" "Raise from 2")) (("b" "test-file/transient/entries:note")))
                 (transient-test:menu))
   (test-user:press! "b")
@@ -120,7 +113,7 @@
   (check-equal? '("Computed" ("g" "gamma") ("c" "Second c")) (list-ref (transient-test:menu) 3))
   (test-user:press! "g")
   (check-equal? 'gamma (car log))
-  (reports-during (lambda () (test-user:press! "C-c t")))
+  (test-runner:reports-during (lambda () (test-user:press! "C-c t")))
   (check-equal? '("z is not in this menu") (report-messages (lambda () (test-user:press! "z"))))
   (check (transient-test:menu))
   (test-user:press! "C-g"))

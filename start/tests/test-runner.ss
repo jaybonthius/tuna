@@ -45,23 +45,60 @@
     '("runner/writes.ss" "runner/reads.ss")))
 
 ;; The kernel reports a task's raise and its cancel when the task ends.
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (test "join gives a task's values, raises its raise again, and raises a cancel with its reason"
   (check-equal? '(1 2) (call-with-values (lambda () (test-runner:join (spawn-task (lambda (restore) (values 1 2))))) list))
   (check-equal? 1
     (length
-      (reports-during
+      (test-runner:reports-during
         (lambda ()
           (check-raises error? (test-runner:join (spawn-task (lambda (restore) (error 'here "raised")))))))))
   (let ([t (spawn-task (lambda (restore) 'never-runs))])
     (cancel-task t 'mine)
     (check-equal? 'mine (guard (c [(cancelled? c) (cancelled-reason c)]) (test-runner:join t)))))
+
+(define (message-of c) (condition-message c))
+
+(test "reports-during gives the reports made while its thunk runs, in order, a warning's too, after which the thunk goes on, and with a count waits for that many"
+  (check-equal? '("one" "two")
+    (map message-of (test-runner:reports-during (lambda () (report (make-message-condition "one")) (report (make-message-condition "two"))))))
+  (check-equal? '("later")
+    (map message-of
+      (test-runner:reports-during
+        (lambda () (fork-task (lambda (restore) (report (make-message-condition "later")))))
+        1)))
+  (check-equal? '() (test-runner:reports-during void))
+  (let ([went-on? #f])
+    (check-equal? '("careful")
+      (map message-of (test-runner:reports-during (lambda () (warning 'here "careful") (set! went-on? #t)))))
+    (check went-on?)))
+
+(test "reports-during's advice is its caller's, outside the advice on report made before, and goes when the thunk raises"
+  (let ([outermost #f] [seen-inside '()])
+    (define (inside next c) (set! seen-inside (cons c seen-inside)) (next c))
+    (advice-add! report inside)
+    (test-runner:reports-during
+      (lambda ()
+        (set! outermost (car (definition-changes report)))
+        (report (make-message-condition "caught"))))
+    (advice-remove! report inside)
+    (check-equal? (list (current-owner) 'advice) (list-head outermost 2))
+    (check-equal? '() seen-inside))
+  (check-equal? '("after")
+    (map message-of
+      (test-runner:reports-during
+        (lambda ()
+          (check-raises error? (test-runner:reports-during (lambda () (error 'here "raised"))))
+          (report (make-message-condition "after")))))))
+
+(test "reports-during checks its arguments"
+  (check-raises assertion-violation? (test-runner:reports-during 'thunk))
+  (check-raises assertion-violation? (test-runner:reports-during void -1)))
+
+(test "wait-for-batch returns once the tasks queued before it have run"
+  (let ([ran #f])
+    (spawn-task (lambda (restore) (set! ran #t)))
+    (test-runner:wait-for-batch)
+    (check ran)))
 
 (test "wait-until returns once another thread makes its condition hold"
   (let ([set (box #f)])
@@ -89,7 +126,7 @@
 (test "a running-task canceller is made on the main thread"
   (check-equal? 1
     (length
-      (reports-during
+      (test-runner:reports-during
         (lambda ()
           (check-raises assertion-violation?
             (test-runner:join (fork-task (lambda (restore) (test-runner:running-task-canceller))))))))))

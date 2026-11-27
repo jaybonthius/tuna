@@ -7,11 +7,8 @@
   (guard (c [(git:failed-condition? c) (git:failure-summary c)]) (thunk) 'no-failure))
 
 (define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (let ([result (thunk)])
-      (advice-remove! report keep)
-      (values result (reverse reported)))))
+  (let* ([result #f] [reported (test-runner:reports-during (lambda () (set! result (thunk))))])
+    (values result reported)))
 
 (git-test/repositories:sample! "repo")
 

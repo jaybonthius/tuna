@@ -14,7 +14,7 @@ bin=$(dirname "$tuna")
 home=$(mktemp -d "${TMPDIR:-/tmp}/tuna-build-plugins.XXXXXX")
 trap 'rm -rf "$home"' EXIT
 status=0
-(cd "$home" && HOME="$home" env -u TUNA_LIBRARY -u XDG_CONFIG_HOME -u XDG_DATA_HOME -u XDG_CACHE_HOME \
+(cd "$home" && HOME="$home" env -u XDG_CONFIG_HOME -u XDG_DATA_HOME -u XDG_CACHE_HOME \
   "$tuna" --install < /dev/null 2> "$home/errors") || status=$?
 if [ "$status" -ne 0 ] || [ -s "$home/errors" ]; then
   cat "$home/errors" >&2

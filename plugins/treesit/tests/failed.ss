@@ -17,7 +17,7 @@
 (define (scroll! top) (views-test/page:report! desktop v top 0 #t))
 
 (define (reported thunk)
-  (map (lambda (c) (list (condition-who c) (condition-message c))) (buffers-test:reports-during thunk)))
+  (map (lambda (c) (list (condition-who c) (condition-message c))) (test-runner:reports-during thunk)))
 
 (test "a buffer whose input raises is reported once, and a scroll starts no failed job again"
   (tables:set! treesit:grammars "python" "python")

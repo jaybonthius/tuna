@@ -90,4 +90,4 @@
 
 (define (reported keys)
   (map (lambda (c) (if (message-condition? c) (condition-message c) c))
-       (isearch-test:reports-during (lambda () (test-user:press! keys)))))
+       (test-runner:reports-during (lambda () (test-user:press! keys)))))

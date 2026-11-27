@@ -1,2 +1,3 @@
 /build/
 /plugins/*/build/
+/src/tuna/version.txt

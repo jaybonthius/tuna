@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (web) (hooks) (tables) (timers) (web-test http) (web-test tasks) (web-test handlers))
+(import (tuna) (test) (test-runner) (web) (hooks) (tables) (timers) (web-test http) (web-test handlers))
 
 (web-test/http:use-url! (lambda () (web:url)))
 (test-runner:wait-until (lambda () (web:url)))
@@ -19,7 +19,7 @@
 
 (test "an item waits for every earlier item of its client"
   (check-equal? 204 (web-test/http:send-numbered! p 7 '(("type" . "note") ("n" . 7))))
-  (web-test/tasks:settle)
+  (test-runner:wait-for-batch)
   (check-equal? '() (taken!))
   (check-equal? 204 (web-test/http:send-numbered! p 6 '(("type" . "note") ("n" . 6))))
   (check-equal? '(6 7) (taken!)))
@@ -30,7 +30,7 @@
          '("not json" "[1, 2]" "{\"client\": \"nobody\", \"seq\": 1}" "{\"seq\": 1}")))
   (check-equal? 204 (web-test/http:send-numbered! p 0 '(("type" . "note") ("n" . 0))))
   (check-equal? 204 (web-test/http:send-numbered! p 8.0 '(("type" . "note") ("n" . 8.0))))
-  (web-test/tasks:settle)
+  (test-runner:wait-for-batch)
   (check-equal? '() (taken!)))
 
 (test "a handler gets the client and the item, its client's id and number included"
@@ -48,20 +48,22 @@
   (check-equal? (module-owner '(web-test handlers)) (web-test/handlers:owner)))
 
 (test "a handler that raises is reported as its module's, and the next item runs"
-  (let ([reported (web-test/tasks:reports-during
+  (let ([reported (test-runner:reports-during
                     (lambda ()
                       (check-equal? '(204 204)
-                        (web-test/http:send-all! p '((("type" . "module-fail")) (("type" . "note") ("n" . "next")))))))])
+                        (web-test/http:send-all! p '((("type" . "module-fail")) (("type" . "note") ("n" . "next")))))
+                      (test-runner:wait-for-batch)))])
     (check-equal? 1 (length reported))
     (check-equal? '(car "~s is not a pair") (list (condition-who (car reported)) (condition-message (car reported)))))
   (check-equal? '("next") (taken!)))
 
 (test "an item whose type has no handler is skipped, with one report per type"
-  (let ([reported (web-test/tasks:reports-during
+  (let ([reported (test-runner:reports-during
                     (lambda ()
                       (check-equal? '(204 204 204 204)
                         (web-test/http:send-all! p
-                          '((("type" . "nothing")) (("type" . "nothing")) (("n" . 1)) (("type" . "note") ("n" . "after")))))))])
+                          '((("type" . "nothing")) (("type" . "nothing")) (("n" . 1)) (("type" . "note") ("n" . "after")))))
+                      (test-runner:wait-for-batch)))])
     (check-equal? '((web:input-handlers "no handler for items of type \"nothing\"") (web:input-handlers "no handler for items of type #f"))
                   (map (lambda (c) (list (condition-who c) (condition-message c))) reported))
     (check (for-all warning? reported)))
@@ -86,8 +88,8 @@
 
 (test "an item whose quit is true cancels the command running when it arrives, then runs in its turn"
   (tables:set! web:input-handlers "spin" (lambda (client item) (set! spinning #t) (let loop () (loop))))
-  (let ([reported (web-test/tasks:reports-during
-                    (lambda () (check-equal? '(204 204) (send-while-spinning! "spin" (list quit-item)))))])
+  (let ([reported (test-runner:reports-during
+                    (lambda () (check-equal? '(204 204) (send-while-spinning! "spin" (list quit-item))) (test-runner:wait-for-batch)))])
     (check-equal? '(#t) (map cancelled? reported))
     (check-equal? '(quit) (map cancelled-reason reported)))
   (check-equal? '(quit-ran) (taken!)))
@@ -99,11 +101,11 @@
         (set! spun (current-task))
         (call-with-cancellation-masked (lambda (restore) (set! spinning #t) (let loop () (loop))))))
     (check-equal? '(204 204 204) (send-while-spinning! "masked-spin" (list quit-item quit-item)))
-    (web-test/tasks:settle)
+    (test-runner:wait-for-batch)
     (check-equal? 'stopped (let-values ([(how detail) (join-task spun)]) how))
     (check-equal? '(quit-ran quit-ran) (taken!))
     (check-equal? 204 (web-test/http:send! p quit-item))
-    (web-test/tasks:settle)
+    (test-runner:wait-for-batch)
     (check-equal? '(quit-ran) (taken!))))
 
 (test "a quit item seen before, as when a page resends one whose post failed, quits nothing"
@@ -116,7 +118,7 @@
     (check-equal? 204 (web-test/http:send! resender quit-item))
     (check-equal? '(204 204)
       (web-test/http:send-numbered-all! resender (list (cons 2 '(("type" . "spin-briefly"))) (cons 1 quit-item))))
-    (web-test/tasks:settle)
+    (test-runner:wait-for-batch)
     (check-equal? '(quit-ran spun) (taken!))))
 
 (define answer #f)
@@ -127,7 +129,7 @@
   (check-equal? '("typed") (taken!))
   (check (real? (timers:idle-seconds)))
   (answer (lambda () "answered"))
-  (web-test/tasks:settle)
+  (test-runner:wait-for-batch)
   (check-equal? '("answered") (taken!)))
 
 (test "while an item runs, web:current-client is its client, also after the item pauses, and #f outside an item"
@@ -139,7 +141,7 @@
   (web-test/http:send! p '(("type" . "whose")))
   (check-equal? '(#t) (taken!))
   (answer void)
-  (web-test/tasks:settle)
+  (test-runner:wait-for-batch)
   (check-equal? '(#t #t) (taken!))
   (check-equal? #f (web:current-client))
   (check-raises (lambda (e) (and (who-condition? e) (eq? 'web:current-client (condition-who e)))) (web:current-client 'nobody)))
@@ -158,9 +160,9 @@
     (let ([client (find (lambda (c) (not (memq c removed))) (reverse (web:clients)))])
       (check-equal? 10000 (web-test/http:send-range! q 2 10001 '(("type" . "note"))))
       (check-equal? '((script "location.reload()") closed) (web-test/http:take q 2))
-      (web-test/tasks:settle)
+      (test-runner:wait-for-batch)
       (check-equal? (list client) removed))
     (check-equal? 204 (web-test/http:send-numbered! q 1 '(("type" . "note") ("n" . 1))))
-    (web-test/tasks:settle)
+    (test-runner:wait-for-batch)
     (check-equal? '() (taken!))
     (hooks:remove! web:client-removed note-removed)))

@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (buffers) (document) (views) (layout) (undo) (markdown) (buffers-test) (markdown-test chat))
+(import (tuna) (test) (test-runner) (test-user) (buffers) (document) (views) (layout) (undo) (markdown) (buffers-test) (markdown-test chat))
 
 (define (view) (layout:selected-view))
 
@@ -31,5 +31,5 @@
   (check-equal? '(#f 1) (list (buffers:modified? chat) (length (cddr (undo:history chat)))))
   (views:set-point! (view) 5)
   (check-equal? '((buffers:replace! "a read-only span refuses the edit"))
-                (map (lambda (c) (list (condition-who c) (condition-message c))) (buffers-test:reports-during (lambda () (test-user:press! "x")))))
+                (map (lambda (c) (list (condition-who c) (condition-message c))) (test-runner:reports-during (lambda () (test-user:press! "x")))))
   (check-equal? "Steps:\none and two\n" (document:text (buffers:document chat))))

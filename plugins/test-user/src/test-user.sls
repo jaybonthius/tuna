@@ -1,9 +1,9 @@
 #!tuna
-(import (web) (keys) (layout) (views) (buffers) (document) (haml))
+(import (web) (keys) (layout) (views) (buffers) (document) (haml) (test-runner))
 
 (define-record-type %page
   (sealed #t)
-  (fields (mutable screen) (mutable sxml) (mutable title) (mutable calls) (mutable reports) answer))
+  (fields (mutable screen) (mutable sxml) (mutable title) (mutable calls) (mutable reports) answer (mutable held)))
 
 (define %pages (make-weak-eq-hashtable))
 
@@ -15,7 +15,7 @@
     [(answer)
      (unless (procedure? answer)
        (assertion-violation 'test-user:open-client "not a procedure" answer))
-     (let* ([page (make-%page #f #f #f '() 0 answer)]
+     (let* ([page (make-%page #f #f #f '() 0 answer #f)]
             [client (web:open-client
                       (lambda (client screen title)
                         (%page-screen-set! page screen)
@@ -36,21 +36,15 @@
   (or (hashtable-ref %pages client #f)
       (assertion-violation who "not a client test-user opened" client)))
 
-;; A task spawned now runs after the tasks queued before it, and the
-;; resume it queues while this task is paused runs only once their batch
-;; has ended, so the screens are drawn by then.
-(define (%wait-for-batch)
-  (suspend (lambda (resume) (spawn-task (lambda (restore) (resume void))))))
-
-;; A task the batch woke, such as a command that a key's read or a
-;; prompt's answer resumed, continues only in the next batch, and no
-;; kernel name tells whether one was woken, so a second wait always
-;; follows. A page answers in a draw, so a command that asked it more
-;; than once continues later still.
+;; A batch draws its screens as it ends. A task the batch woke, such as
+;; a command that a key's read or a prompt's answer resumed, continues
+;; only in the next batch, and no kernel name tells whether one was woken,
+;; so a second wait always follows. A page answers in a draw, so a
+;; command that asked it more than once continues later still.
 (define (settle)
   (set! %answered? #f)
-  (%wait-for-batch)
-  (%wait-for-batch)
+  (test-runner:wait-for-batch)
+  (test-runner:wait-for-batch)
   (when %answered? (settle)))
 
 ;; Each key is posted once Tuna has handled the one before, as a user who
@@ -270,7 +264,9 @@
 (define (%text-place position) (list (cons "at" position) (cons "count" 0)))
 
 ;; An element is pressed off any text of its own, where the page names
-;; the tokens of the innermost element standing for them.
+;; the tokens of the innermost element standing for them. Off any tokens
+;; and text, the page places the pointer in the line above it, which only
+;; geometry tells, or sends no place when the view draws no line.
 (define (%element-press who client element)
   (let ([chain (%ancestry (%sxml who client) element)])
     (unless chain
@@ -278,13 +274,19 @@
     (let ([own (%out-to-view chain)])
       (unless own
         (assertion-violation who "an element in no view" element))
-      (let ([token (find (lambda (e)
+      (let ([view-element (car (last-pair own))]
+            [token (find (lambda (e)
                            (and (%attribute e "data-to") (not (%attribute e "data-view"))
                                 (not (member "segment" (%words (or (%attribute e "class") ""))))))
                          own)])
-        (unless token
-          (assertion-violation who "an element that stands for no tokens" element))
-        (values (car (last-pair own)) (list (cons "token" (%number token "data-at"))) (%keymaps own))))))
+        (cond
+          [token (values view-element (list (cons "token" (%number token "data-at"))) (%keymaps own))]
+          [(and (not (exists (lambda (e) (or (%attribute e "data-at") (%attribute e "data-line"))) own))
+                (null? (%own-elements view-element
+                         (lambda (e)
+                           (and (%attribute e "data-line") (member "line" (%words (or (%attribute e "class") ""))))))))
+           (values view-element '() (%keymaps own))]
+          [else (assertion-violation who "an element that stands for no tokens" element)])))))
 
 (define (%modifier-names event)
   (list->vector
@@ -302,7 +304,12 @@
 (define (%button-fields who key action)
   (let ([event (and (string? key) (if (eq? action 'drag) (list key #t #t) (list key #t)))])
     (unless (and event (keys:event? event) (memq action (keys:event-modifiers event)))
-      (assertion-violation who (if (eq? action 'drag) "not a mouse drag key" "not a mouse click key") key))
+      (assertion-violation who
+        (case action
+          [(drag) "not a mouse drag key"]
+          [(down) "not a mouse press key"]
+          [else "not a mouse click key"])
+        key))
     (let* ([type (symbol->string (keys:event-basic-type event))]
            [fields (list (cons "button" (string->number (substring type 6 (string-length type))))
                          (cons "clicks" (keys:event-clicks event))
@@ -322,10 +329,55 @@
                 (cons "showing" (%number view-element "data-showing")))
           place fields))
 
-(define (%post-click! client view-element place fields)
-  (web:post-input! client (%mouse-item view-element "down" place fields))
-  (web:post-input! client (%mouse-item view-element "click" place fields))
-  (settle))
+;; A page keeps a press until its release: the view, whose element each
+;; later item reads again from the newest screen, as the page reads the
+;; element's version when it sends; the button's fields and the keymaps
+;; under the press, which the release repeats; and whether the pointer
+;; moved, which makes the release a drag.
+(define-record-type %held
+  (sealed #t)
+  (fields view view-id button-fields keymaps (mutable moved?)))
+
+(define (%held-of who client)
+  (or (%page-held (%page-of who client))
+      (assertion-violation who "no button is held" client)))
+
+(define (%held-view-element who client held)
+  (let ([id (number->string (%held-view-id held))])
+    (or (find (lambda (e) (equal? id (%attribute e "data-view")))
+              (%elements-where (%sxml who client) (lambda (e) (%attribute e "data-view"))))
+        (assertion-violation who "the pressed view is not on the client's last screen" (%held-view-id held)))))
+
+(define (%post-press! who client view view-element place button-fields keymaps pointer)
+  (let ([page (%page-of who client)])
+    (when (%page-held page)
+      (assertion-violation who "a button is already held" client))
+    (%page-held-set! page (make-%held view (%number view-element "data-view") button-fields keymaps #f))
+    (web:post-input! client
+      (%mouse-item view-element "down" place (append (%press-fields button-fields keymaps) pointer)))))
+
+;; A move carries a report number, as the page's does, which the view's
+;; next screen gives back.
+(define (%post-move! who client place pointer)
+  (let* ([page (%page-of who client)] [held (%held-of who client)])
+    (%held-moved?-set! held #t)
+    (%page-reports-set! page (fx+ (%page-reports page) 1))
+    (web:post-input! client
+      (%mouse-item (%held-view-element who client held) "move" place
+                   (append (list (cons "modifiers" (vector)) (cons "report" (%page-reports page))) pointer)))))
+
+(define (%post-release! who client place pointer)
+  (let* ([page (%page-of who client)] [held (%held-of who client)] [view-element (%held-view-element who client held)])
+    (%page-held-set! page #f)
+    (web:post-input! client
+      (%mouse-item view-element (if (%held-moved? held) "drag" "click") place
+                   (append (%press-fields (%held-button-fields held) (%held-keymaps held)) pointer)))))
+
+(define (%held-text-ancestry who client position)
+  (let ([view (%held-view (%held-of who client))])
+    (unless view
+      (assertion-violation who "the held press is on no view's text" client))
+    (%text-ancestry who client view position)))
 
 (define click!
   (case-lambda
@@ -333,8 +385,10 @@
     [(view position key) (click! %first view position key)]
     [(client view position key)
      (let ([ancestry (%text-ancestry 'test-user:click! client view position)])
-       (%post-click! client (car (last-pair ancestry)) (%text-place position)
-                     (%press-fields (%button-fields 'test-user:click! key 'click) (%keymaps ancestry))))]))
+       (%post-press! 'test-user:click! client view (car (last-pair ancestry)) (%text-place position)
+                     (%button-fields 'test-user:click! key 'click) (%keymaps ancestry) '())
+       (%post-release! 'test-user:click! client (%text-place position) '())
+       (settle))]))
 
 (define click-element!
   (case-lambda
@@ -342,28 +396,50 @@
     [(element key) (click-element! %first element key)]
     [(client element key)
      (let-values ([(view-element place keymaps) (%element-press 'test-user:click-element! client element)])
-       (%post-click! client view-element place
-                     (%press-fields (%button-fields 'test-user:click-element! key 'click) keymaps)))]))
+       (%post-press! 'test-user:click-element! client #f view-element place
+                     (%button-fields 'test-user:click-element! key 'click) keymaps '())
+       (%post-release! 'test-user:click-element! client place '())
+       (settle))]))
 
-;; A move carries a report number, as the page's does, which the view's
-;; next screen gives back.
 (define drag!
   (case-lambda
     [(view from to) (drag! %first view from to "<drag-mouse-1>")]
     [(view from to key) (drag! %first view from to key)]
     [(client view from to key)
-     (let* ([ancestry (%text-ancestry 'test-user:drag! client view from)]
-            [view-element (car (last-pair ancestry))]
-            [fields (%press-fields (%button-fields 'test-user:drag! key 'drag) (%keymaps ancestry))]
-            [page (%page-of 'test-user:drag! client)])
+     (let ([ancestry (%text-ancestry 'test-user:drag! client view from)]
+           [fields (%button-fields 'test-user:drag! key 'drag)])
        (%text-ancestry 'test-user:drag! client view to)
-       (%page-reports-set! page (fx+ (%page-reports page) 1))
-       (web:post-input! client (%mouse-item view-element "down" (%text-place from) fields))
-       (web:post-input! client
-         (%mouse-item view-element "move" (%text-place to)
-                      (list (cons "modifiers" (vector)) (cons "report" (%page-reports page)))))
-       (web:post-input! client (%mouse-item view-element "drag" (%text-place to) fields))
+       (%post-press! 'test-user:drag! client view (car (last-pair ancestry)) (%text-place from) fields (%keymaps ancestry) '())
+       (%post-move! 'test-user:drag! client (%text-place to) '())
+       (%post-release! 'test-user:drag! client (%text-place to) '())
        (settle))]))
+
+(define press-button!
+  (case-lambda
+    [(view position) (press-button! %first view position "<down-mouse-1>")]
+    [(view position key) (press-button! %first view position key)]
+    [(client view position key)
+     (let ([ancestry (%text-ancestry 'test-user:press-button! client view position)])
+       (%post-press! 'test-user:press-button! client view (car (last-pair ancestry)) (%text-place position)
+                     (%button-fields 'test-user:press-button! key 'down) (%keymaps ancestry) '())
+       (settle))]))
+
+(define move-pointer!
+  (case-lambda
+    [(position) (move-pointer! %first position)]
+    [(client position)
+     (%held-text-ancestry 'test-user:move-pointer! client position)
+     (%post-move! 'test-user:move-pointer! client (%text-place position) '())
+     (settle)]))
+
+;; A page sends no place for a release outside the pressed view.
+(define release-button!
+  (case-lambda
+    [(position) (release-button! %first position)]
+    [(client position)
+     (when position (%held-text-ancestry 'test-user:release-button! client position))
+     (%post-release! 'test-user:release-button! client (if position (%text-place position) '()) '())
+     (settle)]))
 
 (define (%check-cell who column row)
   (unless (and (fixnum? column) (fx>= column 0) (fixnum? row) (fx>= row 0))
@@ -382,9 +458,10 @@
     [(client element column row key)
      (%check-cell 'test-user:click-cell! column row)
      (let-values ([(view-element place keymaps) (%element-press 'test-user:click-cell! client element)])
-       (%post-click! client view-element place
-                     (append (%press-fields (%button-fields 'test-user:click-cell! key 'click) keymaps)
-                             (%cell-fields column row))))]))
+       (%post-press! 'test-user:click-cell! client #f view-element place
+                     (%button-fields 'test-user:click-cell! key 'click) keymaps (%cell-fields column row))
+       (%post-release! 'test-user:click-cell! client place (%cell-fields column row))
+       (settle))]))
 
 (define drag-cells!
   (case-lambda
@@ -396,16 +473,11 @@
      (%check-cell 'test-user:drag-cells! from-column from-row)
      (%check-cell 'test-user:drag-cells! to-column to-row)
      (let-values ([(view-element place keymaps) (%element-press 'test-user:drag-cells! client element)])
-       (let ([fields (%press-fields (%button-fields 'test-user:drag-cells! key 'drag) keymaps)]
-             [page (%page-of 'test-user:drag-cells! client)])
-         (%page-reports-set! page (fx+ (%page-reports page) 1))
-         (web:post-input! client (%mouse-item view-element "down" place (append fields (%cell-fields from-column from-row))))
-         (web:post-input! client
-           (%mouse-item view-element "move" place
-                        (append (list (cons "modifiers" (vector)) (cons "report" (%page-reports page)))
-                                (%cell-fields to-column to-row))))
-         (web:post-input! client (%mouse-item view-element "drag" place (append fields (%cell-fields to-column to-row))))
-         (settle)))]))
+       (%post-press! 'test-user:drag-cells! client #f view-element place
+                     (%button-fields 'test-user:drag-cells! key 'drag) keymaps (%cell-fields from-column from-row))
+       (%post-move! 'test-user:drag-cells! client place (%cell-fields to-column to-row))
+       (%post-release! 'test-user:drag-cells! client place (%cell-fields to-column to-row))
+       (settle))]))
 
 (define (%wheel-fields who key)
   (let ([event (and (string? key) (list key #t))])

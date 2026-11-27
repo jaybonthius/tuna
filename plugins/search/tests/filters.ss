@@ -1,4 +1,4 @@
-(import (tuna) (test) (tables) (search) (search-test))
+(import (tuna) (test) (test-runner) (tables) (search) (search-test))
 
 (define b (search-test:text-buffer "f" "aaaa one two one two\n"))
 
@@ -42,9 +42,9 @@
   (let* ([broken (lambda (buffer start end) (error 'broken "no answer"))]
          [q (search:query-with-filter one broken)]
          [found #f]
-         [reports (search-test:reports-during (lambda () (set! found (search-test:all-in b q))))])
+         [reports (test-runner:reports-during (lambda () (set! found (search-test:all-in b q))))])
     (check-equal? '((6 9 "one") (14 17 "one")) found)
     (check-equal? '("no answer" "no answer") (map condition-message reports))
-    (let* ([s #f] [reports (search-test:reports-during (lambda () (set! s (search-test:scanned b q))))])
+    (let* ([s #f] [reports (test-runner:reports-during (lambda () (set! s (search-test:scanned b q))))])
       (check-equal? '((6 9 "one") (14 17 "one")) (search-test:scan-spans b s))
       (check-equal? '("no answer") (map condition-message reports)))))

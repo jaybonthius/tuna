@@ -1,4 +1,4 @@
-(import (tuna) (test) (plugins) (fixtures) (remotes))
+(import (tuna) (test) (test-runner) (plugins) (fixtures) (remotes))
 
 (define stubs
   '((auto-mode ((auto-mode) (import (tables)) (tables:define-table file-names)))
@@ -55,7 +55,7 @@
 (fixtures:write-lib-module! '(gui-presentation) '((import (fill) (options)) (define (start!) (options:set! fill:column 100) 'presenting)))
 
 (define reports
-  (fixtures:reports-during
+  (test-runner:reports-during
     (lambda ()
       (fixtures:load-configuration!
         `((import (hooks) (options) (tables) (saved))

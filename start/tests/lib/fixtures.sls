@@ -45,14 +45,6 @@
   (write-configuration! forms)
   (plugins:load-configuration!))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (guard (c [#t (advice-remove! report keep) (raise c)])
-      (thunk))
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (define (reported-position c)
   (let ([form (cond
                 [(source-condition? c) (source-condition-form c)]

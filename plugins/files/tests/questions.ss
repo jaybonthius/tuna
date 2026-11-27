@@ -1,4 +1,4 @@
-(import (tuna) (test) (hooks) (options) (ask) (commands) (keys) (tables) (buffers) (files) (files-test))
+(import (tuna) (test) (test-runner) (hooks) (options) (ask) (commands) (keys) (tables) (buffers) (files) (files-test))
 
 (options:set! files:require-final-newline #t)
 
@@ -10,15 +10,8 @@
 (define (raised-by who) (lambda (c) (and (error? c) (eq? who (condition-who c)))))
 
 ;; A command run reports what it raises.
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (define (check-reported who? thunk)
-  (let ([reports (reports-during thunk)])
+  (let ([reports (test-runner:reports-during thunk)])
     (check-equal? '(#t) (map who? reports))))
 
 (define (readers! file-name y-or-n)

@@ -16,11 +16,7 @@
 (define (texts selector) (test-browser:call (lambda () (map element-text (page-query page selector)))))
 
 (define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (map (lambda (c) (if (cancelled? c) (list 'cancelled (cancelled-reason c)) (condition-message c))) (reverse reported))))
+  (map (lambda (c) (if (cancelled? c) (list 'cancelled (cancelled-reason c)) (condition-message c))) (test-runner:reports-during thunk)))
 
 (test "a page opened is a client of web, and has applied its first screen when open returns"
   (let* ([before (web:clients)] [other (test-browser:open)] [added (remp (lambda (c) (memq c before)) (web:clients))])

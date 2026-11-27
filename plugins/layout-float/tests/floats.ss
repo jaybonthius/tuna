@@ -1,4 +1,4 @@
-(import (tuna) (test) (layout) (layout-split) (layout-float) (views) (buffers) (document) (commands) (tables) (undo)
+(import (tuna) (test) (test-runner) (layout) (layout-split) (layout-float) (views) (buffers) (document) (commands) (tables) (undo)
         (keys) (web) (test-user) (layout-float-test popper) (layout-float-test asker))
 
 (define (raised-with who message)
@@ -47,11 +47,7 @@
 (define (press! keys) (test-user:press! desktop keys))
 
 (define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (map (lambda (c) (list (condition-who c) (condition-message c))) reported)))
+  (map (lambda (c) (list (condition-who c) (condition-message c))) (reverse (test-runner:reports-during thunk))))
 
 (define (described floats)
   (map (lambda (f) (list (test-user:element-attribute f "class") (test-user:element-attribute f "style"))) floats))

@@ -171,6 +171,9 @@
     (docs-at-point:ask-sources (view))
     (test-runner:wait-until (lambda () quit?))
     (release!)
+    ;; The released entry runs in a later batch; an ask before then quits
+    ;; it, and that quit is reported.
+    (test-user:settle)
     (hooks:remove! docs-at-point:sources noting-quit)
     (displayed)))
 
@@ -179,12 +182,9 @@
   (define (odd v) 5)
   (hooks:add! docs-at-point:sources broken -2)
   (hooks:add! docs-at-point:sources odd -1)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (docs-at-point:ask-sources (view))
-    (wait-for-display)
-    (test-runner:wait-until (lambda () (= 2 (length reported))))
-    (advice-remove! report keep)
+  (let ([reported (test-runner:reports-during
+                    (lambda () (docs-at-point:ask-sources (view)) (wait-for-display))
+                    2)])
     (check-equal? '(car docs-at-point:sources) (list-sort (lambda (a b) (string<? (symbol->string a) (symbol->string b)))
                                                           (map condition-who reported))))
   (check-equal? (list (list (view) '("fast") #t)) (displayed))

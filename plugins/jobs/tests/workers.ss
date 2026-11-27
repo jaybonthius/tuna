@@ -73,7 +73,7 @@
 
 (test "a raise ends the job: it is reported, then on-end receives it"
   (let* ([ended #f]
-         [reported (jobs-test:reports-during 1 (lambda () (set! ended (jobs-test:finished fails 1))))])
+         [reported (test-runner:reports-during (lambda () (set! ended (jobs-test:finished fails 1))) 1)])
     (check-equal? 1 (length reported))
     (check-equal? '(before) (car ended))
     (check (eq? (car reported) (cadr ended)))
@@ -81,7 +81,7 @@
 
 (test "a warning is reported and the body goes on"
   (let* ([ended #f]
-         [reported (jobs-test:reports-during 1 (lambda () (set! ended (jobs-test:finished warns 1))))])
+         [reported (test-runner:reports-during (lambda () (set! ended (jobs-test:finished warns 1))) 1)])
     (check-equal? 1 (length reported))
     (check (warning? (car reported)))
     (check-equal? '((went-on) #f) ended)))
@@ -92,15 +92,16 @@
 
 (test "a raised value that looks like an ending is still a raise"
   (let* ([ended '()]
-         [reported (jobs-test:reports-during 2
+         [reported (test-runner:reports-during
                      (lambda ()
-                       (set! ended (list (jobs-test:finished raises #f) (jobs-test:finished raises 'stopped)))))])
+                       (set! ended (list (jobs-test:finished raises #f) (jobs-test:finished raises 'stopped))))
+                     2)])
     (check-equal? '(#f stopped) reported)
     (check-equal? '((() #f) (() stopped)) ended)))
 
 (test "a warning raised with raise cannot go on, so the job ends with the non-continuable violation that follows"
   (let* ([ended #f]
-         [reported (jobs-test:reports-during 2 (lambda () (set! ended (jobs-test:finished warns-raising 1))))])
+         [reported (test-runner:reports-during (lambda () (set! ended (jobs-test:finished warns-raising 1))) 2)])
     (check-equal? 2 (length reported))
     (check (warning? (car reported)))
     (check (non-continuable-violation? (cadr reported)))
@@ -111,7 +112,7 @@
 
 (test "emit takes only plain data"
   (let* ([ended #f]
-         [reported (jobs-test:reports-during 1 (lambda () (set! ended (jobs-test:finished leaks 1))))])
+         [reported (test-runner:reports-during (lambda () (set! ended (jobs-test:finished leaks 1))) 1)])
     (check-equal? '() (car ended))
     (check ((raised? 'emit "not plain data" (condition-irritants (car reported))) (car reported)))
     (check (procedure? (car (condition-irritants (car reported)))))))
@@ -138,7 +139,7 @@
   (check-raises (raised? 'jobs:send! "not a job" '(parsing)) (jobs:send! 'parsing 1))
   (check-raises (raised? 'jobs:stop! "not a job" (list match-names)) (jobs:stop! match-names))
   (let* ([ended #f]
-         [reported (jobs-test:reports-during 1 (lambda () (set! ended (jobs-test:finished waits-badly 0))))])
+         [reported (test-runner:reports-during (lambda () (set! ended (jobs-test:finished waits-badly 0))) 1)])
     (check-equal? '() (car ended))
     (check ((raised? 'receive "not a number of seconds" '(-1)) (cadr ended)))))
 

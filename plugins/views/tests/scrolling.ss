@@ -1,4 +1,4 @@
-(import (tuna) (test) (views) (buffers) (document) (options) (commands) (keys) (layout) (web) (test-user)
+(import (tuna) (test) (test-runner) (views) (buffers) (document) (options) (commands) (keys) (layout) (web) (test-user)
         (views-test page) (views-test text) (views-test md))
 
 (options:set! views:scroll-margin 2 views:wrap-lines #f)
@@ -368,11 +368,7 @@
     (views:set-buffer! v b)))
 
 (define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (map (lambda (c) (list (condition-who c) (condition-message c))) (reverse reported))))
+  (map (lambda (c) (list (condition-who c) (condition-message c))) (test-runner:reports-during thunk)))
 
 (test "M-v asks the page to scroll back, and C-v and M-v raise at the end and the start the page reports"
   (let ([asked '()])

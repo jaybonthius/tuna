@@ -1,4 +1,4 @@
-(import (tuna) (test) (hooks) (plugins) (commands)
+(import (tuna) (test) (test-runner) (hooks) (plugins) (commands)
         (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 
 (define (raised? who message)
@@ -13,13 +13,6 @@
 (define (take-events!) (let ([e (reverse events)]) (set! events '()) e))
 
 (define (run-values thunk) (call-with-values thunk list))
-
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
 
 (define (note-before c) (event! 'before c (commands:this-command) (commands:last-command)))
 
@@ -112,23 +105,23 @@
                 (take-events!)))
 
 (test "a raise in an outermost run, in its body or its interactive expressions, is reported; after-command runs, and run returns no values"
-  (let ([reported (reports-during (lambda () (check-equal? '() (run-values (lambda () (commands:run broken))))))])
+  (let ([reported (test-runner:reports-during (lambda () (check-equal? '() (run-values (lambda () (commands:run broken))))))])
     (check-equal? 1 (length reported))
     (check-equal? 'car (condition-who (car reported))))
   (check-equal? (list (list 'before broken broken outer) '(broken) (list 'after broken broken outer)) (take-events!))
-  (let ([reported (reports-during (lambda () (check-equal? '() (run-values (lambda () (commands:run broken-reading))))))])
+  (let ([reported (test-runner:reports-during (lambda () (check-equal? '() (run-values (lambda () (commands:run broken-reading))))))])
     (check-equal? 1 (length reported))
     (check (assertion-violation? (car reported))))
   (check-equal? (list (list 'before broken-reading broken-reading broken) (list 'after broken-reading broken-reading broken))
                 (take-events!))
-  (let ([reported (reports-during (lambda () (commands:run odd)))])
+  (let ([reported (test-runner:reports-during (lambda () (commands:run odd)))])
     (check-equal? '(oops) reported))
   (check-equal? (list (list 'before odd odd broken-reading) (list 'after odd odd broken-reading)) (take-events!)))
 
 (test "a raise in an inner run reaches the outer command, and the inner run ended when it left"
   (check-equal? "~s is not a pair" (commands:run catching))
   (check-equal? (list (list 'before catching catching odd) '(broken) (list 'after broken broken odd)) (take-events!))
-  (let ([reported (reports-during (lambda () (commands:run execute broken)))])
+  (let ([reported (test-runner:reports-during (lambda () (commands:run execute broken)))])
     (check-equal? 1 (length reported)))
   (check-equal? (list (list 'before execute execute broken) '(broken) (list 'after broken broken broken)) (take-events!)))
 
@@ -142,14 +135,14 @@
                             [spinning (cancel-task main)]
                             [(time>? (current-time 'time-monotonic) deadline) (cancel-task main 'missed)]
                             [else (chez:sleep (make-time 'time-duration 1000000 0)) (loop)])))))]
-         [reported (reports-during (lambda () (commands:run spin)))])
+         [reported (test-runner:reports-during (lambda () (commands:run spin)))])
     (check-equal? 1 (length reported))
     (check (cancelled? (car reported)))
     (check-equal? #f (cancelled-reason (car reported))))
   (check-equal? (list (list 'before spin spin broken) (list 'after spin spin broken)) (take-events!)))
 
 (test "a warning is reported and the command goes on"
-  (let ([reported (reports-during (lambda () (check-equal? 'done (commands:run careful))))])
+  (let ([reported (test-runner:reports-during (lambda () (check-equal? 'done (commands:run careful))))])
     (check-equal? 1 (length reported))
     (check (warning? (car reported))))
   (check-equal? (list (list 'before careful careful spin) (list 'after careful careful spin)) (take-events!)))
@@ -168,7 +161,7 @@
 
 (test "a raise from report is reported once more; one from that report is dropped; either way after-command runs once"
   (let* ([failing (lambda (next c) (if (eq? c 'oops) (raise 'report-failed) (next c)))]
-         [reported (reports-during
+         [reported (test-runner:reports-during
                      (lambda ()
                        (advice-add! report failing)
                        (check-equal? '() (run-values (lambda () (commands:run odd))))
@@ -222,7 +215,7 @@
 
 (test "a raise after the keep still keeps the last command"
   (check-equal? 2 (commands:run outer 1))
-  (check-equal? 1 (length (reports-during (lambda () (commands:run prefix-broken)))))
+  (check-equal? 1 (length (test-runner:reports-during (lambda () (commands:run prefix-broken)))))
   (check (eq? inner (commands:last-command)))
   (check-equal? (list (list 'before outer outer inner) '(reading-inner) (list 'inner inner inner) (list 'outer outer inner)
                       (list 'after inner inner inner) (list 'before prefix-broken prefix-broken inner)

@@ -17,7 +17,7 @@
   (test-user:type! text)
   (test-runner:wait-until (lambda () (let ([s (session)]) (and s (not (completion:session-busy? s)) (pair? (texts s))))))
   (let ([found (texts (session))])
-    (check (for-all cancelled? (shell-commands-test:reports-during (lambda () (test-user:press! "C-g")))))
+    (check (for-all cancelled? (test-runner:reports-during (lambda () (test-user:press! "C-g")))))
     found))
 
 (for-each shell-commands-test:folder! '("src" "src/x" "proj" "proj/sub"))

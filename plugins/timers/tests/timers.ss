@@ -26,13 +26,6 @@
     (join-task (fork-task (lambda (restore) (set! result (guard (c [#t (condition-message c)]) (thunk))))))
     result))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 ;; A due time is known only to lie between two clock readings, since the
 ;; thread can be descheduled between a reading and the call that sets the
 ;; time, so it is kept as the earliest and latest it can be. Runs are in
@@ -103,7 +96,7 @@
   (let ([ran #f])
     (check-equal? 1
       (length
-        (reports-during
+        (test-runner:reports-during
           (lambda ()
             (wait-for-done
               (lambda (done)
@@ -119,7 +112,7 @@
 
 (test "a task that sleeps can raise when it wakes, and a cancel reaches it while it sleeps"
   (let ([failing (spawn-task (lambda (restore) (timers:sleep 0.05) (error 'nap "woke badly")))])
-    (check-equal? 1 (length (reports-during (lambda () (check-raises error? (test-runner:join failing)))))))
+    (check-equal? 1 (length (test-runner:reports-during (lambda () (check-raises error? (test-runner:join failing)))))))
   (let ([waiting (spawn-task (lambda (restore) (timers:sleep 100)))])
     (test-runner:wait-until (lambda () (eq? (task-state waiting) 'paused)))
     (cancel-task waiting 'stop)

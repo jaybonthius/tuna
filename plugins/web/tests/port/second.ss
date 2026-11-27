@@ -1,8 +1,8 @@
-(import (tuna) (test) (web) (options) (web-test http) (web-test tasks))
+(import (tuna) (test) (test-runner) (web) (options) (web-test http))
 
 (define first-url (call-with-input-file (string-append (getenv "HOME") "/first-url") read))
 
-(web-test/tasks:settle)
+(test-runner:wait-for-batch)
 
 (test "the default port passes over a port another Tuna listens on"
   (check (string? (web:url)))
@@ -12,11 +12,11 @@
   (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
     (advice-add! report keep)
     (options:set! web:port (web-test/http:url-port first-url))
-    (web-test/tasks:settle)
+    (test-runner:wait-for-batch)
     (advice-remove! report keep)
     (check-equal? 1 (length reported))
     (check-equal? (list "127.0.0.1" (web-test/http:url-port first-url)) (list-head (condition-irritants (car reported)) 2))
     (check-equal? #f (web:url))
     (options:set! web:port #f)
-    (web-test/tasks:settle)
+    (test-runner:wait-for-batch)
     (check (string? (web:url)))))

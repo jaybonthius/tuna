@@ -56,15 +56,12 @@
   (check-equal? '("text.txt-1-needle one" "text.txt:2:hay") (search "hay -B1"))
   (quit!))
 
-(define (reports-during thunk) (completion-test/picking:reports-during thunk))
-
-
 (test "the first line rg writes to its standard error is reported"
   (visit! "src/text.txt")
   (test-user:press! "M-s r")
   (check-equal? '((grep:grep "rg: regex parse error:"))
                 (map (lambda (c) (list (condition-who c) (condition-message c)))
-                     (reports-during (lambda () (test-user:type! "needle(") (choices)))))
+                     (test-runner:reports-during (lambda () (test-user:type! "needle(") (choices)))))
   (quit!))
 
 (define (running name)
@@ -132,7 +129,7 @@
       (kill-ring:push! (list "other"))
       (test-user:press! "C-.")
       (check-equal? '(cancelled) (map (lambda (c) (if (cancelled? c) 'cancelled c))
-                                      (reports-during (lambda () (test-user:press! "w")))))
+                                      (test-runner:reports-during (lambda () (test-user:press! "w")))))
       (check-equal? "a.txt:2:two a" (kill-ring:text (kill-ring:current)))
       (test-user:press! "M-s r")
       (test-user:type! "any#b")
@@ -161,7 +158,7 @@
   (test-user:press! "M-s r")
   (let ([reported (lambda (typed)
                     (map (lambda (c) (list (condition-message c) (condition-irritants c)))
-                         (reports-during (lambda () (clear-input!) (test-user:type! typed) (choices)))))])
+                         (test-runner:reports-during (lambda () (clear-input!) (test-user:type! typed) (choices)))))])
     (check-equal? '(("cannot run no-such-rg: No such file or directory" ("no-such-rg" ("-e" "needle" "."))))
                   (reported "needle"))
     (check-equal? '(("cannot run no-such-rg: No such file or directory" ("no-such-rg" ("-e" "-1" "-F" "."))))

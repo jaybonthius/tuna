@@ -24,13 +24,8 @@
   (set! runs (cons b runs))
   (list (diagnostics-test/marks:warn b "beta" "checked")))
 
-(define (reports-during thunk done?)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (test-runner:wait-until (lambda () (done? reported)))
-    (advice-remove! report keep)
-    (map condition-message (reverse reported))))
+(define (reports-during thunk)
+  (map condition-message (test-runner:reports-during thunk 1)))
 
 (define folder (string-append (getenv "HOME") "/project"))
 
@@ -120,18 +115,18 @@
     (define (broken b) (set! calls (+ calls 1)) (error 'broken "no linter installed"))
     (let ([r (buffers:make "r" "alpha beta\n")])
       (buffers:with-buffer r (hooks:add-local! diagnostics:checkers broken))
-      (check-equal? '("no linter installed") (reports-during (lambda () (diagnostics-test/marks:mode! r #t)) pair?))
+      (check-equal? '("no linter installed") (reports-during (lambda () (diagnostics-test/marks:mode! r #t))))
       (check (diagnostics:check-failed? r))
       (buffers:insert! r 1 "x")
       (views:set-buffer! (layout:selected-view) r)
       (test-user:press! "C-c c")
       (past-delay)
       (check-equal? '(1 #t) (list calls (diagnostics:check-failed? r)))
-      (check-equal? '("no linter installed") (reports-during (lambda () (test-user:press! "C-u C-c c")) pair?))
+      (check-equal? '("no linter installed") (reports-during (lambda () (test-user:press! "C-u C-c c"))))
       (check-equal? '(2 #t) (list calls (diagnostics:check-failed? r)))))
   (let ([odd (buffers:make "odd" "alpha\n")])
     (buffers:with-buffer odd (hooks:add-local! diagnostics:checkers (lambda (b) 'none)))
-    (reports-during (lambda () (diagnostics-test/marks:mode! odd #t)) pair?)
+    (reports-during (lambda () (diagnostics-test/marks:mode! odd #t)))
     (check (diagnostics:check-failed? odd))))
 
 (test "a checker a mode adds goes with the mode, and its findings with it"

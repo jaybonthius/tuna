@@ -55,13 +55,6 @@
   (let ([shown (test-user:elements (test-user:screen) "minibuffer-message")])
     (and (pair? shown) (test-user:element-text (car shown)))))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (define (buffer-text b)
   (let ([doc (buffers:document b)])
     (buffers:text-between doc 0 (document:length doc))))

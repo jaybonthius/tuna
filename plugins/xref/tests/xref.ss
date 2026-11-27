@@ -7,11 +7,7 @@
          (message-condition? c) (string=? message (condition-message c)))))
 
 (define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (map (lambda (c) (if (cancelled? c) 'cancelled (list (condition-who c) (condition-message c)))) (reverse reported))))
+  (map (lambda (c) (if (cancelled? c) 'cancelled (list (condition-who c) (condition-message c)))) (test-runner:reports-during thunk)))
 
 ;; A command may pause past test-user:settle, as when it visits a file,
 ;; so a test that needs it done waits for its end.

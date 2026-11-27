@@ -1,5 +1,5 @@
-(import (tuna) (test) (test-user) (web) (keys) (tables) (commands) (editing) (kill-ring)
-        (echo-area) (clipboard) (web-test tasks))
+(import (tuna) (test) (test-runner) (test-user) (web) (keys) (tables) (commands) (editing) (kill-ring)
+        (echo-area) (clipboard))
 
 (define laptop (test-user:client))
 
@@ -49,8 +49,8 @@
   (check-equal? "Copy failed: the browser refused the clipboard (NotAllowedError)" (echo-area:current-message)))
 
 (test "an item without its text is reported as no clipboard item"
-  (let ([reported (append (web-test/tasks:reports-during (lambda () (web:post-input! phone '(("type" . "paste")))))
-                          (web-test/tasks:reports-during (lambda () (web:post-input! phone '(("type" . "clipboard") ("outcome" . "refused"))))))])
+  (let ([reported (append (test-runner:reports-during (lambda () (web:post-input! phone '(("type" . "paste"))) (test-runner:wait-for-batch)))
+                          (test-runner:reports-during (lambda () (web:post-input! phone '(("type" . "clipboard") ("outcome" . "refused"))) (test-runner:wait-for-batch))))])
     (check-equal? '((clipboard "not a clipboard item") (clipboard "not a clipboard item"))
                   (map (lambda (c) (list (condition-who c) (condition-message c))) reported))))
 

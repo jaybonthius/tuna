@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (options) (ask) (buffers) (views) (keys) (commands) (editing)
+(import (tuna) (test) (test-runner) (test-user) (options) (ask) (buffers) (views) (keys) (commands) (editing)
         (buffers-test) (terminal) (terminal-test))
 
 (define told '())
@@ -10,7 +10,7 @@
 (define (bound-to-send-key? key) (eq? terminal:send-key (terminal-test:in-view (lambda () (keys:lookup client key)))))
 
 (define (reported thunk)
-  (map (lambda (c) (list (condition-who c) (condition-message c))) (buffers-test:reports-during thunk)))
+  (map (lambda (c) (list (condition-who c) (condition-message c))) (test-runner:reports-during thunk)))
 
 (define (as-input char n)
   (lambda () (terminal-test:in-view (lambda () (keys:run-as-input client editing:self-insert n char)))))
@@ -79,7 +79,7 @@
 (test "outside a terminal the commands raise"
   (terminal-test:show! (buffers:make "notes" "hi\n"))
   (check-equal? '("C-c C-t is undefined")
-                (map condition-message (buffers-test:reports-during (lambda () (test-user:press! "C-c C-t")))))
+                (map condition-message (test-runner:reports-during (lambda () (test-user:press! "C-c C-t")))))
   (check-equal? '((terminal:copy-mode "not a terminal"))
                 (reported (lambda () (terminal-test:in-view (lambda () (commands:run terminal:copy-mode)))))))
 

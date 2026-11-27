@@ -56,13 +56,6 @@
       '("down" "click"))
     (test-user:settle)))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (define (raised? who message)
   (lambda (c)
     (and (who-condition? c) (eq? who (condition-who c))

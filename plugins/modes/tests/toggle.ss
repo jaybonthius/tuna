@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (modes) (prog) (buffers) (document) (views) (layout) (layout-split) (keys) (commands) (hooks)
+(import (tuna) (test) (test-runner) (test-user) (modes) (prog) (buffers) (document) (views) (layout) (layout-split) (keys) (commands) (hooks)
         (options) (tables) (undo) (editing) (echo-area) (minibuffer) (completion) (command-picker) (help) (buffers-test)
         (completion-test sessions) (status-line) (status-line-test) (modes-test text) (modes-test fill) (modes-test code) (modes-test view) (modes-test probe))
 
@@ -27,7 +27,7 @@
 
 ;; The prompt's own quit ends the command by a cancel, which is reported.
 (define (quit!)
-  (check-equal? '(#t) (map cancelled? (completion-test/sessions:reports-during (lambda () (test-user:press! "C-g"))))))
+  (check-equal? '(#t) (map cancelled? (test-runner:reports-during (lambda () (test-user:press! "C-g"))))))
 
 (define (ask-minor! . prefix)
   (for-each test-user:press! prefix)

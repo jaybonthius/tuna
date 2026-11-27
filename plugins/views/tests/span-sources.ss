@@ -1,4 +1,4 @@
-(import (tuna) (test) (views) (buffers) (document) (options) (tables) (test-user)
+(import (tuna) (test) (test-runner) (views) (buffers) (document) (options) (tables) (test-user)
         (views-test page) (views-test text) (views-test md))
 
 (options:set! views:scroll-margin 2 views:wrap-lines #f)
@@ -60,24 +60,17 @@
     (check-equal? '("match") (map (lambda (f) (test-user:element-attribute f "data-face")) (test-user:elements e "above-region"))))
   (views:set-mark! v 13))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (test "a source that raises, or returns what is not a list of spans, is reported, and the view still draws"
   (let ([broken (lambda (view client start end) (error 'broken "no spans here"))]
         [malformed (lambda (view client start end) '((1 2)))]
         [e #f])
     (tables:set! views:span-sources broken 5)
-    (check-equal? '("no spans here") (map condition-message (reports-during (lambda () (set! e (drawn desktop v))))))
+    (check-equal? '("no spans here") (map condition-message (test-runner:reports-during (lambda () (set! e (drawn desktop v))))))
     (check-equal? '(("match" "beta") ("match.other" "beta")) (faced e))
     (tables:remove! views:span-sources broken)
     (tables:set! views:span-sources malformed 5)
     (check-equal? '("a source returned what is not a list of spans")
-                  (map condition-message (reports-during (lambda () (set! e (drawn desktop v))))))
+                  (map condition-message (test-runner:reports-during (lambda () (set! e (drawn desktop v))))))
     (check-equal? '(("match" "beta") ("match.other" "beta")) (faced e))
     (tables:remove! views:span-sources malformed)))
 

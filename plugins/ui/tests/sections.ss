@@ -230,11 +230,7 @@
           (ui-test:elements v "ui-section-heading"))))
 
 (define (click-chevron! . identity)
-  (let* ([p (apply heading-of identity)]
-         [chevron (car (test-user:elements (apply chevron-of identity) "ui-section-chevron"))]
-         [marks (cons "keymaps" (vector (ui-test:mark-number chevron)))])
-    (ui-test:mouse! v "down" (list (cons "token" p)) marks)
-    (ui-test:mouse! v "click" (list (cons "token" p)) marks)))
+  (test-user:click-element! (car (test-user:elements (apply chevron-of identity) "ui-section-chevron"))))
 
 (test "a click on a chevron toggles its section and moves point to its heading; section-moved follows any command that changes the section at point"
   (set! moved '())

@@ -1,4 +1,4 @@
-(import (tuna) (test) (views) (buffers) (document) (hooks) (options) (timers) (web) (test-user)
+(import (tuna) (test) (test-runner) (views) (buffers) (document) (hooks) (options) (timers) (web) (test-user)
         (views-test page) (views-test text))
 
 (options:set! views:scroll-margin 2 views:wrap-lines #f)
@@ -232,21 +232,14 @@
       (let ([t (told)])
         (check-equal? '(#f () ()) (list (views:buffer x) (views:drawn-ranges x) t))))))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (test "an entry that raises is reported and kept, and the others run"
   (let ([fails (lambda (view buffer) (car '()))])
     (hooks:add! views:drawn-ranges-changed fails -1)
-    (let ([reported (reports-during (lambda () (views:scroll-to! v (line-start v 20) (views:align top)) (told)))])
+    (let ([reported (test-runner:reports-during (lambda () (views:scroll-to! v (line-start v 20) (views:align top)) (told)))])
       (check-equal? '(car) (map condition-who reported)))
     (check-equal? '((1 120)) (ranges v))
     (let* ([seen #f]
-           [reported (reports-during (lambda () (views:scroll-to! v (line-start v 200) (views:align top)) (set! seen (told))))])
+           [reported (test-runner:reports-during (lambda () (views:scroll-to! v (line-start v 200) (views:align top)) (set! seen (told))))])
       (check-equal? '(car) (map condition-who reported))
       (check-equal? `(((100 300)) ((v ,long-name #t))) (list (ranges v) seen)))
     (hooks:remove! views:drawn-ranges-changed fails)))

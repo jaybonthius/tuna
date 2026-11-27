@@ -204,7 +204,7 @@
       (on-unload (lambda () (error 'second "failed")))
       (on-unload (lambda () (fixtures:note! 'third)))))
   (load-module! '(actor))
-  (check-equal? '(second) (map condition-who (fixtures:reports-during (lambda () (unload-owner! (module-owner '(actor)))))))
+  (check-equal? '(second) (map condition-who (test-runner:reports-during (lambda () (unload-owner! (module-owner '(actor)))))))
   (check-equal? '(third first) (fixtures:take-notes!)))
 
 (test "a module whose body raises on its first load is unloaded: the import raises, then its unload actions run and its changes are taken back"

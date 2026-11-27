@@ -1,12 +1,10 @@
-(import (tuna) (test))
+(import (tuna) (test) (test-runner))
 
 ;; A form of its own, so it loads before layout.
 (import (layout-test beneath))
 
 (import (test-user) (layout) (layout-split) (views) (buffers) (web) (haml) (options) (timers) (tables)
         (layout-test parts))
-
-(define reports-during layout-test/parts:reports-during)
 
 ;; Chez's own errors carry a format string, others a plain message.
 (define (describe c)
@@ -50,7 +48,7 @@
 
 (test "a draw that raises is reported once until a draw for that client succeeds, the client shows the condition, and the others are drawn"
   (let* ([fails (lambda (screen client) (if (eq? client desktop) (car '()) (screen client)))]
-         [reported (reports-during
+         [reported (test-runner:reports-during
                      (lambda ()
                        (with-screen-advice fails (lambda () (test-user:settle) (test-user:settle)))))])
     (check-equal? '(car) (map condition-who reported))
@@ -60,11 +58,11 @@
     (check-equal? #f (error-text phone))
     (test-user:settle)
     (check-equal? #f (error-text desktop))
-    (check-equal? 1 (length (reports-during (lambda () (with-screen-advice fails test-user:settle)))))
+    (check-equal? 1 (length (test-runner:reports-during (lambda () (with-screen-advice fails test-user:settle)))))
     (test-user:settle)))
 
 (test "a raise of what is no condition is shown and reported for each client it fails"
-  (let ([reported (reports-during (lambda () (with-screen-advice (lambda (screen client) (raise 'oops)) test-user:settle)))])
+  (let ([reported (test-runner:reports-during (lambda () (with-screen-advice (lambda (screen client) (raise 'oops)) test-user:settle)))])
     (check-equal? (map (lambda (c) 'oops) (web:clients)) reported)
     (check-equal? "Exception occurred with non-condition value oops" (error-text desktop)))
   (test-user:settle))
@@ -74,7 +72,7 @@
          [warns (lambda (screen client)
                   (when warn? (set! warn? #f) (warning 'draw "careful"))
                   (screen client))]
-         [reported (reports-during (lambda () (with-screen-advice warns test-user:settle)))])
+         [reported (test-runner:reports-during (lambda () (with-screen-advice warns test-user:settle)))])
     (check-equal? '("careful") (messages reported))
     (check (warning? (car reported)))
     (check-equal? #f (error-text desktop))
@@ -90,7 +88,7 @@
                (cancel-task (current-task))
                (let spin () (spin)))
              (let ([s (screen client)]) (set! events (cons client events)) s))]
-         [reported (reports-during
+         [reported (test-runner:reports-during
                      (lambda () (with-screen-advice quit-on-desktop (lambda () (test-user:settle) (test-user:settle)))))]
          [after (cdr (memq 'quit (reverse events)))])
     (check-equal? '() reported)
@@ -111,7 +109,7 @@
   (for-each
     (lambda (set-flag! reported?)
       (let ([drawn 0])
-        (let ([reported (reports-during
+        (let ([reported (test-runner:reports-during
                           (lambda ()
                             (with-screen-advice (lambda (screen client) (set! drawn (+ drawn 1)) (screen client))
                               (lambda () (set-flag!) (test-user:settle)))))])
@@ -147,7 +145,7 @@
 (test "a page title that raises or makes no string is reported once, and every page is titled Tuna and still drawn"
   (for-each
     (lambda (title expected)
-      (let ([reported (reports-during
+      (let ([reported (test-runner:reports-during
                         (lambda ()
                           (options:set! layout:page-title title)
                           (test-user:settle)

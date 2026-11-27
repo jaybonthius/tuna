@@ -1,4 +1,4 @@
-(import (tuna) (test) (plugins) (fixtures) (remotes))
+(import (tuna) (test) (test-runner) (plugins) (fixtures) (remotes))
 
 (define plugins-folder (fixtures:home-path ".local" "share" "tuna" "plugins"))
 
@@ -11,7 +11,7 @@
 (write-mine! '((define (text) "one")))
 
 (define first-reports
-  (fixtures:reports-during
+  (test-runner:reports-during
     (lambda ()
       (fixtures:load-configuration!
         `((import (tuna))
@@ -69,7 +69,7 @@
 (test "a plugin installed from another source than its line's, such as a copy put in place by hand, is installed from the line with a warning"
   (let ([commits (remotes:commits "spell")] [spell-folder (string-append plugins-folder "/spell")])
     (fixtures:write-file! (string-append spell-folder "/src/spell.sls") (fixtures:module-text '((define (dictionary-path) "a copy"))))
-    (let ([reports (fixtures:reports-during
+    (let ([reports (test-runner:reports-during
                      (lambda ()
                        (fixtures:load-configuration!
                          `((import (tuna) (options))
@@ -91,6 +91,6 @@
     (plugins:load-configuration!)
     (check-equal? (car commits) (plugins:commit 'spell))
     (check-equal? (list (format "replaced ~a/spell, installed from another source or commit than its line's" plugins-folder))
-      (map fixtures:message (fixtures:reports-during (lambda () (unload-owner! (module-owner '(spell)))))))
+      (map fixtures:message (test-runner:reports-during (lambda () (unload-owner! (module-owner '(spell)))))))
     (check-equal? (cadr commits) (plugins:commit 'spell))
     (check-equal? '("/home/groucho/words" "en-GB") (fixtures:at-repl '(list (spell:dictionary-path) (spell:language))))))

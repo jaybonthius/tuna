@@ -199,11 +199,7 @@
   (options:unset! completion-popup:auto-commands))
 
 (define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (map condition-message (reverse reported))))
+  (map condition-message (test-runner:reports-during thunk)))
 
 (test "a popup's moving keys are the starting client's: at another client showing it, M-n is undefined and the selection stays"
   (with-region greek

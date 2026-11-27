@@ -34,7 +34,7 @@
            [(cancelled? c) 'cancelled]
            [(and (format-condition? c) (irritants-condition? c)) (apply format (condition-message c) (condition-irritants c))]
            [else (condition-message c)]))
-       (completion-test/sessions:reports-during thunk)))
+       (test-runner:reports-during thunk)))
 
 ;; The prompt's own quit ends the command by a cancel, which is reported.
 (define (quit!) (check-equal? '(cancelled) (reports-of (lambda () (test-user:press! "C-g")))))

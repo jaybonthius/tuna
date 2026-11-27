@@ -262,7 +262,7 @@
     '("<f5>" "M-a" "C-ı"))
   (test-user:press! "C-q")
   (check-equal? '((editing:quoted-insert "<mouse-1> is not a character"))
-    (editing-test/scene:reports-during (lambda () (editing-test/scene:mouse! "click" 2))))
+    (editing-test/scene:reports-during (lambda () (test-user:click! (editing-test/scene:view) 1))))
   (check-equal? "a|b" (test-user:text)))
 
 (test "C-q's prefix argument is a count at each cursor, and C-q replaces an active region under delete-selection"

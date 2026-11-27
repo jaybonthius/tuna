@@ -1,4 +1,4 @@
-(import (tuna) (test) (buffers) (document) (buffers-test md) (buffers-test cards) (buffers-test))
+(import (tuna) (test) (test-runner) (buffers) (document) (buffers-test md) (buffers-test cards) (buffers-test))
 
 (buffers:define-layer responses (travels) (sticky after))
 
@@ -28,7 +28,7 @@
 (test "a text procedure that raises, or returns what is not a string, goes to report as the kind's module's, and its atom gives none"
   (let* ([odd (buffers-test:fresh (buffers-test/cards:rows '() (buffers-test/cards:broken '()) (buffers-test/cards:number '()) (buffers-test/cards:row '((label . "ok")))))]
          [texts #f]
-         [reported (buffers-test:reports-during
+         [reported (test-runner:reports-during
                      (lambda ()
                        (set! texts (buffers:atom-texts (buffers:document odd) 0 (whole (buffers:document odd))))))])
     (check-equal? '((1 . "") (2 . "") (3 . "ok\n")) texts)

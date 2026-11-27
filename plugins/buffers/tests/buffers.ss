@@ -1,4 +1,4 @@
-(import (tuna) (test) (hooks) (options) (scopes) (commands) (buffers) (document) (buffers-test md) (buffers-test))
+(import (tuna) (test) (test-runner) (hooks) (options) (scopes) (commands) (buffers) (document) (buffers-test md) (buffers-test))
 
 (options:define-option width 70 fixnum?)
 
@@ -137,7 +137,7 @@
   (let ([t (buffers:make "t" "old\n")])
     (buffers:with-buffer t
       (check-equal? '("nothing reverts this buffer")
-        (map condition-message (buffers-test:reports-during (lambda () (commands:run buffers:revert-buffer)))))
+        (map condition-message (test-runner:reports-during (lambda () (commands:run buffers:revert-buffer)))))
       (options:set-local! buffers:revert-function rebuild)
       (commands:run buffers:revert-buffer))
     (check-equal? "again\n" (document:text (buffers:document t)))

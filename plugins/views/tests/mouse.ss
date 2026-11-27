@@ -1,4 +1,4 @@
-(import (tuna) (test) (views) (buffers) (document) (options) (tables) (commands) (keys) (web) (test-user)
+(import (tuna) (test) (test-runner) (views) (buffers) (document) (options) (tables) (commands) (keys) (web) (test-user)
         (views-test page) (views-test md))
 
 (options:set! views:scroll-margin 2 views:wrap-lines #f)
@@ -42,11 +42,7 @@
   (test-user:settle))
 
 (define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (map condition-message (reverse reported))))
+  (map condition-message (test-runner:reports-during thunk)))
 
 (define stale '("Stale click: what was clicked is gone"))
 

@@ -1,4 +1,4 @@
-(import (tuna) (test) (modes) (prog) (buffers) (views) (layout) (keys) (commands) (hooks) (options) (tables) (test-user)
+(import (tuna) (test) (test-runner) (modes) (prog) (buffers) (views) (layout) (keys) (commands) (hooks) (options) (tables) (test-user)
         (buffers-test) (modes-test) (modes-test text) (modes-test fill) (modes-test code) (modes-test view))
 
 (define (view) (layout:selected-view))
@@ -170,7 +170,7 @@
     (check-equal? '(("modes:minor-modes" "not a real number") ("raising" "broken minor mode")
                     ("modes:minor-modes" "not a real number") ("raising" "broken minor mode"))
                   (map (lambda (c) (list (symbol->string (condition-who c)) (condition-message c)))
-                       (buffers-test:reports-during
+                       (test-runner:reports-during
                          (lambda ()
                            (set! on (modes:active-minor-modes (view)))
                            (set! keymaps (in-view (lambda () (modes:active-keymaps (test-user:client) #f))))))))

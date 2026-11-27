@@ -83,7 +83,7 @@
 (test "a quit between pieces stops a long find"
   (let* ([slow (text-buffer "slow" (make-string 20000000 #\x))]
          [finder (spawn-task (lambda (restore) (search:find slow (rx "\\b\\w+-\\w+\\b") 0 forward)))]
-         [reports (search-test:reports-during
+         [reports (test-runner:reports-during
                     (lambda ()
                       (fork-task
                         (lambda (restore)

@@ -59,7 +59,7 @@
       (check-equal? '("bye") (terminal-test:screen-lines d))
       (terminal-test:show! d)
       (check-equal? '("the program has ended")
-        (map condition-message (buffers-test:reports-during (lambda () (test-user:press! "x")))))
+        (map condition-message (test-runner:reports-during (lambda () (test-user:press! "x")))))
       (check-raises (buffers-test:raised-with? 'terminal:send! "the program has ended" (list d))
                     (terminal:send! d "x"))
       (buffers:kill! d))

@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (options) (tables) (commands) (keys) (buffers) (views) (layout) (ask) (diagnostics) (diagnostics-test marks))
+(import (tuna) (test) (test-runner) (test-user) (options) (tables) (commands) (keys) (buffers) (views) (layout) (ask) (diagnostics) (diagnostics-test marks))
 
 (define said '())
 
@@ -10,11 +10,7 @@
     s))
 
 (define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (map (lambda (c) (list (condition-who c) (condition-message c))) (reverse reported))))
+  (map (lambda (c) (list (condition-who c) (condition-message c))) (test-runner:reports-during thunk)))
 
 (test-user:show! "|alpha beta gamma\ndelta epsilon\n\nzeta eta\n")
 

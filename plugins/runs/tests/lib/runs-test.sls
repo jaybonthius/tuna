@@ -54,13 +54,6 @@
 
 (define (take-said!) (let ([said (reverse %said)]) (set! %said '()) said))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (define (raised thunk)
   (guard (c [(and (who-condition? c) (message-condition? c))
              (list (condition-who c) (condition-message c) (if (irritants-condition? c) (condition-irritants c) '()))])

@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (keys) (commands) (buffers) (views) (layout) (layout-split) (web) (editing) (minibuffer)
+(import (tuna) (test) (test-runner) (test-user) (keys) (commands) (buffers) (views) (layout) (layout-split) (web) (editing) (minibuffer)
         (completion-list) (buffer-picker) (file-picker) (command-picker) (completion-test picking)
         (file-picker-test tree))
 
@@ -73,7 +73,7 @@
   (check-equal? "[layout:other-view-prefix]" (description))
   (test-user:press! "C-x")
   (check-equal? (list "[layout:other-view-prefix]" "C-x") (list (description) (keys:pending (test-user:client))))
-  (check-equal? '("C-x C-g is undefined") (map condition-message (completion-test/picking:reports-during (lambda () (test-user:press! "C-g")))))
+  (check-equal? '("C-x C-g is undefined") (map condition-message (test-runner:reports-during (lambda () (test-user:press! "C-g")))))
   (test-user:press! "C-g")
   (check-equal? #f (description)))
 

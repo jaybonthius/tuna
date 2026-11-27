@@ -1,5 +1,5 @@
 #!tuna
-(import (tuna) (minibuffer) (commands) (keys) (buffers) (document) (test-user))
+(import (tuna) (test-runner) (minibuffer) (commands) (keys) (buffers) (document) (test-user))
 
 (define-record-type (%reading %make-reading reading?)
   (sealed #t)
@@ -55,15 +55,8 @@
 
 (define (echo-drawn?) (and (first-element "echo-area-message") #t))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (define (report-messages thunk)
-  (map (lambda (c) (if (message-condition? c) (condition-message c) c)) (reports-during thunk)))
+  (map (lambda (c) (if (message-condition? c) (condition-message c) c)) (test-runner:reports-during thunk)))
 
 (define (buffer-text b)
   (let ([doc (buffers:document b)])

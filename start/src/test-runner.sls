@@ -130,7 +130,7 @@
 (define (home-environment home)
   (unless (string? home) (assertion-violation 'test-runner:home-environment "not a string" home))
   `(("HOME" . ,home) ("TMPDIR" . ,(string-append home "/tmp")) ("GIT_CONFIG_NOSYSTEM" . "1")
-    ("XDG_CONFIG_HOME" . #f) ("XDG_DATA_HOME" . #f) ("XDG_CACHE_HOME" . #f) ("TUNA_LIBRARY" . #f)))
+    ("XDG_CONFIG_HOME" . #f) ("XDG_DATA_HOME" . #f) ("XDG_CACHE_HOME" . #f)))
 
 (define make-home!
   (case-lambda
@@ -267,6 +267,34 @@
                 (sleep (make-time 'time-duration 10000000 0))
                 (resume void)))))
         (loop)))))
+
+;; The advice is its caller's, a test file or a test module the file
+;; calls, which loads after every plugin, so it sits outside every
+;; plugin's advice on report: a plugin's advice never sees a report caught
+;; here. Threads report too, so the list is kept under a mutex. Not a
+;; dynamic-wind, whose after-thunk would run at each pause of the test's
+;; task. A warning is not caught, so the code that raised it goes on.
+(define reports-during
+  (case-lambda
+    [(thunk) (reports-during thunk 0)]
+    [(thunk count)
+     (unless (procedure? thunk) (assertion-violation 'test-runner:reports-during "not a procedure" thunk))
+     (unless (and (fixnum? count) (fx>= count 0)) (assertion-violation 'test-runner:reports-during "not a count" count))
+     (let* ([mutex (make-mutex)] [reported '()]
+            [keep (lambda (next c) (with-mutex mutex (set! reported (cons c reported))))]
+            [caught (lambda () (with-mutex mutex (reverse reported)))])
+       (advice-add! report keep)
+       (guard (c [(not (warning? c)) (advice-remove! report keep) (raise c)])
+         (thunk)
+         (wait-until (lambda () (>= (length (caught)) count))))
+       (advice-remove! report keep)
+       (caught))]))
+
+;; A task spawned now runs after the tasks queued before it, and the
+;; resume it queues while the caller is paused runs only once their batch
+;; has ended.
+(define (wait-for-batch)
+  (suspend (lambda (resume) (spawn-task (lambda (restore) (resume void))))))
 
 (define %main-thread (get-thread-id))
 (define %self (current-owner))

@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (web) (layout) (views) (buffers) (document) (keys) (commands) (editing) (ui) (ui-test))
+(import (tuna) (test) (test-runner) (test-user) (web) (layout) (views) (buffers) (document) (keys) (commands) (editing) (ui) (ui-test))
 
 (define view ui-test:view)
 
@@ -61,7 +61,7 @@
   (test-user:press! "RET")
   (ui-test:click-token! (view) 97)
   (check-equal? '((96 99) 96) (list chosen (selected)))
-  (ui-test:click-token! (view) 98 '("button" . 2))
+  (ui-test:click-token! (view) 98 "<mouse-2>")
   (check-equal? '((97 96 99) 97) (list chosen (selected)))
   (set! chosen (cdr chosen))
   (ui:select-row! (lst) (view) 96))
@@ -199,13 +199,11 @@
     (check (for-all (lambda (e) (null? (test-user:elements e "ui-list-heading"))) row-holders))
     (check-equal? 'li (car heading))))
 
-(test "a press and a release on a heading name the list's own node, so they choose nothing and leave point; a click on a row chooses it"
+(test "a click on a heading names the list's own node, so it chooses nothing and leaves point; a click on a row chooses it"
   (set! chosen '())
   (ui:select-row! (hl) (view) 5)
   (let ([p0 (views:point (view))])
-    (ui-test:mouse! (view) "down" (list (cons "token" (document:node-start (hl)))))
-    (check-equal? (list '() 5 #t) (list chosen (ui:selected-row (hl) (view)) (= p0 (views:point (view)))))
-    (ui-test:mouse! (view) "click" (list (cons "token" (document:node-start (hl)))))
+    (test-user:click-element! (car (ui-test:elements (view) "ui-list-heading")))
     (check-equal? (list '() 5 #t) (list chosen (ui:selected-row (hl) (view)) (= p0 (views:point (view))))))
   (ui-test:click-token! (view) 7)
   (check-equal? '((6) 6) (list chosen (ui:selected-row (hl) (view))))
@@ -228,7 +226,7 @@
   (ui:set-rows! h (hl) 2 number-row choose (lambda (n) 'x))
   (check-equal? '((ui:set-rows! "a heading procedure returned neither a string nor #f" (x)))
     (map (lambda (c) (list (condition-who c) (condition-message c) (condition-irritants c)))
-         (ui-test:reports-during (lambda () (ui-test:drawn (view))))))
+         (test-runner:reports-during (lambda () (ui-test:drawn (view))))))
   (check-equal? '() (rows-drawn (view))))
 
 (test "a list made with (click . select) leaves clicks to the keymaps around it: a click moves point to the row and chooses nothing"
@@ -259,13 +257,13 @@
     (set! chosen '())
     (ui-test:show! r)
     (ui:set-rows! r (document:token (buffers:document r) 0) 3 (labels (vector "a" "b" "c")) choose)
-    (let ([drawn (buffers:version r)])
-      (ui:set-rows! r (document:token (buffers:document r) 0) 3 (labels (vector "x" "y" "z")) choose)
-      (check-equal? '("Stale click: what was clicked is gone")
-        (ui-test:report-messages (lambda () (ui-test:mouse! (view) "click" '(("token" . 2)) (cons "version" drawn)))))
-      (check-equal? '() chosen))
+    (ui-test:drawn (view))
+    (ui:set-rows! r (document:token (buffers:document r) 0) 3 (labels (vector "x" "y" "z")) choose)
+    (check-equal? '("Stale click: what was clicked is gone")
+      (ui-test:report-messages (lambda () (test-user:click-element! (ui-test:innermost (ui-test:token-element 2))))))
+    (check-equal? '() chosen)
     (ui:set-rows! r (document:token (buffers:document r) 0) 3 number-row choose)
-    (let ([drawn (buffers:version r)])
-      (ui:add-rows! r (document:token (buffers:document r) 0) 17)
-      (ui-test:mouse! (view) "click" '(("token" . 3)) (cons "version" drawn))
-      (check-equal? '(2) chosen))))
+    (ui-test:drawn (view))
+    (ui:add-rows! r (document:token (buffers:document r) 0) 17)
+    (test-user:click-element! (ui-test:innermost (ui-test:token-element 3)))
+    (check-equal? '(2) chosen)))

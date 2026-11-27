@@ -1,4 +1,4 @@
-(import (tuna) (test) (views) (buffers) (document) (options) (test-user) (views-test page) (views-test md))
+(import (tuna) (test) (test-runner) (views) (buffers) (document) (options) (test-user) (views-test page) (views-test md))
 
 (options:set! views:scroll-margin 2 views:wrap-lines #f)
 
@@ -31,13 +31,6 @@
     (views:set-point! v (at doc to-line to-column))
     (views:set-mark! v (at doc from-line from-column))
     (pieces v)))
-
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
 
 (test "each line's piece of the region is a span of its own, and a line the region goes on past is eol, its newline shown"
   (check-equal? '(("region eol" "56789") ("region eol" "0123") ("region eol" "") ("region eol" "01234567")
@@ -165,7 +158,7 @@
     (views:set-mark! bv 3)
     (views:set-point! bv 8)
     (advice-add! views:region-ranges outside)
-    (let* ([drawn-pieces #f] [reported (reports-during (lambda () (set! drawn-pieces (pieces bv))))])
+    (let* ([drawn-pieces #f] [reported (test-runner:reports-during (lambda () (set! drawn-pieces (pieces bv))))])
       (advice-remove! views:region-ranges outside)
       (check-equal? '() drawn-pieces)
       (check-equal? 1 (length reported))

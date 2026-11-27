@@ -1,8 +1,8 @@
-(import (tuna) (test) (plugins) (fixtures) (remotes))
+(import (tuna) (test) (test-runner) (plugins) (fixtures) (remotes))
 
 (define adder-commits (remotes:commits "chez-adder"))
 (define libraries-folder (fixtures:home-path ".local" "share" "tuna" "libraries"))
-(define (warnings-during thunk) (map fixtures:message (fixtures:reports-during thunk)))
+(define (warnings-during thunk) (map fixtures:message (test-runner:reports-during thunk)))
 (define expected-library-line
   '(library "expected an id and clauses (git url) with (commit hex), (local folder), (library-directories root ...) or (build program argument ...)"))
 (define (raised-syntax form)
@@ -82,7 +82,7 @@
 (test "library lines go only at the top level, since they are read before anything runs"
   (check-equal? '((library "a library line goes at the top level of the configuration or the REPL"))
     (map (lambda (c) (list (condition-who c) (fixtures:message c)))
-         (fixtures:reports-during
+         (test-runner:reports-during
            (lambda ()
              (fixtures:at-repl `(use-plugin sum (git ,(remotes:url "sum"))
                                   (config (library chez-other (commit ,(fixtures:short (caddr adder-commits))))))))))))

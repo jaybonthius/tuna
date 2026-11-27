@@ -62,7 +62,7 @@
 (test "an edit group larger than the undo limit leaves a history with no saved state, so the edits are not kept"
   (let ([l (visited "l.txt" "limit\n")])
     (buffers:with-buffer l (options:set-local! undo:limit 100))
-    (let ([reports (undo-log-test/edits:reports-during (lambda () (buffers:replace! l 1 1 (make-string 200 #\x)) (test-user:settle)))])
+    (let ([reports (test-runner:reports-during (lambda () (buffers:replace! l 1 1 (make-string 200 #\x)) (test-user:settle)))])
       (check-equal? '(undo:limit) (map condition-who reports)))
     (check-equal? '(#t #f #f) (list (buffers:modified? l) (cadr (undo:history l)) (kept? l)))))
 

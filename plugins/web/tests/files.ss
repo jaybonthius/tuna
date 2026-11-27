@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (web) (haml) (tables) (timers) (web-test http) (web-test tasks))
+(import (tuna) (test) (test-runner) (web) (haml) (tables) (timers) (web-test http))
 
 (web-test/http:use-url! (lambda () (web:url)))
 (test-runner:wait-until (lambda () (web:url)))
@@ -34,7 +34,7 @@
                   (web-test/http:elements-named (cadddr event) 'link)))))
 
 (load-module! '(styler))
-(web-test/tasks:settle)
+(test-runner:wait-for-batch)
 
 (define p (web-test/http:page))
 (web-test/http:connect! p)
@@ -97,11 +97,12 @@
   (check-equal? "remove" (cadr (head-patch (next)))))
 
 (test "a file that cannot be read is left off the page, with a warning"
-  (let ([reported (web-test/tasks:reports-during
+  (let ([reported (test-runner:reports-during
                     (lambda ()
                       (tables:set! web:stylesheets 'missing "missing.css")
-                      (web-test/tasks:settle)
-                      (tables:set! web:stylesheets 'number 42)))])
+                      (test-runner:wait-for-batch)
+                      (tables:set! web:stylesheets 'number 42)
+                      (test-runner:wait-for-batch)))])
     (check-equal? (list (list 'web:stylesheets "cannot read the file" (list (home-file "missing.css")))
                         '(web:stylesheets "cannot read the file" (42)))
                   (map (lambda (c) (list (condition-who c) (condition-message c) (condition-irritants c))) reported))

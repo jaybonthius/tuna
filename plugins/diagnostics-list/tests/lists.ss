@@ -6,11 +6,7 @@
 (keys:bind! keys:global "C-c l b" diagnostics-list:show-buffer-diagnostics)
 
 (define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (map (lambda (c) (list (condition-who c) (condition-message c))) (reverse reported))))
+  (map (lambda (c) (list (condition-who c) (condition-message c))) (test-runner:reports-during thunk)))
 
 (define (places) (map (lambda (p) (cons (buffers:name (car p)) (cdr p))) (jump-history:places)))
 

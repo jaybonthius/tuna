@@ -1,4 +1,4 @@
-(import (tuna) (test) (plugins) (fixtures))
+(import (tuna) (test) (test-runner) (plugins) (fixtures))
 
 (define plugins-folder (fixtures:home-path ".local" "share" "tuna" "plugins"))
 (define (build-log id) (fixtures:read-file (fixtures:home-path ".cache" "tuna" "builds" (format "~a.log" id))))
@@ -88,7 +88,7 @@
     (fixtures:read-file (string-append plugins-folder "/wrap/vendor/cadd/add.c"))))
 
 (test "an update whose module fails to load is reported and goes back to the previous commit, building it again"
-  (check-equal? '(car) (map condition-who (fixtures:reports-during (lambda () (plugins:update! 'wrap (fixtures:short (cadddr wrap-commits)))))))
+  (check-equal? '(car) (map condition-who (test-runner:reports-during (lambda () (plugins:update! 'wrap (fixtures:short (cadddr wrap-commits)))))))
   (check-equal? (caddr wrap-commits) (plugins:commit 'wrap))
   (check-equal? (string-append (log-entry (cadddr wrap-commits) 0 "built\n") (log-entry (caddr wrap-commits) 0 "built\n"))
     (build-log 'wrap)))

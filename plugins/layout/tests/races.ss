@@ -197,7 +197,7 @@
     (check-equal? (list (format "n ~a" n) (format "n ~a" n)) (list (newest (test-user:client)) (newest phone)))
     (advice-remove! layout:screen heavy)
     (let* ([fails (lambda (screen c) (if (eq? c phone) (car '()) (screen c)))]
-           [reported (layout-test/parts:reports-during
+           [reported (test-runner:reports-during
                        (lambda () (advice-add! layout:screen fails) (test-user:settle) (test-user:settle) (advice-remove! layout:screen fails)))])
       (check-equal? 1 (length reported)))
     (web:close-client! phone)))

@@ -115,7 +115,7 @@
 (test "a mode with no language, or a language with no highlighter, gets no job and no message"
   (let ([u #f] [n #f])
     (check-equal? '()
-                  (buffers-test:reports-during
+                  (test-runner:reports-during
                     (lambda ()
                       (set! u (marked "u" "#u" syntax-highlighting-test/marks:unnamed))
                       (set! n (marked "n" "#n" syntax-highlighting-test/marks:unknown)))))
@@ -168,7 +168,7 @@
   (check-equal? '((marks:input "the input raised"))
                 (syntax-highlighting-test:reports-until 1 (lambda () (syntax-highlighting:update! r))))
   (check-equal? '() (job-events))
-  (check-equal? '() (buffers-test:reports-during (lambda () (syntax-highlighting:input-changed! r) (test-user:settle))))
+  (check-equal? '() (test-runner:reports-during (lambda () (syntax-highlighting:input-changed! r) (test-user:settle))))
   (check-equal? '() (job-events))
   (buffers:with-buffer r (options:set-local! syntax-highlighting-test/marks:input-raises? #f))
   (syntax-highlighting:update! r)

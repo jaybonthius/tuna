@@ -1,9 +1,9 @@
-(import (tuna) (test) (test-user) (modes) (prog) (buffers) (views) (layout) (keys) (commands) (tables) (editing)
+(import (tuna) (test) (test-runner) (test-user) (modes) (prog) (buffers) (views) (layout) (keys) (commands) (tables) (editing)
         (completion-test sessions) (modes-test text) (modes-test code) (modes-test vim))
 
 (define (view) (layout:selected-view))
 
-(define (messages thunk) (map condition-message (completion-test/sessions:reports-during thunk)))
+(define (messages thunk) (map condition-message (test-runner:reports-during thunk)))
 
 (define (keymaps)
   (let ([named (list (cons modes-test/vim:normal-keymap 'normal) (cons modes-test/vim:insert-keymap 'insert)

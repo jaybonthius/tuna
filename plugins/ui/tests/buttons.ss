@@ -41,10 +41,11 @@
     (check (eq? selected (view)))))
 
 (test "the middle button pushes a button, and a middle drag off one pushes nothing"
-  (ui-test:mouse! (view) "down" '(("at" . 7) ("count" . 0)) '("button" . 2))
-  (ui-test:mouse! (view) "click" '(("at" . 7) ("count" . 0)) '("button" . 2))
-  (ui-test:mouse! (view) "down" '(("at" . 7) ("count" . 0)) '("button" . 2))
-  (ui-test:mouse! (view) "drag" '(("at" . 2) ("count" . 0)) '("button" . 2))
+  (ui-test:click-at! (view) 7 "<mouse-2>")
+  (ui-test:drawn (view))
+  (test-user:press-button! (view) 7 "<down-mouse-2>")
+  (test-user:move-pointer! 2)
+  (test-user:release-button! 2)
   (check-equal? '(1 2 2 1) pushed))
 
 (test "RET with point in a button pushes it; outside every button the command's parameter raises"
@@ -83,8 +84,7 @@
     (ui-test:click-at! (view) 7)
     (ui-test:click-token! (view) 10)
     (ui-test:click-at! other 12)
-    (ui-test:mouse! (view) "down" '(("at" . 7) ("count" . 0)) '("button" . 2))
-    (ui-test:mouse! (view) "click" '(("at" . 7) ("count" . 0)) '("button" . 2))
+    (ui-test:click-at! (view) 7 "<mouse-2>")
     (check-equal? (list #t 2) (list (eq? pushed before) (views:point (view))))
     (views:set-point! (view) 7)
     (test-user:press! "RET")

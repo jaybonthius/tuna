@@ -1,4 +1,4 @@
-(import (tuna) (test) (plugins) (options) (fixtures))
+(import (tuna) (test) (test-runner) (plugins) (options) (fixtures))
 
 (define spell-root (fixtures:home-path "src" "spell" "src"))
 
@@ -62,7 +62,7 @@
   (check-equal? '(((repl) "fr") ((init) "en-GB")) (settings)))
 
 (test "a config form that raises is reported, and the next one runs"
-  (let ([reports (fixtures:reports-during
+  (let ([reports (test-runner:reports-during
                    (lambda () (fixtures:at-repl '(use-plugin spell (local "~/src/spell") (config (car '()) (fixtures:note! 'next))))))])
     (check-equal? '(car) (map condition-who reports))
     (check-equal? '(next) (fixtures:take-notes!))))
@@ -97,7 +97,7 @@
       "    (raise (make-error))\n"
       "    (fixtures:note! 'last)))\n"
       "(fixtures:note! (list 'after (spell:language)))\n"))
-  (let ([reports (fixtures:reports-during plugins:load-configuration!)])
+  (let ([reports (test-runner:reports-during plugins:load-configuration!)])
     (check-equal? '(2 3 4 7 9 10 11) (map fixtures:reported-line reports))
     (check-equal? (list "plugin nothere holds no module (nothere)"
                         (string-append "commit 0000000 not found in " (fixtures:remote-url "dict"))

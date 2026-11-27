@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (saved) (minibuffer) (completion) (completion-list) (editing) (completion-test sessions))
+(import (tuna) (test) (test-runner) (test-user) (saved) (minibuffer) (completion) (completion-list) (editing) (completion-test sessions))
 
 (saved:define-saved h '() list?)
 
@@ -41,7 +41,7 @@
 
 (test "M-r on a prompt with no history raises History is empty, and the read waits"
   (let ([r (completion-test/sessions:start! (lambda () (minibuffer:read "Word: " #f)))])
-    (let ([reported (completion-test/sessions:reports-during (lambda () (test-user:press! "M-r")))])
+    (let ([reported (test-runner:reports-during (lambda () (test-user:press! "M-r")))])
       (check-equal? '((completion:search-history "History is empty"))
         (map (lambda (c) (list (condition-who c) (condition-message c))) reported)))
     (check-equal? 'waiting (completion-test/sessions:result r))

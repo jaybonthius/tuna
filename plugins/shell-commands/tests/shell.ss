@@ -77,7 +77,7 @@
   (test-user:press! "RET")
   (test-runner:wait-until
     (lambda () (exists (lambda (p) (member "sleep 30; echo never" (processes:command-line p))) (processes:all))))
-  (check (for-all cancelled? (shell-commands-test:reports-during (lambda () (test-user:press! "C-g")))))
+  (check (for-all cancelled? (test-runner:reports-during (lambda () (test-user:press! "C-g")))))
   (check-equal? "Quit" (shell-commands-test:message))
   (test-runner:wait-until
     (lambda () (not (exists (lambda (p) (member "sleep 30; echo never" (processes:command-line p))) (processes:all))))))

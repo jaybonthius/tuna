@@ -1,5 +1,3 @@
-;;; A library, so that both bin/tuna.sps and the executable's boot file can
-;;; run the program.
 (library (tuna main)
   (export main)
   (import (except (chezscheme) exit) (prefix (only (chezscheme) exit) chez-) (lang loader)

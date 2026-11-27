@@ -24,7 +24,7 @@
     (car '())
     (define after-error 'ran)))
 
-(define first-reports (fixtures:reports-during (lambda () (fixtures:load-configuration! configuration))))
+(define first-reports (test-runner:reports-during (lambda () (fixtures:load-configuration! configuration))))
 
 (test "the configuration loads form by form as (init); a form that raises is reported with its line, and the next form runs"
   (check-equal? '(6 9) (map fixtures:reported-line first-reports))
@@ -81,11 +81,11 @@
 (test "reading the configuration again takes back its changes, runs its unload actions, then runs the file as it is"
   (let ([before (plugins:configuration-owner)]
         [kinds (map car (owner-changes (plugins:configuration-owner)))])
-    (check-equal? '(6 9) (map fixtures:reported-line (fixtures:reports-during plugins:load-configuration!)))
+    (check-equal? '(6 9) (map fixtures:reported-line (test-runner:reports-during plugins:load-configuration!)))
     (check (not (owner-live? before)))
     (check-equal? kinds (map car (owner-changes (plugins:configuration-owner)))))
   (check-equal? '()
-    (fixtures:reports-during
+    (test-runner:reports-during
       (lambda ()
         (fixtures:load-configuration!
           '((import (tuna) (spell))

@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (keys) (views) (minibuffer) (kill-ring) (search) (isearch) (isearch-test))
+(import (tuna) (test) (test-runner) (test-user) (keys) (views) (minibuffer) (kill-ring) (search) (isearch) (isearch-test))
 
 (define here isearch-test:here)
 
@@ -35,7 +35,7 @@
 (test "a quit in M-e's prompt of a failing search quits the prompt once: the part that failed is rubbed out and the search goes on"
   (isearch-test:show! "e" "Foo bar foo baz Bar\n")
   (test-user:press! "C-s f o o z M-e")
-  (let ([reports (isearch-test:reports-during (lambda () (test-user:press! "C-g")))])
+  (let ([reports (test-runner:reports-during (lambda () (test-user:press! "C-g")))])
     (check-equal? '(#t) (map cancelled? reports)))
   (check-equal? '(4 "I-search: foo" "Foo") (here))
   (test-user:press! "RET"))

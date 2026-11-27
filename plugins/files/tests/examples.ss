@@ -3,13 +3,6 @@
 
 (options:set! files:require-final-newline #t)
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (files-test:write-text! "~/notes.txt" "Buy milk.  \nCall Bob.")
 
 (define notes (files:visit "~/notes.txt"))
@@ -108,7 +101,7 @@
 (define plain (buffers:make "plain" "text\n"))
 
 (test "a buffer that visits no file and sets no value of its own gets files' refusal, which the command run reports"
-  (check-equal? '(files:revert-from-file) (map condition-who (reports-during (lambda () (revert-in plain))))))
+  (check-equal? '(files:revert-from-file) (map condition-who (test-runner:reports-during (lambda () (revert-in plain))))))
 
 (define seen #f)
 

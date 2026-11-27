@@ -65,20 +65,13 @@
                 (test-user:elements-with e "data-face"))
            '()))]))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 ;; Keys that end a search by cancelling it raise &cancelled, which the
 ;; command's report carries.
 (define cancelling!
   (case-lambda
     [(keys) (cancelling! (test-user:client) keys)]
     [(client keys)
-     (let ([reports (reports-during (lambda () (test-user:press! client keys)))])
+     (let ([reports (test-runner:reports-during (lambda () (test-user:press! client keys)))])
        (and (pair? reports) (for-all cancelled? reports)))]))
 
 ;; A key runs in a task of its own, which an options:with binding of the

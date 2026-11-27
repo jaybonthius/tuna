@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (web) (options) (web-test http) (web-test tasks))
+(import (tuna) (test) (test-runner) (web) (options) (web-test http))
 
 (web-test/http:use-url! (lambda () (web:url)))
 (test-runner:wait-until (lambda () (web:url)))
@@ -22,9 +22,9 @@
   (list (condition-who c) (condition-message c) (if (irritants-condition? c) (condition-irritants c) '())))
 
 ;; A changed setting restarts the server in a task of web's, which runs
-;; before the settle's.
+;; before the wait for the batch.
 (define (reports-setting! . settings)
-  (map described (web-test/tasks:reports-during (lambda () (apply options:set! settings)))))
+  (map described (test-runner:reports-during (lambda () (apply options:set! settings) (test-runner:wait-for-batch)))))
 
 (write-secret! "proxy-secret" "0123456789abcdef-secret\n" #o600)
 

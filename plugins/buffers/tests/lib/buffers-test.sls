@@ -22,13 +22,6 @@
     (thunk)
     'allowed))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (define (on-thread thunk)
   (let ([result #f])
     (join-task

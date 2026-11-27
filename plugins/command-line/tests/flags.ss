@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (test-user) (options) (plugins) (command-line-test) (web-test tasks))
+(import (tuna) (test) (test-runner) (test-user) (options) (plugins) (command-line-test))
 
 (define evaluated '())
 
@@ -17,10 +17,11 @@
         "--evl=1" "--eval=(warning 'flags \"take care\") (note! 'warned)" "--eval=(note! 'last) (note! 'and-after)"))
 
 (define reported
-  (web-test/tasks:reports-during
+  (test-runner:reports-during
     (lambda ()
       (load-module! '(command-line))
-      (test-runner:wait-until (lambda () (= 4 (length evaluated)))))))
+      (test-runner:wait-until (lambda () (= 4 (length evaluated))))
+      (test-runner:wait-for-batch))))
 
 (test "each --eval is evaluated in order, as the REPL's owner, every form of it"
   (check-equal? (list (plugins:repl-owner) 'warned 'last 'and-after) evaluated))
@@ -38,9 +39,9 @@
 
 (test "an --eval's setting wins over the configuration's, and stays when the configuration is evaluated again"
   (check-equal? 2 (command-line-test:level))
-  (check-equal? '() (web-test/tasks:reports-during plugins:load-configuration!))
+  (check-equal? '() (test-runner:reports-during (lambda () (plugins:load-configuration!) (test-runner:wait-for-batch))))
   (check-equal? 2 (command-line-test:level)))
 
 (test "a reload of the plugin evaluates no argument again"
-  (check-equal? '() (web-test/tasks:reports-during (lambda () (reload-modules! '((command-line))) (test-user:settle))))
+  (check-equal? '() (test-runner:reports-during (lambda () (reload-modules! '((command-line))) (test-user:settle))))
   (check-equal? 4 (length evaluated)))

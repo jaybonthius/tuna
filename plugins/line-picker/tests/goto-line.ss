@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (views) (layout) (minibuffer) (line-picker)
+(import (tuna) (test) (test-runner) (test-user) (views) (layout) (minibuffer) (line-picker)
         (completion-test picking))
 
 (define (question)
@@ -12,7 +12,7 @@
 (define (input) (minibuffer:input (minibuffer:current-prompt)))
 
 (define (messages-during thunk)
-  (map (lambda (c) (if (cancelled? c) 'cancelled (condition-message c))) (completion-test/picking:reports-during thunk)))
+  (map (lambda (c) (if (cancelled? c) 'cancelled (condition-message c))) (test-runner:reports-during thunk)))
 
 (define (goto-line-in-view line) (views:call-with-view (layout:selected-view) (lambda () (line-picker:goto-line line))))
 

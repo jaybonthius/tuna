@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (web) (layout) (layout-split) (views) (buffers) (document) (keys) (commands) (tables)
+(import (tuna) (test) (test-runner) (test-user) (web) (layout) (layout-split) (views) (buffers) (document) (keys) (commands) (tables)
         (status-line) (status-line-test))
 
 (define view status-line-test:view)
@@ -73,7 +73,7 @@
     (let ([item (status-line-test:mouse-item gone "click" 3 drawn (list status-line:keymap))])
       (layout:delete-part! (layout:view-node gone))
       (check-equal? '("Stale click: what was clicked is gone")
-        (map condition-message (status-line-test:reports-during (lambda () (web:post-input! (test-user:client) item) (test-user:settle))))))
+        (map condition-message (test-runner:reports-during (lambda () (web:post-input! (test-user:client) item) (test-user:settle))))))
     (check-equal? 1 (length (layout:views)))))
 
 (test "the right button deletes the clicked window and the middle keeps only it, whichever is selected"

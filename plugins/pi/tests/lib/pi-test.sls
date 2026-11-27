@@ -56,12 +56,7 @@
     [else c]))
 
 (define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (guard (c [#t (advice-remove! report keep) (raise c)])
-      (thunk))
-    (advice-remove! report keep)
-    (map message-of (reverse reported))))
+  (map message-of (test-runner:reports-during thunk)))
 
 (define (reports-after thunk count)
   (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])

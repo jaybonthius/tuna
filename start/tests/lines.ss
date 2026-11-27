@@ -1,4 +1,4 @@
-(import (tuna) (test) (plugins) (fixtures) (remotes))
+(import (tuna) (test) (test-runner) (plugins) (fixtures) (remotes))
 
 (define no-source "the line for ~a has no source: give it a git or local clause, or use an index that names it")
 
@@ -7,7 +7,7 @@
             files))
 
 (test "an index's line comes before the lines that rely on it: a line read before it has no source and installs nothing"
-  (let ([reports (fixtures:reports-during
+  (let ([reports (test-runner:reports-during
                    (lambda ()
                      (fixtures:load-configuration!
                        `((import (tuna))
@@ -51,7 +51,7 @@
     (use-plugin notes (local "~/src/notes"))))
 
 (define second-line-reports
-  (fixtures:reports-during
+  (test-runner:reports-during
     (lambda ()
       (plugins:remove! 'compat)
       (plugins:remove! 'consult)
@@ -121,7 +121,7 @@
 
 (test "removing a local plugin unloads its module and comments out its line, and never deletes its folder; the configuration is read again"
   (check-equal? '("a second line for consult")
-    (map fixtures:message (fixtures:reports-during (lambda () (plugins:remove! 'notes)))))
+    (map fixtures:message (test-runner:reports-during (lambda () (plugins:remove! 'notes)))))
   (check (not (memq 'notes (plugins:installed))))
   (check (file-exists? (fixtures:home-path "src" "notes" "src" "notes.sls")))
   (check-equal? "module (notes) is unloaded" (fixtures:raised-message (lambda () (fixtures:at-repl '(notes:where)))))

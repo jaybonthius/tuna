@@ -93,7 +93,7 @@
 
 (test "a program that cannot start is reported, and its end is that condition"
   (let* ([missing #f]
-         [reports (runs-test:reports-during
+         [reports (test-runner:reports-during
                     (lambda ()
                       (set! missing (runs:start-for-user "*end*" '("no-such-program-at-all" "it's") home))
                       (runs-test:ended missing)))])
@@ -177,7 +177,7 @@
       (check-equal? 'buffers:insert! (car (runs-test:raised (lambda () (buffers:insert! quiet 1 "typed")))))
       (layout:switch-to-buffer quiet)
       (check-equal? '("a is undefined")
-                    (map condition-message (runs-test:reports-during (lambda () (test-user:press! "a")))))))
+                    (map condition-message (test-runner:reports-during (lambda () (test-user:press! "a")))))))
   (taken-ends)
   (runs-test:take-said!))
 

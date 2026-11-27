@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (layout) (web) (test-user))
+(import (test-runner) (buffers) (document) (views) (layout) (web) (test-user))
 
 (define (view) (layout:selected-view))
 
@@ -33,34 +33,30 @@
     (and m (let ([space (let find ([k 0]) (cond [(= k (string-length m)) #f] [(char=? (string-ref m k) #\space) k] [else (find (+ k 1))]))])
              (and space (string->symbol (substring m (+ space 1) (string-length m))))))))
 
-(define (mark-number element)
-  (read (open-input-string (test-user:element-attribute element "data-keymap"))))
+;; A user clicks what they see, so the view is drawn first.
+(define click-at!
+  (case-lambda
+    [(v at) (click-at! v at "<mouse-1>")]
+    [(v at key) (drawn v) (test-user:click! v at key)]))
 
-(define (mouse! v action place . fields)
-  (web:post-input! (test-user:client)
-    (append fields
-            (remp (lambda (field) (assoc (car field) fields))
-                  (append place
-                          (list (cons "type" "mouse") (cons "action" action) (cons "button" 1) (cons "clicks" 1)
-                                (cons "modifiers" '#()) (cons "view" (views:id v))
-                                (cons "version" (buffers:version (views:buffer v))) (cons "showing" (views:shown-count v)))))))
-  (test-user:settle))
+(define (token-element at)
+  (or (find (lambda (e) (equal? (number->string at) (test-user:element-attribute e "data-at")))
+            (test-user:elements-with (test-user:screen) "data-to"))
+      (assertion-violation 'ui-test:token-element "no element of the last screen stands for the token" at)))
 
-(define (click-at! v at . fields)
-  (for-each (lambda (action) (apply mouse! v action (list (cons "at" at) (cons "count" 0)) fields)) '("down" "click")))
+;; A user clicks what an element shows, so the keymaps marked on the
+;; elements inside it apply too.
+(define (innermost element)
+  (let ([inner (find (lambda (x) (and (pair? x) (symbol? (car x)) (not (eq? (car x) '\x40;)))) (cdr element))])
+    (if inner (innermost inner) element)))
 
-(define (click-token! v at . fields)
-  (for-each (lambda (action) (apply mouse! v action (list (cons "token" at)) fields)) '("down" "click")))
-
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
+(define click-token!
+  (case-lambda
+    [(v at) (click-token! v at "<mouse-1>")]
+    [(v at key) (drawn v) (test-user:click-element! (innermost (token-element at)) key)]))
 
 (define (report-messages thunk)
-  (map (lambda (c) (if (message-condition? c) (condition-message c) c)) (reports-during thunk)))
+  (map (lambda (c) (if (message-condition? c) (condition-message c) c)) (test-runner:reports-during thunk)))
 
 (define (raised? who message)
   (lambda (c)

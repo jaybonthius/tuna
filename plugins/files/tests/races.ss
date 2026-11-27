@@ -85,18 +85,11 @@
 
 (define (unloaded? c) (and (error? c) (equal? "the files plugin was unloaded" (condition-message c))))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (test "unloading files ends the tasks waiting for its jobs, with an error"
   (call-with-output-file (files-test:expand "~/big.txt") (lambda (p) (display (make-string 8000000 #\x) p)))
   (check-equal? '(files:read-document)
     (map condition-who
-      (reports-during
+      (test-runner:reports-during
         (lambda ()
           (let* ([visitor (spawn-task (lambda (restore) (files:visit "~/big.txt")))]
                  [unloader (spawn-task (lambda (restore) (unload-owner! (module-owner '(files)))))])
@@ -111,7 +104,7 @@
     (buffers:replace! large 1 1 "y")
     (check-equal? '(files:save-buffer files:save-buffer)
       (map condition-who
-        (reports-during
+        (test-runner:reports-during
           (lambda ()
             (let* ([first-saver (spawn-task (lambda (restore) (files:save-buffer large)))]
                    [second-saver (spawn-task (lambda (restore) (files:save-buffer large)))]

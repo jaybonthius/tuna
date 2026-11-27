@@ -1,4 +1,4 @@
-(import (tuna) (test) (auto-mode) (modes) (prog) (python) (files) (buffers) (document) (hooks) (options) (tables) (buffers-test)
+(import (tuna) (test) (test-runner) (auto-mode) (modes) (prog) (python) (files) (buffers) (document) (hooks) (options) (tables) (buffers-test)
         (modes-test text) (modes-test fill) (auto-mode-test modes))
 
 (define (home-file name) (string-append (getenv "HOME") "/" name))
@@ -86,7 +86,7 @@
     (hooks:add! auto-mode:choosers broken -100)
     (write-file! "one.py" "1\n")
     (let ([one #f])
-      (check-equal? '(car) (map condition-who (buffers-test:reports-during (lambda () (set! one (files:visit (home-file "one.py")))))))
+      (check-equal? '(car) (map condition-who (test-runner:reports-during (lambda () (set! one (files:visit (home-file "one.py")))))))
       (check-equal? modes:fundamental (modes:major-mode one))
       (hooks:remove! auto-mode:choosers broken)
       (auto-mode:normal-mode one)

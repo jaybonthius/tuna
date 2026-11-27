@@ -11,16 +11,6 @@
 (define (log) (reverse (getprop 'main-thread 'log '())))
 (define (clear-log!) (putprop 'main-thread 'log '()))
 
-;; A thread's raise reaches report on the main thread a little later, so
-;; the reports a test expects are waited for.
-(define (reports-during expected thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (test-runner:wait-until (lambda () (>= (length reported) expected)))
-    (advice-remove! report keep)
-    (reverse reported)))
-
 ;; A user's quit cancels the main thread's running task from another
 ;; thread.
 (define (quit! task) (fork-task (lambda (restore) (cancel-task task))))
@@ -78,10 +68,11 @@
 
 (test "a quit ends runaway code, and the code after it goes on"
   (let* ([started (box #f)] [t (spawn-task (lambda (restore) (set-box! started #t) (spin)))])
-    (let ([reported (reports-during 1
+    (let ([reported (test-runner:reports-during
                       (lambda ()
                         (quit-when! (lambda () (unbox started)) t)
-                        (check-equal? '(cancelled #f) (call-with-values (lambda () (join-task t)) list))))])
+                        (check-equal? '(cancelled #f) (call-with-values (lambda () (join-task t)) list)))
+                      1)])
       (check-equal? 1 (length reported))
       (check (cancelled? (car reported))))
     (check-equal? 3 (+ 1 2))))
@@ -109,7 +100,7 @@
                (with-exception-handler
                  (lambda (c) (if (cancelled? c) (begin (quit! (current-task)) (spin)) (raise c)))
                  (lambda () (quit! (current-task)) (spin)))))])
-    (let ([reported (reports-during 1 (lambda () (join-task t)))])
+    (let ([reported (test-runner:reports-during (lambda () (join-task t)) 1)])
       (check-equal? 1 (length reported))
       (check (cancelled? (car reported))))
     (check-equal? 'done (task-state t))))
@@ -119,28 +110,29 @@
   (test-runner:wait-until (lambda () (not (module-owner '(main-thread runaway))))))
 
 (test "after a warning, the code that raised it goes on"
-  (let ([reported (reports-during 1 (lambda () (check-equal? 'went-on (begin (warning 'careful "watch out") 'went-on))))])
+  (let ([reported (test-runner:reports-during (lambda () (check-equal? 'went-on (begin (warning 'careful "watch out") 'went-on))) 1)])
     (check-equal? 1 (length reported))
     (check (warning? (car reported)))))
 
 (test "report gets a condition no handler takes before the stack unwinds"
   (let ([where (make-thread-parameter 'outside)] [seen #f])
     (define (show-where next c) (set! seen (where)) (next c))
-    (let ([reported (reports-during 1
+    (let ([reported (test-runner:reports-during
                       (lambda ()
                         (advice-add! report show-where)
                         (join-task (spawn-task (lambda (restore) (parameterize ([where 'inside]) (car 1)))))
-                        (advice-remove! report show-where)))])
+                        (advice-remove! report show-where))
+                      1)])
       (check-equal? 1 (length reported)))
     (check-equal? 'inside seen)))
 
 (test "a raise on another thread is reported and ends that thread; after a warning the thread goes on"
   (let ([finished? #f])
-    (let ([reported (reports-during 1 (lambda () (join-task (fork-task (lambda (restore) (car 5) (set! finished? #t))))))])
+    (let ([reported (test-runner:reports-during (lambda () (join-task (fork-task (lambda (restore) (car 5) (set! finished? #t))))) 1)])
       (check-equal? 1 (length reported))
       (check (assertion-violation? (car reported))))
     (check-equal? #f finished?)
-    (let ([reported (reports-during 1 (lambda () (join-task (fork-task (lambda (restore) (warning 'thread "careful") (set! finished? #t))))))])
+    (let ([reported (test-runner:reports-during (lambda () (join-task (fork-task (lambda (restore) (warning 'thread "careful") (set! finished? #t))))) 1)])
       (check-equal? 1 (length reported))
       (check (warning? (car reported))))
     (check-equal? #t finished?)))
@@ -172,7 +164,7 @@
 
 (test "a task that raises is reported, join-task gives the same condition, and a task cannot join itself"
   (let ([failing #f])
-    (let ([reported (reports-during 1 (lambda () (set! failing (spawn-task (lambda (restore) (error 'nap "woke badly")))) (join-task failing)))])
+    (let ([reported (test-runner:reports-during (lambda () (set! failing (spawn-task (lambda (restore) (error 'nap "woke badly")))) (join-task failing)) 1)])
       (check-equal? 1 (length reported))
       (check-equal? (car reported) (guard (c [#t c]) (test-runner:join failing)))))
   (check-raises assertion-violation? (join-task (current-task))))
@@ -209,7 +201,7 @@
 (test "another thread's cancel is delivered"
   (let ([signalled (spawn-task (lambda (restore) (suspend (lambda (resume) (void)))))])
     (test-runner:wait-until (lambda () (eq? (task-state signalled) 'paused)))
-    (let ([reported (reports-during 1 (lambda () (join-task (fork-task (lambda (restore) (cancel-task signalled 'from-thread)))) (join-task signalled)))])
+    (let ([reported (test-runner:reports-during (lambda () (join-task (fork-task (lambda (restore) (cancel-task signalled 'from-thread)))) (join-task signalled)) 1)])
       (check-equal? 1 (length reported))
       (check (cancelled? (car reported))))
     (check-equal? 'from-thread (guard (c [(cancelled? c) (cancelled-reason c)]) (test-runner:join signalled)))))

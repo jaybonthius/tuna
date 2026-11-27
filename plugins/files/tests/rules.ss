@@ -1,4 +1,4 @@
-(import (tuna) (test) (hooks) (options) (commands) (keys) (tables) (document) (buffers) (files)
+(import (tuna) (test) (test-runner) (hooks) (options) (commands) (keys) (tables) (document) (buffers) (files)
         (only (files disk) failure failure-violation?) (files-test))
 
 (options:set! files:require-final-newline #t)
@@ -181,13 +181,6 @@
 
 (define (refuse b) (error 'hooked "refused"))
 
-(define (reports-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (reverse reported)))
-
 (test "the hooks get the buffer, with it current, so local entries run too; an entry that raises is reported and the save goes on"
   (let ([after-visit (note 'after-visit)] [after-save (note 'after-save)] [after-revert (note 'after-revert)])
     (hooks:add! files:after-visit after-visit)
@@ -199,7 +192,7 @@
       (check (eq? hooked (files:visit "~/hooks.txt")))
       (buffers:with-buffer hooked (hooks:add-local! files:before-save (note 'local-before-save)))
       (buffers:replace! hooked 1 1 "+")
-      (check-equal? '(hooked) (map condition-who (reports-during (lambda () (files:save-buffer hooked)))))
+      (check-equal? '(hooked) (map condition-who (test-runner:reports-during (lambda () (files:save-buffer hooked)))))
       (check-equal? "+h\n" (files-test:read-text "~/hooks.txt"))
       (hooks:remove! files:before-save refuse)
       (files:save-buffer hooked)
