@@ -5,8 +5,6 @@
     (unless (file-directory? folder) (make (path-parent folder)) (mkdir folder)))
   (call-with-output-file path (lambda (p) (put-string p text)) 'replace))
 
-;; Installed from local folders, so their modules rank below the modules
-;; of lib/.
 (define (install-local! name text)
   (let ([folder (format "~a/plugins/~a" (getenv "HOME") name)])
     (write-file! (format "~a/src/~a.sls" folder name) text)
@@ -41,7 +39,7 @@
   (call-as-owner second (lambda () (advice-add! saver:save! announce)))
   (check-equal? '(advice override) (map car (owner-changes second))))
 
-(test "a module's change is its own, and a module of lib/ ranks above the plugins' modules"
+(test "a module's change is its own, and a module first loaded later ranks above one it does not import"
   (import (groucho words))
   (load-module! '(prog))
   (check-equal? "prog" (spell:language))
@@ -56,9 +54,9 @@
   (check-equal? '(((spell) advice) ((changes first) advice) ((changes second) advice) ((saver) define))
                 (changes-of saver:save!)))
 
-(test "in code run for a module, a definition of its own name defines it again"
+(test "in code run as a module, a top-level definition of its own name is its override, which its importer's outranks"
   (call-as-owner (module-owner '(spell)) (lambda () (eval '(define spell:language (lambda () "assigned")) (interaction-environment))))
-  (check-equal? '((spell) (prog) (groucho words) (spell)) (map car (changes-of spell:language)))
+  (check-equal? '(((spell) override) ((prog) override) ((groucho words) override) ((spell) define)) (changes-of spell:language))
   (check-equal? "prog" (spell:language)))
 
 (test "call-as-owner refuses what is not an owner"
@@ -81,7 +79,7 @@
   (check-equal? "prog2" (spell:language))
   (check-equal? '((prog2) (spell) (prog) (groucho words) (spell)) (map car (changes-of spell:language))))
 
-(test "a reloaded module keeps its rank, and one loaded again after an unload ranks as loaded then"
+(test "a module keeps its rank when it reloads, and when it loads again after an unload"
   (reload-modules! '((prog)))
   (check-equal? "prog2" (spell:language))
   (unload-owner! (module-owner '(prog)))

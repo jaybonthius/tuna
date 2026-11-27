@@ -262,6 +262,26 @@
     (unload-owner! a)
     (unload-owner! b)))
 
+(test "while a module is unloaded, an entry that is its definition is skipped, and an entry that calls it is reported"
+  (load-module! '(hooks-test helper))
+  (let ([o (make-owner '(calls helper))] [mark (eval 'hooks-test/helper:mark (environment '(hooks-test helper)))]
+        [reports '()])
+    (define (quiet report c) (set! reports (cons (condition-message c) reports)))
+    (call-as-owner o
+      (lambda ()
+        (advice-add! report quiet)
+        (hooks:add! changed mark)
+        (hooks:add! changed (lambda (calls) (mark calls)) 1)
+        (hooks:add! changed (marker 'after) 2)))
+    (check-equal? '(helper helper after) (calls changed))
+    (unload-owner! (module-owner '(hooks-test helper)))
+    (check-equal? '(after) (calls changed))
+    (check-equal? '("module (hooks-test helper) is unloaded") reports)
+    (check-equal? 2 (length (hooks:entries changed)))
+    (load-module! '(hooks-test helper))
+    (check-equal? 3 (length (hooks:entries changed)))
+    (unload-owner! o)))
+
 (test "an owner's entry is out of effect once its unload begins, though its own code runs the hook"
   (let ([o (make-owner '(hook unloading))] [seen (box '())])
     (call-as-owner o

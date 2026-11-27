@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (views) (editing) (replace) (isearch-test) (replace-test))
+(import (tuna) (test) (test-user) (views) (editing) (echo-area) (replace) (isearch-test) (replace-test))
 
 (define asked replace-test:asked)
 
@@ -116,8 +116,8 @@
   (isearch-test:show! "r6" "x1 x2\n")
   (replace-test:replace! "M-%" "x" "y")
   (test-user:press! "y")
-  (isearch-test:cancelling! "C-g")
-  (check-equal? '(#f "y1 x2\n") (list (replace-test:session) (text)))
+  (check (isearch-test:cancelling! "C-g"))
+  (check-equal? '(#f "y1 x2\n" "Quit") (list (replace-test:session) (text) (echo-area:current-message)))
   (isearch-test:take-said!))
 
 (test "Y replaces as y does, and N and <delete> skip as n does"

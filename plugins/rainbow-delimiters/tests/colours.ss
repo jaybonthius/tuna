@@ -117,7 +117,7 @@
     (depths-become b '(1 2 2 2 3 3 2 1))
     (depths-become c '(1 2 2 1))))
 
-(test "unloading takes away the entry and the stylesheet and stops the bracket spans, a hook entry naming the mode is skipped without a report, and loading again brings them back"
+(test "unloading takes away the entry and the stylesheet and stops the bracket spans, a hook entry setting the mode keeps its setting and raises nothing, and loading again brings them back"
   (let ([b (chez-scheme-test/scheme-buffers:scheme-buffer "unload.ss" nested)])
     (depths-become b '(1 2 2 2 3 3 2 1))
     (unload-owner! (module-owner '(rainbow-delimiters)))
@@ -126,6 +126,9 @@
     (buffers:replace! b 1 1 "(x) ")
     (test-user:settle)
     (check-equal? '() (depths b))
-    (check-equal? '() (test-runner:reports-during (lambda () (chez-scheme-test/scheme-buffers:scheme-buffer "z.ss" "(q)\n"))))
-    (load-module! '(rainbow-delimiters))
-    (depths-become b '(1 1 1 2 2 2 3 3 2 1))))
+    (let* ([z #f] [reports (test-runner:reports-during (lambda () (set! z (chez-scheme-test/scheme-buffers:scheme-buffer "z.ss" "(q)\n"))))])
+      (check-equal? '() reports)
+      (check (buffers:with-buffer z (options:local? rainbow-delimiters:mode)))
+      (load-module! '(rainbow-delimiters))
+      (depths-become b '(1 1 1 2 2 2 3 3 2 1))
+      (depths-become z '(1 1)))))

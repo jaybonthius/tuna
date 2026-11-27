@@ -110,7 +110,7 @@
     (guard (c [(syntax-violation? c) (list (condition-who c) (condition-message c))])
       (fixtures:at-repl `(plugin compat (git ,(remotes:url "compat-fork")))))))
 
-(test "remove-unused! deletes the plugins with no line none of whose modules a lookup has found"
+(test "remove-unused! deletes the plugins with no line none of whose modules is loaded, one whose module failed to compile included"
   (fixtures:write-file! (fixtures:home-path ".local" "share" "tuna" "plugins" "greet" "src" "greet.sls")
     (fixtures:module-text '((define (text) "hello"))))
   (check-equal? '(sources compat consult embark embark-consult notes greet plain vertico) (plugins:installed))

@@ -71,9 +71,9 @@
   (fixtures:at-repl '(define mine:x 2))
   (check-equal? '(1 2) (fixtures:at-repl '(list nothere:x mine:x))))
 
-(test "a module loaded after a top-level definition of one of its names replaces it"
+(test "a module loaded after a top-level definition of one of its names replaces it, with no report"
   (fixtures:at-repl '(define magit/extra:y 'user))
-  (load-module! '(magit extra))
+  (check-equal? '() (test-runner:reports-during (lambda () (load-module! '(magit extra)))))
   (check-equal? 'extra-y (fixtures:at-repl 'magit/extra:y)))
 
 (define unload-count 0)

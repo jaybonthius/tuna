@@ -37,7 +37,7 @@
 
   (define (found-library-source name) (library-source name))
 
-  (define (found-libraries-under folder)
+  (define (loaded-modules-under folder)
     (filter (lambda (name) (under? folder (library-source name))) (loaded-modules)))
 
   (define (loaded-libraries-under folder)
@@ -1283,8 +1283,8 @@
       (string->symbol
         (if (member (path-extension name) '("installed" "new" "old" "compare")) (path-root name) name))))
 
-  ;; A plugin is used when a lookup found one of its modules; a library
-  ;; when its line was chosen at the last resolution. Installs fill folders
+  ;; A plugin is used while one of its modules is loaded; a library when
+  ;; its line was chosen at the last resolution. Installs fill folders
   ;; while they hold the turn, and git that a cancelled install started
   ;; may still be filling one after.
   (define (remove-unused-plugins!)
@@ -1296,7 +1296,7 @@
             (unless (or (configuration-line id)
                         (hashtable-contains? installing id)
                         (fetching? (plugin-folder id))
-                        (pair? (found-libraries-under (install-root id (installed-source id)))))
+                        (pair? (loaded-modules-under (install-root id (installed-source id)))))
               (uninstall! id)))
           (installed-plugins))
         (when (file-directory? libraries-root)

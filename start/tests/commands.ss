@@ -121,7 +121,7 @@
   (fixtures:at-repl '(use-plugin vertico))
   (check-equal? 20 (fixtures:at-repl '(vertico:count))))
 
-(test "remove-unused! deletes only the plugins with no line none of whose modules a lookup has found"
+(test "remove-unused! deletes only the plugins with no line none of whose modules is loaded"
   (plugins:remove-unused!)
   (check-equal? '(spell sources compat consult embark embark-consult notes vertico flaky) (plugins:installed))
   (check-equal? '("compat" "compat.installed" "consult" "consult.installed" "embark" "embark-consult" "embark-consult.installed"

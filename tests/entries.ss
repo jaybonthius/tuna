@@ -43,7 +43,7 @@
   (unload-owner! (module-owner '(entries quiet1)))
   (unload-owner! (module-owner '(entries adder))))
 
-(test "while its module is unloaded, a hook entry of its definition is skipped and advice of it raises"
+(test "while its module is unloaded, a hook entry of its definition is skipped and left out of hooks:entries, and advice of it raises"
   (let ([o (make-owner '(entries user))])
     (call-as-owner o
       (lambda ()
@@ -54,10 +54,11 @@
     (entries/target:greeted "Chico")
     (check-equal? '() (shouted))
     (check-raises unloaded? (entries/target:text "Chico"))
-    (check-equal? 1 (length (hooks:entries entries/target:greeted)))
+    (check-equal? 0 (length (hooks:entries entries/target:greeted)))
     (check-equal? '(advice) (map car (owner-changes o)))
     (check-equal? '(advice define) (map cadr (definition-changes entries/target:text)))
     (load-module! '(entries helper))
+    (check-equal? 1 (length (hooks:entries entries/target:greeted)))
     (check-equal? '(("Zeppo") "[Zeppo]" "Harpo") (greet "Zeppo"))
     (unload-owner! o)))
 

@@ -46,7 +46,7 @@
 
 ;; In a module, so Chez may inline these calls, as it never does a call of
 ;; a changeable procedure: a call of a hook makes several.
-(module %internals (%runner-of %refresh! %changed! %hook-of %entries-now %run)
+(module %internals (%runner-of %refresh! %changed! %hook-of %entries-now %run %note-definer! %unloaded-definition?)
   (define (%runner-of e)
     (or (%entry-runner e)
         (let ([runner (%runner (%entry-owner e) (%entry-procedure e))])
@@ -139,6 +139,34 @@
             (if (null? local) global (merge %depth<? global local)))
           global)))
 
+  ;; The kernel offers no test of a changeable procedure, its readers
+  ;; refusing any other value, and names no definer once that instance has
+  ;; unloaded. So each entry procedure's definer is kept from when it was
+  ;; loaded, and #f for a procedure that is not changeable; one first seen
+  ;; with no loaded definer is taken for a definition whose module is gone.
+  ;; hooks:entries may be called on any thread.
+  (define %definers (make-weak-eq-hashtable))
+  (define %definers-mutex (make-mutex))
+
+  (define (%note-definer! p)
+    (with-mutex %definers-mutex
+      (let ([known (hashtable-ref %definers p 'unknown)])
+        (if (eq? known 'unknown)
+            (let ([changes (guard (c [(assertion-violation? c) 'none]) (definition-changes p))])
+              (cond
+                [(eq? changes 'none) (hashtable-set! %definers p #f) #f]
+                [(find (lambda (change) (eq? (cadr change) 'define)) changes)
+                 => (lambda (change) (hashtable-set! %definers p (car change)) (car change))]
+                [else 'unknown]))
+            known))))
+
+  ;; A definition its loaded module no longer defines does not count: a
+  ;; call of it is a mistake to report.
+  (define (%unloaded-definition? p)
+    (let ([o (%note-definer! p)])
+      (or (eq? o 'unknown)
+          (and o (not (owner-live? o)) (not (module-owner (owner-name o)))))))
+
   ;; One escape and one handler per call, not per entry. A raise is reported
   ;; where it happens and the next entry runs; a cancel meant for the task
   ;; goes on to end it; an entry whose owner's unload began, before or while
@@ -158,12 +186,12 @@
                                     [(and (warning? c) (not (serious-condition? c))) (report c)]
                                     [else
                                      ;; An entry whose owner, or whose procedure's module, is
-                                     ;; gone is skipped quietly; a definition its loaded module
-                                     ;; no longer defines is a mistake to report.
+                                     ;; gone is skipped quietly. An entry that calls a module
+                                     ;; that is gone, or a definition its loaded module no
+                                     ;; longer defines, is a mistake to report.
                                      (unless (and (unloaded? c)
-                                                  (let ([o (unloaded-owner c)])
-                                                    (or (eq? o (%entry-owner (car at)))
-                                                        (not (or (owner-live? o) (module-owner (owner-name o)))))))
+                                                  (or (eq? (unloaded-owner c) (%entry-owner (car at)))
+                                                      (%unloaded-definition? (%entry-procedure (car at)))))
                                        (report c))
                                      (k (cdr at))]))
                                 (lambda ()
@@ -224,6 +252,7 @@
     [(h proc depth)
      (let ([st (%hook-of 'hooks:add! h)])
        (%check-entry 'hooks:add! proc depth)
+       (%note-definer! proc)
        (call-with-cancellation-masked
          (lambda (restore)
            (owned:add! (%hook-set st) proc depth)
@@ -261,6 +290,7 @@
     [(h proc) (add-local! h proc 0)]
     [(h proc depth)
      (%check-entry 'hooks:add-local! proc depth)
+     (%note-definer! proc)
      (%put-local! 'hooks:add-local! h proc depth #f)]))
 
 (define (remove-local! h proc)
@@ -268,10 +298,12 @@
   (%put-local! 'hooks:remove-local! h proc 0 #t))
 
 ;; An entry whose owner has begun to unload is out of effect, whether or
-;; not owned has dropped it yet.
+;; not owned has dropped it yet; so is one whose procedure's module is
+;; gone, which a call of the hook skips.
 (define (entries h)
   (map %runner-of
-       (filter (lambda (e) (owner-live? (%entry-owner e))) (%entries-now (%hook-of 'hooks:entries h)))))
+       (filter (lambda (e) (and (owner-live? (%entry-owner e)) (not (%unloaded-definition? (%entry-procedure e)))))
+               (%entries-now (%hook-of 'hooks:entries h)))))
 
 (define (documentation h)
   (%hook-doc (%hook-of 'hooks:documentation h)))

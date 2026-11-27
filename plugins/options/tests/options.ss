@@ -146,6 +146,15 @@
   (check-equal? "Width of filled lines." (options:documentation width))
   (check-equal? #f (options:documentation level)))
 
+(test "an option a module defines is a changeable procedure: advice on it changes what a read gives, past settings and bindings, until its owner unloads"
+  (let ([o (make-owner '(advising))] [margin (margin)])
+    (call-as-owner o (lambda () (advice-add! margin (lambda (next) (+ (next) 1)))))
+    (as-test-owner (lambda () (options:set! margin 10)))
+    (check-equal? '(11 21) (list (margin) (options:with ([margin 20]) (margin))))
+    (unload-owner! o)
+    (check-equal? 10 (margin))
+    (as-test-owner (lambda () (options:unset! margin)))))
+
 (test "other threads read whole values while the main thread changes them"
   (let ([s (scopes:make)] [stop? #f] [mutex (make-mutex)] [seen '()] [init (make-owner '(options init))])
     (define (reader scope)

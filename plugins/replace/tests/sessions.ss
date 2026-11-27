@@ -129,7 +129,7 @@
     (replace-test:replace! "M-%" "q" "v")
     (check-equal? before (length (jump-history:places)))
     (replace-test:replace! "M-%" "w" "v")
-    (isearch-test:cancelling! "C-g")
+    (check (isearch-test:cancelling! "C-g"))
     (check-equal? (list 2 (+ before 1)) (list (isearch-test:point) (length (jump-history:places))))
     (at! 1)
     (replace-test:replace! "M-%" "w" "v")
