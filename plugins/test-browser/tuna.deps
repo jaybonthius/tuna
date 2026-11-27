@@ -1,0 +1,15 @@
+(library chez-cdp
+  (git "https://github.com/jaybonthius/chez-cdp.git")
+  (commit "e24d82e59f1a727c924c29ebc7c3307b1a261bb1")
+  (library-directories ("src" . "build/obj/src"))
+  (build))
+(library chez-json
+  (git "https://github.com/jaybonthius/chez-json.git")
+  (commit "542c745ae1dcbe914b033df7cb8483ec4d9c26f3")
+  (library-directories ("src" . "build/obj/src"))
+  (build))
+(library chez-process
+  (git "https://github.com/jaybonthius/chez-process.git")
+  (commit "1d3356c0f82248125ae4771d116f94597046f2df")
+  (library-directories ("src" . "build/obj/src"))
+  (build "make" "build/obj/src/process/libchez-process.so"))

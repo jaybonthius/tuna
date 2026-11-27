@@ -3,11 +3,9 @@ CHEZ_DIR := $(patsubst %/,%,$(dir $(SCHEME)))
 OBJ := build/obj
 LIBDIRS := src::$(OBJ)/src:lib/chez-lang/src::$(OBJ)/lib/chez-lang/src
 TEST_TIMEOUT ?= 60
-BROWSER_TEST_TIMEOUT ?= 300
-BROWSER_TESTS := $(sort $(wildcard tests/*-browser-test.sh))
-SCRIPT_TESTS := $(filter-out $(BROWSER_TESTS),$(sort $(wildcard tests/*-test.sh)))
+SCRIPT_TESTS := $(sort $(wildcard tests/*-test.sh))
 TRANSCRIPTS := $(sort $(wildcard tests/*/*.transcript))
-RUNS := run/test-files $(SCRIPT_TESTS:%=run/%) $(BROWSER_TESTS:%=run/%) $(TRANSCRIPTS:%=run/%)
+RUNS := run/test-files $(SCRIPT_TESTS:%=run/%) $(TRANSCRIPTS:%=run/%)
 
 .PHONY: build test repl exe clean $(RUNS)
 
@@ -26,22 +24,8 @@ run/test-files: exe
 $(SCRIPT_TESTS:%=run/%): run/%: exe
 	@timeout $(TEST_TIMEOUT) sh $* build/bin/tuna
 
-$(BROWSER_TESTS:%=run/%): run/%: exe
-	@timeout $(BROWSER_TEST_TIMEOUT) sh $* build/bin/tuna
-
 $(TRANSCRIPTS:%=run/%): run/%: exe
 	@TEST_TIMEOUT=$(TEST_TIMEOUT) sh tests/run-transcript.sh build/bin/tuna $*
-
-# faces' browser test highlights with tree-sitter-python at the commit
-# Tuna pins, built from the copy chez-treesitter vendors, so no test
-# fetches it.
-PYTHON_GRAMMAR := build/test-grammars/libtree-sitter-python-293fdc02038e.so
-
-$(PYTHON_GRAMMAR): | exe
-	sh tests/build-grammar.sh build/bin/libraries/chez-treesitter/vendor/tree-sitter-python \
-	  293fdc02038ee2bf0e2e206711b69c90ac0d413f $@
-
-run/tests/faces-browser-test.sh: $(PYTHON_GRAMMAR)
 
 repl: build
 	$(SCHEME) --libdirs $(LIBDIRS) --compile-imported-libraries
