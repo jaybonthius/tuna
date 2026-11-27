@@ -31,3 +31,17 @@
     (check-equal? '#(3) (jsonrpc:request c "echo" '#(3)))
     (unload-owner! owner)
     (test-runner:wait-until (lambda () (processes:status process)))))
+
+(test "once the module that started a connection unloads, it is not running, and the requests other modules wait for get jsonrpc:&ended"
+  (let*-values ([(owner) (make-owner '(starter))]
+                [(c record) (call-as-owner owner (lambda () (servers:start! "fake" (jsonrpc:handlers))))])
+    (let ([failed #f])
+      (jsonrpc:request-async c "wait" '() (lambda (v) (void)) (lambda (e) (set! failed e)))
+      (let ([waiting (spawn-task (lambda (restore) (servers:raised (lambda () (jsonrpc:request c "wait" '())))))])
+        (servers:wait-for-records record 2)
+        (unload-owner! owner)
+        (check (not (jsonrpc:running? c)))
+        (check-equal? '(ended #f) (test-runner:join waiting)))
+      (test-runner:wait-until (lambda () failed))
+      (check (jsonrpc:ended? failed))
+      (check-equal? '(ended #f) (servers:raised (lambda () (jsonrpc:request c "echo" '())))))))

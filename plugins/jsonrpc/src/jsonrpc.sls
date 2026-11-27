@@ -82,7 +82,7 @@
    pending-done! %pending-resume %pending-resume-set! %pending-timer-set!
    %pending-on-result %pending-on-error %pending-owner
    make-events-log %events-log-buffer
-   connections remember-connection! forget-connection! append-to-log!)
+   connections remember-connection! forget-connection! append-to-log! watch-owner!)
 
   (define-record-type (%handlers make-handlers handlers?)
     (sealed #t)
@@ -126,6 +126,23 @@
   (define (remember-connection! c) (set! connections (cons c connections)))
 
   (define (forget-connection! c) (set! connections (remq c connections)))
+
+  ;; The unload of the module that started a connection stops its process
+  ;; and job without calling their procedures, so the connection is dropped
+  ;; then, or it would read as running and requests other modules wait for
+  ;; would never end. One unload action per owner drops all its
+  ;; connections, so many connections make one change, not many.
+  (define watched-owners (make-eq-hashtable))
+
+  (define (watch-owner! owner)
+    (unless (hashtable-contains? watched-owners owner)
+      (hashtable-set! watched-owners owner #t)
+      (on-unload
+        (lambda ()
+          (hashtable-delete! watched-owners owner)
+          (for-each
+            (lambda (c) (when (eq? (%connection-owner c) owner) (%drop! c)))
+            connections)))))
 
   ;; The log's lines are counted in a queue of their lengths, so trimming
   ;; never reads the buffer's text.
@@ -276,6 +293,7 @@
                [directory (and options (processes:options-directory options))]
                [environment (and options (processes:options-environment options))])
              stderr)))
+       (watch-owner! (current-owner))
        c)]))
 
 (define (%events-log-size-changed size)
@@ -494,6 +512,14 @@
           (%connection-events-set! c (make-events-log b))
           b))))
 
+(define (%drop! c)
+  (unless (%connection-finished? c)
+    (%connection-finished?-set! c #t)
+    (%connection-running?-set! c #f)
+    (forget-connection! c)
+    (let-values ([(ids waiting) (hashtable-entries (%connection-pending c))])
+      (vector-for-each (lambda (p) (%fail! p (%ended c))) waiting))))
+
 ;; A connection's process, job and waiting tasks may belong to a module
 ;; that stays loaded, so the requests fail now and the process's and job's
 ;; procedures, which call this plugin's, are told it is gone before they
@@ -502,9 +528,7 @@
   (lambda ()
     (for-each
       (lambda (c)
-        (%connection-finished?-set! c #t)
-        (let-values ([(ids waiting) (hashtable-entries (%connection-pending c))])
-          (vector-for-each (lambda (p) (%fail! p (%ended c))) waiting))
+        (%drop! c)
         (processes:stop! (%connection-process c))
         (jobs:stop! (%connection-job c)))
       connections)))

@@ -1392,7 +1392,9 @@
                  [(unvisited) (or (pair? unvisited) (%resource-operations? edit))]
                  [else #f])])
     (when (and ask? (pair? paths))
-      (unless (ask:yes-or-no? (%fmt "Apply changes to ~a? " (%join (map files:abbreviated-path paths))))
+      (unless (ask:yes-or-no? (%fmt "Apply changes to ~a? "
+                                (fold-left (lambda (acc p) (string-append acc ", " p)) (files:abbreviated-path (car paths))
+                                           (map files:abbreviated-path (cdr paths)))))
         (error 'lsp "Changes not applied")))))
 
 (define (%apply-workspace-edit! conn edit versions)
