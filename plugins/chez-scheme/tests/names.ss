@@ -1,6 +1,7 @@
-(import (tuna) (test) (test-runner) (buffers) (document) (files) (syntax-highlighting) (chez-scheme) (scheme-buffers))
+(import (tuna) (test) (test-runner) (buffers) (document) (files) (syntax-highlighting) (chez-scheme) (chez-scheme-test scheme-buffers))
 
 ;; Loaded, not imported, so the tests' unloads of them stay unloads.
+(chez-scheme-test/scheme-buffers:write-lib-modules!)
 (load-module! '(zeppo))
 (load-module! '(tunes))
 
@@ -17,11 +18,11 @@
     (test-runner:wait-until (lambda () (not (eq? (chez-scheme:names b) (chez-scheme:repl-names))))))
   (let ([end (- (document:length (buffers:document b)) 1)])
     (buffers:replace! b end end " 7"))
-  (test-runner:wait-until (lambda () (eq? 'number (scheme-buffers:face-of b "7"))))
-  (scheme-buffers:faces b))
+  (test-runner:wait-until (lambda () (eq? 'number (chez-scheme-test/scheme-buffers:face-of b "7"))))
+  (chez-scheme-test/scheme-buffers:faces b))
 
 (define (word-faces content scoped? . words)
-  (let* ([b (scheme-buffers:scheme-buffer "names.ss" content)] [faces (final-faces b scoped?)])
+  (let* ([b (chez-scheme-test/scheme-buffers:scheme-buffer "names.ss" content)] [faces (final-faces b scoped?)])
     (buffers:kill! b)
     (map (lambda (word) (let ([found (assoc word faces)]) (and found (cadr found)))) words)))
 
@@ -57,10 +58,10 @@
                             "define" "car" "options:define-option")))
 
 (test "data the reader makes that is not a spec is left out of the scope, and the job goes on"
-  (let ([bad (scheme-buffers:scheme-buffer "bad.ss" "(import #&x (chezscheme) #vfx(1) #0=(a . #0#))\n(car 1)")])
+  (let ([bad (chez-scheme-test/scheme-buffers:scheme-buffer "bad.ss" "(import #&x (chezscheme) #vfx(1) #0=(a . #0#))\n(car 1)")])
     (check-equal? 'function.builtin (cadr (assoc "car" (final-faces bad #t))))
-    (buffers:replace! bad (scheme-buffers:after bad "(car 1)") (scheme-buffers:after bad "(car 1)") " (cdr 2)")
-    (test-runner:wait-until (lambda () (eq? 'function.builtin (scheme-buffers:face-of bad "cdr"))))
+    (buffers:replace! bad (chez-scheme-test/scheme-buffers:after bad "(car 1)") (chez-scheme-test/scheme-buffers:after bad "(car 1)") " (cdr 2)")
+    (test-runner:wait-until (lambda () (eq? 'function.builtin (chez-scheme-test/scheme-buffers:face-of bad "cdr"))))
     (buffers:kill! bad))
   (check-equal? '(function.builtin) (word-faces "(library (a #!eof) (export) (import (chezscheme)))\n(car 1)" #t "car")))
 
@@ -70,9 +71,9 @@
                             "car" "options:define-option" "modes:ancestry" "modes:major-mode-changed" "syntax:lexers" "faces:comment"
                             "buffers:with-buffer" "chez-scheme:%highlight-input" "syntax:class")))
 
-(define zeppo (files:visit (scheme-buffers:home-file ".config/tuna/lib/zeppo.sls")))
+(define zeppo (files:visit (chez-scheme-test/scheme-buffers:home-file ".config/tuna/lib/zeppo.sls")))
 
-(define tunes (files:visit (scheme-buffers:home-file ".config/tuna/lib/tunes.sls")))
+(define tunes (files:visit (chez-scheme-test/scheme-buffers:home-file ".config/tuna/lib/tunes.sls")))
 
 (test "a module's file, found by its path, spells its own exports without the prefix, and its helpers are drawn there"
   (let ([faces (final-faces tunes #t)])
@@ -86,26 +87,26 @@
 (test "a library the running Tuna has not loaded adds no names"
   (check-equal? '(#f #f) (word-faces "(import (nowhere))\n(nowhere:thing car)" #t "nowhere:thing" "car")))
 
-(define hums (scheme-buffers:scheme-buffer "hums.ss" "(import (tunes))\n(tunes:hum)"))
+(define hums (chez-scheme-test/scheme-buffers:scheme-buffer "hums.ss" "(import (tunes))\n(tunes:hum)"))
 
 (test "when a module unloads, the buffers that import it lose its names and their colours; loading it again brings them back"
-  (test-runner:wait-until (lambda () (eq? 'function.builtin (scheme-buffers:face-of hums "tunes:hum"))))
+  (test-runner:wait-until (lambda () (eq? 'function.builtin (chez-scheme-test/scheme-buffers:face-of hums "tunes:hum"))))
   (unload-owner! (module-owner '(tunes)))
-  (test-runner:wait-until (lambda () (not (scheme-buffers:face-of hums "tunes:hum"))))
+  (test-runner:wait-until (lambda () (not (chez-scheme-test/scheme-buffers:face-of hums "tunes:hum"))))
   (check-equal? #f (chez-scheme:find-name hums 'tunes:hum)))
 
 (load-module! '(tunes))
 
 (test "a module loaded again gives its names and colours back"
-  (test-runner:wait-until (lambda () (eq? 'function.builtin (scheme-buffers:face-of hums "tunes:hum")))))
+  (test-runner:wait-until (lambda () (eq? 'function.builtin (chez-scheme-test/scheme-buffers:face-of hums "tunes:hum")))))
 
 (test "a module's names are classified again when it loads again, and the buffers whose scope holds it are highlighted again"
-  (scheme-buffers:write-text! ".config/tuna/lib/tunes.sls" "#!tuna\n(define (hum) (%note 1))\n(define (%note n) n)\n(define (sing) 1)\n")
-  (let ([singer (scheme-buffers:scheme-buffer "singer.ss" "(import (tunes))\n(tunes:sing)")])
+  (chez-scheme-test/scheme-buffers:write-text! ".config/tuna/lib/tunes.sls" "#!tuna\n(define (hum) (%note 1))\n(define (%note n) n)\n(define (sing) 1)\n")
+  (let ([singer (chez-scheme-test/scheme-buffers:scheme-buffer "singer.ss" "(import (tunes))\n(tunes:sing)")])
     (final-faces singer #t)
-    (check-equal? #f (scheme-buffers:face-of singer "tunes:sing"))
+    (check-equal? #f (chez-scheme-test/scheme-buffers:face-of singer "tunes:sing"))
     (reload-modules! '((tunes)))
-    (test-runner:wait-until (lambda () (eq? 'function.builtin (scheme-buffers:face-of singer "tunes:sing"))))))
+    (test-runner:wait-until (lambda () (eq? 'function.builtin (chez-scheme-test/scheme-buffers:face-of singer "tunes:sing"))))))
 
 (define plugins (string-append (path-parent (car (command-line))) "/plugins"))
 
@@ -140,7 +141,7 @@
     (check (member '(zeppo) libraries))))
 
 (test "a configuration gets its own imports' names, then the REPL's"
-  (let ([config (scheme-buffers:scheme-buffer "init.ss" "(import (tuna) (document))\n(use-plugin buffers)\n")])
+  (let ([config (chez-scheme-test/scheme-buffers:scheme-buffer "init.ss" "(import (tuna) (document))\n(use-plugin buffers)\n")])
     (final-faces config #t)
     (check-equal? '((zeppo:%tune (zeppo) procedure) (document:text (document) procedure) (spawn-task (tuna) procedure))
                   (described config '(zeppo:%tune document:text spawn-task)))))

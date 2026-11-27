@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (test-runner) (options) (hooks) (tables) (modes) (buffers) (document) (views) (web) (ui)
-        (minibuffer) (completion) (completion rows) (completion-list) (completion-popup) (editing) (sessions))
+        (minibuffer) (completion) (completion rows) (completion-list) (completion-popup) (editing) (completion-test sessions))
 
 (define (contains? text piece)
   (let loop ([i 0])
@@ -8,7 +8,7 @@
 
 (define (quit! r)
   (test-user:press! "C-g")
-  (check-raises cancelled? (sessions:result r)))
+  (check-raises cancelled? (completion-test/sessions:result r)))
 
 (define (rows-view)
   (let ([b (find (lambda (b) (contains? (buffers:name b) "*Completions")) (buffers:all))])
@@ -31,7 +31,7 @@
                          (test-user:elements (view-element (rows-view)) "ui-list-row"))])
     (and (pair? current) (row-text (car current)))))
 
-(define (state) (list (sessions:selected-text (sessions:session)) (drawn-selected)))
+(define (state) (list (completion-test/sessions:selected-text (completion-test/sessions:session)) (drawn-selected)))
 
 (define (two-before sources)
   (lambda ()
@@ -58,7 +58,7 @@
 
 (test "a read that preselects nothing draws no row selected until a move selects one"
   (options:set! completion:read-preselect 'none)
-  (let ([r (sessions:start! (lambda () (completion:read "Word: " (list (completion:source (candidates (vector "alpha" "almond" "apple" "banana")))) #f)))])
+  (let ([r (completion-test/sessions:start! (lambda () (completion:read "Word: " (list (completion:source (candidates (vector "alpha" "almond" "apple" "banana")))) #f)))])
     (check-equal? '(#f #f) (state))
     (check-equal? '("alpha" "apple" "almond" "banana") (drawn-rows))
     (test-user:press! "<down>")
@@ -66,11 +66,11 @@
     (test-user:press! "<down>")
     (check-equal? '("apple" "apple") (state))
     (test-user:press! "RET")
-    (check-equal? "apple" (sessions:result r)))
+    (check-equal? "apple" (completion-test/sessions:result r)))
   (options:unset! completion:read-preselect))
 
 (test "a group's title is a heading above its first row, never inside a row, and every match is a row"
-  (let ([r (sessions:start!
+  (let ([r (completion-test/sessions:start!
              (lambda ()
                (completion:read "? "
                  (list (completion:source
@@ -86,7 +86,7 @@
     (quit! r)))
 
 (test "a match is drawn as a completion-match span in its face"
-  (let ([r (sessions:start!
+  (let ([r (completion-test/sessions:start!
              (lambda ()
                (completion:read "? "
                  (list (completion:source (candidates (vector "file-picker:find-file" "files:save-buffer")) (styles (list completion:any-order))))
@@ -102,7 +102,7 @@
 (test "the rows' columns are as wide as the widest drawn in the session, written on the rows' element, and only grow"
   (tables:set! completion:annotators sized-category
     (lambda (session) (lambda (word details) (list (number->string (string-length word))))))
-  (let ([r (sessions:start!
+  (let ([r (completion-test/sessions:start!
              (lambda ()
                (minibuffer:call-with-setup (lambda (p) (minibuffer:set-input! p "q"))
                  (lambda () (completion:read "Word: " (list (completion:source (candidates (vector "q" "abcdefghij")) (category sized-category))) #f)))))]
@@ -121,7 +121,7 @@
 (test "the rows' buffer is in the display's own mode, derived from completion/rows:mode, and one display's hook changes it alone"
   (let ([margin (lambda () (options:set-local! views:scroll-margin 3))])
     (hooks:add! completion-popup:mode-hook margin)
-    (let ([r (sessions:start! (lambda () (completion:read "Word: " (list (completion:source (candidates (vector "alpha" "apple")))) #f)))])
+    (let ([r (completion-test/sessions:start! (lambda () (completion:read "Word: " (list (completion:source (candidates (vector "alpha" "apple")))) #f)))])
       (let ([b (views:buffer (rows-view))])
         (check-equal? (list completion-list:mode #t) (list (modes:major-mode b) (modes:derived? (modes:major-mode b) completion/rows:mode)))
         (check-equal? '(2 #f #f) (buffers:with-buffer b (list (views:scroll-margin) (views:cursor-visible) (views:hand-scroll-moves-point))))
@@ -191,65 +191,65 @@
 
 (define (lines from to) (list->vector (map (lambda (i) (format "item-~a" (+ from i))) (iota (- to from)))))
 
-(define (rows-count) (completion:matches-count (completion:session-matches (sessions:session))))
+(define (rows-count) (completion:matches-count (completion:session-matches (completion-test/sessions:session))))
 
 (define (fed! from to)
   (feed (lines from to))
   (test-runner:wait-until (lambda () (= (rows-count) to)))
   (test-user:settle))
 
-(define (place) (list (placement) (views:point (rows-view)) (row-at-top) (completion:session-matches (sessions:session))))
+(define (place) (list (placement) (views:point (rows-view)) (row-at-top) (completion:session-matches (completion-test/sessions:session))))
 
 (test "a stream's rounds and its end add rows without moving a list scrolled by hand, and a click on a row drawn before chooses it"
-  (let ([r (sessions:start! stream-read)])
+  (let ([r (completion-test/sessions:start! stream-read)])
     (for-each (lambda (k) (fed! (* k 1000) (* (+ k 1) 1000))) (iota 5))
     (scroll-by-hand! 2000)
-    (check-equal? (list 2000 "item-0") (list (row-at-top) (sessions:selected-text (sessions:session))))
+    (check-equal? (list 2000 "item-0") (list (row-at-top) (completion-test/sessions:selected-text (completion-test/sessions:session))))
     (let ([before (place)] [version (buffers:version (views:buffer (rows-view)))]
           [token (car (find (lambda (drawn) (string=? "item-2005" (cdr drawn))) (drawn-row-tokens)))])
       (fed! 5000 5100)
       (feed 'done)
-      (sessions:wait-matches (sessions:session))
+      (completion-test/sessions:wait-matches (completion-test/sessions:session))
       (test-user:settle)
       (check-equal? before (place))
       (check-equal? 5100 (rows-count))
       (click-row! token version)
-      (check-equal? "item-2005" (sessions:result r)))))
+      (check-equal? "item-2005" (completion-test/sessions:result r)))))
 
 (test "with nothing selected a stream's rounds leave the view where it is, and a command shows the selection again"
   (options:set! completion:read-preselect 'none)
-  (let ([r (sessions:start! stream-read)])
+  (let ([r (completion-test/sessions:start! stream-read)])
     (fed! 0 3000)
     (scroll-by-hand! 1500)
     (let ([before (place)])
       (fed! 3000 3500)
       (feed 'done)
-      (sessions:wait-matches (sessions:session))
+      (completion-test/sessions:wait-matches (completion-test/sessions:session))
       (test-user:settle)
-      (check-equal? #f (completion:selected (sessions:session)))
+      (check-equal? #f (completion:selected (completion-test/sessions:session)))
       (check-equal? (list-head before 3) (list-head (place) 3)))
     (for-each
       (lambda (key expected)
         (test-user:press! key)
-        (check-equal? (list expected #t) (list (sessions:selected-text (sessions:session)) (views:following? (rows-view)))))
+        (check-equal? (list expected #t) (list (completion-test/sessions:selected-text (completion-test/sessions:session)) (views:following? (rows-view)))))
       '("C-n" "M->" "M-<")
       '("item-0" "item-3499" "item-0"))
     (quit! r))
   (options:unset! completion:read-preselect))
 
 (test "a stream that ends with few lines is matched on the main thread and keeps its matches and the view's place"
-  (let ([r (sessions:start! stream-read)])
+  (let ([r (completion-test/sessions:start! stream-read)])
     (fed! 0 600)
     (fed! 600 900)
     (scroll-by-hand! 400)
     (let ([before (place)])
       (feed 'done)
-      (sessions:wait-matches (sessions:session))
+      (completion-test/sessions:wait-matches (completion-test/sessions:session))
       (test-user:settle)
       (check-equal? before (place)))
     (quit! r)))
 
 (test "a click on a row of a read's list chooses it"
-  (let ([r (sessions:start! (lambda () (completion:read "Word: " (list (completion:source (candidates (vector "alpha" "almond" "apple" "banana")))) #f)))])
+  (let ([r (completion-test/sessions:start! (lambda () (completion:read "Word: " (list (completion:source (candidates (vector "alpha" "almond" "apple" "banana")))) #f)))])
     (click-row! (list-ref (row-tokens) 2) (buffers:version (views:buffer (rows-view))))
-    (check-equal? "almond" (sessions:result r))))
+    (check-equal? "almond" (completion-test/sessions:result r))))

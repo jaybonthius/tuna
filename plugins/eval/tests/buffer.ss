@@ -1,4 +1,4 @@
-(import (tuna) (test) (caught-reports) (test-user) (files) (document) (buffers) (views) (layout) (layout-split)
+(import (tuna) (test) (eval-test caught-reports) (test-user) (files) (document) (buffers) (views) (layout) (layout-split)
         (editing) (echo-area) (undo) (modes) (minibuffer) (completion) (chez-scheme) (chez-scheme-completion) (eval)
         (eval-test))
 
@@ -50,6 +50,8 @@
   (eval-test:show! (files:visit (eval-test:home-path "failing.ss")))
   (check-equal? '("1 is not a pair" ((car "~s is not a pair"))) (shown-after "C-c C-k"))
   (check-equal? (list '("a" "car: 1 is not a pair") #f) (list (eval-test:log-tail 2) (bound? "after"))))
+
+(eval-test:write-greet!)
 
 (import (greet))
 

@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (web) (processes) (jsonrpc) (json-rpc) (servers))
+(import (tuna) (test) (test-runner) (web) (processes) (jsonrpc) (json-rpc) (jsonrpc-test servers))
 
 (define (message thunk)
   (guard (c [(assertion-violation? c) (condition-message c)]) (thunk) 'no-violation))
@@ -7,7 +7,7 @@
 
 (define (note-cancel! c id) (set! cancels (cons id cancels)))
 
-(define-values (c c-record) (servers:start! "fake" (jsonrpc:handlers [cancel note-cancel!])))
+(define-values (c c-record) (jsonrpc-test/servers:start! "fake" (jsonrpc:handlers [cancel note-cancel!])))
 
 ;; Cancelling a waiting task makes the kernel report the cancel.
 (define (cancel-waiting! task)
@@ -30,21 +30,21 @@
 
 (test "an error the program answers is its own &json-rpc-error with code, message and data, -32099 included"
   (check-equal? '(json-rpc-error -32602 "bad params")
-    (servers:raised (lambda () (jsonrpc:request c "fail" '(("code" . -32602) ("message" . "bad params"))))))
+    (jsonrpc-test/servers:raised (lambda () (jsonrpc:request c "fail" '(("code" . -32602) ("message" . "bad params"))))))
   (check-equal? '(json-rpc-error -32099 "server busy")
-    (servers:raised (lambda () (jsonrpc:request c "fail" '(("code" . -32099) ("message" . "server busy"))))))
+    (jsonrpc-test/servers:raised (lambda () (jsonrpc:request c "fail" '(("code" . -32099) ("message" . "server busy"))))))
   (check-equal? '#(1 2)
     (guard (e [(json-rpc-error? e) (json-rpc-error-data e)])
       (jsonrpc:request c "fail" '(("code" . 1) ("message" . "m") ("data" . #(1 2)))))))
 
 (test "a request the program never answers raises jsonrpc:&timeout after its time, naming the method"
-  (check-equal? '(timeout "wait") (servers:raised (lambda () (jsonrpc:request c "wait" '() 0.1))))
+  (check-equal? '(timeout "wait") (jsonrpc-test/servers:raised (lambda () (jsonrpc:request c "wait" '() 0.1))))
   (check-equal? 10 (jsonrpc:request-timeout)))
 
 (test "a cancel of a waiting task calls the cancel clause with the request's id, and the answer, when it comes, is dropped"
-  (let* ([sent (length (servers:record-of c-record))]
+  (let* ([sent (length (jsonrpc-test/servers:record-of c-record))]
          [waiting (spawn-task (lambda (restore) (jsonrpc:request c "wait" '())))])
-    (servers:wait-for-records c-record (+ sent 1))
+    (jsonrpc-test/servers:wait-for-records c-record (+ sent 1))
     (check-equal? '() cancels)
     (cancel-waiting! waiting)
     (check-equal? 1 (length cancels))
@@ -61,13 +61,13 @@
       (check-equal? 1 (length cancels)))))
 
 (test "a connection without a cancel clause sends nothing when a waiting task is cancelled, and two connections each read their own frames"
-  (let-values ([(quiet record) (servers:start! "quiet" (jsonrpc:handlers))])
+  (let-values ([(quiet record) (jsonrpc-test/servers:start! "quiet" (jsonrpc:handlers))])
     (let ([waiting (spawn-task (lambda (restore) (jsonrpc:request quiet "wait" '())))])
-      (servers:wait-for-records record 1)
+      (jsonrpc-test/servers:wait-for-records record 1)
       (cancel-waiting! waiting)
       (check-equal? '#(1) (jsonrpc:request quiet "echo" '#(1)))
       (check-equal? '("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"wait\"," "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"echo\",")
-        (map (lambda (line) (substring line 0 (min 40 (string-length line)))) (servers:record-of record))))
+        (map (lambda (line) (substring line 0 (min 40 (string-length line)))) (jsonrpc-test/servers:record-of record))))
     (let ([both (list (spawn-task (lambda (restore) (jsonrpc:request c "echo" '#("c"))))
                       (spawn-task (lambda (restore) (jsonrpc:request quiet "echo" '#("quiet")))))])
       (check-equal? '(#("c") #("quiet")) (map test-runner:join both)))

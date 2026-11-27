@@ -1,4 +1,4 @@
-(import (tuna) (caught-reports))
+(import (tuna) (eval-test caught-reports))
 (use-plugin layout)
 (use-plugin layout-split)
 (use-plugin editing)

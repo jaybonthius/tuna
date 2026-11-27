@@ -39,6 +39,6 @@
   (for-each
     (lambda (module message)
       (check-raises (lambda (c) (and (syntax-violation? c) (string=? message (condition-message c))))
-                    (load-module! (list 'bad-options module))))
+                    (load-module! (list 'docs-at-point-test 'bad-options module))))
     '(unknown-clause clause-twice)
     '("invalid clause" "clause given twice")))

@@ -1,5 +1,7 @@
-(import (tuna) (test) (test-runner) (hooks) (options) (jobs) (timers) (buffers) (files) (files-test) (quits)
+(import (tuna) (test) (test-runner) (hooks) (options) (jobs) (timers) (buffers) (files) (files-test)
         (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+
+(define request-quit! (test-runner:running-task-canceller))
 
 (options:set! files:require-final-newline #t)
 
@@ -138,7 +140,7 @@
           (when quitting
             (chez:sleep (make-time 'time-duration 100000 0))
             (when (box-cas! armed #t #f)
-              (quits:request-quit!)
+              (request-quit!)
               (set! requests (+ requests 1)))
             (loop)))))
     (let again ()

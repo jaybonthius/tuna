@@ -1,20 +1,20 @@
-(import (tuna) (test) (test-user) (saved) (options) (tables) (minibuffer) (completion) (completion-list) (editing) (sessions))
+(import (tuna) (test) (test-user) (saved) (options) (tables) (minibuffer) (completion) (completion-list) (editing) (completion-test sessions))
 
 (saved:define-saved words-history '() list?)
 
 (define (with-read sources thunk)
-  (let ([r (sessions:start! (lambda () (completion:read "? " sources words-history)))])
-    (thunk (sessions:session))
+  (let ([r (completion-test/sessions:start! (lambda () (completion:read "? " sources words-history)))])
+    (thunk (completion-test/sessions:session))
     (test-user:press! "C-g")
-    (check-raises cancelled? (sessions:result r))))
+    (check-raises cancelled? (completion-test/sessions:result r))))
 
 (define (offered sources text)
   (let ([found #f])
     (with-read sources
       (lambda (s)
         (test-user:type! text)
-        (sessions:wait-matches s)
-        (set! found (sessions:texts s))))
+        (completion-test/sessions:wait-matches s)
+        (set! found (completion-test/sessions:texts s))))
     found))
 
 (define (first-spans sources text)
@@ -22,7 +22,7 @@
     (with-read sources
       (lambda (s)
         (test-user:type! text)
-        (set! found (completion:spans s (car (sessions:matches s))))))
+        (set! found (completion:spans s (car (completion-test/sessions:matches s))))))
     found))
 
 (define commands-like
@@ -122,9 +122,9 @@
           (completion:source (candidates (vector "abc" "xbc"))))
     (lambda (s)
       (test-user:type! "bc")
-      (check-equal? '("abc" "xbc" "abc" "xbc") (sessions:texts s))
+      (check-equal? '("abc" "xbc" "abc" "xbc") (completion-test/sessions:texts s))
       (test-user:type! "x")
-      (check-equal? '() (sessions:texts s))))
+      (check-equal? '() (completion-test/sessions:texts s))))
   (options:unset! completion:styles)
   (tables:remove! completion:category-styles letter-category))
 
@@ -134,10 +134,10 @@
     (list (completion:source (candidates (vector "one two" "two")) (category letter-category) (styles (list completion:substring))))
     (lambda (s)
       (test-user:type! "tw")
-      (check-equal? '("two" "one two") (sessions:texts s))
+      (check-equal? '("two" "one two") (completion-test/sessions:texts s))
       (test-user:press! "DEL DEL")
       (test-user:type! "oo")
-      (check-equal? '("one two") (sessions:texts s))))
+      (check-equal? '("one two") (completion-test/sessions:texts s))))
   (tables:remove! completion:category-styles letter-category))
 
 (test "a category's styles come before completion:styles, which still finds what they miss; at its default the category's defaults stand in"

@@ -69,6 +69,31 @@
     (test-runner:wait-until (lambda () (unbox set)))
     (check (unbox set))))
 
+(test "a running-task canceller cancels, from another thread, the task the main thread is running, unless it is the task spared, and says whether it cancelled"
+  (let ([cancel! (test-runner:running-task-canceller)] [me (current-task)] [spared-cancels 0] [stopped #f])
+    (fork-task
+      (lambda (restore)
+        (let ([until (+ (real-time) 200)])
+          (let loop ()
+            (when (< (real-time) until)
+              (when (cancel! me) (set! spared-cancels (+ spared-cancels 1)))
+              (loop))))
+        (set! stopped #t)))
+    (let spin () (unless stopped (spin)))
+    (check-equal? 0 spared-cancels)
+    (check-equal? 'cancelled
+      (guard (c [(cancelled? c) 'cancelled])
+        (fork-task (lambda (restore) (let loop () (unless (cancel!) (loop)))))
+        (let spin () (spin))))))
+
+(test "a running-task canceller is made on the main thread"
+  (check-equal? 1
+    (length
+      (reports-during
+        (lambda ()
+          (check-raises assertion-violation?
+            (test-runner:join (fork-task (lambda (restore) (test-runner:running-task-canceller))))))))))
+
 (test "run-paths is #t only when every file it names passes"
   (check-equal? #t (test-runner:run-paths '("runner/tests/passes.ss")))
   (check-equal? #f (test-runner:run-paths '("runner")))

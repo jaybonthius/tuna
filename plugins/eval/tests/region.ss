@@ -1,4 +1,4 @@
-(import (tuna) (test) (caught-reports) (test-user) (keys) (document) (buffers) (views) (layout) (layout-split) (editing) (echo-area)
+(import (tuna) (test) (eval-test caught-reports) (test-user) (keys) (document) (buffers) (views) (layout) (layout-split) (editing) (echo-area)
         (undo) (modes) (minibuffer) (completion) (files) (actions) (chez-scheme) (chez-scheme-completion) (eval)
         (eval-test))
 
@@ -49,7 +49,7 @@
   (let ([open (eval-test:scheme-buffer! "open.ss" "(+ 1")])
     (views:set-point! (eval-test:view) 1)
     (eval-test:mark-at! open "1" 1)
-    (let ([reports (caught-reports:during (lambda () (test-user:press! "C-c C-r")))])
+    (let ([reports (eval-test/caught-reports:during (lambda () (test-user:press! "C-c C-r")))])
       (check-equal? '(#t) (map lexical-violation? reports))
       (check-equal? "unexpected end-of-file reading list at char 0 of #<input port string>" (message)))))
 
@@ -59,6 +59,8 @@
     (eval-test:mark-at! cmd "\n" 0)
     (test-user:press! "C-c C-r")
     (check-equal? "say-hello" (message))))
+
+(eval-test:write-greet!)
 
 (import (greet))
 

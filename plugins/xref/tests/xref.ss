@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-runner) (test-user) (hooks) (options) (commands) (keys) (buffers) (document) (views)
-        (layout) (layout-split) (editing) (files) (minibuffer) (completion) (completion-list) (jump-history) (xref) (words))
+        (layout) (layout-split) (editing) (files) (minibuffer) (completion) (completion-list) (jump-history) (xref) (xref-test words))
 
 (define (raised? who message)
   (lambda (c)
@@ -52,7 +52,7 @@
 
 (define (prompting?) (and (minibuffer:current-prompt) #t))
 
-(define uses (files:visit (words:path "uses.txt")))
+(define uses (files:visit (xref-test/words:path "uses.txt")))
 
 (define (to-word! word line)
   (let* ([doc (buffers:document uses)] [start (document:line-start doc line)]
@@ -153,8 +153,8 @@
     (test-user:press! "M-,")))
 
 (test "an item keeps its summary, path, line, column and kind, and its arguments are checked"
-  (let ([item (xref:make-item "a" (words:path "defs.txt") 3 4 "Function")] [plain (xref:make-item "b" (words:path "uses.txt") 1 0)])
-    (check-equal? (list "a" (words:path "defs.txt") 3 4 "Function")
+  (let ([item (xref:make-item "a" (xref-test/words:path "defs.txt") 3 4 "Function")] [plain (xref:make-item "b" (xref-test/words:path "uses.txt") 1 0)])
+    (check-equal? (list "a" (xref-test/words:path "defs.txt") 3 4 "Function")
                   (list (xref:item-summary item) (xref:item-path item) (xref:item-line item) (xref:item-column item) (xref:item-kind item)))
     (check-equal? '(#t #f) (list (xref:item? plain) (xref:item-kind plain))))
   (check-raises (raised? 'xref:make-item "not an absolute path") (xref:make-item "a" "relative.txt" 1 0))
@@ -163,7 +163,7 @@
   (check-raises (raised? 'xref:make-item "neither a string nor #f") (xref:make-item "a" "/a.txt" 1 0 'function)))
 
 (commands:define-command (show-two) "Shows two items."
-  (xref:show-items (list (xref:make-item "a" (words:path "defs.txt") 3 4) (xref:make-item "b" (words:path "uses.txt") 1 0)) "Found"))
+  (xref:show-items (list (xref:make-item "a" (xref-test/words:path "defs.txt") 3 4) (xref:make-item "b" (xref-test/words:path "uses.txt") 1 0)) "Found"))
 
 (keys:bind! keys:global "C-c x" show-two)
 
@@ -177,9 +177,9 @@
   (test-user:press! "M-,"))
 
 (test "xref:go-to-item puts point at the item's column, or at the end of a line shorter than that"
-  (xref:go-to-item (xref:make-item "x" (words:path "uses.txt") 1 4))
+  (xref:go-to-item (xref:make-item "x" (xref-test/words:path "uses.txt") 1 4))
   (check-equal? "x = |total\ny = average + total\n" (test-user:text))
-  (xref:go-to-item (xref:make-item "x" (words:path "uses.txt") 1 40))
+  (xref:go-to-item (xref:make-item "x" (xref-test/words:path "uses.txt") 1 40))
   (check-equal? "x = total|\ny = average + total\n" (test-user:text)))
 
 (test "C-M-. asks for a pattern and shows the identifiers that match it under Symbols matching, through xref:references-display; none raises"
@@ -226,7 +226,7 @@
   (for-each
     (lambda (module message)
       (check-raises (lambda (c) (and (syntax-violation? c) (string=? message (condition-message c))))
-                    (load-module! (list 'bad-backend module))))
+                    (load-module! (list 'xref-test 'bad-backend module))))
     '(unknown-clause clause-twice)
     '("invalid clause" "clause given twice")))
 

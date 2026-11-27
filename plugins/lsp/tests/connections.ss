@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-runner) (test-user) (hooks) (options) (tables) (keys) (buffers) (document) (views) (layout)
-        (files) (xref) (jsonrpc) (minibuffer) (completion) (completion-list) (lsp) (servers))
+        (files) (xref) (jsonrpc) (minibuffer) (completion) (completion-list) (lsp) (lsp-test servers))
 
 (options:set! lsp:send-changes-delay 0.05)
 
@@ -22,26 +22,26 @@
 
 (keys:bind! keys:global "C-c o" lsp:organize-imports)
 
-(lsp:define-server alpha (servers:fake-command "alpha"))
+(lsp:define-server alpha (lsp-test/servers:fake-command "alpha"))
 
-(define a-path (string-append servers:project "/a b é.fk"))
+(define a-path (string-append lsp-test/servers:project "/a b é.fk"))
 
 (define (edit text)
   `(("changes" (,(lsp:path->uri a-path) . #((("range" ("start" ("line" . 0) ("character" . 0)) ("end" ("line" . 0) ("character" . 0))) ("newText" . ,text)))))))
 
 (define (action title kind . more) (append `(("title" . ,title) ("kind" . ,kind)) more))
 
-(servers:configure! "alpha" '(capabilities ("textDocumentSync" . 2) ("codeActionProvider" . #t)) '(responses ("textDocument/codeAction" . #())))
+(lsp-test/servers:configure! "alpha" '(capabilities ("textDocumentSync" . 2) ("codeActionProvider" . #t)) '(responses ("textDocument/codeAction" . #())))
 
 (tables:set! lsp:language-servers "fakelang" (list alpha))
 
-(hooks:add! servers:fake-mode-hook lsp:ensure)
+(hooks:add! lsp-test/servers:fake-mode-hook lsp:ensure)
 
-(servers:write-file! a-path "one\ntwo\n")
+(lsp-test/servers:write-file! a-path "one\ntwo\n")
 
-(define a (servers:visit! a-path))
+(define a (lsp-test/servers:visit! a-path))
 
-(servers:wait-for "alpha" "textDocument/didOpen")
+(lsp-test/servers:wait-for "alpha" "textDocument/didOpen")
 
 (define c (car (lsp:buffer-connections a)))
 
@@ -59,7 +59,7 @@
 
 (test "a path and its file: URI turn into each other, characters outside the unreserved ones escaped; another scheme raises"
   (check-equal? a-path (lsp:uri->path (lsp:path->uri a-path)))
-  (check-equal? (string-append "file://" servers:project "/a%20b%20%C3%A9.fk") (lsp:path->uri a-path))
+  (check-equal? (string-append "file://" lsp-test/servers:project "/a%20b%20%C3%A9.fk") (lsp:path->uri a-path))
   (check-raises (raised? 'lsp:uri->path "not a file: URI") (lsp:uri->path "https://example.org/a")))
 
 (test "a Location becomes an xref item with its line's text as the summary"
@@ -67,43 +67,43 @@
     (check-equal? (list "two" a-path 2 1) (list (xref:item-summary item) (xref:item-path item) (xref:item-line item) (xref:item-column item)))))
 
 (test "a server's showMessage goes to the echo area through ask:message"
-  (servers:said!)
-  (servers:send! c '(("jsonrpc" . "2.0") ("method" . "window/showMessage") ("params" ("type" . 3) ("message" . "Indexed."))))
+  (lsp-test/servers:said!)
+  (lsp-test/servers:send! c '(("jsonrpc" . "2.0") ("method" . "window/showMessage") ("params" ("type" . 3) ("message" . "Indexed."))))
   (let ([got '()])
-    (test-runner:wait-until (lambda () (set! got (append got (servers:said!))) (member "Indexed." got)))
+    (test-runner:wait-until (lambda () (set! got (append got (lsp-test/servers:said!))) (member "Indexed." got)))
     (check-equal? '("Indexed.") got)))
 
 (test "a server's request a table entry names is answered by it"
   (tables:set! lsp:request-handlers "fake/ask" (lambda (connection params) (list (cons "echo" params))))
-  (servers:send! c '(("jsonrpc" . "2.0") ("id" . "r1") ("method" . "fake/ask") ("params" ("n" . 1))))
-  (test-runner:wait-until (lambda () (servers:answered "alpha" "r1")))
-  (check-equal? '(("echo" ("n" . 1))) (servers:ref (servers:answered "alpha" "r1") "result")))
+  (lsp-test/servers:send! c '(("jsonrpc" . "2.0") ("id" . "r1") ("method" . "fake/ask") ("params" ("n" . 1))))
+  (test-runner:wait-until (lambda () (lsp-test/servers:answered "alpha" "r1")))
+  (check-equal? '(("echo" ("n" . 1))) (lsp-test/servers:ref (lsp-test/servers:answered "alpha" "r1") "result")))
 
 (test "lsp:code-actions with none raises No code actions here"
-  (check-equal? '((lsp:code-actions "No code actions here")) (servers:reports-during (lambda () (servers:press-until-ended! "C-c a" lsp:code-actions)))))
+  (check-equal? '((lsp:code-actions "No code actions here")) (lsp-test/servers:reports-during (lambda () (lsp-test/servers:press-until-ended! "C-c a" lsp:code-actions)))))
 
 (test "with several, lsp:code-actions asks Code action:, the preferred first"
-  (servers:configure! "alpha" '(capabilities ("textDocumentSync" . 2) ("codeActionProvider" . #t))
+  (lsp-test/servers:configure! "alpha" '(capabilities ("textDocumentSync" . 2) ("codeActionProvider" . #t))
     `(responses ("textDocument/codeAction" . #(,(action "Plain" "quickfix" (cons "edit" (edit "P"))) ,(action "Best" "quickfix" '("isPreferred" . #t) (cons "edit" (edit "B")))))))
-  (servers:press-until-prompt! "C-c a")
-  (check-equal? "Code action: " (servers:question))
-  (let* ([s (views:call-with-view (servers:view) completion:current-session)] [ms (begin (test-runner:wait-until (lambda () (not (completion:session-busy? s)))) (completion:session-matches s))])
+  (lsp-test/servers:press-until-prompt! "C-c a")
+  (check-equal? "Code action: " (lsp-test/servers:question))
+  (let* ([s (views:call-with-view (lsp-test/servers:view) completion:current-session)] [ms (begin (test-runner:wait-until (lambda () (not (completion:session-busy? s)))) (completion:session-matches s))])
     (check-equal? '("Best" "Plain") (map (lambda (k) (completion:text s (completion:matches-ref ms k))) (iota (completion:matches-count ms)))))
-  (servers:press-until-ended! "RET" lsp:code-actions)
-  (check-equal? "Bone\ntwo\n" (servers:text a)))
+  (lsp-test/servers:press-until-ended! "RET" lsp:code-actions)
+  (check-equal? "Bone\ntwo\n" (lsp-test/servers:text a)))
 
 (test "lsp:quickfix and lsp:organize-imports run their kind's one action without asking"
-  (servers:configure! "alpha" '(capabilities ("textDocumentSync" . 2) ("codeActionProvider" . #t))
+  (lsp-test/servers:configure! "alpha" '(capabilities ("textDocumentSync" . 2) ("codeActionProvider" . #t))
     `(responses ("textDocument/codeAction" . #(,(action "Fix" "quickfix" (cons "edit" (edit "Q"))) ,(action "Sort" "source.organizeImports" (cons "edit" (edit "O")))))))
-  (servers:press-until-ended! "C-c q" lsp:quickfix)
-  (check-equal? "QBone\ntwo\n" (servers:text a))
-  (servers:press-until-ended! "C-c o" lsp:organize-imports)
-  (check-equal? "OQBone\ntwo\n" (servers:text a)))
+  (lsp-test/servers:press-until-ended! "C-c q" lsp:quickfix)
+  (check-equal? "QBone\ntwo\n" (lsp-test/servers:text a))
+  (lsp-test/servers:press-until-ended! "C-c o" lsp:organize-imports)
+  (check-equal? "OQBone\ntwo\n" (lsp-test/servers:text a)))
 
 (test "lsp:execute-command sends a command no lsp:commands entry names to the server"
   (lsp:execute-command c '(("title" . "x") ("command" . "server.do") ("arguments" . #(3))))
-  (servers:wait-for "alpha" "workspace/executeCommand")
-  (check-equal? '(("command" . "server.do") ("arguments" . #(3))) (servers:ref (servers:last-of "alpha" "workspace/executeCommand") "params")))
+  (lsp-test/servers:wait-for "alpha" "workspace/executeCommand")
+  (check-equal? '(("command" . "server.do") ("arguments" . #(3))) (lsp-test/servers:ref (lsp-test/servers:last-of "alpha" "workspace/executeCommand") "params")))
 
 (test "lsp:keymap is the keymap of the managed state mode, and empty"
   (check-equal? '() (keys:bindings lsp:keymap)))

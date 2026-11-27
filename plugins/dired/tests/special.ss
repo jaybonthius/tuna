@@ -1,4 +1,4 @@
-(import (tuna) (test) (caught-reports) (test-runner) (test-user) (commands) (keys) (modes) (buffers) (views) (layout) (layout-split)
+(import (tuna) (test) (eval-test caught-reports) (test-runner) (test-user) (commands) (keys) (modes) (buffers) (views) (layout) (layout-split)
         (editing) (echo-area) (minibuffer) (completion) (files) (undo) (dired) (dired-test))
 
 (for-each (lambda (n) (dired-test:touch! (string-append "sp/" n ".txt") n "\n")) '("a" "b" "c" "d" "e"))
@@ -39,7 +39,7 @@
 
 (test "a printing key the listing leaves unbound is undefined, and q quits the listing's view"
   (check-equal? '("z is undefined")
-    (map condition-message (caught-reports:during (lambda () (test-user:press! "z")))))
+    (map condition-message (eval-test/caught-reports:during (lambda () (test-user:press! "z")))))
   (check-equal? '("  ." "  .." "* a.txt" "  b.txt" "  c.txt" "  d.txt" "  e.txt" "  f.txt" "  g.txt") (dired-test:lines b))
   (test-user:press! "q")
   (check-equal? '() (views:showing b)))

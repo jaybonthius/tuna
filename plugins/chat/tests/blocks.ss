@@ -1,7 +1,7 @@
-(import (tuna) (test) (test-user) (test-runner) (options) (tables) (buffers) (views) (echo-area) (chat) (fake-talks)
-        (fake-agents) (chat-test))
+(import (tuna) (test) (test-user) (test-runner) (options) (tables) (buffers) (views) (echo-area) (chat) (chat-test fake-talks)
+        (chat-test fake-agents) (chat-test))
 
-(define e (fake-talks:start 'echo (getenv "HOME")))
+(define e (chat-test/fake-talks:start 'echo (getenv "HOME")))
 
 (chat:show! e)
 
@@ -16,9 +16,9 @@
   (check (tables:ref chat:block-kinds chat:tool-call #f)))
 
 (test "TAB on a block's header unfolds it, and TAB again folds it; elsewhere in the conversation there is no block"
-  (fake-talks:add! e 'thinking "Pondering")
-  (fake-talks:add! e 'thinking "Weighing")
-  (fake-talks:reply! e "Answer")
+  (chat-test/fake-talks:add! e 'thinking "Pondering")
+  (chat-test/fake-talks:add! e 'thinking "Weighing")
+  (chat-test/fake-talks:reply! e "Answer")
   (test-user:settle)
   (check-equal? '(#f #f) (opens))
   (chat-test:at! b "Thinking")
@@ -38,7 +38,7 @@
   (check-equal? '(#t #t) (opens)))
 
 (test "folds belong to the chat's session: a block of another session starts folded where an unfolded one was"
-  (fake-talks:move! e "another-session")
+  (chat-test/fake-talks:move! e "another-session")
   (test-user:settle)
   (check-equal? '(#f #f) (opens)))
 
@@ -66,4 +66,4 @@
 
 (test "the closed sets are forms that refuse a misspelling"
   (check-equal? '(next-step error history) (list (chat:delivery next-step) (chat:level error) (chat:text-state history)))
-  (check-raises syntax-violation? (load-module! '(bad-source level))))
+  (check-raises syntax-violation? (load-module! '(chat-test bad-source level))))

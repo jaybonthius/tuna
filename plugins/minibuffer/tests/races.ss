@@ -1,5 +1,5 @@
-(import (quiet) (tuna) (test) (test-user) (test-runner) (options) (faces) (buffers) (document) (layout) (timers) (editing) (echo-area) (ask)
-        (minibuffer) (reading))
+(import (minibuffer-test quiet) (tuna) (test) (test-user) (test-runner) (options) (faces) (buffers) (document) (layout) (timers) (editing) (echo-area) (ask)
+        (minibuffer) (minibuffer-test reading))
 
 (define (layout-datums) (document:datums (buffers:document layout:buffer)))
 
@@ -10,13 +10,13 @@
 (test "twenty nested prompts quit in a scrambled order each raise a quit, and the prompts and the layout end as they began"
   (test-user:settle)
   (let* ([before (layout-datums)]
-         [readings (map (lambda (i) (reading:start! (lambda () (minibuffer:read (format "Q~a: " i))))) (iota 20))])
+         [readings (map (lambda (i) (minibuffer-test/reading:start! (lambda () (minibuffer:read (format "Q~a: " i))))) (iota 20))])
     (check-equal? '("[20] ") (map test-user:element-text (test-user:elements (test-user:screen) "minibuffer-depth")))
-    (for-each (lambda (i) (cancel-task (reading:task (list-ref readings i))))
+    (for-each (lambda (i) (cancel-task (minibuffer-test/reading:task (list-ref readings i))))
       '(7 0 19 3 12 5 18 1 9 14 2 16 6 11 4 17 8 13 10 15))
-    (test-runner:wait-until (lambda () (not (exists reading:waiting? readings))))
+    (test-runner:wait-until (lambda () (not (exists minibuffer-test/reading:waiting? readings))))
     (test-user:settle)
-    (for-each (lambda (r) (check-raises cancelled? (reading:result r))) readings)
+    (for-each (lambda (r) (check-raises cancelled? (minibuffer-test/reading:result r))) readings)
     (check-equal? #f (minibuffer:current-prompt))
     (check-equal? '() (prompts-drawn))
     (check-equal? before (layout-datums))))
@@ -57,12 +57,12 @@
             (minibuffer:call-with-setup
               (lambda (p) (echo-area:message! "Setup ~a" i) (minibuffer:message! p "Own"))
               (lambda () (minibuffer:read "Storm: ")))))
-  (check-equal? (list #f #f #t) (list (minibuffer:current-prompt) (echo-area:hidden?) (reading:echo-drawn?)))
+  (check-equal? (list #f #f #t) (list (minibuffer:current-prompt) (echo-area:hidden?) (minibuffer-test/reading:echo-drawn?)))
   (echo-area:message! "Calm")
   (check-equal? "Calm" (echo-area:current-message)))
 
 (define (lines-logged-from-threads)
-  (let loop ([chars (string->list (reading:buffer-text (buffers:find "*Messages*")))] [line '()] [n 0])
+  (let loop ([chars (string->list (minibuffer-test/reading:buffer-text (buffers:find "*Messages*")))] [line '()] [n 0])
     (cond
       [(null? chars) n]
       [(char=? (car chars) #\newline)
@@ -71,8 +71,8 @@
 
 (test "reports from four threads while a prompt waits are all logged, and the last shown is drawn after the input in its face"
   (options:set! echo-area:log-max 16384)
-  (let ([r (reading:start! (lambda () (minibuffer:read "Name: ")))] [done 0] [done-mutex (make-mutex)])
-    (quiet:silence! #t)
+  (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:read "Name: ")))] [done 0] [done-mutex (make-mutex)])
+    (minibuffer-test/quiet:silence! #t)
     (for-each
       (lambda (i)
         (fork-task
@@ -87,7 +87,7 @@
     (check-equal? #t (echo-area:hidden?))
     (check-equal? (list (string-append " [" (echo-area:current-message) "]")
                         (let ([face (echo-area:current-face)]) (and face (symbol->string face))))
-      (list (reading:bracket) (reading:bracket-face)))
+      (list (minibuffer-test/reading:bracket) (minibuffer-test/reading:bracket-face)))
     (let* ([reported #f]
            [report-late
             (lambda (p)
@@ -103,10 +103,10 @@
       (hooks:add! minibuffer:prompt-ended report-late)
       (test-user:press! "RET")
       (hooks:remove! minibuffer:prompt-ended report-late)
-      (quiet:silence! #f)
-      (check-equal? "" (reading:result r))
+      (minibuffer-test/quiet:silence! #f)
+      (check-equal? "" (minibuffer-test/reading:result r))
       (check-equal? (list #f #f #t "late" faces:error)
-        (list (minibuffer:current-prompt) (echo-area:hidden?) (reading:echo-drawn?) (echo-area:current-message)
+        (list (minibuffer:current-prompt) (echo-area:hidden?) (minibuffer-test/reading:echo-drawn?) (echo-area:current-message)
               (echo-area:current-face)))))
   (options:unset! echo-area:log-max))
 
@@ -115,9 +115,9 @@
     (reload-modules! '((undo)))
     (test-user:settle)
     (check (eq? b (buffers:find " *Minibuf*")))
-    (let ([r (reading:start! (lambda () (minibuffer:read "Name: ")))])
+    (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:read "Name: ")))])
       (test-user:press! "RET")
-      (check-equal? "" (reading:result r)))))
+      (check-equal? "" (minibuffer-test/reading:result r)))))
 
 (test "reloading the minibuffer during a read quits the read, and the new instance's buffer, readers and prompts work"
   (let* ([old (module-owner '(minibuffer))] [old-buffer (buffers:find " *Minibuf*")]
@@ -134,8 +134,8 @@
     (check (not (eq? (ask:line-reader) (options:default ask:line-reader))))
     (check (eq? (ask:number-reader) minibuffer:read-number))
     (check (minibuffer:buffer? (buffers:find " *Minibuf*"))))
-  (let ([r (reading:start! (lambda () (minibuffer:read "Name: ")))])
+  (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:read "Name: ")))])
     (test-user:type! "x")
     (test-user:press! "RET")
-    (check-equal? "x" (reading:result r))
+    (check-equal? "x" (minibuffer-test/reading:result r))
     (check-equal? "x" (car (minibuffer:history)))))

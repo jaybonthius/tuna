@@ -1,4 +1,4 @@
-(import (tuna) (test) (options) (buffers) (document) (md) (lists) (form) (cards) (buffers-test))
+(import (tuna) (test) (options) (buffers) (document) (buffers-test md) (buffers-test lists) (buffers-test form) (buffers-test cards) (buffers-test))
 
 (define at buffers-test:at)
 
@@ -26,9 +26,9 @@
 (test "a link's edges are not sticky: each is one stop, outside the link"
   (let ([md (fresh-md)])
     (check-equal? (at md "Alpha |beta") (buffers:next-stop md (at md "Alpha| beta")))
-    (check-equal? 'md:para (buffers-test:kind-at md (at md "Alpha |beta")))
+    (check-equal? 'buffers-test/md:para (buffers-test:kind-at md (at md "Alpha |beta")))
     (check-equal? (at md "b|eta") (buffers:next-stop md (at md "Alpha |beta")))
-    (check-equal? 'md:para (buffers-test:kind-at md (at md "beta| gamma")))
+    (check-equal? 'buffers-test/md:para (buffers-test:kind-at md (at md "beta| gamma")))
     (check-equal? (at md "beta |gamma") (buffers:next-stop md (at md "beta| gamma")))))
 
 (test "an atom has one stop before it, and the next stop passes it in one step"
@@ -37,64 +37,64 @@
     (check-equal? (+ before-image 1) (buffers:next-stop md before-image))))
 
 (test "stops after a block's last line break: none, except at the root's end and in an inline node, where a line break is text"
-  (check-equal? '(2 3 4 7 8 9) (buffers-test:all-stops (buffers-test:fresh (md:doc '() (md:para '() "ab\n") (md:para '() "cd\n")))))
+  (check-equal? '(2 3 4 7 8 9) (buffers-test:all-stops (buffers-test:fresh (buffers-test/md:doc '() (buffers-test/md:para '() "ab\n") (buffers-test/md:para '() "cd\n")))))
   (check-equal? '(1 2 3 4) (buffers-test:all-stops (buffers-test:fresh "ab\n")))
-  (check-equal? '(2 4 5 6) (buffers-test:all-stops (buffers-test:fresh (md:doc '() (md:para '() "x" (cards:field '() "a\n") "\n"))))))
+  (check-equal? '(2 4 5 6) (buffers-test:all-stops (buffers-test:fresh (buffers-test/md:doc '() (buffers-test/md:para '() "x" (buffers-test/cards:field '() "a\n") "\n"))))))
 
 (test "backspace at the start of a block joins it to the one before, as deleting a newline joins two lines"
   (let ([md (fresh-md)])
     (buffers-test:backspace! md (at md "|Alpha"))
-    (check-equal? '(md:heading ((level . 1)) "TitleAlpha " (md:link ((href . "https://x")) "beta") " gamma.\n")
+    (check-equal? '(buffers-test/md:heading ((level . 1)) "TitleAlpha " (buffers-test/md:link ((href . "https://x")) "beta") " gamma.\n")
                   (car (buffers-test:children md)))))
 
 (test "a region from the middle of a paragraph to the middle of a list's second item joins the item's rest to the paragraph"
   (let ([md (fresh-md)])
     (buffers:replace! md (at md "Al|pha") (at md "tw|o") "")
-    (check-equal? '((md:para () "Alo\n") (lists:bulleted () (md:item () "three\n"))) (list-head (cdr (buffers-test:children md)) 2))))
+    (check-equal? '((buffers-test/md:para () "Alo\n") (buffers-test/lists:bulleted () (buffers-test/md:item () "three\n"))) (list-head (cdr (buffers-test:children md)) 2))))
 
 (test "a kill from inside a link to inside an item is open two deep at each end, and its datum closes its open nodes"
   (let* ([md (fresh-md)] [piece (buffers-test:kill! md (at md "be|ta") (at md "on|e"))])
-    (check-equal? '((md:para () (md:link ((href . "https://x")) "ta") " gamma.\n") (lists:bulleted () (md:item () "on")))
+    (check-equal? '((buffers-test/md:para () (buffers-test/md:link ((href . "https://x")) "ta") " gamma.\n") (buffers-test/lists:bulleted () (buffers-test/md:item () "on")))
                   (document:datums piece))
     (check-equal? '(2 2) (list (document:open-start piece) (document:open-end piece)))
-    (check-equal? '(md:para () "Alpha " (md:link ((href . "https://x")) "bee\n")) (cadr (buffers-test:children md)))))
+    (check-equal? '(buffers-test/md:para () "Alpha " (buffers-test/md:link ((href . "https://x")) "bee\n")) (cadr (buffers-test:children md)))))
 
 (test "yanking a kill splits the paragraph there and joins the kill's open edges to the halves"
   (let* ([md (fresh-md)] [piece (buffers-test:kill! md (at md "Alpha |") (at md "on|e"))])
     (buffers-test:yank! md (at md "Last |@") piece)
-    (check-equal? '((md:code ((lang . "scheme")) "(car x)\n") (md:para () "Last " (md:link ((href . "https://x")) "beta") " gamma.\n")
-                    (lists:bulleted () (md:item () "on" #(md:image ((src . "a.png"))) " line.\n")))
+    (check-equal? '((buffers-test/md:code ((lang . "scheme")) "(car x)\n") (buffers-test/md:para () "Last " (buffers-test/md:link ((href . "https://x")) "beta") " gamma.\n")
+                    (buffers-test/lists:bulleted () (buffers-test/md:item () "on" #(buffers-test/md:image ((src . "a.png"))) " line.\n")))
                   (list-tail (buffers-test:children md) 3))
     (check-equal? "beta gamma.\non" (document:text piece))))
 
 (test "a whole item killed and yanked between two others comes back as an item"
   (let* ([md (fresh-md)] [piece (buffers-test:kill! md (at md "|one") (at md "|two"))])
-    (check-equal? '(lists:bulleted () (md:item () "two\n") (md:item () "three\n")) (caddr (buffers-test:children md)))
+    (check-equal? '(buffers-test/lists:bulleted () (buffers-test/md:item () "two\n") (buffers-test/md:item () "three\n")) (caddr (buffers-test:children md)))
     (buffers-test:yank! md (at md "|three") piece)
-    (check-equal? '(lists:bulleted () (md:item () "two\n") (md:item () "one\n") (md:item () "three\n")) (caddr (buffers-test:children md)))))
+    (check-equal? '(buffers-test/lists:bulleted () (buffers-test/md:item () "two\n") (buffers-test/md:item () "one\n") (buffers-test/md:item () "three\n")) (caddr (buffers-test:children md)))))
 
 (test "a kind whose module is unloaded refuses edits inside its nodes, which can still be deleted whole; loading it again restores it"
   (let ([md (fresh-md)])
-    (unload-owner! (module-owner '(lists)))
-    (check-equal? #f (buffers:kind 'lists:bulleted))
+    (unload-owner! (module-owner '(buffers-test lists)))
+    (check-equal? #f (buffers:kind 'buffers-test/lists:bulleted))
     (check-equal? '(refused "inside a node whose kind is not loaded")
       (buffers-test:refusal (lambda () (buffers:replace! md (at md "t|wo") (at md "t|wo") "x"))))
     (let* ([doc (buffers:document md)] [the-list (document:enclosing doc (document:node-start (document:enclosing doc (at md "t|wo"))))])
       (buffers:replace! md (document:node-start the-list) (document:node-end the-list) ""))
     (check-equal? 4 (length (buffers-test:children md)))
-    (load-module! '(lists))
-    (check (buffers:kind? (buffers:kind 'lists:bulleted)))))
+    (load-module! '(buffers-test lists))
+    (check (buffers:kind? (buffers:kind 'buffers-test/lists:bulleted)))))
 
-(test "a form: labels have no stops and refuse edits, fields hold one line, and a row's own text is its newline"
+(test "a buffers-test/form: labels have no stops and refuse edits, fields hold one line, and a row's own text is its newline"
   (let* ([form (fresh-form)] [stops (buffers-test:all-stops form)])
-    (check-equal? '() (filter (lambda (p) (eq? (buffers-test:kind-at form p) 'form:label)) stops))
+    (check-equal? '() (filter (lambda (p) (eq? (buffers-test:kind-at form p) 'buffers-test/form:label)) stops))
     (check-equal? (at form "|John") (car stops))
-    (check-equal? '(form:field form:field)
+    (check-equal? '(buffers-test/form:field buffers-test/form:field)
       (list (buffers-test:kind-at form (at form "John|")) (buffers-test:kind-at form (buffers:next-stop form (at form "John|")))))
     (let ([email (buffers:next-stop form (at form "John|"))])
       (buffers:replace! form email email "j@x.org"))
-    (check-equal? '(form:row () (form:label () "Name: ") (form:field ((name . name)) "John") (form:label () "  Email: ")
-                    (form:field ((name . email)) "j@x.org") "\n")
+    (check-equal? '(buffers-test/form:row () (buffers-test/form:label () "Name: ") (buffers-test/form:field ((name . name)) "John") (buffers-test/form:label () "  Email: ")
+                    (buffers-test/form:field ((name . email)) "j@x.org") "\n")
                   (car (buffers-test:children form))))
   (let ([form (fresh-form)])
     (check-equal? (make-list 4 '(refused "the node refuses the edit"))
@@ -108,12 +108,12 @@
   (let* ([form (fresh-form)] [piece (document:slice (buffers:document form) (at form "|John") (at form "John|"))])
     (check-equal? '(0 0) (list (document:open-start piece) (document:open-end piece)))
     (buffers-test:yank! form (at form "|first") piece)
-    (check-equal? '(form:field ((name . notes)) "Johnfirst") (cadddr (cadr (buffers-test:children form)))))
+    (check-equal? '(buffers-test/form:field ((name . notes)) "Johnfirst") (cadddr (cadr (buffers-test:children form)))))
   (let* ([form (fresh-form)] [md (fresh-md)] [piece (buffers-test:kill! md (at md "Alpha |") (at md "on|e"))])
     (check-equal? '(refused "the node refuses the edit") (buffers-test:refusal (lambda () (buffers-test:yank! form (at form "|first") piece)))))
   (let* ([form (fresh-form)] [md (fresh-md)] [piece (buffers-test:kill! md (at md "Alpha |") (at md "gamma|.\n"))])
     (buffers-test:yank! form (at form "|first") piece)
-    (check-equal? '(form:field ((name . notes)) "beta gammafirst") (cadddr (cadr (buffers-test:children form))))))
+    (check-equal? '(buffers-test/form:field ((name . notes)) "beta gammafirst") (cadddr (cadr (buffers-test:children form))))))
 
 (test "a form's stops end at its button, an atom, and visit each field's characters"
   (let ([form (fresh-form)])
@@ -129,9 +129,9 @@
 
 (test "the docs' form has its stops in its fields"
   (let ([form (buffers:make "*form*"
-                (form:form '()
-                  (form:row '() (form:label '() "Name: ") (form:field '((name . name)) "") "\n")
-                  (form:row '() (form:label '() "Notes: ") (form:field '((name . notes)) "") "\n")))])
+                (buffers-test/form:form '()
+                  (buffers-test/form:row '() (buffers-test/form:label '() "Name: ") (buffers-test/form:field '((name . name)) "") "\n")
+                  (buffers-test/form:row '() (buffers-test/form:label '() "Notes: ") (buffers-test/form:field '((name . notes)) "") "\n")))])
     (check-equal? '(11 25) (list (buffers:next-stop form 0) (buffers:next-stop form 11)))))
 
 (test "a buffer whose only node is its root finds the stops that the same text has before another node"
@@ -144,7 +144,7 @@
           (let* ([text (random-text (random 30))]
                  [atom (vector 'document:raw-byte '((byte . 200)))]
                  [bare (buffers-test:fresh (list 'buffers:text '() text atom text))]
-                 [other (buffers-test:fresh (list 'buffers:text '() text atom text '(md:link ())))]
+                 [other (buffers-test:fresh (list 'buffers:text '() text atom text '(buffers-test/md:link ())))]
                  [n (max 0 (- (document:length (buffers:document bare)) 3))])
             (equal? (stop-answers bare n) (stop-answers other n))))
         (iota 50)))))

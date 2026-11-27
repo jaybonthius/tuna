@@ -89,7 +89,7 @@
       (values status errors))))
 
 ;; A test file, or a file a test launches, is a .ss file in a tests folder,
-;; whose lib/ the child gets and whose parent names the file's owner.
+;; whose parent names the file's owner.
 (define (%check-test-file who file)
   (unless (file-regular? file) (assertion-violation who "no such file" file))
   (unless (and (string=? (path-extension file) "ss") (%tests-folder file))
@@ -114,7 +114,15 @@
       [(string=? (path-last folder) "tests") folder]
       [else (loop (path-parent folder))])))
 
-(define (%lib-of file) (string-append (%tests-folder file) "/lib"))
+(define (%bin) (path-parent (normal-path (car (command-line)))))
+
+;; The child finds an own plugin's test modules where it finds the plugin,
+;; in the install. start's and the kernel's are not installed, and their
+;; tests use them as the user's lib/ modules, so those are copied there.
+(define (%lib-to-copy file)
+  (let ([tests (%tests-folder file)])
+    (and (not (file-directory? (format "~a/plugins/~a/src" (%bin) (path-last (path-parent tests)))))
+         (string-append tests "/lib"))))
 
 ;; Nothing of the user's that would change what a test does reaches the
 ;; program: no configuration, no saved data, no git settings, and Tuna's
@@ -138,7 +146,7 @@
            (assertion-violation 'test-runner:make-home! "no such file" init))
          (%run-script
            (string-append
-             (%home-script home (%lib-of running))
+             (%home-script home (%lib-to-copy running))
              (if init
                  (format "cp ~a ~a\n" (shell-quote init) (shell-quote (string-append home "/.config/tuna/init.ss")))
                  "")))
@@ -147,7 +155,7 @@
 ;; The install's compiled plugins are copied in, as a home's compiled
 ;; folder is its Tuna's own, so the Tuna under test compiles none of them.
 (define (%home-script home lib)
-  (let* ([bin (path-parent (normal-path (car (command-line))))]
+  (let* ([bin (%bin)]
          [cache (string-append home "/.cache/tuna")]
          [q shell-quote])
     (string-append
@@ -158,7 +166,7 @@
         (q (string-append cache "/start" bin))
         (q (string-append bin "/plugins-cache")) (q (string-append cache "/library"))
         (q (string-append bin "/start-cache")) (q (string-append cache "/start" bin "/start")))
-      (if (file-directory? lib)
+      (if (and lib (file-directory? lib))
           (format "cp -R ~a ~a\n" (q (string-append lib "/.")) (q (string-append home "/.config/tuna/lib/")))
           ""))))
 
@@ -174,7 +182,7 @@
           (%run-script
             (string-append
               (format "exec </dev/null >~a 2>~a\n" (q output) (q errors))
-              (%home-script home (%lib-of file))
+              (%home-script home (%lib-to-copy file))
               (format "cd ~a\n" (q home))
               (format "env~{ -u ~a~}~{ ~a~} timeout -k 10 ~a ~a ~a\n"
                 (map car (filter (lambda (entry) (not (cdr entry))) (home-environment home)))
@@ -259,3 +267,28 @@
                 (sleep (make-time 'time-duration 10000000 0))
                 (resume void)))))
         (loop)))))
+
+(define %main-thread (get-thread-id))
+(define %self (current-owner))
+(define %running (box #f))
+
+(define (%note-running next)
+  (set-box! %running (current-task))
+  (next))
+
+;; Only tick, which runs in the task the main thread is running, can name
+;; that task to another thread. tick is advised only for files that ask,
+;; since the advice runs at every tick.
+(define (running-task-canceller)
+  (unless (eqv? (get-thread-id) %main-thread)
+    (assertion-violation 'test-runner:running-task-canceller "not on the main thread"))
+  (call-as-owner %self (lambda () (advice-add! tick %note-running)))
+  (rec cancel!
+    (case-lambda
+      [() (cancel! #f)]
+      [(spared)
+       (unless (or (not spared) (task? spared))
+         (assertion-violation 'test-runner:running-task-canceller "not a task" spared))
+       (let ([t (if (eqv? (get-thread-id) %main-thread) (current-task) (unbox %running))])
+         (and t (not (eq? t spared)) (eq? (task-state t) 'running)
+              (begin (cancel-task t) #t)))])))

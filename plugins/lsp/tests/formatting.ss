@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-runner) (test-user) (hooks) (options) (tables) (buffers) (document) (views) (layout) (files)
-        (lsp) (servers))
+        (lsp) (lsp-test servers))
 
 (options:set! lsp:send-changes-delay 0.05)
 
@@ -10,38 +10,38 @@
   `(("range" ("start" ("line" . 0) ("character" . 0)) ("end" ("line" . 100000) ("character" . 0))) ("newText" . ,text)))
 
 (define (format-answer! . edits)
-  (servers:configure! "shaper"
+  (lsp-test/servers:configure! "shaper"
     '(capabilities ("textDocumentSync" . 2) ("documentFormattingProvider" . #t) ("documentRangeFormattingProvider" . #t)
                    ("documentOnTypeFormattingProvider" ("firstTriggerCharacter" . "\n")))
     `(responses ("textDocument/formatting" . ,(list->vector edits))
                 ("textDocument/rangeFormatting" . #(,(edit 1 0 0 "  "))))
     '(name . "shaper")))
 
-(lsp:define-server shaper (servers:fake-command "shaper"))
+(lsp:define-server shaper (lsp-test/servers:fake-command "shaper"))
 
 (format-answer!)
 
 (tables:set! lsp:language-servers "fakelang" (list shaper))
 
-(hooks:add! servers:fake-mode-hook lsp:ensure)
+(hooks:add! lsp-test/servers:fake-mode-hook lsp:ensure)
 
-(define path (string-append servers:project "/e.fk"))
+(define path (string-append lsp-test/servers:project "/e.fk"))
 
-(servers:write-file! path "\n")
+(lsp-test/servers:write-file! path "\n")
 
-(define c (servers:visit! path))
+(define c (lsp-test/servers:visit! path))
 
-(servers:wait-for "shaper" "textDocument/didOpen")
+(lsp-test/servers:wait-for "shaper" "textDocument/didOpen")
 
 (define (around)
-  (let ([doc (buffers:document c)] [p (views:point (servers:view))])
+  (let ([doc (buffers:document c)] [p (views:point (lsp-test/servers:view))])
     (list (document:text doc 0 p) (document:text doc p (document:length doc)))))
 
 (define (fresh! content before)
   (buffers:replace! c 1 (- (document:length (buffers:document c)) 1) content)
-  (views:set-point! (servers:view) (+ 1 (string-length before))))
+  (views:set-point! (lsp-test/servers:view) (+ 1 (string-length before))))
 
-(define (format!) (views:call-with-view (servers:view) (lambda () (lsp:format-buffer c))))
+(define (format!) (views:call-with-view (lsp-test/servers:view) (lambda () (lsp:format-buffer c))))
 
 (test "edits at one start apply as the protocol says: inserts there in the list's order, then the replacement; an insert listed after the replacement is kept before it"
   (format-answer! (edit 0 0 0 "a") (edit 0 0 0 "b") (edit 0 0 1 "Z"))
@@ -55,22 +55,22 @@
 
 (test "an edit that replaces the whole text is one change to the buffer and to the server, and point in text it keeps stays with that text"
   (format-answer! (whole-edit "(let ([a 1])\n  (+ a b))\n"))
-  (let ([before (length (servers:of-method "shaper" "textDocument/didChange"))])
+  (let ([before (length (lsp-test/servers:of-method "shaper" "textDocument/didChange"))])
     (fresh! "(let ([a 1]) (+ a b))\n" "(let ([a 1]) (+ a ")
-    (servers:wait-for "shaper" "textDocument/didChange" (+ before 1)))
-  (let ([version (buffers:version c)] [changes (length (servers:of-method "shaper" "textDocument/didChange"))])
+    (lsp-test/servers:wait-for "shaper" "textDocument/didChange" (+ before 1)))
+  (let ([version (buffers:version c)] [changes (length (lsp-test/servers:of-method "shaper" "textDocument/didChange"))])
     (format!)
-    (servers:wait-for "shaper" "textDocument/didChange" (+ changes 1))
+    (lsp-test/servers:wait-for "shaper" "textDocument/didChange" (+ changes 1))
     (check-equal? '(("(let ([a 1])\n  (+ a " "b))\n") 1 1)
                   (list (around) (- (buffers:version c) version)
-                        (vector-length (servers:ref (servers:last-of "shaper" "textDocument/didChange") "params" "contentChanges"))))))
+                        (vector-length (lsp-test/servers:ref (lsp-test/servers:last-of "shaper" "textDocument/didChange") "params" "contentChanges"))))))
 
 (test "the server's edits are not typing: one that leaves a single line break asks for no on-type formatting"
   (options:set! lsp:on-type-formatting? #t)
   (format-answer! (whole-edit "x = 1\ny = 2\n"))
   (fresh! "x = 1; y = 2\n" "")
   (format!)
-  (check-equal? '("x = 1\ny = 2\n" 0) (list (servers:text c) (length (servers:of-method "shaper" "textDocument/onTypeFormatting"))))
+  (check-equal? '("x = 1\ny = 2\n" 0) (list (lsp-test/servers:text c) (length (lsp-test/servers:of-method "shaper" "textDocument/onTypeFormatting"))))
   (options:unset! lsp:on-type-formatting?))
 
 (test "formatting moves point in a line's indentation as typing does; whitespace elsewhere is only text the difference keeps or not"
@@ -90,9 +90,9 @@
 
 (test "a region from a line's start keeps its mark there when the server indents the line, as a mark is an anchor"
   (fresh! "(a\nb)\n" "(a\nb")
-  (views:set-mark! (servers:view) 4)
-  (views:call-with-view (servers:view) lsp:format)
-  (check-equal? '(4 ("(a\n  b" ")\n")) (list (views:mark (servers:view)) (around))))
+  (views:set-mark! (lsp-test/servers:view) 4)
+  (views:call-with-view (lsp-test/servers:view) lsp:format)
+  (check-equal? '(4 ("(a\n  b" ")\n")) (list (views:mark (lsp-test/servers:view)) (around))))
 
 (define (numbered n f) (apply string-append (map f (iota n))))
 
@@ -105,7 +105,7 @@
       (format!)
       (check-equal? (list #t 1 (+ 1 (string-length (numbered 1000 (lambda (i) (format "    (define (f~a x) (+ x ~a))\n" i i))))
                                   (string-length "    (define (f1000 x) ")))
-                    (list (equal? (servers:text c) reindented) (- (buffers:version c) version) (views:point (servers:view)))))))
+                    (list (equal? (lsp-test/servers:text c) reindented) (- (buffers:version c) version) (views:point (lsp-test/servers:view)))))))
 
 (test "whole-text edits between random texts give the server's text"
   (random-seed 7)
@@ -118,7 +118,7 @@
                           (format-answer! (whole-edit new))
                           (buffers:replace! c 1 (- (document:length (buffers:document c)) 1) old)
                           (format!)
-                          (loop (+ n 1) (if (equal? (servers:text c) new) wrong (cons (list old new (servers:text c)) wrong)))))))))
+                          (loop (+ n 1) (if (equal? (lsp-test/servers:text c) new) wrong (cons (list old new (lsp-test/servers:text c)) wrong)))))))))
 
 (test "an edit whose differences cost too much to find replaces its range whole, and a point or mark inside it keeps its line and column, or the line's end when the new line is shorter"
   (random-seed 5)
@@ -133,10 +133,10 @@
     (format-answer! `(("range" ("start" ("line" . 1) ("character" . 0)) ("end" ("line" . 60001) ("character" . 0)))
                       ("newText" . ,(substring new 5 (string-length new)))))
     (buffers:replace! c 1 (- (document:length (buffers:document c)) 1) old)
-    (views:set-mark! (servers:view) (+ 1 (line-start old mark-line) 12))
-    (views:set-point! (servers:view) (+ 1 (line-start old point-line) 9))
+    (views:set-mark! (lsp-test/servers:view) (+ 1 (line-start old mark-line) 12))
+    (views:set-point! (lsp-test/servers:view) (+ 1 (line-start old point-line) 9))
     (format!)
-    (check (equal? (servers:text c) new))
+    (check (equal? (lsp-test/servers:text c) new))
     (check-equal? '(9 #t)
-                  (list (- (views:point (servers:view)) 1 (line-start new point-line))
-                        (= (views:mark (servers:view)) (+ 1 (line-start new mark-line) (line-length new mark-line)))))))
+                  (list (- (views:point (lsp-test/servers:view)) 1 (line-start new point-line))
+                        (= (views:mark (lsp-test/servers:view)) (+ 1 (line-start new mark-line) (line-length new mark-line)))))))

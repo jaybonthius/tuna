@@ -25,10 +25,10 @@
     (check-equal? without-minor-modes (status-line-test:segment-names (view)))))
 
 (test "unloading the module that defines and places a segment hides it; loading it again shows it"
-  (load-module! '(cursors))
+  (load-module! '(status-line-test cursors))
   (views:add-cursor! (view) 2)
-  (check-equal? "2 cursors" (status-line-test:segment-text (view) 'cursors:cursor-count))
-  (unload-owner! (module-owner '(cursors)))
+  (check-equal? "2 cursors" (status-line-test:segment-text (view) 'status-line-test/cursors:cursor-count))
+  (unload-owner! (module-owner '(status-line-test cursors)))
   (check-equal? without-minor-modes (status-line-test:segment-names (view)))
-  (load-module! '(cursors))
-  (check-equal? "2 cursors" (status-line-test:segment-text (view) 'cursors:cursor-count)))
+  (load-module! '(status-line-test cursors))
+  (check-equal? "2 cursors" (status-line-test:segment-text (view) 'status-line-test/cursors:cursor-count)))

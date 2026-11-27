@@ -1,5 +1,7 @@
-(import (tuna) (test) (test-runner) (test-user) (tables) (commands) (keys) (repeat) (repeat-test quits)
+(import (tuna) (test) (test-runner) (test-user) (tables) (commands) (keys) (repeat)
         (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+
+(define request-quit! (test-runner:running-task-canceller))
 
 (define (sleep-ms ms) (chez:sleep (make-time 'time-duration (* ms 1000000) 0)))
 
@@ -39,7 +41,7 @@
                 (lambda (restore)
                   (let loop ()
                     (when (unbox quitting)
-                      (repeat-test/quits:request-quit!)
+                      (request-quit!)
                       (sleep-ms 1)
                       (loop)))))))
           ;; A quit that ends a repetition, or drops a prefix, leaves the

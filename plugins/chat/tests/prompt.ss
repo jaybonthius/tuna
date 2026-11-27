@@ -1,14 +1,14 @@
 (import (tuna) (test) (test-user) (test-runner) (buffers) (document) (views) (layout) (editing) (undo) (echo-area) (chat)
-        (fake-talks)
-        (fake-agents) (chat-test))
+        (chat-test fake-talks)
+        (chat-test fake-agents) (chat-test))
 
-(define e (fake-talks:start 'echo (getenv "HOME")))
+(define e (chat-test/fake-talks:start 'echo (getenv "HOME")))
 
 (chat:show! e)
 
 (define b (chat:buffer e))
 
-(define (sent) (fake-talks:talk-sent e))
+(define (sent) (chat-test/fake-talks:talk-sent e))
 
 (define (notices)
   (map (lambda (n) (list (test-user:element-attribute n "data-level") (test-user:element-text n)))
@@ -24,7 +24,7 @@
   (test-user:press! "RET")
   (check-equal? '((send . "Fix it")) (sent))
   (check-equal? "\n" (chat-test:shown e))
-  (check-equal? '("Fix it") (fake-agents:echo-history))
+  (check-equal? '("Fix it") (chat-test/fake-agents:echo-history))
   (check-equal? '("no further undo information") (chat-test:press! "C-/")))
 
 (test "S-RET adds a line, and M-RET follows up with the whole text"
@@ -73,7 +73,7 @@
   (check-equal? "Then\ntyped since" (chat-test:prompt-text e)))
 
 (test "the conversation refuses edits: typing goes only into the prompt"
-  (fake-talks:reply! e "Hello")
+  (chat-test/fake-talks:reply! e "Hello")
   (test-user:settle)
   (chat-test:at! b "Hello")
   (let ([before (chat-test:shown e)])
@@ -82,7 +82,7 @@
 
 (test "the source's queue shows under the conversation, tagged; M-<up> takes it back into the prompt and C-c C-k cancels with it"
   (chat:set-prompt! e "")
-  (fake-talks:queue! e (list (cons (chat:delivery next-step) "a") (cons (chat:delivery turn-end) "b")))
+  (chat-test/fake-talks:queue! e (list (cons (chat:delivery next-step) "a") (cons (chat:delivery turn-end) "b")))
   (test-user:settle)
   (check-equal? '("Steer a" "Follow-up b")
     (map test-user:element-text (test-user:elements (car (test-user:elements (test-user:screen) "chat-queue")) "chat-queued")))
@@ -90,7 +90,7 @@
   (test-user:press! "M-<up>")
   (check-equal? "a\nb" (chat-test:prompt-text e))
   (check-equal? '() (test-user:elements (test-user:screen) "chat-queued"))
-  (fake-talks:queue! e (list (cons (chat:delivery turn-end) "c")))
+  (chat-test/fake-talks:queue! e (list (cons (chat:delivery turn-end) "c")))
   (test-user:press! "C-c C-k")
   (check-equal? "c\na\nb" (chat-test:prompt-text e)))
 
@@ -99,10 +99,10 @@
   (views:set-point! (chat-test:view) (chat:prompt-start e))
   (test-user:type! "one")
   (test-user:press! "C-e")
-  (fake-talks:reply! e "Working")
+  (chat-test/fake-talks:reply! e "Working")
   (test-user:settle)
   (test-user:type! " two")
-  (fake-talks:reply! e "More")
+  (chat-test/fake-talks:reply! e "More")
   (test-user:settle)
   (test-user:press! "C-/")
   (check-equal? "one" (chat-test:prompt-text e))

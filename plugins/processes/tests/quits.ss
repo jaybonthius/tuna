@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (processes) (recorder) (setting)
+(import (tuna) (test) (test-runner) (processes) (processes-test recorder) (processes-test setting)
   (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 
 (define (violation thunk)
@@ -8,15 +8,7 @@
 
 (define (ignore-output bytes end) (void))
 
-;; As a user's interrupt from another thread would, each quit cancels the
-;; task running on the main thread when it lands; tick runs in that task.
-(define running-on-main (box #f))
-(advice-add! tick (lambda (next) (set-box! running-on-main (current-task)) (next)))
-
-(define (quit-running!)
-  (let ([t (unbox running-on-main)])
-    (when (and t (eq? (task-state t) 'running))
-      (cancel-task t))))
+(define quit-running! (test-runner:running-task-canceller))
 
 ;; The cancels land in deliveries at random, and each ends a task the
 ;; kernel reports; how many land is chance, so they are kept, not counted.
@@ -50,39 +42,39 @@
 
 (test "quits from another thread while an own process floods output lose and repeat nothing, and reading and the exit go on"
   (let-values ([(follow holes) (following)])
-    (let* ([r (recorder:make)] [own (processes:start "cat" '("/dev/zero") follow (recorder:on-exit r))])
+    (let* ([r (processes-test/recorder:make)] [own (processes:start "cat" '("/dev/zero") follow (processes-test/recorder:on-exit r))])
       (quits-for 2)
       (check-equal? 0 (holes))
       (check (advancing? own))
       (processes:stop! own)
-      (check-equal? '((exit -1)) (recorder:wait-for-exit r)))))
+      (check-equal? '((exit -1)) (processes-test/recorder:wait-for-exit r)))))
 
 (test "quits from another thread while a pausing user process with a small log floods output lose and repeat nothing"
-  (setting:with processes:log-size 4096
+  (processes-test/setting:with processes:log-size 4096
     (lambda ()
       (let-values ([(follow holes) (following)])
-        (let ([r (recorder:make)]
+        (let ([r (processes-test/recorder:make)]
               [user (processes:start-for-user "cat" '("/dev/zero") (processes:options [full-log (processes:full-log pause)]))])
-          (processes:attach! user 0 follow (recorder:on-exit r))
+          (processes:attach! user 0 follow (processes-test/recorder:on-exit r))
           (quits-for 2)
           (check-equal? 0 (holes))
           (check (advancing? user))
           (processes:stop! user)
-          (check-equal? '((exit -1)) (recorder:wait-for-exit r))
+          (check-equal? '((exit -1)) (processes-test/recorder:wait-for-exit r))
           (check (not (memq user (processes:all)))))))))
 
 (test "standard error kept apart reaches on-error-output as output reaches on-output, then its end, before the exit status"
-  (let ([r (recorder:make)])
-    (processes:start "sh" '("-c" "printf out; printf err >&2") (recorder:on-output r) (recorder:on-exit r)
-      (processes:options) (recorder:on-error-output r))
-    (let ([events (recorder:wait-for-exit r)])
+  (let ([r (processes-test/recorder:make)])
+    (processes:start "sh" '("-c" "printf out; printf err >&2") (processes-test/recorder:on-output r) (processes-test/recorder:on-exit r)
+      (processes:options) (processes-test/recorder:on-error-output r))
+    (let ([events (processes-test/recorder:wait-for-exit r)])
       (check-equal? '((error "err" 3) (error-eof 3)) (filter (lambda (e) (memq (car e) '(error error-eof))) events))
       (check-equal? '(exit 0) (car (reverse events)))))
-  (let* ([r (recorder:make)]
-         [p (processes:start "sh" '("-c" "printf late >&2") (recorder:on-output r) (recorder:on-exit r)
-              (processes:options) (recorder:on-error-output r))])
+  (let* ([r (processes-test/recorder:make)]
+         [p (processes:start "sh" '("-c" "printf late >&2") (processes-test/recorder:on-output r) (processes-test/recorder:on-exit r)
+              (processes:options) (processes-test/recorder:on-error-output r))])
     (check-equal? '((error "late" 4) (error-eof 4))
-      (filter (lambda (e) (memq (car e) '(error error-eof))) (recorder:wait-for-exit r)))
+      (filter (lambda (e) (memq (car e) '(error error-eof))) (processes-test/recorder:wait-for-exit r)))
     (check-equal? "late" (utf8->string (processes:error-output p)))))
 
 (test "on-error-output must be a procedure, and a terminal cannot keep standard error apart"
@@ -92,11 +84,11 @@
     (violation (lambda () (processes:start "true" '() ignore-output (lambda (s) (void)) (processes:options) 'errors)))))
 
 (test "standard error is not held back for a slow reader: past processes:log-size bytes between deliveries the oldest go, and a line receiver passes the lines after the cut whole"
-  (setting:with processes:log-size 64
+  (processes-test/setting:with processes:log-size 64
     (lambda ()
-      (let* ([r (recorder:make)] [lines '()]
+      (let* ([r (processes-test/recorder:make)] [lines '()]
              [p (processes:start "sh" '("-c" "i=1; while [ $i -le 40 ]; do echo \"error line $i\" >&2; i=$((i+1)); done")
-                  ignore-output (recorder:on-exit r) (processes:options)
+                  ignore-output (processes-test/recorder:on-exit r) (processes:options)
                   (processes:line-receiver 0 (lambda (line end) (set! lines (cons (list line end) lines)))))]
              [give-up (+ (real-time) 5000)])
         ;; The main thread stays busy until all of it is written, so nothing
@@ -107,6 +99,6 @@
                         (and (>= (string-length text) 14)
                              (string=? "error line 40\n" (substring text (- (string-length text) 14) (string-length text))))))
             (loop)))
-        (recorder:wait-for-exit r)
+        (processes-test/recorder:wait-for-exit r)
         (check-equal? `(("error line 37" 509) ("error line 38" 523) ("error line 39" 537) ("error line 40" 551) (,(eof-object) 551))
           (reverse lines))))))

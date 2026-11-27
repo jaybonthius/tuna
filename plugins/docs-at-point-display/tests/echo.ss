@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-runner) (test-user) (hooks) (options) (timers) (commands) (keys) (buffers) (document) (views)
-        (layout) (layout-split) (editing) (faces) (echo-area) (docs-at-point) (docs-at-point-display) (signatures))
+        (layout) (layout-split) (editing) (faces) (echo-area) (docs-at-point) (docs-at-point-display) (docs-at-point-display-test signatures))
 
 (options:set! docs-at-point:delay 0.05)
 
@@ -21,7 +21,7 @@
 
 (define other-view (layout-split:split-view! notes-view (layout-split:direction row)))
 
-(hooks:add! docs-at-point:sources signatures:signature)
+(hooks:add! docs-at-point:sources docs-at-point-display-test/signatures:signature)
 
 (test "as point rests, the echo area shows the doc as its thing, a colon and its echo, its ranges moved past the thing, and does not log it"
   (let ([logged (messages-text)])
@@ -39,9 +39,9 @@
 
 (test "docs never cover a message"
   (echo-area:message! "Saved")
-  (signatures:asked!)
+  (docs-at-point-display-test/signatures:asked!)
   (docs-at-point:ask-sources notes-view)
-  (test-runner:wait-until (lambda () (pair? (signatures:asked))))
+  (test-runner:wait-until (lambda () (pair? (docs-at-point-display-test/signatures:asked))))
   (test-user:settle)
   (check-equal? "Saved" (echo-area:current-message)))
 
@@ -49,7 +49,7 @@
   (define (faced v)
     (docs-at-point:make-doc "(total items)"
       (docs-at-point:doc-options [thing "total"] [face faces:function] [spans (list (list 7 12 faces:highlight))])))
-  (hooks:remove! docs-at-point:sources signatures:signature)
+  (hooks:remove! docs-at-point:sources docs-at-point-display-test/signatures:signature)
   (hooks:add! docs-at-point:sources faced)
   (test-user:press! "C-b")
   (test-runner:wait-until (message-is? "total: (total items)"))
@@ -74,10 +74,10 @@
 (test "when the sources answer with no docs, the echo area's docs go"
   (let ([answered? #f])
     (define (none v) (set! answered? #t) #f)
-    (hooks:add! docs-at-point:sources signatures:signature)
+    (hooks:add! docs-at-point:sources docs-at-point-display-test/signatures:signature)
     (test-user:press! "C-a")
     (test-runner:wait-until (message-is? "alpha: (alpha x)"))
-    (hooks:remove! docs-at-point:sources signatures:signature)
+    (hooks:remove! docs-at-point:sources docs-at-point-display-test/signatures:signature)
     (hooks:add! docs-at-point:sources none)
     (test-user:press! "C-f")
     (test-runner:wait-until (lambda () answered?))
@@ -87,7 +87,7 @@
 
 (test "docs cleared while the user is away from their place show again on the way back, though nothing asks again there"
   (let ([plain (buffers:make "plain" "x\n")])
-    (hooks:add! docs-at-point:sources signatures:signature)
+    (hooks:add! docs-at-point:sources docs-at-point-display-test/signatures:signature)
     (test-user:press! "C-a")
     (test-runner:wait-until (message-is? "alpha: (alpha x)"))
     (views:set-buffer! other-view plain)
@@ -97,11 +97,11 @@
     (test-user:press! "C-f")
     (past-delay)
     (check-equal? (list plain #f) (list (views:buffer (layout:selected-view)) (echo-area:current-message)))
-    (signatures:asked!)
+    (docs-at-point-display-test/signatures:asked!)
     (test-user:press! "C-x o")
     (past-delay)
     (check-equal? (list notes '() "alpha: (alpha x)")
-                  (list (views:buffer (layout:selected-view)) (signatures:asked!) (echo-area:current-message)))))
+                  (list (views:buffer (layout:selected-view)) (docs-at-point-display-test/signatures:asked!) (echo-area:current-message)))))
 
 (test "docs show again after a command only where the mode is on in their buffer"
   (buffers:with-buffer notes (options:set-local! docs-at-point:mode #f))
@@ -114,8 +114,8 @@
 
 (test "docs show again after a command only in their view while it shows their buffer"
   (let ([elsewhere (buffers:make "elsewhere" "no sources here\n")])
-    (hooks:remove! docs-at-point:sources signatures:signature)
-    (buffers:with-buffer notes (hooks:add-local! docs-at-point:sources signatures:signature))
+    (hooks:remove! docs-at-point:sources docs-at-point-display-test/signatures:signature)
+    (buffers:with-buffer notes (hooks:add-local! docs-at-point:sources docs-at-point-display-test/signatures:signature))
     (test-user:press! "C-f")
     (test-runner:wait-until (message-is? "alpha: (alpha x)"))
     (views:set-buffer! notes-view elsewhere)
@@ -127,7 +127,7 @@
 (test "once the buffer's sources are gone, the next changed place clears its docs, and they do not show again"
   (test-user:press! "C-a")
   (test-runner:wait-until (message-is? "alpha: (alpha x)"))
-  (buffers:with-buffer notes (hooks:remove-local! docs-at-point:sources signatures:signature))
+  (buffers:with-buffer notes (hooks:remove-local! docs-at-point:sources docs-at-point-display-test/signatures:signature))
   (test-user:press! "C-f")
   (past-delay)
   (test-user:press! "C-f")

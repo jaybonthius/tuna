@@ -1,13 +1,13 @@
 (import (tuna) (test) (test-runner) (hooks) (tables) (modes) (buffers) (document) (syntax) (syntax-highlighting)
-        (chez-scheme) (scheme-buffers))
+        (chez-scheme) (chez-scheme-test scheme-buffers))
 
 ;; Highlighting runs in a job, so each check waits until the spans are
 ;; the ones it expects.
 (define (faces-become b expected)
-  (test-runner:wait-until (lambda () (equal? expected (scheme-buffers:faces b)))))
+  (test-runner:wait-until (lambda () (equal? expected (chez-scheme-test/scheme-buffers:faces b)))))
 
 (define (brackets-become b expected)
-  (test-runner:wait-until (lambda () (equal? expected (scheme-buffers:brackets b)))))
+  (test-runner:wait-until (lambda () (equal? expected (chez-scheme-test/scheme-buffers:brackets b)))))
 
 (tables:define-table derived-keymap)
 
@@ -26,7 +26,7 @@
                       (",@" punctuation.special) ("#'" punctuation.special)))))
 
 (define n
-  (scheme-buffers:scheme-buffer "n.ss"
+  (chez-scheme-test/scheme-buffers:scheme-buffer "n.ss"
     (string-append
       "(define (area r) \"The area.\" (* r r))\n(define pi 3.14)\n(define-record-type point (fields x))\n"
       "(define-enumeration color (red) colors)\n(modes:define-major-mode python (keymap k))\n(define ((curried a) b) a)\n"
@@ -50,18 +50,18 @@
   (faces-become n n-faces))
 
 (test "bracket spans come while a plugin uses brackets, and go with the job"
-  (let ([k (scheme-buffers:scheme-buffer "k.ss" "(a [b])")])
+  (let ([k (chez-scheme-test/scheme-buffers:scheme-buffer "k.ss" "(a [b])")])
     (tables:set! syntax:bracket-users 'test (lambda (buffer) (eq? buffer k)))
     (syntax-highlighting:update!)
-    (test-runner:wait-until (lambda () (= 4 (length (scheme-buffers:brackets k)))))
-    (check-equal? '((bracket . 1) (bracket . 2) (bracket . 2) (bracket . 1)) (map caaddr (scheme-buffers:brackets k)))
+    (test-runner:wait-until (lambda () (= 4 (length (chez-scheme-test/scheme-buffers:brackets k)))))
+    (check-equal? '((bracket . 1) (bracket . 2) (bracket . 2) (bracket . 1)) (map caaddr (chez-scheme-test/scheme-buffers:brackets k)))
     (modes:set-major-mode modes:fundamental k)
     (brackets-become k '())
     (tables:remove! syntax:bracket-users 'test)
     (syntax-highlighting:update!)))
 
 (test "after an edit the job lexes the newest text, and the faces follow; text typed right after a lexeme takes its face until then"
-  (let ([w (scheme-buffers:scheme-buffer "w.ss" "(car x)\n")])
+  (let ([w (chez-scheme-test/scheme-buffers:scheme-buffer "w.ss" "(car x)\n")])
     (faces-become w '(("car" function.builtin)))
     (buffers:replace! w 5 5 "-or-cdr")
     (check-equal? (list (list 2 12 (list (cons 'face 'function.builtin))))
@@ -74,7 +74,7 @@
       (check-equal? '() (buffers:layers copy)))))
 
 (test "the job is told where each edit was, so a space typed after a lexeme, among other spaces, loses the lexeme's face at the next lex"
-  (let ([sp (scheme-buffers:scheme-buffer "sp.ss" "(car   x)\n")])
+  (let ([sp (chez-scheme-test/scheme-buffers:scheme-buffer "sp.ss" "(car   x)\n")])
     (faces-become sp '(("car" function.builtin)))
     (buffers:replace! sp 5 5 " ")
     (buffers:replace! sp 11 11 " 2")

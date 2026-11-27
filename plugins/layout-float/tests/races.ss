@@ -1,5 +1,7 @@
 (import (tuna) (test) (layout) (layout-scroll) (layout-float) (views) (buffers) (document) (tables) (web) (plugins)
-        (haml) (test-user) (layout-float-test quits) (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+        (haml) (test-user) (test-runner) (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+
+(define request-quit! (test-runner:running-task-canceller))
 
 (define (lines name n)
   (apply string-append (map (lambda (i) (format "~a ~a\n" name (+ i 1))) (iota n))))
@@ -89,7 +91,7 @@
               (let loop ()
                 (if quitting
                     (begin
-                      (layout-float-test/quits:request-quit!)
+                      (request-quit!)
                       (chez:sleep (make-time 'time-duration 1000000 0))
                       (loop))
                     (set! stopped #t))))))

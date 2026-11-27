@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-runner) (test-user) (hooks) (options) (tables) (timers) (keys) (modes) (buffers) (document)
-        (files) (views) (layout) (processes) (ask) (diagnostics) (marks) (linter))
+        (files) (views) (layout) (processes) (ask) (diagnostics) (diagnostics-test marks) (diagnostics-test linter))
 
 ;; ask's own writer reports each message, such as the Wrote of a save, as
 ;; a warning, which would fail the file.
@@ -22,7 +22,7 @@
 
 (define (check-beta b)
   (set! runs (cons b runs))
-  (list (marks:warn b "beta" "checked")))
+  (list (diagnostics-test/marks:warn b "beta" "checked")))
 
 (define (reports-during thunk done?)
   (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
@@ -44,14 +44,14 @@
 (buffers:with-buffer plain (hooks:add-local! diagnostics:checkers check-beta))
 
 (test "a checker runs when the mode turns on, once the delay has passed since the last edit, and after a save; its findings are its source's report"
-  (marks:mode! plain #t)
+  (diagnostics-test/marks:mode! plain #t)
   (test-runner:wait-until (lambda () (pair? runs)))
   (check-equal? (list (list plain) '(("beta" warning "checked")) '(("beta" (diagnostic.warning) "checked")))
-                (list (runs!) (marks:all-seen plain) (marks:marks plain)))
+                (list (runs!) (diagnostics-test/marks:all-seen plain) (diagnostics-test/marks:marks plain)))
   (buffers:insert! plain 1 "x")
   (check-equal? '() runs)
   (test-runner:wait-until (lambda () (pair? runs)))
-  (check-equal? (list (list plain) '(("beta" warning "checked"))) (list (runs!) (marks:all-seen plain))))
+  (check-equal? (list (list plain) '(("beta" warning "checked"))) (list (runs!) (diagnostics-test/marks:all-seen plain))))
 
 (test "with check-delay #f an edit runs no checker, and a save still does"
   (options:set! diagnostics:check-delay #f)
@@ -73,11 +73,11 @@
   (options:set! diagnostics:check-delay 0.05))
 
 (test "with the mode off its marks are hidden and no checker runs, on an edit or a save"
-  (marks:mode! plain #f)
+  (diagnostics-test/marks:mode! plain #f)
   (buffers:insert! plain 1 "z")
   (files:save-buffer plain)
   (past-delay)
-  (check-equal? '(() () (("beta" warning "checked"))) (list runs (marks:marks plain) (marks:all-seen plain))))
+  (check-equal? '(() () (("beta" warning "checked"))) (list runs (diagnostics-test/marks:marks plain) (diagnostics-test/marks:all-seen plain))))
 
 (test "a check started while the last of the same checker runs quits the last, whose program stops; only the new one reports; checking? holds while one runs"
   (let ([calls 0])
@@ -85,34 +85,34 @@
       (set! calls (+ calls 1))
       (let ([n calls])
         (when (= n 1) (processes:run "sleep" '("30")))
-        (list (marks:warn b "beta" (format "check ~a" n)))))
+        (list (diagnostics-test/marks:warn b "beta" (format "check ~a" n)))))
     (let ([q (buffers:make "q" "alpha beta\n")])
       (buffers:with-buffer q (hooks:add-local! diagnostics:checkers slow))
-      (marks:mode! q #t)
+      (diagnostics-test/marks:mode! q #t)
       (test-runner:wait-until (lambda () (pair? (processes:all))))
       (check-equal? '(#t (("sleep" "30"))) (list (diagnostics:checking? q) (map processes:command-line (processes:all))))
       (views:set-buffer! (layout:selected-view) q)
       (test-user:press! "C-c c")
       (test-runner:wait-until (lambda () (and (null? (processes:all)) (not (diagnostics:checking? q)))))
-      (check-equal? '(#f (("beta" warning "check 2")) 2) (list (diagnostics:checking? q) (marks:all-seen q) calls)))))
+      (check-equal? '(#f (("beta" warning "check 2")) 2) (list (diagnostics:checking? q) (diagnostics-test/marks:all-seen q) calls)))))
 
 (test "two buffers checked at once each get their own findings, placed by the version each check started at"
   (options:set! diagnostics:check-delay #f)
   (let ([held '()])
     (define (pausing b)
-      (let ([d (marks:warn b "beta" (buffers:name b))])
+      (let ([d (diagnostics-test/marks:warn b "beta" (buffers:name b))])
         (suspend (lambda (resume) (set! held (cons resume held))))
         (list d)))
     (let ([one (buffers:make "one" "alpha beta\n")] [two (buffers:make "two" "beta alpha\n")])
       (for-each (lambda (b) (buffers:with-buffer b (hooks:add-local! diagnostics:checkers pausing))) (list one two))
-      (marks:mode! one #t)
-      (marks:mode! two #t)
+      (diagnostics-test/marks:mode! one #t)
+      (diagnostics-test/marks:mode! two #t)
       (test-runner:wait-until (lambda () (= 2 (length held))))
       (check-equal? '(#t #t) (list (diagnostics:checking? one) (diagnostics:checking? two)))
       (buffers:insert! one 1 "new ")
       (for-each (lambda (resume) (resume void)) held)
       (test-runner:wait-until (lambda () (not (or (diagnostics:checking? one) (diagnostics:checking? two)))))
-      (check-equal? '((("beta" warning "one")) (("beta" warning "two"))) (list (marks:all-seen one) (marks:all-seen two)))))
+      (check-equal? '((("beta" warning "one")) (("beta" warning "two"))) (list (diagnostics-test/marks:all-seen one) (diagnostics-test/marks:all-seen two)))))
   (options:set! diagnostics:check-delay 0.05))
 
 (test "a checker that raises, or returns what is not a list of diagnostics, is reported and not called again in that buffer until C-u diagnostics:check; check-failed? says so meanwhile"
@@ -120,7 +120,7 @@
     (define (broken b) (set! calls (+ calls 1)) (error 'broken "no linter installed"))
     (let ([r (buffers:make "r" "alpha beta\n")])
       (buffers:with-buffer r (hooks:add-local! diagnostics:checkers broken))
-      (check-equal? '("no linter installed") (reports-during (lambda () (marks:mode! r #t)) pair?))
+      (check-equal? '("no linter installed") (reports-during (lambda () (diagnostics-test/marks:mode! r #t)) pair?))
       (check (diagnostics:check-failed? r))
       (buffers:insert! r 1 "x")
       (views:set-buffer! (layout:selected-view) r)
@@ -131,7 +131,7 @@
       (check-equal? '(2 #t) (list calls (diagnostics:check-failed? r)))))
   (let ([odd (buffers:make "odd" "alpha\n")])
     (buffers:with-buffer odd (hooks:add-local! diagnostics:checkers (lambda (b) 'none)))
-    (reports-during (lambda () (marks:mode! odd #t)) pair?)
+    (reports-during (lambda () (diagnostics-test/marks:mode! odd #t)) pair?)
     (check (diagnostics:check-failed? odd))))
 
 (test "a checker a mode adds goes with the mode, and its findings with it"
@@ -142,14 +142,14 @@
   (let ([script (buffers:make "script" "alpha beta\n")])
     (modes:set-major-mode sh-mode script)
     (test-runner:wait-until (lambda () (pair? (diagnostics:in script))))
-    (check-equal? '(("beta" warning "checked")) (marks:all-seen script))
+    (check-equal? '(("beta" warning "checked")) (diagnostics-test/marks:all-seen script))
     (modes:set-major-mode modes:fundamental script)
-    (check-equal? '() (marks:all-seen script))))
+    (check-equal? '() (diagnostics-test/marks:all-seen script))))
 
 (test "a checker's findings go when its module unloads"
   (let ([bad (buffers:make "bad" "a bad word\n")])
-    (marks:mode! bad #t)
+    (diagnostics-test/marks:mode! bad #t)
     (test-runner:wait-until (lambda () (pair? (diagnostics:in bad))))
-    (check-equal? '(("bad" error "bad word")) (marks:all-seen bad))
-    (unload-owner! (module-owner '(linter)))
-    (check-equal? '() (marks:all-seen bad))))
+    (check-equal? '(("bad" error "bad word")) (diagnostics-test/marks:all-seen bad))
+    (unload-owner! (module-owner '(diagnostics-test linter)))
+    (check-equal? '() (diagnostics-test/marks:all-seen bad))))

@@ -1,4 +1,4 @@
-(import (tuna) (test) (hooks) (options) (scopes) (commands) (buffers) (document) (md) (buffers-test))
+(import (tuna) (test) (hooks) (options) (scopes) (commands) (buffers) (document) (buffers-test md) (buffers-test))
 
 (options:define-option width 70 fixnum?)
 
@@ -8,8 +8,8 @@
 
 (test "a buffer is made from a string held in a buffers:text root, a datum of one node, or a document of one node"
   (check-equal? '(buffers:text () "Buy milk.\n") (buffers-test:root (buffers:make "plain" "Buy milk.\n")))
-  (check-equal? '(md:para () "a") (buffers-test:root (buffers:make "datum" '(md:para () "a"))))
-  (check-equal? '(md:para () "a") (buffers-test:root (buffers:make "document" (document:from-datum '(md:para () "a")))))
+  (check-equal? '(buffers-test/md:para () "a") (buffers-test:root (buffers:make "datum" '(buffers-test/md:para () "a"))))
+  (check-equal? '(buffers-test/md:para () "a") (buffers-test:root (buffers:make "document" (document:from-datum '(buffers-test/md:para () "a")))))
   (check-equal? '("plain" "datum" "document") (names))
   (check-equal? (list #f "datum") (list (buffers:find "nothing") (buffers:name (buffers:find "datum"))))
   (kill-all!))
@@ -17,9 +17,9 @@
 (test "make refuses a live buffer's name, content that is not one node, and a name that is not a string"
   (buffers:make "plain" "")
   (check-raises (buffers-test:raised-with? 'buffers:make "a live buffer has the name" '("plain")) (buffers:make "plain" "again"))
-  (check-raises (buffers-test:raised-with? 'buffers:make "not one node" '(#(md:image ()))) (buffers:make "atom" '#(md:image ())))
-  (check-raises (buffers-test:raised-with? 'buffers:make "not one node" '(((md:para ()) (md:para ()))))
-    (buffers:make "two" (document:from-datum '(md:para ()) '(md:para ()))))
+  (check-raises (buffers-test:raised-with? 'buffers:make "not one node" '(#(buffers-test/md:image ()))) (buffers:make "atom" '#(buffers-test/md:image ())))
+  (check-raises (buffers-test:raised-with? 'buffers:make "not one node" '(((buffers-test/md:para ()) (buffers-test/md:para ()))))
+    (buffers:make "two" (document:from-datum '(buffers-test/md:para ()) '(buffers-test/md:para ()))))
   (check-raises (buffers-test:raised-with? 'buffers:make "not a string" '(name)) (buffers:make 'name "a"))
   (kill-all!))
 

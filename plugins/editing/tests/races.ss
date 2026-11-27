@@ -1,6 +1,8 @@
 (import (tuna) (test) (test-user) (test-runner) (options) (hooks) (commands) (web) (keys) (views) (buffers) (kill-ring) (undo)
-        (editing) (scene) (quits)
+        (editing) (editing-test scene)
         (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+
+(define request-quit! (test-runner:running-task-canceller))
 
 (define refusals
   '("end of buffer" "beginning of buffer" "the previous command was not a yank" "no two characters to transpose"
@@ -10,7 +12,7 @@
 ;; quit lands inside whatever key's command is running then.
 (define (storm! quit! thunk)
   (let* ([quitting #t] [stopped #f] [others '()]
-         [note-report (lambda (next c) (unless (cancelled? c) (set! others (cons (scene:condition-text c) others))))]
+         [note-report (lambda (next c) (unless (cancelled? c) (set! others (cons (editing-test/scene:condition-text c) others))))]
          [until (+ (real-time) 1500)]
          [rounds 0])
     (advice-add! report note-report)
@@ -50,24 +52,24 @@
 (define (press-quit!) (web:post-input! (test-user:client) '(("type" . "key") ("name" . "C-g") ("quit" . #t))))
 
 (define (on-stops? b)
-  (for-all (lambda (c) (eqv? (buffers:stop b (views:cursor-point c)) (views:cursor-point c))) (views:cursors (scene:view))))
+  (for-all (lambda (c) (eqv? (buffers:stop b (views:cursor-point c)) (views:cursor-point c))) (views:cursors (editing-test/scene:view))))
 
 (test "reloading the plugin keeps its commands and bindings and starts its passing state afresh"
-  (scene:show! "alpha beta gamma" 1)
+  (editing-test/scene:show! "alpha beta gamma" 1)
   (test-user:press! "M-d")
   (reload-modules! '((editing)))
   (test-user:press! "M-d")
-  (check-equal? '((" gamma" ((1 #f))) (" beta")) (list (scene:state) (scene:kills 1)))
+  (check-equal? '((" gamma" ((1 #f))) (" beta")) (list (editing-test/scene:state) (editing-test/scene:kills 1)))
   (test-user:press! "C-y")
   (reload-modules! '((editing)))
-  (check-equal? '((editing:yank-pop "the previous command was not a yank")) (scene:press-reports! "M-y"))
+  (check-equal? '((editing:yank-pop "the previous command was not a yank")) (editing-test/scene:press-reports! "M-y"))
   (test-user:press! "M-f x")
-  (check-equal? '(" beta gammax" ((13 #f))) (scene:state)))
+  (check-equal? '(" beta gammax" ((13 #f))) (editing-test/scene:state)))
 
 (test "quits landing in typing, killing and yanking at three cursors leave every cursor on a stop, an edit still clearing every view's marks, and the history whole"
-  (scene:with-setting editing:delete-selection #t
+  (editing-test/scene:with-setting editing:delete-selection #t
     (lambda ()
-      (let ([storm (scene:show! "alpha beta\ngamma delta\nepsilon zeta\n" 1 12 24)])
+      (let ([storm (editing-test/scene:show! "alpha beta\ngamma delta\nepsilon zeta\n" 1 12 24)])
         ;; The yanks grow the text with every round, and how many rounds run
         ;; depends on the machine, so the history is unbounded to keep the
         ;; first state.
@@ -86,48 +88,48 @@
         (let ([other (views:make storm)])
           (views:set-mark! other 2)
           (test-user:press! "C-SPC x")
-          (check-equal? '(#f #f) (list (views:mark (scene:view)) (views:mark other)))
+          (check-equal? '(#f #f) (list (views:mark (editing-test/scene:view)) (views:mark other)))
           (views:drop! other))
         (undo:go-to! storm 0)
-        (check-equal? "alpha beta\ngamma delta\nepsilon zeta\n" (scene:text))
+        (check-equal? "alpha beta\ngamma delta\nepsilon zeta\n" (editing-test/scene:text))
         (check (for-all string? (map kill-ring:text (kill-ring:entries)))))))
-  (scene:take-said!))
+  (editing-test/scene:take-said!))
 
 (test "reloading the plugin in the middle of a drag ends the drag, and the next press starts afresh"
-  (scene:show! "alpha beta gamma\ndelta epsilon\n" 1)
-  (scene:mouse! "down" 2)
-  (scene:mouse! "move" 5)
+  (editing-test/scene:show! "alpha beta gamma\ndelta epsilon\n" 1)
+  (editing-test/scene:mouse! "down" 2)
+  (editing-test/scene:mouse! "move" 5)
   (reload-modules! '((editing)))
-  (scene:mouse! "move" 9)
-  (check-equal? '((5 2)) (scene:cursors))
-  (scene:mouse! "down" 7)
-  (scene:mouse! "move" 11)
-  (scene:mouse! "drag" 11)
-  (check-equal? '((11 7)) (scene:cursors)))
+  (editing-test/scene:mouse! "move" 9)
+  (check-equal? '((5 2)) (editing-test/scene:cursors))
+  (editing-test/scene:mouse! "down" 7)
+  (editing-test/scene:mouse! "move" 11)
+  (editing-test/scene:mouse! "drag" 11)
+  (check-equal? '((11 7)) (editing-test/scene:cursors)))
 
 (test "quits landing in presses, moves, drags and clicks leave one cursor on a stop, at most one drag keymap, and clicks working"
-  (let ([b (scene:show! "alpha beta gamma\ndelta epsilon\n" 1)])
+  (let ([b (editing-test/scene:show! "alpha beta gamma\ndelta epsilon\n" 1)])
     (buffers:with-buffer b
       (options:set-local! undo:limit (greatest-fixnum))
       (options:set-local! editing:delete-active-region #f))
-    (let ([requests (quits:requests)])
+    (let ([requests 0])
       (let-values ([(rounds others)
-                    (storm! (let ([test-task (current-task)]) (lambda () (quits:request-quit! test-task)))
+                    (storm! (let ([test-task (current-task)]) (lambda () (when (request-quit! test-task) (set! requests (+ requests 1)))))
                             (lambda ()
-                              (scene:mouse! "down" 3) (scene:mouse! "move" 9) (scene:mouse! "drag" 12)
-                              (scene:mouse! "down" 4 '("clicks" . 2)) (scene:mouse! "click" 4 '("clicks" . 2))
-                              (scene:mouse! "down" 20 '("clicks" . 3)) (scene:mouse! "move" 2) (scene:mouse! "drag" #f '("clicks" . 3))
-                              (scene:mouse! "down" 6 '("modifiers" . #("shift"))) (scene:mouse! "click" 6 '("modifiers" . #("shift")))
+                              (editing-test/scene:mouse! "down" 3) (editing-test/scene:mouse! "move" 9) (editing-test/scene:mouse! "drag" 12)
+                              (editing-test/scene:mouse! "down" 4 '("clicks" . 2)) (editing-test/scene:mouse! "click" 4 '("clicks" . 2))
+                              (editing-test/scene:mouse! "down" 20 '("clicks" . 3)) (editing-test/scene:mouse! "move" 2) (editing-test/scene:mouse! "drag" #f '("clicks" . 3))
+                              (editing-test/scene:mouse! "down" 6 '("modifiers" . #("shift"))) (editing-test/scene:mouse! "click" 6 '("modifiers" . #("shift")))
                               (test-user:press! "x DEL")
-                              (scene:mouse! "down" 2) (test-user:press! "C-g") (scene:mouse! "move" 8) (scene:mouse! "click" 8)))])
+                              (editing-test/scene:mouse! "down" 2) (test-user:press! "C-g") (editing-test/scene:mouse! "move" 8) (editing-test/scene:mouse! "click" 8)))])
         (check (> rounds 10))
-        (check (> (- (quits:requests) requests) 30))
+        (check (> requests 30))
         (check-equal? '() (remp (lambda (m) (equal? m "Stale click: what was clicked is gone")) others))))
-    (check-equal? 1 (length (views:cursors (scene:view))))
+    (check-equal? 1 (length (views:cursors (editing-test/scene:view))))
     (check (on-stops? b))
     (check (<= (length (keys:active-keymaps (test-user:client))) 3))
     (undo:go-to! b 0)
-    (check-equal? "alpha beta gamma\ndelta epsilon\n" (scene:text))
-    (scene:mouse! "down" 8)
-    (scene:mouse! "click" 8)
-    (check-equal? '((8 #f)) (scene:cursors))))
+    (check-equal? "alpha beta gamma\ndelta epsilon\n" (editing-test/scene:text))
+    (editing-test/scene:mouse! "down" 8)
+    (editing-test/scene:mouse! "click" 8)
+    (check-equal? '((8 #f)) (editing-test/scene:cursors))))

@@ -1,4 +1,4 @@
-(import (tuna) (test) (caught-reports) (test-runner) (test-user) (hooks) (options) (ask) (buffers) (views) (layout)
+(import (tuna) (test) (eval-test caught-reports) (test-runner) (test-user) (hooks) (options) (ask) (buffers) (views) (layout)
         (layout-split) (editing) (echo-area) (minibuffer) (completion) (files) (undo) (dired) (dired-test))
 
 (dired-test:touch! "proj/src/main.c" "int main;\n")

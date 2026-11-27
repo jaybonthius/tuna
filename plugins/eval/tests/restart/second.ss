@@ -1,4 +1,4 @@
-(import (tuna) (test) (caught-reports) (test-user) (buffers) (layout) (layout-split) (editing) (echo-area) (minibuffer)
+(import (tuna) (test) (eval-test caught-reports) (test-user) (buffers) (layout) (layout-split) (editing) (echo-area) (minibuffer)
         (completion) (chez-scheme) (chez-scheme-completion) (eval) (eval-test))
 
 (test "after a restart, M-p at M-:'s prompt recalls the input of the last session"

@@ -1,5 +1,5 @@
 (import (tuna) (test) (options) (hooks) (tables) (keys) (modes) (auto-mode) (prog) (buffers) (document) (files) (editing)
-        (syntax) (syntax-highlighting) (ask) (chez-scheme) (scheme-buffers))
+        (syntax) (syntax-highlighting) (ask) (chez-scheme) (chez-scheme-test scheme-buffers))
 
 ;; ask's own writer reports each message, such as the (New file) of
 ;; visiting a file that does not exist, as a warning, which would fail
@@ -14,14 +14,14 @@
   (let ([order '()])
     (hooks:add! prog:mode-hook (lambda () (set! order (cons 'prog order))))
     (hooks:add! chez-scheme:mode-hook (lambda () (set! order (cons 'scheme order))))
-    (scheme-buffers:scheme-buffer "first.ss" "")
+    (chez-scheme-test/scheme-buffers:scheme-buffer "first.ss" "")
     (check-equal? '(prog scheme) (reverse order))))
 
 (test "Scheme files get the mode by their names, and by the program a first line names"
-  (mkdir (scheme-buffers:home-file "src"))
+  (mkdir (chez-scheme-test/scheme-buffers:home-file "src"))
   (let ([mode-of (lambda (name content)
-                   (scheme-buffers:write-text! (string-append "src/" name) content)
-                   (modes:major-mode (files:visit (scheme-buffers:home-file (string-append "src/" name)))))])
+                   (chez-scheme-test/scheme-buffers:write-text! (string-append "src/" name) content)
+                   (modes:major-mode (files:visit (chez-scheme-test/scheme-buffers:home-file (string-append "src/" name)))))])
     (check-equal? (list chez-scheme:mode chez-scheme:mode chez-scheme:mode chez-scheme:mode chez-scheme:mode chez-scheme:mode modes:fundamental)
                   (map (lambda (name) (mode-of name "")) '("a.sls" "a.ss" "a.sps" "a.scm" "a.sch" "a.sld" "a.txt")))
     (check-equal? (make-list 7 chez-scheme:mode)
@@ -33,16 +33,16 @@
 (test "a user maps another file name to the mode, and binds keys in its keymap"
   (tables:set! auto-mode:file-names "ms" chez-scheme:mode)
   (keys:bind! chez-scheme:keymap "C-c C-u" editing:upcase-region)
-  (check-equal? chez-scheme:mode (modes:major-mode (files:visit (scheme-buffers:home-file "notes.ms"))))
+  (check-equal? chez-scheme:mode (modes:major-mode (files:visit (chez-scheme-test/scheme-buffers:home-file "notes.ms"))))
   (check-equal? (list (cons "C-c C-u" editing:upcase-region)) (keys:bindings chez-scheme:keymap)))
 
 (test "words are as in other modes; symbols also hold R6RS's identifier characters, so the symbol at point is a whole name"
   (check-equal? (syntax:mode-word-characters modes:fundamental) (syntax:mode-word-characters chez-scheme:mode))
   (check-equal? "!$%&*/:<=>?^_~+-.@" (syntax:mode-symbol-characters chez-scheme:mode))
-  (let ([s (scheme-buffers:scheme-buffer "s.ss" "(buffers:insert! b \"x\") ; list->vector\n")])
+  (let ([s (chez-scheme-test/scheme-buffers:scheme-buffer "s.ss" "(buffers:insert! b \"x\") ; list->vector\n")])
     (check-equal? '("buffers:insert!" "list->vector")
                   (map (lambda (word)
-                         (let-values ([(start end) (syntax:symbol-bounds s (scheme-buffers:after s word))])
+                         (let-values ([(start end) (syntax:symbol-bounds s (chez-scheme-test/scheme-buffers:after s word))])
                            (document:text (buffers:document s) start end)))
                        '("(buf" "list->")))))
 

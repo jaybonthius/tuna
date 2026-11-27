@@ -1,8 +1,8 @@
-(import (tuna) (test) (test-runner) (git) (repositories))
+(import (tuna) (test) (test-runner) (git) (git-test repositories))
 
-(repositories:sample! "repo")
+(git-test/repositories:sample! "repo")
 
-(define repo (git:find-repository (repositories:path "repo")))
+(define repo (git:find-repository (git-test/repositories:path "repo")))
 
 (test "a reload of git keeps each repository's queue and log: a command called after it waits for one running from before"
   (let* ([old-ended #f] [new-ended #f]
@@ -16,7 +16,7 @@
       (test-runner:wait-until
         (lambda () (exists (lambda (c) (equal? '("tag" "after-reload") (git:command-arguments c))) (git:commands repo))))
       (check-equal? #f (git:command-exit waiting))
-      (repositories:write-file! "repo/release" "")
+      (git-test/repositories:write-file! "repo/release" "")
       (test-runner:join after))
     (check (and old-ended (< old-ended new-ended)))
     (check-equal? '(("-c" "alias.wait=!while [ ! -e release ]; do sleep 0.01; done" "wait") ("tag" "after-reload"))

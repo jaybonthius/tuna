@@ -1,6 +1,8 @@
 (import (tuna) (test) (test-user) (layout) (layout-split) (layout-tabs) (views) (buffers) (document) (plugins)
-        (layout-tabs-test parts) (layout-tabs-test quits)
+        (layout-tabs-test parts) (test-runner)
         (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+
+(define request-quit! (test-runner:running-task-canceller))
 
 (define tree layout-tabs-test/parts:tree)
 
@@ -40,7 +42,7 @@
               (let loop ()
                 (if quitting
                     (begin
-                      (layout-tabs-test/quits:request-quit!)
+                      (request-quit!)
                       (chez:sleep (make-time 'time-duration 1000000 0))
                       (loop))
                     (set! stopped #t))))))

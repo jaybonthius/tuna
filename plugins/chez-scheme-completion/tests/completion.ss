@@ -1,8 +1,9 @@
 (import (tuna) (test) (test-runner) (test-user) (hooks) (commands) (keys) (buffers) (document) (views) (modes) (layout) (editing)
         (files) (prog) (minibuffer) (completion) (layout-float) (completion-popup) (completion-annotations)
-        (chez-scheme) (chez-scheme-completion))
+        (chez-scheme) (chez-scheme-completion) (chez-scheme-test scheme-buffers))
 
 ;; Loaded, not imported, so the test's unload of it stays an unload.
+(chez-scheme-test/scheme-buffers:write-lib-modules!)
 (load-module! '(zeppo))
 
 (define (view) (layout:selected-view))

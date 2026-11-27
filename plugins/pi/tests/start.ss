@@ -75,7 +75,7 @@
 (test "the closed sets are forms that refuse a misspelling"
   (check-equal? '(idle confirm error running) (list (pi:activity idle) (pi:method confirm) (pi:stop error) (pi:tool-state running)))
   (check-raises (lambda (c) (and (syntax-violation? c) (string=? "universe of activity does not include specified symbol" (condition-message c))))
-                (load-module! '(misspelled-activity))))
+                (load-module! '(pi-test misspelled-activity))))
 
 (define (start-refusal directory)
   (guard (c [(error? c) (condition-message c)])

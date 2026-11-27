@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (layout) (views) (buffers) (document) (options) (tables) (modes)
-        (status-line) (lighters) (cards) (status-line-test))
+        (status-line) (status-line-test lighters) (status-line-test cards) (status-line-test))
 
 (define view status-line-test:view)
 (define status status-line-test:status)
@@ -46,8 +46,8 @@
 (test "a modified buffer shows *, and the major mode's lighter and those of the minor modes on in the view follow"
   (let ([b (show! "one\n")])
     (buffers:replace! b 1 1 "x")
-    (modes:set-major-mode lighters:script b)
-    (views:with-view (view) (options:set-local! lighters:wrap #t))
+    (modes:set-major-mode status-line-test/lighters:script b)
+    (views:with-view (view) (options:set-local! status-line-test/lighters:wrap #t))
     (check-equal? '("*" "Script" "Wrap") (map text (list status-line:modified status-line:major-mode status-line:minor-modes)))
     (buffers:set-modified! b #f)
     (check-equal? "" (text status-line:modified))))
@@ -205,7 +205,7 @@
   (check-raises (status-line-test:raised? 'status-line:show-percent-position "not a view") (status-line:show-percent-position 5)))
 
 (test "a region counts the text atoms stand for, and the percent position counts each atom as one character"
-  (views:set-buffer! (view) (buffers:make "rows" (cards:rows '() (cards:row '((label . "one"))) (cards:row '((label . "two"))) (cards:blank '()))))
+  (views:set-buffer! (view) (buffers:make "rows" (status-line-test/cards:rows '() (status-line-test/cards:row '((label . "one"))) (status-line-test/cards:row '((label . "two"))) (status-line-test/cards:blank '()))))
   (check-equal? '("8 characters, 2 lines" "4 characters" "4 characters" "8 characters, 2 lines")
     (list (regions 1 3) (regions 1 2) (regions 2 4) (regions 1 4)))
   (check-equal? '("Top" "34%" "67%") (map percent-at '(1 2 3))))
@@ -216,12 +216,12 @@
     (for-each (lambda (c) (views:remove-cursor! (view) c)) (cdr (views:cursors (view))))
     (views:set-mark! (view) #f)
     (check-equal? "L1" (text status-line:position))
-    (tables:set! views:position-describers cards:row describe)
+    (tables:set! views:position-describers status-line-test/cards:row describe)
     (views:set-point! (view) 2)
     (check-equal? "row at 2" (text status-line:position))
     (buffers:with-buffer rows (options:set-local! views:position-description #f))
     (check-equal? (list #f "") (list (views:with-view (view) (status-line:show-position (view))) (text status-line:position)))
-    (tables:remove! views:position-describers cards:row)))
+    (tables:remove! views:position-describers status-line-test/cards:row)))
 
 (test "the docs' example of the percent position holds"
   (views:set-buffer! (view) (buffers:make (buffers:free-name "notes") "abc\ndef\nghij\n"))

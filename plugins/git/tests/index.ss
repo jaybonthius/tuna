@@ -1,13 +1,13 @@
-(import (tuna) (test) (git) (repositories))
+(import (tuna) (test) (git) (git-test repositories))
 
 (define (failure thunk)
   (guard (c [(git:failed-condition? c) (git:failure-summary c)]) (thunk) 'no-failure))
 
-(define (repository name) (git:find-repository (repositories:path name)))
+(define (repository name) (git:find-repository (git-test/repositories:path name)))
 
 (define (short repo) (utf8->string (git:query repo '("status" "--short"))))
 
-(repositories:sample! "repo")
+(git-test/repositories:sample! "repo")
 
 (define repo (repository "repo"))
 
@@ -40,14 +40,14 @@
     (map git:command-arguments (git:commands repo))))
 
 (test "paths reach git as bytes, so a path that is not UTF-8 is named exactly"
-  (repositories:write-escaped-file! "repo" "caf\\351.txt")
+  (git-test/repositories:write-escaped-file! "repo" "caf\\351.txt")
   (git:stage repo (list (bytevector 99 97 102 233 46 116 120 116)))
   (check-equal? (bytevector 99 97 102 233 46 116 120 116 0) (git:query repo '("diff" "--cached" "--name-only" "-z"))))
 
 (test "before the first commit, unstaging removes from the index"
-  (repositories:git! "" "init" "-q" "-b" "main" "empty")
-  (repositories:write-file! "empty/e.txt" "e\n")
-  (repositories:git! "empty" "add" "e.txt")
+  (git-test/repositories:git! "" "init" "-q" "-b" "main" "empty")
+  (git-test/repositories:write-file! "empty/e.txt" "e\n")
+  (git-test/repositories:git! "empty" "add" "e.txt")
   (let ([empty (repository "empty")])
     (git:unstage empty '("e.txt"))
     (check-equal? "?? e.txt\n" (short empty))

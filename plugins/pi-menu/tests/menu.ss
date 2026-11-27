@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (test-runner) (tables) (commands) (buffers) (views) (layout) (completion) (completion-list) (echo-area) (pi) (chat)
-        (pi-chat) (pi-picker) (pi-menu) (test-pi) (menus))
+        (pi-chat) (pi-picker) (pi-menu) (test-pi) (pi-menu-test menus))
 
 (define home (getenv "HOME"))
 
@@ -8,16 +8,16 @@
 (layout:switch-to-buffer (buffers:make "notes" "one\n"))
 
 (test "the menu is the chat's: C-c C-p is a key of Pi chats, and the command is refused outside one"
-  (check-equal? '("C-c C-p is undefined") (menus:press! "C-c C-p"))
+  (check-equal? '("C-c C-p is undefined") (pi-menu-test/menus:press! "C-c C-p"))
   (check-equal? '("not in a Pi chat")
-    (menus:reports-during (lambda () (views:call-with-view (layout:selected-view) (lambda () (commands:run pi-menu:show))))))
+    (pi-menu-test/menus:reports-during (lambda () (views:call-with-view (layout:selected-view) (lambda () (commands:run pi-menu:show))))))
   (check (memq 'pi-chat:mode (tables:ref commands:command-modes pi-menu:show '()))))
 
 (mkdir (string-append home "/src"))
 
-(define chat (menus:started (string-append home "/src")))
+(define chat (pi-menu-test/menus:started (string-append home "/src")))
 
-(define f (menus:fake chat))
+(define f (pi-menu-test/menus:fake chat))
 
 (chat:show! chat)
 
@@ -29,9 +29,9 @@
                       '("Context" ("c" "Compact") ("a" "Pi's own compaction (on)"))
                       '("Model" ("m" "Model (Fake Model)") ("t" "Thinking level (medium)"))
                       '("Display" ("T" "Finished thinking (folded)") ("o" "Fold or unfold every block")))
-                (menus:menu))
+                (pi-menu-test/menus:menu))
   (test-user:press! "C-g")
-  (check-equal? #f (menus:menu)))
+  (check-equal? #f (pi-menu-test/menus:menu)))
 
 (test "the menu is computed as it shows: titled with the session's name, and a group of Pi's commands with an entry only for each kind Pi has"
   (test-pi:answer! f "get_commands"
@@ -43,18 +43,18 @@
   (test-runner:wait-until (lambda () (= 4 (length (pi:chat-commands chat)))))
   (pi:set-session-name! chat "Parser")
   (test-user:press! "C-c C-p")
-  (check-equal? "Pi: Parser" (car (menus:menu)))
+  (check-equal? "Pi: Parser" (car (pi-menu-test/menus:menu)))
   (check-equal? '("Pi's commands" ("s" "Skills (1)") ("p" "Prompt templates (1)") ("x" "Extension commands (2)"))
-                (menus:group "Pi's commands")))
+                (pi-menu-test/menus:group "Pi's commands")))
 
 (test "toggles stay in the menu, which shows the new state"
   (test-user:press! "a")
   (test-runner:wait-until (lambda () (equal? "Pi no longer compacts on its own" (echo-area:current-message))))
   (check-equal? #f (ref (test-pi:last-request f "set_auto_compaction") "enabled"))
-  (check-equal? '("Context" ("c" "Compact") ("a" "Pi's own compaction (off)")) (menus:group "Context"))
+  (check-equal? '("Context" ("c" "Compact") ("a" "Pi's own compaction (off)")) (pi-menu-test/menus:group "Context"))
   (test-user:press! "T")
   (check-equal? '(#t "Finished thinking is shown") (list (chat:thinking-shown?) (echo-area:current-message)))
-  (check-equal? '("Display" ("T" "Finished thinking (shown)") ("o" "Fold or unfold every block")) (menus:group "Display"))
+  (check-equal? '("Display" ("T" "Finished thinking (shown)") ("o" "Fold or unfold every block")) (pi-menu-test/menus:group "Display"))
   (test-user:press! "T")
   (check-equal? "Finished thinking is folded" (echo-area:current-message))
   (test-user:press! "C-g"))
@@ -63,27 +63,27 @@
   (test-pi:answer! f "get_available_models"
     (lambda (r) '(("models" . #((("id" . "m1") ("name" . "One") ("provider" . "p") ("contextWindow" . 1000) ("reasoning" . #f)))))))
   (test-user:press! "C-c C-p m")
-  (test-runner:wait-until menus:session)
-  (check-equal? #f (menus:menu))
-  (check-equal? '("p/m1") (menus:texts))
-  (check-equal? '(quit) (menus:press! "C-g")))
+  (test-runner:wait-until pi-menu-test/menus:session)
+  (check-equal? #f (pi-menu-test/menus:menu))
+  (check-equal? '("p/m1") (pi-menu-test/menus:texts))
+  (check-equal? '(quit) (pi-menu-test/menus:press! "C-g")))
 
 (test "Pi's commands are menus by source, each shown above the chat's menu, so C-g comes back to it"
   (test-user:press! "C-c C-p x")
-  (check-equal? '("Pi's extension commands" (("a" "/audit") ("b" "/review"))) (menus:menu))
+  (check-equal? '("Pi's extension commands" (("a" "/audit") ("b" "/review"))) (pi-menu-test/menus:menu))
   (test-user:press! "C-g")
-  (check-equal? "Pi: Parser" (car (menus:menu)))
+  (check-equal? "Pi: Parser" (car (pi-menu-test/menus:menu)))
   (test-user:press! "s")
-  (check-equal? '("Pi's skills" (("a" "/skill:tdd"))) (menus:menu))
+  (check-equal? '("Pi's skills" (("a" "/skill:tdd"))) (pi-menu-test/menus:menu))
   (test-user:press! "C-g p")
-  (check-equal? '("Pi's prompt templates" (("a" "/fix-tests"))) (menus:menu))
+  (check-equal? '("Pi's prompt templates" (("a" "/fix-tests"))) (pi-menu-test/menus:menu))
   (test-user:press! "C-g C-g")
-  (check-equal? #f (menus:menu)))
+  (check-equal? #f (pi-menu-test/menus:menu)))
 
 (test "an entry of Pi's commands reads the command's arguments and sends it"
   (test-user:press! "C-c C-p x a")
-  (check-equal? #f (menus:menu))
-  (check-equal? "Arguments for /audit (empty for none): " (menus:asking))
+  (check-equal? #f (pi-menu-test/menus:menu))
+  (check-equal? "Arguments for /audit (empty for none): " (pi-menu-test/menus:asking))
   (test-user:type! "now")
   (test-user:press! "RET")
   (test-runner:wait-until (lambda () (equal? "/audit now" (ref (test-pi:last-request f "prompt") "message")))))

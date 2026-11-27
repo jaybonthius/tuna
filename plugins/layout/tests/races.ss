@@ -1,7 +1,9 @@
 (import (tuna) (test) (test-user) (layout) (layout-split) (layout-tabs) (layout-scroll) (layout-float) (views) (buffers)
         (document) (haml) (web) (plugins) (timers) (commands)
-        (layout-test parts) (layout-test quits)
+        (layout-test parts) (test-runner)
         (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+
+(define request-quit! (test-runner:running-task-canceller))
 
 (define atom layout-test/parts:atom)
 (define tree layout-test/parts:tree)
@@ -45,7 +47,7 @@
               (let loop ()
                 (if quitting
                     (begin
-                      (layout-test/quits:request-quit!)
+                      (request-quit!)
                       (chez:sleep (make-time 'time-duration 1000000 0))
                       (loop))
                     (set! stopped #t))))))

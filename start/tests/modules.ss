@@ -16,6 +16,7 @@
 (fixtures:write-lib-module! '(tuna core) '((define (where) "lib/")))
 (fixtures:write-lib-module! '(tuna extra) '((define (where) "lib/")))
 (fixtures:write-lib-module! '(lang extra) '((define (where) "lib/")))
+(fixtures:write-lib-module! '(jobs-test words) '((define (where) "lib/")))
 
 (define start-reports
   (fixtures:reports-during (lambda () (fixtures:load-configuration! '((import (tuna)))))))
@@ -29,6 +30,12 @@
   (check-equal? 'other (fixtures:at-repl '(begin (import (other)) (other:name))))
   (check-equal? "the plugin" (fixtures:at-repl '(begin (import (command-line)) (command-line:where))))
   (check-equal? 'tuna (plugins:module-source '(command-line handled))))
+
+(test "a module (x-test ...) is looked for in lib/, then in the tests/lib/ of Tuna's own plugin x"
+  (check-equal? #t (fixtures:at-repl '(begin (import (design-tokens-test css)) (design-tokens-test/css:prefix? "a" "ab"))))
+  (check-equal? 'tuna (plugins:module-source '(design-tokens-test css)))
+  (check-equal? "lib/" (fixtures:at-repl '(begin (import (jobs-test words)) (jobs-test/words:where))))
+  (check-equal? 'user (plugins:module-source '(jobs-test words))))
 
 (test "Tuna's own names resolve only to Tuna's own libraries"
   (for-each

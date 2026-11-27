@@ -1,7 +1,7 @@
-(import (tuna) (test) (test-user) (buffers) (document) (views) (kill-ring) (editing) (markdown) (chat) (fake-talks)
-        (fake-agents) (chat-test))
+(import (tuna) (test) (test-user) (buffers) (document) (views) (kill-ring) (editing) (markdown) (chat) (chat-test fake-talks)
+        (chat-test fake-agents) (chat-test))
 
-(define e (fake-talks:start 'echo (getenv "HOME")))
+(define e (chat-test/fake-talks:start 'echo (getenv "HOME")))
 
 (chat:show! e)
 
@@ -33,8 +33,8 @@
     (map (lambda (c) (apply on-prompt c)) cases)))
 
 (test "with the source's datums above and below the prompt it behaves the same, but nothing raises at the edges"
-  (fake-talks:talk-above-set! e (list (chat:message '((key . w1)) "w1\n")))
-  (fake-talks:talk-below-set! e (list (chat:message '((key . w2)) "w2\n")))
+  (chat-test/fake-talks:talk-above-set! e (list (chat:message '((key . w1)) "w1\n")))
+  (chat-test/fake-talks:talk-below-set! e (list (chat:message '((key . w2)) "w2\n")))
   (chat:changed! e)
   (test-user:settle)
   (check-equal? "w1\nhi there\nw2\n" (chat-test:shown e))
@@ -71,7 +71,7 @@
     (list (field-text) (- (views:point (chat-test:view)) (document:node-start (node-of 'chat:field)) 1) reports)))
 
 (test "a question's field is isolating too, and one without lines refuses a line break"
-  (fake-talks:ask! e "q1" "Name?" 'field)
+  (chat-test/fake-talks:ask! e "q1" "Name?" 'field)
   (test-user:settle)
   (check-equal? '(("ab cd" 5 ()) ("ab cd" 0 ()) ("ab cd" 5 ()) ("" 0 ()) ("" 0 ()) ("ab cd" 5 ()) ("ab cd" 0 ()) ("cd ab" 5 ())
                   ("ab dc" 5 ()) ("AB cd" 2 ()))

@@ -1,9 +1,9 @@
-(import (tuna) (test) (caught-reports) (test-user) (options) (ask) (modes) (document) (buffers) (views) (layout)
+(import (tuna) (test) (eval-test caught-reports) (test-user) (options) (ask) (modes) (document) (buffers) (views) (layout)
         (layout-split) (editing) (echo-area) (minibuffer) (completion) (files) (undo) (dired) (dired-test))
 
 (define (reports-during thunk)
   (map (lambda (c) (if (cancelled? c) 'cancelled (list (condition-who c) (condition-message c))))
-       (caught-reports:during thunk)))
+       (eval-test/caught-reports:during thunk)))
 
 (dired-test:touch! "src/b.txt" "bee\n")
 (dired-test:touch! "src/A.txt" "a\n")

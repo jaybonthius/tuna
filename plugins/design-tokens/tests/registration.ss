@@ -9,14 +9,14 @@
     (check (< (length (memq 'faces order)) (length (memq 'design-tokens order))))))
 
 (test "a theme is a plugin that registers its file as theme; the user's tweaks are a file of their own, after it; turning the theme off takes its file back"
-  (load-module! '(dusk))
+  (load-module! '(design-tokens-test dusk))
   (call-with-output-file (string-append (getenv "HOME") "/.config/tuna/user.css")
     (lambda (p) (put-string p ":root { --tuna-region: #264f78; }\n")) 'replace)
   (tables:set! web:stylesheets 'user "user.css")
   (check-equal? "dusk/dusk.css" (tables:ref web:stylesheets 'theme #f))
   (let ([order (names)])
     (check (< (length (memq 'user order)) (length (memq 'theme order)) (length (memq 'faces order)))))
-  (unload-owner! (module-owner '(dusk)))
+  (unload-owner! (module-owner '(design-tokens-test dusk)))
   (check-equal? #f (tables:ref web:stylesheets 'theme #f))
   (tables:remove! web:stylesheets 'user))
 

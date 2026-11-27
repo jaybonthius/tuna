@@ -1,4 +1,4 @@
-(import (tuna) (test) (caught-reports) (test-runner) (test-user) (options) (ask) (processes) (document) (buffers) (views)
+(import (tuna) (test) (eval-test caught-reports) (test-runner) (test-user) (options) (ask) (processes) (document) (buffers) (views)
         (layout) (layout-split) (editing) (echo-area) (minibuffer) (completion) (files) (undo) (dired) (dired-test))
 
 (define (message) (echo-area:current-message))

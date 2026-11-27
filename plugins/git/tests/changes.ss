@@ -1,8 +1,8 @@
-(import (tuna) (test) (options) (diff) (git) (repositories))
+(import (tuna) (test) (options) (diff) (git) (git-test repositories))
 
-(define (repository name) (git:find-repository (repositories:path name)))
+(define (repository name) (git:find-repository (git-test/repositories:path name)))
 
-(repositories:sample! "repo")
+(git-test/repositories:sample! "repo")
 
 (define repo (repository "repo"))
 
@@ -18,12 +18,12 @@
     (check-equal? '("@@ -2 +2 @@ one" "@@ -9 +9 @@ eight") headings)))
 
 (test "a textconv driver does not change the diff, which holds the file's bytes"
-  (repositories:write-file! "repo/.gitattributes" "*.up diff=upper\n")
-  (repositories:git! "repo" "config" "diff.upper.textconv" "tr a-z A-Z <")
-  (repositories:write-file! "repo/t.up" "one\n")
-  (repositories:git! "repo" "add" ".gitattributes" "t.up")
-  (repositories:git! "repo" "commit" "-qm" "t")
-  (repositories:write-file! "repo/t.up" "one\ntwo\n")
+  (git-test/repositories:write-file! "repo/.gitattributes" "*.up diff=upper\n")
+  (git-test/repositories:git! "repo" "config" "diff.upper.textconv" "tr a-z A-Z <")
+  (git-test/repositories:write-file! "repo/t.up" "one\n")
+  (git-test/repositories:git! "repo" "add" ".gitattributes" "t.up")
+  (git-test/repositories:git! "repo" "commit" "-qm" "t")
+  (git-test/repositories:write-file! "repo/t.up" "one\ntwo\n")
   (let ([t (find (lambda (f) (equal? (diff:file-path f) "t.up")) (git:diff repo '()))])
     (check-equal? '("one" "two")
       (map (lambda (l) (utf8->string (diff:line-bytes l))) (vector->list (diff:hunk-lines (car (diff:file-hunks t))))))))
@@ -37,19 +37,19 @@
                     commits)))
   (check-equal? '("t" "Second commit") (map git:commit-subject (git:commits repo "@{upstream}.." 10)))
   (check-equal? '("t") (map git:commit-subject (git:commits repo "HEAD" 1)))
-  (repositories:git! "repo" "tag" "v1" "HEAD~1")
+  (git-test/repositories:git! "repo" "tag" "v1" "HEAD~1")
   (check-equal? '("tag: v1") (git:commit-refs (cadr (git:commits repo "HEAD" #f)))))
 
 (test "git:stashes gives each stash's name and message, newest first"
   (check-equal? '() (git:stashes repo))
-  (repositories:git! "repo" "stash" "-q")
-  (repositories:git! "repo" "stash" "-q" "-u")
+  (git-test/repositories:git! "repo" "stash" "-q")
+  (git-test/repositories:git! "repo" "stash" "-q" "-u")
   (let ([head (git:commit-short-name (car (git:commits repo "HEAD" 1)))])
     (check-equal? (list (cons "stash@{0}" (string-append "WIP on main: " head " t")) (cons "stash@{1}" (string-append "WIP on main: " head " t")))
       (git:stashes repo))))
 
 (test "git:diff gives a conflicted file's unstaged changes as a combined diff"
-  (repositories:conflict! "conflict")
+  (git-test/repositories:conflict! "conflict")
   (check-equal? '(("f.txt" unmerged #t))
     (map (lambda (f) (list (diff:file-path f) (diff:file-status f) (diff:file-combined? f)))
          (git:diff (repository "conflict") '()))))

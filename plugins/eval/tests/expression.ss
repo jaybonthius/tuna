@@ -1,4 +1,4 @@
-(import (tuna) (test) (caught-reports) (test-user) (options) (buffers) (views) (layout) (layout-split) (editing) (echo-area) (undo)
+(import (tuna) (test) (eval-test caught-reports) (test-user) (options) (buffers) (views) (layout) (layout-split) (editing) (echo-area) (undo)
         (minibuffer) (completion) (files) (chez-scheme) (chez-scheme-completion) (eval) (eval-test))
 
 (define (message) (echo-area:current-message))
@@ -126,6 +126,8 @@
   (check-equal? "point" (shown-value "(define-record-type (point make-point point?) (fields x))"))
   (check-equal? "say-hello" (shown-value "(commands:define-command (say-hello) \"Says hello.\" (echo-area:message! \"Hello\"))"))
   (check-equal? "5" (shown-value "(begin (define y 1) 5)")))
+
+(eval-test:write-greet!)
 
 (import (greet))
 

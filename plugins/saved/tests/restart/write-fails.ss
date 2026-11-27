@@ -1,7 +1,7 @@
 (import (tuna) (test) (test-runner) (saved) (saved-test kept) (saved-test files))
 
 ;; A file where the datum's folder would go makes its write fail.
-(saved-test/files:write-text! (saved-test/files:file "user" "saved-test" "kept") "")
+(saved-test/files:write-text! (saved-test/files:file "tuna" "saved-test" "kept") "")
 
 (test "a write that fails is reported"
   (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])

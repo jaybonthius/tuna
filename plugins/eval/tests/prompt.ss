@@ -1,4 +1,4 @@
-(import (tuna) (test) (caught-reports) (test-runner) (test-user) (hooks) (tables) (saved) (commands) (keys) (buffers) (views) (layout) (layout-split)
+(import (tuna) (test) (eval-test caught-reports) (test-runner) (test-user) (hooks) (tables) (saved) (commands) (keys) (buffers) (views) (layout) (layout-split)
         (editing) (echo-area) (undo) (minibuffer) (completion) (files) (chez-scheme) (chez-scheme-completion) (eval)
         (eval-test))
 
@@ -65,6 +65,8 @@
   (test-user:press! "TAB")
   (check-equal? '("(buffers:insert!" #f) (list (eval-test:input) (eval-test:session)))
   (test-user:press! "C-a C-k"))
+
+(eval-test:write-greet!)
 
 (import (greet))
 

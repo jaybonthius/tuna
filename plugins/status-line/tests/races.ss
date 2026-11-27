@@ -1,6 +1,8 @@
 (import (tuna) (test) (test-user) (layout) (layout-split) (views) (buffers) (commands) (tables)
-        (status-line) (status-line-test) (quits)
+        (status-line) (status-line-test) (test-runner)
         (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+
+(define request-quit! (test-runner:running-task-canceller))
 
 (define view status-line-test:view)
 
@@ -41,7 +43,7 @@
               (let loop ()
                 (if quitting
                     (begin
-                      (quits:request-quit!)
+                      (request-quit!)
                       (chez:sleep (make-time 'time-duration 1000000 0))
                       (loop))
                     (set! stopped #t))))))

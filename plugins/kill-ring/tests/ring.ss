@@ -1,4 +1,4 @@
-(import (tuna) (test) (hooks) (options) (tables) (document) (buffers) (md) (kill-ring))
+(import (tuna) (test) (hooks) (options) (tables) (document) (buffers) (kill-ring-test md) (kill-ring))
 
 (define (raised? who message)
   (lambda (c)
@@ -125,7 +125,7 @@
 
 (test "a kill's text joins its parts, an entry's joins its kills with line breaks"
   (check-equal? "alpha\nbeta" (kill-ring:text (list "alpha" "beta")))
-  (let ([w (buffers:make "parts" (md:doc '() (md:para '() "One two.\n") (md:para '() "Three four.\n")))])
+  (let ([w (buffers:make "parts" (kill-ring-test/md:doc '() (kill-ring-test/md:para '() "One two.\n") (kill-ring-test/md:para '() "Three four.\n")))])
     (kill-ring:push! (list (buffers:piece w 6 17)))
     (kill-ring:append! (list "+"))
     (kill-ring:prepend! (list "<"))
@@ -134,22 +134,22 @@
   (empty-ring!))
 
 (test "a kill keeps the texts its atoms' kinds gave when it was taken, and joins them with its characters on any thread"
-  (let* ([b (buffers:make "atoms" (md:doc '() (md:para '() "a " (md:badge '((label . "NEW"))) " b " (md:image '()) "c\n")))]
+  (let* ([b (buffers:make "atoms" (kill-ring-test/md:doc '() (kill-ring-test/md:para '() "a " (kill-ring-test/md:badge '((label . "NEW"))) " b " (kill-ring-test/md:image '()) "c\n")))]
          [p (buffers:piece b 2 10)])
     (check-equal? "a NEW b c" (buffers:piece-text p))
     (kill-ring:push! (list p))
     (let ([entry (kill-ring:current)])
-      (set-box! md:badge-suffix "!")
+      (set-box! kill-ring-test/md:badge-suffix "!")
       (check-equal? "a NEW! b c" (buffers:piece-text (buffers:piece b 2 10)))
       (check-equal? "a NEW b c" (kill-ring:text entry))
       (check-equal? "a NEW b c" (on-thread (lambda () (kill-ring:text entry))))
-      (set-box! md:badge-suffix ""))
+      (set-box! kill-ring-test/md:badge-suffix ""))
     (buffers:kill! b))
   (empty-ring!))
 
 (test "duplicates are told by text, so a kill with atoms is one of a string with its text"
   (options:with ([kill-ring:skip-duplicates #t])
-    (let ([b (buffers:make "atom-duplicates" (md:doc '() (md:para '() "a " (md:badge '((label . "NEW"))) " b\n")))])
+    (let ([b (buffers:make "atom-duplicates" (kill-ring-test/md:doc '() (kill-ring-test/md:para '() "a " (kill-ring-test/md:badge '((label . "NEW"))) " b\n")))])
       (kill-ring:push! (list (buffers:piece b 2 7)))
       (kill-ring:push! (list (kill-ring:text (kill-ring:current))))
       (check-equal? 1 (length (kill-ring:entries)))
@@ -157,7 +157,7 @@
   (empty-ring!))
 
 (test "join makes one kill of strings, pieces and kills: pushed, it is one entry and one call of after-push"
-  (let ([w (buffers:make "cells" (md:doc '() (md:para '() "One two.\n") (md:para '() "Three four.\n")))])
+  (let ([w (buffers:make "cells" (kill-ring-test/md:doc '() (kill-ring-test/md:para '() "One two.\n") (kill-ring-test/md:para '() "Three four.\n")))])
     (check-equal? '("One|Three")
       (pushed-during (lambda () (kill-ring:push! (list (kill-ring:join (buffers:piece w 2 5) "|" (buffers:piece w 13 18)))))))
     (check-equal? 1 (length (kill-ring:current)))

@@ -1,5 +1,5 @@
 #!tuna
-(import (caught-reports) (test-runner) (test-user) (echo-area) (document) (buffers) (views) (layout) (modes) (chez-scheme) (minibuffer) (completion))
+(import (eval-test caught-reports) (test-runner) (test-user) (echo-area) (document) (buffers) (views) (layout) (modes) (chez-scheme) (minibuffer) (completion))
 
 (define (home-path name) (string-append (getenv "HOME") "/" name))
 
@@ -9,6 +9,10 @@
 (define (write-file! name text)
   (suspend (lambda (resume) (fork-task (lambda (restore) (sleep (make-time 'time-duration 10000000 0)) (resume void)))))
   (call-with-output-file (home-path name) (lambda (p) (put-string p text)) 'replace))
+
+;; Tests visit, edit and reload greet.sls as a user's own module, in lib/.
+(define (write-greet!)
+  (write-file! ".config/tuna/lib/greet.sls" "#!tuna\n(define (text n) (string-append \"Hello, \" n \"!\"))\n"))
 
 (define (view) (layout:selected-view))
 
@@ -66,7 +70,7 @@
          (if (cancelled? c)
              'cancelled
              (list (and (who-condition? c) (condition-who c)) (and (message-condition? c) (condition-message c)))))
-       (caught-reports:during thunk)))
+       (eval-test/caught-reports:during thunk)))
 
 ;; A command that pauses, as to save a file or reload a module, goes on
 ;; after the keys have settled; it ends with a message or a report.

@@ -1,5 +1,7 @@
-(import (tuna) (test) (test-runner) (timers) (jobs) (jobs-test) (jobs-test progress) (jobs-test quits)
+(import (tuna) (test) (test-runner) (timers) (jobs) (jobs-test) (jobs-test progress)
         (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+
+(define request-quit! (test-runner:running-task-canceller))
 
 (define (sleep-ms ms) (chez:sleep (make-time 'time-duration (* ms 1000000) 0)))
 
@@ -86,7 +88,7 @@
         (let loop ()
           (when (unbox quitting)
             (sleep-ms 1)
-            (when (box-cas! armed #t #f) (jobs-test/quits:request-quit!))
+            (when (box-cas! armed #t #f) (request-quit!))
             (loop)))))
     (let retry ()
       (when (< quits 500)
@@ -122,7 +124,7 @@
                 (let ([until (+ (real-time) 2000)] [deadline (+ (real-time) 30000)])
                   (let loop ()
                     (when (and (< (real-time) deadline) (or (< (real-time) until) (= reported 0)))
-                      (jobs-test/quits:request-quit!)
+                      (request-quit!)
                       (loop))))
                 (resume void)))))))
     (let ([before delivered])
@@ -135,7 +137,7 @@
 
 (test "a worker's first start compiles it with quits held off, so quits asked for at every tick cannot keep it from compiling"
   (let* ([asking #f]
-         [ask-at-each-tick (lambda (tick) (when asking (jobs-test/quits:request-quit!)) (tick))])
+         [ask-at-each-tick (lambda (tick) (when asking (cancel-task (current-task))) (tick))])
     (advice-add! tick ask-at-each-tick)
     (check-equal? 'started
       (let try ([tries 0])
@@ -160,7 +162,7 @@
   (let ([started 0] [finished-jobs 0] [landed 0])
     (do ([i 0 (+ i 1)]) ((= i 100))
       (guard (c [(cancelled? c) (set! landed (+ landed 1))])
-        (jobs-test/quits:request-quit!)
+        (cancel-task (current-task))
         (let loop ()
           (jobs:stop! (jobs:start nothing 0 ignore (lambda (e) (set! finished-jobs (+ finished-jobs 1)))))
           (set! started (+ started 1))
@@ -181,7 +183,7 @@
         (let loop ()
           (when (unbox quitting)
             (chez:sleep (make-time 'time-duration 200000 0))
-            (when (box-cas! armed #t #f) (jobs-test/quits:request-quit!))
+            (when (box-cas! armed #t #f) (request-quit!))
             (loop)))))
     (do ([k 0 (+ k 1)]) ((= k 20))
       (jobs:start many 1000

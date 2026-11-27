@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-runner) (test-user) (hooks) (options) (timers) (commands) (keys) (buffers) (document) (views)
-        (layout) (editing) (faces) (echo-area) (docs-at-point) (docs-at-point-display) (diagnostics) (marks))
+        (layout) (editing) (faces) (echo-area) (docs-at-point) (docs-at-point-display) (diagnostics) (diagnostics-test marks))
 
 (options:set! docs-at-point:delay 0.05)
 
@@ -17,9 +17,9 @@
 
 (test "diagnostics:at-point is a docs source only in buffers where the mode is on: added when it turns on there, removed when it turns off"
   (check-equal? '(0 0) (list (sources notes) (sources plain)))
-  (marks:mode! notes #t)
+  (diagnostics-test/marks:mode! notes #t)
   (check-equal? '(1 0) (list (sources notes) (sources plain)))
-  (marks:mode! notes #f)
+  (diagnostics-test/marks:mode! notes #f)
   (check-equal? 0 (sources notes)))
 
 (test "a buffer that gets diagnostics with the mode on gets the source too"
@@ -37,20 +37,20 @@
   (buffers:with-buffer notes (hooks:add-local! docs-at-point:sources signature))
   (test-user:press! "C-h .")
   (test-runner:wait-until
-    (lambda () (let ([d (buffers:find "*Docs*")]) (and d (equal? "alpha\nsignature of alpha\n" (marks:text d))))))
+    (lambda () (let ([d (buffers:find "*Docs*")]) (and d (equal? "alpha\nsignature of alpha\n" (diagnostics-test/marks:text d))))))
   (layout:select! (car (views:showing notes)))
   (test-user:press! "C-c p C-f")
   (past-delay)
-  (check-equal? (list plain "alpha\nsignature of alpha\n") (list (views:buffer (layout:selected-view)) (marks:text (buffers:find "*Docs*"))))
+  (check-equal? (list plain "alpha\nsignature of alpha\n") (list (views:buffer (layout:selected-view)) (diagnostics-test/marks:text (buffers:find "*Docs*"))))
   (layout:switch-to-buffer notes)
   (buffers:with-buffer notes (hooks:remove-local! docs-at-point:sources signature)))
 
 (test "the echo area shows a diagnostic's text at point in error, warning or success"
   (let ([source (diagnostics:make-source)])
-    (marks:mode! notes #t)
-    (diagnostics:report! source notes (list (marks:err notes "beta" "bad beta")))
+    (diagnostics-test/marks:mode! notes #t)
+    (diagnostics:report! source notes (list (diagnostics-test/marks:err notes "beta" "bad beta")))
     (views:set-point! (layout:selected-view) 1)
     (test-user:press! "M-f C-f")
     (test-runner:wait-until (lambda () (equal? "bad beta" (echo-area:current-message))))
-    (check-equal? (list (marks:word notes "beta") (list (list 0 8 faces:error)))
+    (check-equal? (list (diagnostics-test/marks:word notes "beta") (list (list 0 8 faces:error)))
                   (list (views:point (layout:selected-view)) (echo-area:current-spans)))))

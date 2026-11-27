@@ -3,8 +3,10 @@
 ;; A form of its own, so it loads before echo-area.
 (import (echo-area-test beneath))
 
-(import (test-user) (buffers) (document) (options) (editing) (echo-area) (echo-area-test) (quits)
+(import (test-user) (buffers) (document) (options) (editing) (echo-area) (echo-area-test) (test-runner)
         (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+
+(define request-quit! (test-runner:running-task-canceller))
 
 (define log-lines echo-area-test:log-lines)
 
@@ -51,7 +53,7 @@
               (let loop ()
                 (if quitting
                     (begin
-                      (quits:request-quit!)
+                      (request-quit!)
                       (chez:sleep (make-time 'time-duration 1000000 0))
                       (loop))
                     (set! stopped #t))))))

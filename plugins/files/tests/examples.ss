@@ -49,7 +49,7 @@
   (check-equal? '(files:save-buffer files:not-modified files:save-buffers-kill-tuna)
     (map (lambda (k) (commands:command-name (tables:ref keys:global k))) '("C-x C-s" "M-~" "C-x C-c"))))
 
-(import (autosave))
+(import (files-test autosave))
 
 (test "the page's autosave example saves modified buffers after five seconds of idle, and leaves alone a file another program changed and one the user would not save over its write protection"
   (let ([other (files:visit "~/other.txt")] [later (files:visit "~/later.txt")])
@@ -67,7 +67,7 @@
       (check-equal? '(#f #t #t #f) (map buffers:modified? (list notes other locked later)))
       (check-equal? '("+ * Today: Buy milk.\nCall Bob.\n" "changed elsewhere\n" "later\n")
         (map files-test:read-text '("~/notes.txt" "~/other.txt" "~/later.txt")))
-      (unload-owner! (module-owner '(autosave)))
+      (unload-owner! (module-owner '(files-test autosave)))
       (files:not-modified locked)
       (files:not-modified other))))
 

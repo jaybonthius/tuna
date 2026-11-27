@@ -1,4 +1,4 @@
-(import (tuna) (test) (tables) (document) (buffers) (md) (blocks) (kill-ring))
+(import (tuna) (test) (tables) (document) (buffers) (kill-ring-test md) (kill-ring-test blocks) (kill-ring))
 
 (define (raised? who message)
   (lambda (c)
@@ -36,38 +36,38 @@
     (buffers:kill! b)))
 
 (test "a kill across paragraphs yanks back as it was killed"
-  (let* ([m (buffers:make "across" (md:doc '() (md:para '() "Alpha " (md:link '() "beta") " gamma.\n") (md:para '() "Two three.\n")))]
+  (let* ([m (buffers:make "across" (kill-ring-test/md:doc '() (kill-ring-test/md:para '() "Alpha " (kill-ring-test/md:link '() "beta") " gamma.\n") (kill-ring-test/md:para '() "Two three.\n")))]
          [across (buffers:piece m 4 26)]
          [before (root m)])
     (check-equal? "pha beta gamma.\nTw" (buffers:piece-text across))
     (buffers:replace! m 4 26 "")
-    (check-equal? '(md:doc () (md:para () "Alo three.\n")) (root m))
+    (check-equal? '(kill-ring-test/md:doc () (kill-ring-test/md:para () "Alo three.\n")) (root m))
     (check-equal? '((4 . 26)) (kill-ring:insert! m 4 across))
     (check-equal? before (root m))
     (check-equal? '((8 . 30)) (kill-ring:insert! m 8 across))
-    (check-equal? '(md:doc () (md:para () "Alpha pha " (md:link () "beta") " gamma.\n")
-                    (md:para () "Tw" (md:link () "beta") " gamma.\n") (md:para () "Two three.\n"))
+    (check-equal? '(kill-ring-test/md:doc () (kill-ring-test/md:para () "Alpha pha " (kill-ring-test/md:link () "beta") " gamma.\n")
+                    (kill-ring-test/md:para () "Tw" (kill-ring-test/md:link () "beta") " gamma.\n") (kill-ring-test/md:para () "Two three.\n"))
                   (root m))
     (check-equal? "pha beta gamma.\nTw" (document:text (buffers:document m) 8 30))
     (buffers:kill! m)))
 
 (test "a whole paragraph yanked inside another splits it, the first half keeping a line break"
-  (let* ([m (buffers:make "source" (md:doc '() (md:para '() "Two three.\n")))]
+  (let* ([m (buffers:make "source" (kill-ring-test/md:doc '() (kill-ring-test/md:para '() "Two three.\n")))]
          [para (buffers:piece m 1 14)]
-         [n (buffers:make "split" (md:doc '() (md:para '() "abcd\n")))])
+         [n (buffers:make "split" (kill-ring-test/md:doc '() (kill-ring-test/md:para '() "abcd\n")))])
     (check-equal? "Two three.\n" (buffers:piece-text para))
     (let ([after (cdar (kill-ring:insert! n 4 para))])
-      (check-equal? '(md:doc () (md:para () "ab\n") (md:para () "Two three.\n") (md:para () "cd\n")) (root n))
+      (check-equal? '(kill-ring-test/md:doc () (kill-ring-test/md:para () "ab\n") (kill-ring-test/md:para () "Two three.\n") (kill-ring-test/md:para () "cd\n")) (root n))
       (check-equal? "ab\nTwo three.\n" (document:text (buffers:document n) 0 after)))
     (buffers:kill! m)
     (buffers:kill! n)))
 
 (test "yanked back, atoms come back as they were"
-  (let* ([b (buffers:make "atoms" (md:doc '() (md:para '() "a " (md:badge '((label . "NEW"))) " b " (md:image '()) "c\n")))]
+  (let* ([b (buffers:make "atoms" (kill-ring-test/md:doc '() (kill-ring-test/md:para '() "a " (kill-ring-test/md:badge '((label . "NEW"))) " b " (kill-ring-test/md:image '()) "c\n")))]
          [p (buffers:piece b 2 10)])
     (check-equal? '((2 . 10)) (kill-ring:insert! b 2 p))
-    (check-equal? '(md:doc () (md:para () "a " #(md:badge ((label . "NEW"))) " b " #(md:image ()) "ca "
-                              #(md:badge ((label . "NEW"))) " b " #(md:image ()) "c\n"))
+    (check-equal? '(kill-ring-test/md:doc () (kill-ring-test/md:para () "a " #(kill-ring-test/md:badge ((label . "NEW"))) " b " #(kill-ring-test/md:image ()) "ca "
+                              #(kill-ring-test/md:badge ((label . "NEW"))) " b " #(kill-ring-test/md:image ()) "c\n"))
                   (root b))
     (buffers:kill! b)))
 
@@ -90,8 +90,8 @@
 
 (test "a kill appended to a kill keeps both parts, and a yank puts each back in turn with its spans"
   (let ([t (buffers:make "answer" "Ask. Answer here.\n")]
-        [w (buffers:make "paragraphs" (md:doc '() (md:para '() "One two.\n") (md:para '() "Three four.\n")))]
-        [u (buffers:make "target" (md:doc '() (md:para '() "xy\n")))])
+        [w (buffers:make "paragraphs" (kill-ring-test/md:doc '() (kill-ring-test/md:para '() "One two.\n") (kill-ring-test/md:para '() "Three four.\n")))]
+        [u (buffers:make "target" (kill-ring-test/md:doc '() (kill-ring-test/md:para '() "xy\n")))])
     (buffers:add-span! (buffers:layer t responses) 6 18 'gpt)
     (kill-ring:push! (list (buffers:piece w 6 17)))
     (kill-ring:append! (list "+"))
@@ -99,7 +99,7 @@
     (kill-ring:prepend! (list "<"))
     (check-equal? "<two.\nThre+Answer here." (kill-ring:text (kill-ring:current)))
     (check-equal? '((3 . 28)) (kill-ring:insert! u 3 (car (kill-ring:current))))
-    (check-equal? '(md:doc () (md:para () "x<two.\n") (md:para () "Thre+Answer here.y\n")) (root u))
+    (check-equal? '(kill-ring-test/md:doc () (kill-ring-test/md:para () "x<two.\n") (kill-ring-test/md:para () "Thre+Answer here.y\n")) (root u))
     (check-equal? '(("Answer here." gpt)) (spans-of u responses))
     (kill-ring:append! (list "!"))
     (check-equal? "<two.\nThre+Answer here.!" (kill-ring:text (kill-ring:current)))
@@ -107,8 +107,8 @@
 
 (test "a part refused after others went in takes them back out, leaving the buffer and its spans as they were"
   (let ([t (buffers:make "answer" "Ask. Answer here.\n")]
-        [w (buffers:make "paragraphs" (md:doc '() (md:para '() "One two.\n") (md:para '() "Three four.\n")))]
-        [f (buffers:make "form" '(md:form () (md:field () "xy")))])
+        [w (buffers:make "paragraphs" (kill-ring-test/md:doc '() (kill-ring-test/md:para '() "One two.\n") (kill-ring-test/md:para '() "Three four.\n")))]
+        [f (buffers:make "form" '(kill-ring-test/md:form () (kill-ring-test/md:field () "xy")))])
     (buffers:add-span! (buffers:layer t responses) 6 18 'gpt)
     (buffers:add-span! (buffers:layer f responses) 3 4 'gpt)
     (let ([version (buffers:version f)])
@@ -116,23 +116,23 @@
       (kill-ring:append! (list (buffers:piece t 6 18)))
       (kill-ring:append! (list (buffers:piece w 6 17)))
       (check-raises (raised? 'buffers:insert! "the node refuses the edit") (kill-ring:insert! f 3 (car (kill-ring:current))))
-      (check-equal? '(md:form () (md:field () "xy")) (root f))
+      (check-equal? '(kill-ring-test/md:form () (kill-ring-test/md:field () "xy")) (root f))
       (check-equal? '(("y" gpt)) (spans-of f responses))
       (check (> (buffers:version f) version)))
     (kill-ring:push! (list "abc"))
     (kill-ring:append! (list (buffers:piece t 6 18)))
     (check-equal? '((3 . 18)) (kill-ring:insert! f 3 (car (kill-ring:current))))
-    (check-equal? '(md:form () (md:field () "xabcAnswer here.y")) (root f))
+    (check-equal? '(kill-ring-test/md:form () (kill-ring-test/md:field () "xabcAnswer here.y")) (root f))
     (check-equal? '(("Answer here.y" gpt)) (spans-of f responses))
     (check-raises (raised? 'buffers:insert! "the node refuses the edit") (kill-ring:insert! f 3 (kill-ring:join "a" (buffers:piece w 6 17))))
-    (check-equal? '(md:form () (md:field () "xabcAnswer here.y")) (root f))
+    (check-equal? '(kill-ring-test/md:form () (kill-ring-test/md:field () "xabcAnswer here.y")) (root f))
     (for-each buffers:kill! (list t w f))))
 
 (test "a joined kill yanks its parts in turn"
-  (let ([w (buffers:make "cells" (md:doc '() (md:para '() "One two.\n") (md:para '() "Three four.\n")))]
-        [z (buffers:make "row" (md:doc '() (md:para '() "ab\n")))])
+  (let ([w (buffers:make "cells" (kill-ring-test/md:doc '() (kill-ring-test/md:para '() "One two.\n") (kill-ring-test/md:para '() "Three four.\n")))]
+        [z (buffers:make "row" (kill-ring-test/md:doc '() (kill-ring-test/md:para '() "ab\n")))])
     (check-equal? '((3 . 12)) (kill-ring:insert! z 3 (kill-ring:join (buffers:piece w 2 5) "|" (buffers:piece w 13 18))))
-    (check-equal? '(md:doc () (md:para () "aOne|Threeb\n")) (root z))
+    (check-equal? '(kill-ring-test/md:doc () (kill-ring-test/md:para () "aOne|Threeb\n")) (root z))
     (for-each buffers:kill! (list w z)))
   (let* ([w (buffers:make "plain-text" "one two\n")] [joined (kill-ring:join (buffers:piece w 1 4) "\n" "two")])
     (check-equal? "one\ntwo" (kill-ring:text (list joined)))
@@ -145,33 +145,33 @@
          [note-yank (lambda (buffer position piece)
                       (set! calls (cons (list (buffers:name buffer) position (buffers:piece-text piece)) calls))
                       42)]
-         [v (buffers:make "v" (md:doc '() (md:para '() "Pic " (md:image '((src . "a.png"))) ".\n") (md:para '() "Last.\n")))]
-         [u (buffers:make "u" (md:doc '() (md:para '() "xy\n")))]
+         [v (buffers:make "v" (kill-ring-test/md:doc '() (kill-ring-test/md:para '() "Pic " (kill-ring-test/md:image '((src . "a.png"))) ".\n") (kill-ring-test/md:para '() "Last.\n")))]
+         [u (buffers:make "u" (kill-ring-test/md:doc '() (kill-ring-test/md:para '() "xy\n")))]
          [yank-range! (lambda (start end) (kill-ring:insert! u 2 (buffers:piece v start end)))])
-    (tables:set! kill-ring:yankers 'md:image note-yank)
-    (tables:set! kill-ring:yankers 'md:para note-yank)
+    (tables:set! kill-ring:yankers 'kill-ring-test/md:image note-yank)
+    (tables:set! kill-ring:yankers 'kill-ring-test/md:para note-yank)
     (let* ([a (yank-range! 6 7)] [b (yank-range! 1 10)] [c (yank-range! 1 5)] [d (yank-range! 10 18)])
       (check-equal? '(() () () ()) (list a b c d)))
     (check-equal? '(("u" 2 "") ("u" 2 "Pic .\n") ("u" 2 "Pic") ("u" 2 "Last.\n")) (reverse calls))
-    (check-equal? '(md:doc () (md:para () "xy\n")) (root u))
+    (check-equal? '(kill-ring-test/md:doc () (kill-ring-test/md:para () "xy\n")) (root u))
     (check-equal? '((2 . 13)) (yank-range! 2 13))
-    (check-equal? '(md:doc () (md:para () "Pic " #(md:image ((src . "a.png"))) ".\n") (md:para () "Laxy\n")) (root u))
-    (tables:remove! kill-ring:yankers 'md:para)
-    (tables:remove! kill-ring:yankers 'md:image)
+    (check-equal? '(kill-ring-test/md:doc () (kill-ring-test/md:para () "Pic " #(kill-ring-test/md:image ((src . "a.png"))) ".\n") (kill-ring-test/md:para () "Laxy\n")) (root u))
+    (tables:remove! kill-ring:yankers 'kill-ring-test/md:para)
+    (tables:remove! kill-ring:yankers 'kill-ring-test/md:image)
     (check-equal? '((2 . 10)) (yank-range! 10 18))
     (check-raises (raised? 'kill-ring:insert! "not a position in the buffer") (kill-ring:insert! u 999 (buffers:piece v 1 10)))
     (check-equal? 4 (length calls))
     (for-each buffers:kill! (list u v))))
 
 (test "a yanker inserts and returns the position after; insert! reports what it inserted"
-  (tables:set! kill-ring:yankers 'blocks:block blocks:yank-block)
-  (let ([grid (buffers:make "grid" (md:doc '() (blocks:block '() "ab\ncd\n") (md:para '() "end\n")))])
+  (tables:set! kill-ring:yankers 'kill-ring-test/blocks:block kill-ring-test/blocks:yank-block)
+  (let ([grid (buffers:make "grid" (kill-ring-test/md:doc '() (kill-ring-test/blocks:block '() "ab\ncd\n") (kill-ring-test/md:para '() "end\n")))])
     (kill-ring:push! (list (buffers:piece grid 1 9)))
     (check-equal? '((10 . 16)) (kill-ring:insert! grid 10 (car (kill-ring:current))))
-    (check-equal? '(10) (blocks:yanks))
-    (check-equal? '(md:doc () (blocks:block () "ab\ncd\n") (md:para () "ab\ncd\nend\n")) (root grid))
+    (check-equal? '(10) (kill-ring-test/blocks:yanks))
+    (check-equal? '(kill-ring-test/md:doc () (kill-ring-test/blocks:block () "ab\ncd\n") (kill-ring-test/md:para () "ab\ncd\nend\n")) (root grid))
     (buffers:kill! grid))
-  (tables:remove! kill-ring:yankers 'blocks:block))
+  (tables:remove! kill-ring:yankers 'kill-ring-test/blocks:block))
 
 (test "a kill made with its own procedure yanks by calling it, and insert! reports every insertion it made"
   (let ([w (buffers:make "handled" "one two\n")]

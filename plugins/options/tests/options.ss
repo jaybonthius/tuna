@@ -30,14 +30,14 @@
 
 ;; A module's option is defined again whenever the module reloads, and the
 ;; binding a test holds is the old instance's, so it reads the option anew.
-(define (margin) (eval 'options-test/margins:margin (environment '(options-test margins))))
+(define (margin) (eval 'margins:margin (environment '(margins))))
 
 ;; Chez finds a module stale when its source is newer than its object, and
 ;; file times step with the kernel's clock tick, 1 to 10 ms, so a rewrite
 ;; in the tick of the last compile would look unchanged.
 (define (write-module! name text)
   (suspend (lambda (resume) (fork-task (lambda (restore) (sleep-ms 10) (resume void)))))
-  (call-with-output-file (string-append (getenv "HOME") "/.config/tuna/lib/options-test/" name ".sls")
+  (call-with-output-file (string-append (getenv "HOME") "/.config/tuna/lib/" name ".sls")
     (lambda (p) (put-string p text))
     'replace))
 
@@ -100,14 +100,15 @@
     (unload-owner! (as-test-owner current-owner))))
 
 (test "a reload with a new check keeps the settings it accepts and takes back the rest with a warning"
-  (load-module! '(options-test margins))
+  (write-module! "margins" "#!tuna\n(import (options))\n(options:define-option margin 0 fixnum?)\n")
+  (load-module! '(margins))
   (let* ([kept (make-owner '(kept setting))] [failed (make-owner '(failed setting))] [warnings '()])
     (define (keep next c) (set! warnings (cons c warnings)))
     (call-as-owner kept (lambda () (options:set! (margin) 60)))
     (call-as-owner failed (lambda () (options:set! (margin) 90)))
     (advice-add! report keep)
     (write-module! "margins" "#!tuna\n(import (options))\n(options:define-option margin 0 (lambda (v) (and (fixnum? v) (< v 80))))\n")
-    (reload-modules! '((options-test margins)))
+    (reload-modules! '((margins)))
     (advice-remove! report keep)
     (check-equal? 1 (length warnings))
     (check (warning? (car warnings)))
@@ -118,7 +119,7 @@
 
 (test "a default that fails the check is refused"
   (write-module! "odd-default" "#!tuna\n(import (options))\n(options:define-option odd-default 'x fixnum?)\n")
-  (check-raises assertion-violation? (load-module! '(options-test odd-default))))
+  (check-raises assertion-violation? (load-module! '(odd-default))))
 
 (test "options:with checks its values, survives a pause, and parameterize refuses an option"
   (check-raises assertion-violation? (options:with ([level 'x]) (level)))

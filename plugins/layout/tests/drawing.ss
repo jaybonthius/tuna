@@ -4,7 +4,7 @@
 (import (layout-test beneath))
 
 (import (test-user) (layout) (layout-split) (views) (buffers) (web) (haml) (options) (timers) (tables)
-        (layout-test parts) (layout-test quits))
+        (layout-test parts))
 
 (define reports-during layout-test/parts:reports-during)
 
@@ -87,7 +87,7 @@
              (when (and quit? (eq? client desktop))
                (set! quit? #f)
                (set! events (cons 'quit events))
-               (layout-test/quits:request-quit!)
+               (cancel-task (current-task))
                (let spin () (spin)))
              (let ([s (screen client)]) (set! events (cons client events)) s))]
          [reported (reports-during

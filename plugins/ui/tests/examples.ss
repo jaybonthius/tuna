@@ -5,10 +5,10 @@
 
 (call-with-output-file (string-append (getenv "HOME") "/notes.org") (lambda (p) (display "* Notes\n" p)) 'replace)
 
-(import (files-sidebar))
+(import (ui-test files-sidebar))
 
 (test "a sidebar entry is a button: a press leaves point, and the click visits the file it names"
-  (ui-test:show! files-sidebar:sidebar)
+  (ui-test:show! ui-test/files-sidebar:sidebar)
   (check-equal? '("notes.org") (map test-user:element-text (ui-test:elements (view) "ui-button")))
   (views:set-point! (view) 11)
   (ui-test:mouse! (view) "down" '(("at" . 4) ("count" . 0)))
@@ -18,36 +18,36 @@
   (check-equal? "notes.org" (buffers:name (views:buffer (view)))))
 
 (test "RET with point in the entry runs the same command"
-  (ui-test:show! files-sidebar:sidebar)
+  (ui-test:show! ui-test/files-sidebar:sidebar)
   (views:set-point! (view) 5)
   (test-user:press! "RET")
   (check-equal? "notes.org" (buffers:name (views:buffer (view)))))
 
-(import (todo))
+(import (ui-test todo))
 
 (test "a click on a todo's Done button removes its todo from the saved list and the buffer, and so does RET"
-  (ui-test:show! todo:todo-buffer)
-  (check-equal? "Buy milk Done\nWrite the plan Done\n" (ui-test:text todo:todo-buffer))
+  (ui-test:show! ui-test/todo:todo-buffer)
+  (check-equal? "Buy milk Done\nWrite the plan Done\n" (ui-test:text ui-test/todo:todo-buffer))
   (ui-test:click-at! (view) 13)
-  (check-equal? '(("Write the plan") "Write the plan Done\n") (list (todo:todos) (ui-test:text todo:todo-buffer)))
+  (check-equal? '(("Write the plan") "Write the plan Done\n") (list (ui-test/todo:todos) (ui-test:text ui-test/todo:todo-buffer)))
   (views:set-point! (view) 18)
   (test-user:press! "RET")
-  (check-equal? '(() "") (list (todo:todos) (ui-test:text todo:todo-buffer))))
+  (check-equal? '(() "") (list (ui-test/todo:todos) (ui-test:text ui-test/todo:todo-buffer))))
 
-(import (buffer-list))
+(import (ui-test buffer-list))
 
 (test "the buffer list lists the live buffers as rows; RET shows one, and its rows are written silently, so undo records none"
   (define order (buffers:all))
-  (views:with-view (view) (commands:run buffer-list:list-buffers))
+  (views:with-view (view) (commands:run ui-test/buffer-list:list-buffers))
   (check-equal? "*buffer list*" (buffers:name (views:buffer (view))))
-  (let ([rows (cddr (car (ui-test:datums buffer-list:list-buffer)))])
+  (let ([rows (cddr (car (ui-test:datums ui-test/buffer-list:list-buffer)))])
     (check-equal? (length order) (length rows))
     (check (for-all vector? rows)))
   (test-user:press! "C-n")
-  (check-equal? 1 (ui:selected-row (document:token (buffers:document buffer-list:list-buffer) 0) (view)))
+  (check-equal? 1 (ui:selected-row (document:token (buffers:document ui-test/buffer-list:list-buffer) 0) (view)))
   (test-user:press! "RET")
   (check (eq? (cadr order) (views:buffer (view))))
-  (check (for-all buffers:edit-silent? (buffers:edits-since buffer-list:list-buffer 0))))
+  (check (for-all buffers:edit-silent? (buffers:edits-since ui-test/buffer-list:list-buffer 0))))
 
 (commands:define-command (note) "Notes a push." (void))
 (ui:define-button go note)

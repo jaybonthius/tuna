@@ -1,6 +1,8 @@
 (import (tuna) (test) (views) (buffers) (document) (options) (tables) (web) (plugins) (test-user)
-        (views-test page) (views-test text) (views-test md) (views-test quits)
+        (views-test page) (views-test text) (views-test md) (test-runner)
         (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+
+(define request-quit! (test-runner:running-task-canceller))
 
 (options:set! views:scroll-margin 2 views:wrap-lines #f)
 
@@ -54,7 +56,7 @@
               (let loop ()
                 (if quitting
                     (begin
-                      (views-test/quits:request-quit!)
+                      (request-quit!)
                       (chez:sleep (make-time 'time-duration 1000000 0))
                       (loop))
                     (set! stopped #t))))))

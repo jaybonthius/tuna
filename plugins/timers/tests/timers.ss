@@ -157,22 +157,22 @@
     (timers:set-idle! #f)
     (check-raises assertion-violation? (timers:set-idle! 'yes))))
 
-(import (ticker))
+(import (timers-test ticker))
 
 (test "unloading a module stops its timers, paused ones past their handlers, and reloading starts them afresh"
-  (test-runner:wait-until (lambda () (> (ticker:count) 1)))
+  (test-runner:wait-until (lambda () (> (timers-test/ticker:count) 1)))
   (let ([first (timers:live)])
     (check-equal? 1 (length first))
-    (reload-modules! '((ticker)))
+    (reload-modules! '((timers-test ticker)))
     (check-equal? 1 (length (timers:live)))
     (check (not (eq? (car first) (car (timers:live))))))
   (let ([quit #f] [inside (box #f)])
-    (call-as-owner (module-owner '(ticker))
+    (call-as-owner (module-owner '(timers-test ticker))
       (lambda ()
         (timers:run-after 0
           (lambda () (guard (c [(cancelled? c) (set! quit #t)]) (set-box! inside #t) (timers:sleep 3600))))))
     (test-runner:wait-until (lambda () (unbox inside)))
-    (unload-owner! (module-owner '(ticker)))
+    (unload-owner! (module-owner '(timers-test ticker)))
     (check-equal? '() (timers:live))
     (check-equal? #f quit)))
 

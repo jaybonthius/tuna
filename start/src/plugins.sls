@@ -19,8 +19,8 @@
 
   (define cache-root #f)
 
-  ;; A module (x ...) is only ever plugin x's, so of Tuna's own plugins
-  ;; only x's root is searched for it.
+  ;; A module (x ...) is only ever plugin x's, and (x-test ...) only its
+  ;; tests', so of Tuna's own plugins only that root is searched for it.
   (define (library-source name)
     (let-values ([(source object found?)
                   (default-library-search-handler 'import name (search-roots (car name)) (library-extensions))])
@@ -1040,8 +1040,15 @@
     (resolve-libraries!)
     (forget-left-out!)
     (let ([roots (library-roots)]
-          [own (map (lambda (id) (cons id (cons (own-plugin-root id) (format "~a/library/~a" cache-root id))))
-                    (own-plugin-ids))])
+          [own (apply append
+                 (map (lambda (id)
+                        (let ([objects (format "~a/library/~a" cache-root id)]
+                              [tests (string-append (own-plugin-folder id) "/tests/lib")])
+                          (cons (cons id (cons (own-plugin-root id) objects))
+                                (if (file-directory? tests)
+                                    (list (cons (string->symbol (format "~a-test" id)) (cons tests objects)))
+                                    '()))))
+                      (own-plugin-ids)))])
       (set! other-roots
         (append (kernel-library-directories) (list (cons lib-root (string-append cache-root "/lib"))) roots))
       (hashtable-clear! own-roots)

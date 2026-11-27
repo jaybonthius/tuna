@@ -86,19 +86,19 @@
     (buffers:stop b (document:position doc (+ (%search text needle) bar) (document:unit characters)))))
 
 (define md-datum
-  '(md:doc ()
-     (md:heading ((level . 1)) "Title\n")
-     (md:para () "Alpha " (md:link ((href . "https://x")) "beta") " gamma.\n")
-     (lists:bulleted () (md:item () "one\n") (md:item () "two\n") (md:item () "three\n"))
-     (md:code ((lang . "scheme")) "(car x)\n")
-     (md:para () "Last " #(md:image ((src . "a.png"))) " line.\n")))
+  '(buffers-test/md:doc ()
+     (buffers-test/md:heading ((level . 1)) "Title\n")
+     (buffers-test/md:para () "Alpha " (buffers-test/md:link ((href . "https://x")) "beta") " gamma.\n")
+     (buffers-test/lists:bulleted () (buffers-test/md:item () "one\n") (buffers-test/md:item () "two\n") (buffers-test/md:item () "three\n"))
+     (buffers-test/md:code ((lang . "scheme")) "(car x)\n")
+     (buffers-test/md:para () "Last " #(buffers-test/md:image ((src . "a.png"))) " line.\n")))
 
 (define form-datum
-  '(form:form ()
-     (form:row () (form:label () "Name: ") (form:field ((name . name)) "John")
-                  (form:label () "  Email: ") (form:field ((name . email))) "\n")
-     (form:row () (form:label () "Notes: ") (form:field ((name . notes)) "first") "\n")
-     #(form:button ((label . "Send")))))
+  '(buffers-test/form:form ()
+     (buffers-test/form:row () (buffers-test/form:label () "Name: ") (buffers-test/form:field ((name . name)) "John")
+                  (buffers-test/form:label () "  Email: ") (buffers-test/form:field ((name . email))) "\n")
+     (buffers-test/form:row () (buffers-test/form:label () "Notes: ") (buffers-test/form:field ((name . notes)) "first") "\n")
+     #(buffers-test/form:button ((label . "Send")))))
 
 (define (make-all! names) (for-each (lambda (n) (buffers:make n "")) names))
 

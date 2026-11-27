@@ -35,11 +35,11 @@
 ;; in the tick of the last compile would look unchanged.
 (define (write-module! name text)
   (suspend (lambda (resume) (fork-task (lambda (restore) (chez:sleep (make-time 'time-duration 10000000 0)) (resume void)))))
-  (saved-test/files:write-text! (string-append (getenv "HOME") "/.config/tuna/lib/saved-test/" name ".sls") text))
+  (saved-test/files:write-text! (string-append (getenv "HOME") "/.config/tuna/lib/" name ".sls") text))
 
-(define (again-file) (saved-test/files:file "user" "saved-test" "again" "kind.ss"))
+(define (again-file) (saved-test/files:file "user" "again" "kind.ss"))
 
-(define (kind) ((eval 'saved-test/again:kind (environment '(saved-test again)))))
+(define (kind) ((eval 'again:kind (environment '(again)))))
 
 (saved:define-saved answers '() list?)
 (saved:define-saved flag #t boolean?)
@@ -64,9 +64,9 @@
   (check (not (saved:saved? car)))
   (check (not (saved:saved? (lambda () '()))))
   (write-module! "again" "#!tuna\n(import (saved))\n(saved:define-saved kind '(1 2) list?)\n")
-  (load-module! '(saved-test again))
-  (saved:set! (eval 'saved-test/again:kind (environment '(saved-test again))) '(1 2 3))
-  (reload-modules! '((saved-test again)))
+  (load-module! '(again))
+  (saved:set! (eval 'again:kind (environment '(again))) '(1 2 3))
+  (reload-modules! '((again)))
   (check-equal? '(1 2 3) (kind)))
 
 (test "a reload whose check the value fails moves the value aside, with a warning"
@@ -74,14 +74,14 @@
   (let ([reported (reports-during 1
                     (lambda ()
                       (write-module! "again" "#!tuna\n(import (saved))\n(saved:define-saved kind 0 fixnum?)\n")
-                      (reload-modules! '((saved-test again)))))])
+                      (reload-modules! '((again)))))])
     (check-equal? 1 (length reported))
     (check (warning? (car reported))))
   (check-equal? 0 (kind))
   (test-runner:wait-until (lambda () (not (file-exists? (again-file)))))
   (check-equal? '(1 2 3) (saved-test/files:stored (string-append (again-file) ".rejected")))
   (write-module! "again" "#!tuna\n(import (saved))\n(saved:define-saved kind \"none\" string?)\n")
-  (reload-modules! '((saved-test again)))
+  (reload-modules! '((again)))
   (check-equal? "none" (kind)))
 
 (test "saved:set! checks the value and writes it as it was when set; only saved:set! sets it"
@@ -107,7 +107,7 @@
   (for-each
     (lambda (name definition)
       (write-module! name (string-append "#!tuna\n(import (saved))\n" definition "\n"))
-      (check-raises assertion-violation? (load-module! (list 'saved-test (string->symbol name)))))
+      (check-raises assertion-violation? (load-module! (list (string->symbol name)))))
     '("wrong-value" "not-plain" "no-check")
     '("(saved:define-saved wrong 'x list?)" "(saved:define-saved wrong (vector car) vector?)"
       "(saved:define-saved wrong '() 'list?)")))
@@ -124,7 +124,7 @@
       outcome)))
 
 (test "a module's stored value is read when it loads; one unreadable, not plain data or failing its check is moved aside with a warning"
-  (let ([hist (lambda (name) (saved-test/files:file "user" "saved-test" "hist" name))])
+  (let ([hist (lambda (name) (saved-test/files:file "tuna" "saved-test" "hist" name))])
     (for-each
       (lambda (name text) (saved-test/files:write-text! (hist (string-append name ".ss")) text))
       '("stored" "broken" "trailing" "empty" "boxed" "cyclic" "wrong")
@@ -139,7 +139,7 @@
     (saved-test/files:wait-for-stored! (hist "entries.ss") '("first"))
     (check-equal? '("boxed.ss.rejected" "broken.ss.rejected" "cyclic.ss.rejected" "empty.ss.rejected" "entries.ss"
                     "stored.ss" "trailing.ss.rejected" "wrong.ss.rejected")
-                  (sort string<? (directory-list (saved-test/files:file "user" "saved-test" "hist"))))))
+                  (sort string<? (directory-list (saved-test/files:file "tuna" "saved-test" "hist"))))))
 
 (test "unloading a module leaves its saved data, and a procedure held from before is the same one"
   (let* ([env (environment '(saved-test hist))] [held (eval 'saved-test/hist:entries env)])
@@ -150,7 +150,7 @@
       (check (eq? held entries)))))
 
 (test "a check that never returns can be ended, and the stored file stays"
-  (let ([x (saved-test/files:file "user" "saved-test" "looping" "x.ss")])
+  (let ([x (saved-test/files:file "tuna" "saved-test" "looping" "x.ss")])
     (saved-test/files:write-text! x "1")
     (let ([t (spawn-task (lambda (restore) (load-module! '(saved-test looping))))])
       (fork-task (lambda (restore) (when (on-thread-wait (lambda () (getprop 'saved-test 'checking #f)) t) (cancel-task t))))
@@ -160,7 +160,7 @@
     (check (file-exists? x))))
 
 (test "a stored value is read with immutable strings and bytevectors, and #f is written as a value"
-  (saved-test/files:write-text! (saved-test/files:file "user" "saved-test" "loaded" "loaded.ss") "(\"text\" #vu8(1 2) #(\"inner\"))")
+  (saved-test/files:write-text! (saved-test/files:file "tuna" "saved-test" "loaded" "loaded.ss") "(\"text\" #vu8(1 2) #(\"inner\"))")
   (load-module! '(saved-test loaded))
   (let ([v ((eval 'saved-test/loaded:loaded (environment '(saved-test loaded))))])
     (check-equal? '("text" #vu8(1 2) #("inner")) v)
@@ -250,7 +250,7 @@
     (lambda (path) (saved-test/files:wait-for-stored! (apply saved-test/files:file path) 1))
     '(("user" "test-file" "saved" "saved" "a%2Fb%25c.ss")
       ("user" "test-file" "saved" "saved" "%2E..ss")
-      ("user" "saved-test" "util" "hits.ss"))))
+      ("tuna" "saved-test" "util" "hits.ss"))))
 
 (test "a plugin installed from a folder files its data by that folder, so a fork keeps its own"
   (let ([folder (lambda (name) (string-append (getenv "HOME") "/src/" name))])
@@ -272,7 +272,7 @@
 
 
 (test "a stored file that cannot be opened makes the load raise and stays; a deletion that fails is reported and the file stays"
-  (let ([hits (saved-test/files:file "user" "saved-test" "locked" "hits.ss")])
+  (let ([hits (saved-test/files:file "tuna" "saved-test" "locked" "hits.ss")])
     (saved-test/files:write-text! hits "1")
     (chmod hits #o000)
     (check-raises serious-condition? (load-module! '(saved-test locked)))

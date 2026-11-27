@@ -1,5 +1,7 @@
-(import (tuna) (test) (test-runner) (jobs) (buffers) (document) (quits) (buffers-test)
+(import (tuna) (test) (test-runner) (jobs) (buffers) (document) (buffers-test)
         (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+
+(define request-quit! (test-runner:running-task-canceller))
 
 (jobs:define-worker (summarize version emit)
   (import (document))
@@ -66,7 +68,7 @@
               (let loop ()
                 (if quitting
                     (begin
-                      (quits:request-quit!)
+                      (request-quit!)
                       (chez:sleep (make-time 'time-duration 1000000 0))
                       (loop))
                     (set! stopped #t))))))

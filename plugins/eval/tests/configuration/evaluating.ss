@@ -1,4 +1,4 @@
-(import (tuna) (test) (caught-reports) (test-user) (plugins) (files) (modes) (buffers) (echo-area) (chez-scheme) (eval) (eval-test))
+(import (tuna) (test) (eval-test caught-reports) (test-user) (plugins) (files) (modes) (buffers) (echo-area) (chez-scheme) (eval) (eval-test))
 
 (define (message) (echo-area:current-message))
 
@@ -9,7 +9,7 @@
 (define (unflag! name) (delete-file (eval-test:home-path name)))
 
 (define (evaluated-init)
-  (let* ([shown #f] [reports (caught-reports:during (lambda () (set! shown (eval-test:after-message (lambda () (test-user:press! "C-c C-k"))))))])
+  (let* ([shown #f] [reports (eval-test/caught-reports:during (lambda () (set! shown (eval-test:after-message (lambda () (test-user:press! "C-c C-k"))))))])
     (values shown reports)))
 
 (test "the configuration's file is read again by a new owner of its name, and text with its path evaluates as that owner"

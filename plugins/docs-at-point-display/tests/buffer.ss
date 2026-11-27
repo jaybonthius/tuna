@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-runner) (test-user) (hooks) (options) (timers) (buffers) (document) (views) (modes)
-        (layout) (layout-split) (editing) (faces) (echo-area) (markdown) (docs-at-point) (docs-at-point-display) (signatures))
+        (layout) (layout-split) (editing) (faces) (echo-area) (markdown) (docs-at-point) (docs-at-point-display) (docs-at-point-display-test signatures))
 
 (options:set! docs-at-point:delay 0.05)
 
@@ -32,8 +32,8 @@
   (check-raises (raised? 'docs-at-point-display:refresh "No docs to refresh") (docs-at-point-display:refresh)))
 
 (test "C-h . asks now and writes *Docs*, each doc under its thing as a heading and its Markdown drawn, and shows it in another view, leaving the selected one selected"
-  (hooks:add! docs-at-point:sources signatures:signature)
-  (hooks:add! docs-at-point:sources signatures:described 1)
+  (hooks:add! docs-at-point:sources docs-at-point-display-test/signatures:signature)
+  (hooks:add! docs-at-point:sources docs-at-point-display-test/signatures:described 1)
   (options:set! docs-at-point:strategy docs-at-point:all)
   (test-user:press! "C-h .")
   (test-runner:wait-until (docs-text-is? "alpha\n(alpha x)\nalpha\nTakes alpha.\n"))
@@ -67,10 +67,10 @@
   (test-runner:wait-until (docs-text-is? "beta\n(beta x)\nbeta\nTakes beta.\n")))
 
 (test "C-h . in *Docs* asks again for the view its docs are about"
-  (signatures:asked!)
+  (docs-at-point-display-test/signatures:asked!)
   (test-user:press! "C-h .")
-  (test-runner:wait-until (lambda () (pair? (signatures:asked))))
-  (check-equal? (list notes-view) (signatures:asked!)))
+  (test-runner:wait-until (lambda () (pair? (docs-at-point-display-test/signatures:asked))))
+  (check-equal? (list notes-view) (docs-at-point-display-test/signatures:asked!)))
 
 (test "g in *Docs*, about another view, shows the docs in the echo area: the user asked"
   (test-user:press! "g")
@@ -85,9 +85,9 @@
   (layout:select! notes-view)
   (let ([third (layout-split:split-view! notes-view (layout-split:direction column))])
     (layout:select! third)
-    (signatures:asked!)
+    (docs-at-point-display-test/signatures:asked!)
     (test-user:press! "C-h .")
-    (test-runner:wait-until (lambda () (pair? (signatures:asked))))
+    (test-runner:wait-until (lambda () (pair? (docs-at-point-display-test/signatures:asked))))
     (test-user:settle)
     (layout:delete-part! (layout:view-node third))
     (test-user:settle)
@@ -99,8 +99,8 @@
     (docs-at-point:make-doc "(total items)"
       (docs-at-point:doc-options [thing "total"] [face faces:function] [spans (list (list 7 12 faces:highlight))])))
   (options:set! docs-at-point:mode #t)
-  (hooks:remove! docs-at-point:sources signatures:signature)
-  (hooks:remove! docs-at-point:sources signatures:described)
+  (hooks:remove! docs-at-point:sources docs-at-point-display-test/signatures:signature)
+  (hooks:remove! docs-at-point:sources docs-at-point-display-test/signatures:described)
   (hooks:add! docs-at-point:sources faced)
   (test-user:press! "C-h .")
   (test-runner:wait-until (docs-text-is? "total\n(total items)\n"))

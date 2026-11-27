@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (timers) (processes) (recorder) (setting))
+(import (tuna) (test) (test-runner) (timers) (processes) (processes-test recorder) (processes-test setting))
 
 (define (violation thunk)
   (guard (c [(assertion-violation? c) (list (condition-who c) (condition-message c))])
@@ -25,32 +25,32 @@
     (processes:stop! shell)))
 
 (test "a module follows a user process from an offset: the output from there still in the log, then new output, the end and the exit status"
-  (let* ([r (recorder:make)]
+  (let* ([r (processes-test/recorder:make)]
          [shell (processes:start-for-user "sh" '("-c" "printf 'a\\nb\\n'; read line; printf 'c\\n'"))])
     (test-runner:wait-until (lambda () (= (processes:output-end shell) 4)))
-    (check-equal? 2 (processes:attach! shell 2 (recorder:on-output r) (recorder:on-exit r)))
+    (check-equal? 2 (processes:attach! shell 2 (processes-test/recorder:on-output r) (processes-test/recorder:on-exit r)))
     (processes:send! shell "\n")
-    (check-equal? '((output "b\nc\n" 6) (eof 6) (exit 0)) (recorder:wait-for-exit r))
+    (check-equal? '((output "b\nc\n" 6) (eof 6) (exit 0)) (processes-test/recorder:wait-for-exit r))
     (check (not (memq shell (processes:all))))))
 
 (test "an ended user process stays in processes:all until an attachment's on-exit has run"
-  (let ([r (recorder:make)] [later (processes:start-for-user "printf" '("done\n"))])
+  (let ([r (processes-test/recorder:make)] [later (processes:start-for-user "printf" '("done\n"))])
     (test-runner:wait-until (lambda () (and (processes:status later) (= (processes:output-end later) 5))))
     (check-equal? 0 (processes:status later))
     (check (memq later (processes:all)))
-    (check-equal? 5 (processes:attach! later (processes:output-end later) (recorder:on-output r) (recorder:on-exit r)))
-    (check-equal? '((eof 5) (exit 0)) (recorder:wait-for-exit r))
+    (check-equal? 5 (processes:attach! later (processes:output-end later) (processes-test/recorder:on-output r) (processes-test/recorder:on-exit r)))
+    (check-equal? '((eof 5) (exit 0)) (processes-test/recorder:wait-for-exit r))
     (check (not (memq later (processes:all))))))
 
 (test "attaching again from the same module replaces its attachment"
-  (let* ([first-calls '()] [r (recorder:make)]
+  (let* ([first-calls '()] [r (processes-test/recorder:make)]
          [talker (processes:start-for-user "sh" '("-c" "read line; echo \"$line\""))])
     (processes:attach! talker 0
       (lambda (bytes end) (set! first-calls (cons 'output first-calls)))
       (lambda (status) (set! first-calls (cons 'exit first-calls))))
-    (check-equal? 0 (processes:attach! talker 0 (recorder:on-output r) (recorder:on-exit r)))
+    (check-equal? 0 (processes:attach! talker 0 (processes-test/recorder:on-output r) (processes-test/recorder:on-exit r)))
     (processes:send! talker "hello\n")
-    (check-equal? '((output "hello\n" 6) (eof 6) (exit 0)) (recorder:wait-for-exit r))
+    (check-equal? '((output "hello\n" 6) (eof 6) (exit 0)) (processes-test/recorder:wait-for-exit r))
     (check-equal? '() first-calls)))
 
 (test "stopping a user process that has ended and that nobody follows removes it from processes:all"
@@ -70,7 +70,7 @@
         (list taken ended status)))))
 
 (test "a user process nobody follows drops its oldest output by default, and attaching from an offset the log no longer holds starts at the oldest kept"
-  (setting:with processes:log-size 1000
+  (processes-test/setting:with processes:log-size 1000
     (lambda ()
       (let ([flood (processes:start-for-user "head" '("-c" "200000" "/dev/zero"))])
         (test-runner:wait-until (lambda () (= (processes:output-end flood) 200000)))
@@ -79,7 +79,7 @@
           (check-equal? '(1000 200000 0) (result)))))))
 
 (test "with full-log pause a user process stops reading once its log is full, so it waits and nothing it writes is lost"
-  (setting:with processes:log-size 1000
+  (processes-test/setting:with processes:log-size 1000
     (lambda ()
       (let ([held (processes:start-for-user "head" '("-c" "200000" "/dev/zero")
                     (processes:options [full-log (processes:full-log pause)]))])

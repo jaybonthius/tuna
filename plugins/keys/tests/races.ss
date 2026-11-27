@@ -1,5 +1,7 @@
-(import (tuna) (test) (test-runner) (test-user) (web) (hooks) (options) (tables) (commands) (keys) (keys-test) (keys-test quits)
+(import (tuna) (test) (test-runner) (test-user) (web) (hooks) (options) (tables) (commands) (keys) (keys-test)
         (rename (only (chezscheme) sleep) (sleep chez:sleep)))
+
+(define request-quit! (test-runner:running-task-canceller))
 
 (define (sleep-ms ms) (chez:sleep (make-time 'time-duration (* ms 1000000) 0)))
 
@@ -167,7 +169,7 @@
                 (lambda (restore)
                   (let loop ()
                     (when (unbox quitting)
-                      (keys-test/quits:request-quit!)
+                      (request-quit!)
                       (sleep-ms 1)
                       (loop)))))))
           (warnings-counted

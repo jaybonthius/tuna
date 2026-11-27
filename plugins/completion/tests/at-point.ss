@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (test-runner) (hooks) (buffers) (views) (layout) (echo-area) (minibuffer)
-        (completion) (completion-list) (completion-popup) (editing) (sessions))
+        (completion) (completion-list) (completion-popup) (editing) (completion-test sessions))
 
 (define (raised? who message)
   (lambda (c)
@@ -23,11 +23,11 @@
   (let ([s (word-start)])
     (and s (completion:region s (views:point (views:current)) (list greek)))))
 
-(define (session) (sessions:session))
+(define (session) (completion-test/sessions:session))
 
-(define (texts) (sessions:texts (session)))
+(define (texts) (completion-test/sessions:texts (session)))
 
-(define (start-at-point minimum) (sessions:result (sessions:start! (lambda () (completion:start-at-point minimum)))))
+(define (start-at-point minimum) (completion-test/sessions:result (completion-test/sessions:start! (lambda () (completion:start-at-point minimum)))))
 
 (define (with-region entry thunk)
   (hooks:add! completion:find-region entry)
@@ -68,7 +68,7 @@
     (lambda ()
       (test-user:show! "alp|")
       (test-user:press! "C-M-i")
-      (let ([selected (lambda () (sessions:selected-text (session)))])
+      (let ([selected (lambda () (completion-test/sessions:selected-text (session)))])
         (test-user:press! "M-n")
         (check-equal? "alpha" (selected))
         (test-user:press! "M-n")
@@ -171,7 +171,7 @@
     (exit (exit-noting 'tabbed))))
 
 (define (tabbed-region)
-  (let* ([v (views:current)] [point (views:point v)] [text (sessions:buffer-text (views:buffer v))]
+  (let* ([v (views:current)] [point (views:point v)] [text (completion-test/sessions:buffer-text (views:buffer v))]
          [start (let loop ([i point]) (if (or (= i 1) (char=? (string-ref text (- i 2)) #\space)) i (loop (- i 1))))])
     (and (< start point) (completion:region start point (list tabbed)))))
 
@@ -225,9 +225,9 @@
 
 (test "a read calls no exit"
   (set! exits '())
-  (let ([r (sessions:start! (lambda () (completion:read "Fruit: " (list (completion:source (candidates (vector "apple")) (exit (exit-noting 'read)))) #f)))])
+  (let ([r (completion-test/sessions:start! (lambda () (completion:read "Fruit: " (list (completion:source (candidates (vector "apple")) (exit (exit-noting 'read)))) #f)))])
     (test-user:press! "RET")
-    (check-equal? "apple" (sessions:result r))
+    (check-equal? "apple" (completion-test/sessions:result r))
     (check-equal? '() exits)))
 
 (define (zeds)
@@ -295,18 +295,18 @@
 (test "start-from-entry uses one entry, ignoring the hook, and calls its procedure when a fallback region finds nothing"
   (hooks:add! completion:find-region zeds)
   (test-user:show! "al|")
-  (check-equal? #t (sessions:result (sessions:start! (lambda () (completion:start-from-entry zeds)))))
+  (check-equal? #t (completion-test/sessions:result (completion-test/sessions:start! (lambda () (completion:start-from-entry zeds)))))
   (check-equal? '() (texts))
   (test-user:press! "C-g")
-  (check-equal? #t (sessions:result (sessions:start! (lambda () (completion:start-from-entry greek-fallback)))))
+  (check-equal? #t (completion-test/sessions:result (completion-test/sessions:start! (lambda () (completion:start-from-entry greek-fallback)))))
   (check-equal? '("alpha" "almond") (texts))
   (test-user:press! "C-g")
   (test-user:show! "q|")
   (let ([said 0])
-    (check-equal? #t (sessions:result (sessions:start! (lambda () (completion:start-from-entry greek-fallback (lambda () (set! said (+ said 1))))))))
+    (check-equal? #t (completion-test/sessions:result (completion-test/sessions:start! (lambda () (completion:start-from-entry greek-fallback (lambda () (set! said (+ said 1))))))))
     (check-equal? (list #f 1) (list (session) said)))
   (test-user:show! "q |")
-  (check-equal? #f (sessions:result (sessions:start! (lambda () (completion:start-from-entry greek-fallback)))))
+  (check-equal? #f (completion-test/sessions:result (completion-test/sessions:start! (lambda () (completion:start-from-entry greek-fallback)))))
   (hooks:remove! completion:find-region zeds))
 
 (test "the procedures that start sessions at point check their arguments"
@@ -339,16 +339,16 @@
                                  (list (completion:source (candidates (vector "alpha" "almond"))))))))])
     (with-region prompt-words
       (lambda ()
-        (let ([r (sessions:start! (lambda () (minibuffer:read "Eval: " #f)))])
+        (let ([r (completion-test/sessions:start! (lambda () (minibuffer:read "Eval: " #f)))])
           (test-user:type! "al")
           (test-user:press! "C-M-i")
           (check-equal? '("alpha" "almond") (texts))
           (check-equal? #f (completion:session-prompt (session)))
           (test-user:press! "M-n RET")
-          (check-equal? "alpha" (sessions:input))
+          (check-equal? "alpha" (completion-test/sessions:input))
           (check-equal? #f (session))
           (test-user:press! "RET")
-          (check-equal? "alpha" (sessions:result r)))))))
+          (check-equal? "alpha" (completion-test/sessions:result r)))))))
 
 (define (prefix-region)
   (let* ([v (views:current)] [p (views:point v)] [s (editing:forward-word-position (views:buffer v) p -1)])
@@ -400,7 +400,7 @@
       (test-user:press! "C-M-i")
       (test-user:type! "z")
       (test-user:press! "DEL M-n")
-      (check-equal? "alpha" (sessions:selected-text (session)))
+      (check-equal? "alpha" (completion-test/sessions:selected-text (session)))
       (test-user:type! "z")
       (test-user:press! "C-n")
       (check-equal? "alpz\nnext|" (test-user:text))

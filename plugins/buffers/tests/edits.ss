@@ -1,4 +1,4 @@
-(import (tuna) (test) (hooks) (options) (buffers) (document) (md) (lists) (buffers-test))
+(import (tuna) (test) (hooks) (options) (buffers) (document) (buffers-test md) (buffers-test lists) (buffers-test))
 
 (options:define-option width 70 fixnum?)
 
@@ -17,10 +17,10 @@
          [note (lambda (b e) (set! seen (cons (append (edit-datums e) (list (eq? b (buffers:current)) (width))) seen)))])
     (buffers:with-buffer t (options:set-local! width 4) (hooks:add-local! buffers:after-edit note))
     (check-equal? 1 (buffers:edit-version (buffers:replace! t 2 3 "XY")))
-    (buffers:replace! t 1 1 '(md:link () "L"))
+    (buffers:replace! t 1 1 '(buffers-test/md:link () "L"))
     (buffers:replace! t 1 1 (document:from-datum "doc"))
     (buffers:with-buffer t (hooks:remove-local! buffers:after-edit note))
-    (check-equal? '((1 2 ("b") ("XY") #t 4) (2 1 () ((md:link () "L")) #t 4) (3 1 () ("doc") #t 4)) (reverse seen))
+    (check-equal? '((1 2 ("b") ("XY") #t 4) (2 1 () ((buffers-test/md:link () "L")) #t 4) (3 1 () ("doc") #t 4)) (reverse seen))
     (check-equal? (list 3 "docLaXYc\n" #t)
       (list (buffers:version t) (document:text (buffers:document t)) (eq? (buffers:document t) (buffers:document t))))))
 
@@ -52,29 +52,29 @@
 
 (test "splice! replaces tokens exactly, asking no kind, and refuses tokens that would not match or not leave one node"
   (let ([s (buffers-test:fresh "docLaXYc\n")])
-    (check-equal? 1 (buffers:edit-version (buffers:splice! s 1 1 (document:from-datum '(md:para ())))))
-    (check-equal? '(buffers:text () (md:para ()) "docLaXYc\n") (buffers-test:root s))
+    (check-equal? 1 (buffers:edit-version (buffers:splice! s 1 1 (document:from-datum '(buffers-test/md:para ())))))
+    (check-equal? '(buffers:text () (buffers-test/md:para ()) "docLaXYc\n") (buffers-test:root s))
     (check-raises (buffers-test:raised-with? 'buffers:splice! "openings and closings would not match" '(1 2))
       (buffers:splice! s 1 2 (document:from-datum "q")))
     (check-raises (buffers-test:raised-with? 'buffers:splice! "the buffer would not be one node" '(0 0))
-      (buffers:splice! s 0 0 (document:from-datum '(md:para ()))))
+      (buffers:splice! s 0 0 (document:from-datum '(buffers-test/md:para ()))))
     (check-raises (buffers-test:raised-with? 'buffers:splice! "not a document or a piece" '("q"))
       (buffers:splice! s 1 1 "q"))))
 
 (test "content that fits nowhere raises, and so does an edit outside the root; a block put between blocks goes in"
-  (let ([d (buffers-test:fresh '(md:doc () (md:para () "one\n")))])
+  (let ([d (buffers-test:fresh '(buffers-test/md:doc () (buffers-test/md:para () "one\n")))])
     (check-raises (buffers-test:raised? 'buffers:replace! "the content does not fit here") (buffers:replace! d 1 1 "text between blocks"))
     (check-raises (buffers-test:raised? 'buffers:replace! "the content does not fit here") (buffers:replace! d 0 0 "before the root"))
-    (buffers:replace! d 1 1 '(md:para () "zero\n"))
-    (check-equal? '(md:doc () (md:para () "zero\n") (md:para () "one\n")) (buffers-test:root d))
+    (buffers:replace! d 1 1 '(buffers-test/md:para () "zero\n"))
+    (check-equal? '(buffers-test/md:doc () (buffers-test/md:para () "zero\n") (buffers-test/md:para () "one\n")) (buffers-test:root d))
     (check-equal? #f (buffers:refused? 'refused))
     (check-equal? #f (guard (c [#t (buffers:refused? c)]) (buffers:replace! d 0 (document:length (buffers:document d)) "")))))
 
 (test "insert! returns the position after what went in, which fitting can put past the content's length"
-  (let* ([q (buffers-test:fresh '(md:doc () (md:para () "One.\n") (md:para () "Two.\n")))] [two (buffers:piece q 8 15)])
-    (check-equal? '(((md:para () "Two.\n")) 7) (list (document:datums (buffers:piece-document two)) (buffers:piece-length two)))
+  (let* ([q (buffers-test:fresh '(buffers-test/md:doc () (buffers-test/md:para () "One.\n") (buffers-test/md:para () "Two.\n")))] [two (buffers:piece q 8 15)])
+    (check-equal? '(((buffers-test/md:para () "Two.\n")) 7) (list (document:datums (buffers:piece-document two)) (buffers:piece-length two)))
     (check-equal? 13 (buffers:insert! q 3 two))
-    (check-equal? '(md:doc () (md:para () "O\n") (md:para () "Two.\n") (md:para () "ne.\n") (md:para () "Two.\n")) (buffers-test:root q))
+    (check-equal? '(buffers-test/md:doc () (buffers-test/md:para () "O\n") (buffers-test/md:para () "Two.\n") (buffers-test/md:para () "ne.\n") (buffers-test/md:para () "Two.\n")) (buffers-test:root q))
     (check-raises (buffers-test:raised? 'buffers:insert! "not a position in the buffer") (buffers:insert! q 99 "x"))))
 
 (test "an edit that replaces nothing by nothing is an edit, and moves nothing"
@@ -91,26 +91,26 @@
       (check-equal? '(#f 500001) (list (buffers:edit-moves? same-set) (buffers:map-position listing 500001 1))))))
 
 (test "deleting a range from one paragraph into another joins them, keeping the anchors and spans of the moved text"
-  (let* ([m (buffers-test:fresh '(md:doc () (md:para () "Alpha.\n") (md:para () "Beta gamma.\n")))]
+  (let* ([m (buffers-test:fresh '(buffers-test/md:doc () (buffers-test/md:para () "Alpha.\n") (buffers-test/md:para () "Beta gamma.\n")))]
          [beta (buffers:anchor m 16)])
     (buffers:add-span! (buffers:layer m responses) 11 15 'bold)
     (buffers:add-span! (buffers:layer m highlights) 11 15 'warn)
     (buffers:replace! m 8 11 "")
-    (check-equal? '(md:doc () (md:para () "Alpha.Beta gamma.\n")) (buffers-test:root m))
+    (check-equal? '(buffers-test/md:doc () (buffers-test/md:para () "Alpha.Beta gamma.\n")) (buffers-test:root m))
     (check-equal? '(13 ((8 12 bold)) ((8 12 warn)))
       (list (buffers:anchor-position beta) (buffers:spans (buffers:layer m responses) 0 20)
             (buffers:spans (buffers:layer m highlights) 0 20)))
     (check-equal? "Beta" (document:text (buffers:document m) 8 12))))
 
 (test "a deeper join moves the text it joins, its travelling spans with it, and keeps a piece's own spans"
-  (let ([n (buffers-test:fresh '(md:doc () (md:para () "Alpha.\n") (lists:bulleted () (md:item () "Beta gamma.\n"))))]
+  (let ([n (buffers-test:fresh '(buffers-test/md:doc () (buffers-test/md:para () "Alpha.\n") (buffers-test/lists:bulleted () (buffers-test/md:item () "Beta gamma.\n"))))]
         [spans-of (lambda (b) (map (lambda (s) (list (document:text (buffers:document b) (car s) (cadr s)) (caddr s)))
                                    (buffers:spans (buffers:layer b responses) 0 20)))])
     (buffers:add-span! (buffers:layer n responses) 12 16 'bold)
     (buffers:replace! n 8 12 "")
-    (check-equal? '(md:doc () (md:para () "Alpha.Beta gamma.\n") (lists:bulleted ())) (buffers-test:root n))
+    (check-equal? '(buffers-test/md:doc () (buffers-test/md:para () "Alpha.Beta gamma.\n") (buffers-test/lists:bulleted ())) (buffers-test:root n))
     (check-equal? '(("Beta" bold)) (spans-of n))
-    (let ([o (buffers-test:fresh '(md:doc () (md:para () "Alpha.\n") (lists:bulleted () (md:item () "Beta gamma.\n"))))]
+    (let ([o (buffers-test:fresh '(buffers-test/md:doc () (buffers-test/md:para () "Alpha.\n") (buffers-test/lists:bulleted () (buffers-test/md:item () "Beta gamma.\n"))))]
           [x-piece (let ([x (buffers-test:fresh "X\n")])
                      (buffers:add-span! (buffers:layer x responses) 1 2 'x)
                      (buffers:piece x 1 3))])
@@ -120,7 +120,7 @@
 
 (test "yanking an open slice into a paragraph splits it, keeps the spans after the yank point and brings the piece's own"
   (let* ([make (lambda ()
-                 (let ([b (buffers-test:fresh '(md:doc () (md:para () "One two.\n") (md:para () "Three four.\n") (md:para () "Five six seven.\n")))])
+                 (let ([b (buffers-test:fresh '(buffers-test/md:doc () (buffers-test/md:para () "One two.\n") (buffers-test/md:para () "Three four.\n") (buffers-test/md:para () "Five six seven.\n")))])
                    (buffers:add-span! (buffers:layer b responses) 33 38 'bold)
                    b))]
          [texts (lambda (b) (map (lambda (s) (list (document:text (buffers:document b) (car s) (cadr s)) (caddr s)))
@@ -128,9 +128,9 @@
          [y (make)])
     (buffers:add-span! (buffers:layer y responses) 7 9 'it)
     (let ([slice (document:slice (buffers:document y) 6 17)])
-      (check-equal? '((md:para () "two.\n") (md:para () "Thre")) (document:datums slice))
+      (check-equal? '((buffers-test/md:para () "two.\n") (buffers-test/md:para () "Thre")) (document:datums slice))
       (buffers:replace! y 30 30 (buffers:piece y 6 17))
-      (check-equal? '(md:doc () (md:para () "One two.\n") (md:para () "Three four.\n") (md:para () "Fivtwo.\n") (md:para () "Three six seven.\n"))
+      (check-equal? '(buffers-test/md:doc () (buffers-test/md:para () "One two.\n") (buffers-test/md:para () "Three four.\n") (buffers-test/md:para () "Fivtwo.\n") (buffers-test/md:para () "Three six seven.\n"))
                     (buffers-test:root y))
       (check-equal? '(("wo" it) ("wo" it) ("ix se" bold)) (texts y))
       (let ([z (make)])

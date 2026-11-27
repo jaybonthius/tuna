@@ -1,4 +1,4 @@
-(import (tuna) (test) (lexer-check) (chez-scheme lexer))
+(import (tuna) (test) (chez-scheme-test lexer-check) (chez-scheme lexer))
 
 (define (lexemes text)
   (map (lambda (t) (list (lexeme-kind t) (substring text (lexeme-start t) (lexeme-end t)) (lexeme-depth t)))

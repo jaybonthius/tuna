@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (options) (tables) (commands) (keys) (buffers) (views) (layout) (ask) (diagnostics) (marks))
+(import (tuna) (test) (test-user) (options) (tables) (commands) (keys) (buffers) (views) (layout) (ask) (diagnostics) (diagnostics-test marks))
 
 (define said '())
 
@@ -46,15 +46,15 @@
 
 (define source (diagnostics:make-source))
 
-(define (at-word word) (+ (marks:word notes word) 1))
+(define (at-word word) (+ (diagnostics-test/marks:word notes word) 1))
 
-(marks:mode! notes #t)
+(diagnostics-test/marks:mode! notes #t)
 
 (diagnostics:report! source notes
-  (list (diagnostics:make-diagnostic (marks:word notes "beta") (+ (marks:word notes "beta") 4) (diagnostics:severity warning) "vague"
+  (list (diagnostics:make-diagnostic (diagnostics-test/marks:word notes "beta") (+ (diagnostics-test/marks:word notes "beta") 4) (diagnostics:severity warning) "vague"
           (diagnostics:details [keymap own-keys]))
-        (diagnostics:make-diagnostic (marks:word notes "delta") (+ (marks:word notes "delta") 5) (diagnostics:severity error) "wrong")
-        (diagnostics:make-diagnostic (marks:word notes "zeta") (+ (marks:word notes "zeta") 4) (diagnostics:severity info) "short")))
+        (diagnostics:make-diagnostic (diagnostics-test/marks:word notes "delta") (+ (diagnostics-test/marks:word notes "delta") 5) (diagnostics:severity error) "wrong")
+        (diagnostics:make-diagnostic (diagnostics-test/marks:word notes "zeta") (+ (diagnostics-test/marks:word notes "zeta") 4) (diagnostics:severity info) "short")))
 
 (test "a diagnostic's own keymap answers a key at the cursor and a click before diagnostics:mark-keymap; without one the mark keymap answers"
   (check (eq? own-keys (diagnostics:diagnostic-keymap (car (diagnostics:in notes (at-word "beta"))))))
@@ -68,26 +68,26 @@
   (check-equal? '(own mark) (pressed!)))
 
 (test "with the mode off neither keymap applies"
-  (marks:mode! notes #f)
+  (diagnostics-test/marks:mode! notes #f)
   (views:set-point! (view) (at-word "beta"))
   (test-user:press! "C-c a")
   (test-user:settle)
   (test-user:click! (view) (at-word "delta"))
   (check-equal? '(global global) (pressed!))
-  (marks:mode! notes #t))
+  (diagnostics-test/marks:mode! notes #t))
 
 (keys:bind! keys:global "M-n" diagnostics:next)
 
 (keys:bind! keys:global "M-p" diagnostics:previous)
 
-(define (at) (map marks:seen (diagnostics:in notes (views:point (view)))))
+(define (at) (map diagnostics-test/marks:seen (diagnostics:in notes (views:point (view)))))
 
 (test "next and previous go to the start of the Nth diagnostic after or before point, round the buffer's ends, and tell its text"
   (views:set-point! (view) 1)
   (said!)
   (test-user:press! "M-n")
   (check-equal? '((("beta" warning "vague")) ("vague")) (list (at) (said!)))
-  (check-equal? (marks:word notes "beta") (views:point (view)))
+  (check-equal? (diagnostics-test/marks:word notes "beta") (views:point (view)))
   (test-user:press! "M-n M-n")
   (check-equal? '((("zeta" info "short")) ("wrong" "short")) (list (at) (said!)))
   (test-user:press! "M-n")
@@ -110,7 +110,7 @@
 
 (test "without wrap-around? it stops at the ends"
   (options:set! diagnostics:wrap-around? #f)
-  (views:set-point! (view) (marks:word notes "zeta"))
+  (views:set-point! (view) (diagnostics-test/marks:word notes "zeta"))
   (check-equal? '((diagnostics:next "No more diagnostics")) (reports-during (lambda () (test-user:press! "M-n"))))
   (check-equal? '((diagnostics:previous "No more diagnostics")) (reports-during (lambda () (test-user:press! "M-p M-p M-p"))))
   (check-equal? '(("beta" warning "vague")) (at))
@@ -118,14 +118,14 @@
 
 (test "every diagnostic at the place reached is told, one per line"
   (diagnostics:report! source notes
-    (list (diagnostics:make-diagnostic (marks:word notes "beta") (+ (marks:word notes "beta") 4) (diagnostics:severity warning) "vague")
-          (diagnostics:make-diagnostic (marks:word notes "beta") (+ (marks:word notes "beta") 4) (diagnostics:severity error) "unknown"
+    (list (diagnostics:make-diagnostic (diagnostics-test/marks:word notes "beta") (+ (diagnostics-test/marks:word notes "beta") 4) (diagnostics:severity warning) "vague")
+          (diagnostics:make-diagnostic (diagnostics-test/marks:word notes "beta") (+ (diagnostics-test/marks:word notes "beta") 4) (diagnostics:severity error) "unknown"
             (diagnostics:details [origin "lint"] [code "E2"]))
-          (diagnostics:make-diagnostic (marks:word notes "zeta") (+ (marks:word notes "zeta") 4) (diagnostics:severity info) "short")))
+          (diagnostics:make-diagnostic (diagnostics-test/marks:word notes "zeta") (+ (diagnostics-test/marks:word notes "zeta") 4) (diagnostics:severity info) "short")))
   (views:set-point! (view) 1)
   (said!)
   (test-user:press! "M-n")
-  (check-equal? (list (marks:word notes "beta") '("lint [E2]: unknown\nvague")) (list (views:point (view)) (said!))))
+  (check-equal? (list (diagnostics-test/marks:word notes "beta") '("lint [E2]: unknown\nvague")) (list (views:point (view)) (said!))))
 
 (test "any prefix that is not a number filters as C-u does and moves one; a number counts, unfiltered"
   (views:set-point! (view) 1)

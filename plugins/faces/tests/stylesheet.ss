@@ -1,4 +1,4 @@
-(import (tuna) (test) (css))
+(import (tuna) (test) (design-tokens-test css))
 
 ;; No name of the plugin lists its faces, so they are read from its
 ;; source, as data.
@@ -14,25 +14,25 @@
              (loop (cons (symbol->string (cadr form)) acc))]
             [else (loop acc)]))))))
 
-(define (face-rule? r) (css:prefix? "[data-face" (css:rule-selector r)))
+(define (face-rule? r) (design-tokens-test/css:prefix? "[data-face" (design-tokens-test/css:rule-selector r)))
 
 (define (face-of-rule r)
-  (let* ([sel (css:rule-selector r)] [from (+ (css:search sel "\"" 0) 1)])
-    (substring sel from (css:search sel "\"" from))))
+  (let* ([sel (design-tokens-test/css:rule-selector r)] [from (+ (design-tokens-test/css:search sel "\"" 0) 1)])
+    (substring sel from (design-tokens-test/css:search sel "\"" from))))
 
-(define faces-rules (css:file-rules "faces/faces.css"))
+(define faces-rules (design-tokens-test/css:file-rules "faces/faces.css"))
 
 (define face-stylesheets
-  (filter (lambda (file) (exists (lambda (r) (string=? "defaults.faces" (css:rule-layer r))) (css:file-rules file)))
-          (css:stylesheets)))
+  (filter (lambda (file) (exists (lambda (r) (string=? "defaults.faces" (design-tokens-test/css:rule-layer r))) (design-tokens-test/css:file-rules file)))
+          (design-tokens-test/css:stylesheets)))
 
 (define styled-faces
-  (map face-of-rule (filter (lambda (r) (and (string=? "defaults.faces" (css:rule-layer r)) (css:prefix? "[data-face=\"" (css:rule-selector r))))
+  (map face-of-rule (filter (lambda (r) (and (string=? "defaults.faces" (design-tokens-test/css:rule-layer r)) (design-tokens-test/css:prefix? "[data-face=\"" (design-tokens-test/css:rule-selector r))))
                             faces-rules)))
 
 (define (rule-chain file face property)
-  (css:var-chain (css:declaration (find (lambda (r) (and (string=? "defaults.faces" (css:rule-layer r)) (face-rule? r) (string=? face (face-of-rule r))))
-                                        (css:file-rules file))
+  (design-tokens-test/css:var-chain (design-tokens-test/css:declaration (find (lambda (r) (and (string=? "defaults.faces" (design-tokens-test/css:rule-layer r)) (face-rule? r) (string=? face (face-of-rule r))))
+                                        (design-tokens-test/css:file-rules file))
                                   property)))
 
 (test "every face the plugin defines has a rule of its own in its stylesheet, which styles no other name"
@@ -44,11 +44,11 @@
   (check-equal? '()
     (apply append
       (map (lambda (file)
-             (map (lambda (r) (list file (css:rule-layer r) (css:rule-selector r)))
-                  (filter (lambda (r) (and (face-rule? r) (not (string=? "defaults.faces" (css:rule-layer r)))
-                                           (not (css:prefix? "preferences" (css:rule-layer r)))))
-                          (css:file-rules file))))
-           (css:stylesheets)))))
+             (map (lambda (r) (list file (design-tokens-test/css:rule-layer r) (design-tokens-test/css:rule-selector r)))
+                  (filter (lambda (r) (and (face-rule? r) (not (string=? "defaults.faces" (design-tokens-test/css:rule-layer r)))
+                                           (not (design-tokens-test/css:prefix? "preferences" (design-tokens-test/css:rule-layer r)))))
+                          (design-tokens-test/css:file-rules file))))
+           (design-tokens-test/css:stylesheets)))))
 
 (define seven
   '(("color" . "color") ("background-color" . "background") ("font-weight" . "font-weight") ("font-style" . "font-style")
@@ -63,29 +63,29 @@
 
 (test "each face rule declares the seven properties, each reading the face's own token first and ending in a default or revert-layer"
   (check-equal? 134
-    (length (filter (lambda (r) (string=? "defaults.faces" (css:rule-layer r)))
-                    (apply append (map css:file-rules face-stylesheets)))))
+    (length (filter (lambda (r) (string=? "defaults.faces" (design-tokens-test/css:rule-layer r)))
+                    (apply append (map design-tokens-test/css:file-rules face-stylesheets)))))
   (check-equal? '()
     (apply append
       (map (lambda (file)
              (fold-right
                (lambda (r acc)
-                 (if (not (string=? "defaults.faces" (css:rule-layer r)))
+                 (if (not (string=? "defaults.faces" (design-tokens-test/css:rule-layer r)))
                      acc
-                     (let* ([face (if (css:prefix? "[data-face$=" (css:rule-selector r)) "" (face-of-rule r))]
-                            [ds (css:rule-declarations r)]
+                     (let* ([face (if (design-tokens-test/css:prefix? "[data-face$=" (design-tokens-test/css:rule-selector r)) "" (face-of-rule r))]
+                            [ds (design-tokens-test/css:rule-declarations r)]
                             [bad (filter (lambda (p)
                                            (let ([d (assoc (car p) ds)])
                                              (not (and d
-                                                       (let ([c (css:var-chain (cdr d))])
+                                                       (let ([c (design-tokens-test/css:var-chain (cdr d))])
                                                          (and (string=? (car c) (own-token file face (cdr p)))
-                                                              (for-all (lambda (t) (css:suffix? (cdr p) t)) (reverse (cdr (reverse c))))
+                                                              (for-all (lambda (t) (design-tokens-test/css:suffix? (cdr p) t)) (reverse (cdr (reverse c))))
                                                               (let ([end (car (last-pair c))])
-                                                                (or (not (css:prefix? "--" end)) (css:prefix? "--tuna-" end)))))))))
+                                                                (or (not (design-tokens-test/css:prefix? "--" end)) (design-tokens-test/css:prefix? "--tuna-" end)))))))))
                                          seven)]
                             [extra (filter (lambda (d) (not (or (assoc (car d) seven) (string=? (car d) "text-decoration-skip-ink")))) ds)])
-                       (if (and (null? bad) (null? extra)) acc (cons (list file (css:rule-selector r) (map car bad) (map car extra)) acc)))))
-               '() (css:file-rules file)))
+                       (if (and (null? bad) (null? extra)) acc (cons (list file (design-tokens-test/css:rule-selector r) (map car bad) (map car extra)) acc)))))
+               '() (design-tokens-test/css:file-rules file)))
            face-stylesheets))))
 
 (test "a family's member reads its own token, then its family's, then the default; a dired face its own"
@@ -130,14 +130,14 @@
     (map (lambda (n) (rule-chain "faces/faces.css" (format "markup.heading.~a" n) "color")) '(1 6))))
 
 (test "a background is background-color, never the shorthand, so views' hover overlay survives"
-  (check-equal? '() (filter (lambda (r) (assoc "background" (css:rule-declarations r))) (apply append (map css:file-rules face-stylesheets)))))
+  (check-equal? '() (filter (lambda (r) (assoc "background" (design-tokens-test/css:rule-declarations r))) (apply append (map design-tokens-test/css:file-rules face-stylesheets)))))
 
 (test "a node a match covers is no face rule: it stays in defaults, reading the match faces' background tokens"
   (check-equal? '(("defaults" ".view .node[data-face=\"match\"] > *" "var(--faces-match-background, var(--tuna-match))")
                   ("defaults" ".view .node[data-face=\"match.other\"] > *" "var(--faces-match-other-background, var(--tuna-match-other))"))
-    (map (lambda (r) (list (css:rule-layer r) (css:rule-selector r) (cdar (css:rule-declarations r))))
-         (filter (lambda (r) (and (css:search (css:rule-selector r) "data-face" 0) (not (face-rule? r)))) faces-rules))))
+    (map (lambda (r) (list (design-tokens-test/css:rule-layer r) (design-tokens-test/css:rule-selector r) (cdar (design-tokens-test/css:rule-declarations r))))
+         (filter (lambda (r) (and (design-tokens-test/css:search (design-tokens-test/css:rule-selector r) "data-face" 0) (not (face-rule? r)))) faces-rules))))
 
 (test "views has no rule giving the region's band way to a span above it, and chat's diff lines take their backgrounds from the diff faces alone"
-  (check-equal? '() (filter (lambda (r) (css:search (css:rule-selector r) "above-region:not" 0)) (css:file-rules "views/views.css")))
-  (check-equal? '() (filter (lambda (r) (member (css:rule-selector r) '(".chat-added" ".chat-removed"))) (css:file-rules "chat/chat.css"))))
+  (check-equal? '() (filter (lambda (r) (design-tokens-test/css:search (design-tokens-test/css:rule-selector r) "above-region:not" 0)) (design-tokens-test/css:file-rules "views/views.css")))
+  (check-equal? '() (filter (lambda (r) (member (design-tokens-test/css:rule-selector r) '(".chat-added" ".chat-removed"))) (design-tokens-test/css:file-rules "chat/chat.css"))))

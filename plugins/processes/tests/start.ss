@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (processes) (recorder) (setting))
+(import (tuna) (test) (test-runner) (processes) (processes-test recorder) (processes-test setting))
 
 (define (reports-during thunk)
   (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
@@ -20,14 +20,14 @@
 (define (ignore-output bytes end) (void))
 
 (define (start-recorded program arguments . options)
-  (let ([r (recorder:make)])
-    (apply processes:start program arguments (recorder:on-output r) (recorder:on-exit r) options)
+  (let ([r (processes-test/recorder:make)])
+    (apply processes:start program arguments (processes-test/recorder:on-output r) (processes-test/recorder:on-exit r) options)
     r))
 
 (test "an own process's output reaches on-output in order, each piece with the offset after it, then the end, then the exit status"
-  (let* ([r (recorder:make)]
-         [p (processes:start "printf" '("one\ntwo\n") (recorder:on-output r) (recorder:on-exit r))])
-    (check-equal? '((output "one\ntwo\n" 8) (eof 8) (exit 0)) (recorder:wait-for-exit r))
+  (let* ([r (processes-test/recorder:make)]
+         [p (processes:start "printf" '("one\ntwo\n") (processes-test/recorder:on-output r) (processes-test/recorder:on-exit r))])
+    (check-equal? '((output "one\ntwo\n" 8) (eof 8) (exit 0)) (processes-test/recorder:wait-for-exit r))
     (check (processes:process? p))
     (check (not (processes:process? 'p)))
     (check-equal? 0 (processes:status p))
@@ -46,17 +46,17 @@
     (check-equal? (list (current-owner) #t #t) seen)))
 
 (test "the exit status is the exit code, or -n when signal n ended the program"
-  (check-equal? '((eof 0) (exit 3)) (recorder:wait-for-exit (start-recorded "sh" '("-c" "exit 3"))))
-  (check-equal? '((eof 0) (exit -15)) (recorder:wait-for-exit (start-recorded "sh" '("-c" "kill -TERM $$")))))
+  (check-equal? '((eof 0) (exit 3)) (processes-test/recorder:wait-for-exit (start-recorded "sh" '("-c" "exit 3"))))
+  (check-equal? '((eof 0) (exit -15)) (processes-test/recorder:wait-for-exit (start-recorded "sh" '("-c" "kill -TERM $$")))))
 
 (test "a program that cannot start goes to report, then to on-exit as its condition, after the end of output"
-  (let* ([r (recorder:make)] [missing #f]
+  (let* ([r (processes-test/recorder:make)] [missing #f]
          [reported (reports-during
                      (lambda ()
-                       (set! missing (processes:start "no-such-program" '() (recorder:on-output r) (recorder:on-exit r)))
-                       (recorder:wait-for-exit r)))])
+                       (set! missing (processes:start "no-such-program" '() (processes-test/recorder:on-output r) (processes-test/recorder:on-exit r)))
+                       (processes-test/recorder:wait-for-exit r)))])
     (check-equal? 1 (length reported))
-    (let ([events (recorder:events r)])
+    (let ([events (processes-test/recorder:events r)])
       (check-equal? '(eof 0) (car events))
       (check-equal? (car reported) (cadr (cadr events))))
     (check-equal? #f (processes:pid missing))
@@ -65,41 +65,41 @@
 
 (test "a program without a / is looked up in the PATH of its environment, which adds to Tuna's and loses a variable given #f"
   (check-equal? '((output "hi--sh\n" 7) (eof 7) (exit 0))
-    (recorder:wait-for-exit
+    (processes-test/recorder:wait-for-exit
       (start-recorded "sh" '("-c" "echo \"$GREETING-$HOME-$0\"")
         (processes:options [environment '(("GREETING" . "hi") ("HOME" . #f))]))))
   (let* ([r #f]
          [reported (reports-during
                      (lambda ()
                        (set! r (start-recorded "printf" '("x") (processes:options [environment '(("PATH" . "/nowhere"))])))
-                       (recorder:wait-for-exit r)))])
+                       (processes-test/recorder:wait-for-exit r)))])
     (check-equal? 1 (length reported))
-    (check (condition? (cadr (assq 'exit (recorder:events r)))))))
+    (check (condition? (cadr (assq 'exit (processes-test/recorder:events r)))))))
 
 (test "a process runs in the directory its options give"
   (check-equal? '((output "/\n" 2) (eof 2) (exit 0))
-    (recorder:wait-for-exit (start-recorded "pwd" '() (processes:options [directory "/"])))))
+    (processes-test/recorder:wait-for-exit (start-recorded "pwd" '() (processes:options [directory "/"])))))
 
 (test "standard error joins the output, unless separate-stderr keeps it apart for processes:error-output"
   (let* ([both "echo out; echo err >&2"]
-         [joined (recorder:make)]
-         [joined-process (processes:start "sh" (list "-c" both) (recorder:on-output joined) (recorder:on-exit joined))]
-         [apart (recorder:make)]
-         [apart-process (processes:start "sh" (list "-c" both) (recorder:on-output apart) (recorder:on-exit apart)
+         [joined (processes-test/recorder:make)]
+         [joined-process (processes:start "sh" (list "-c" both) (processes-test/recorder:on-output joined) (processes-test/recorder:on-exit joined))]
+         [apart (processes-test/recorder:make)]
+         [apart-process (processes:start "sh" (list "-c" both) (processes-test/recorder:on-output apart) (processes-test/recorder:on-exit apart)
                           (processes:options [separate-stderr #t]))])
-    (check-equal? '((output "out\nerr\n" 8) (eof 8) (exit 0)) (recorder:wait-for-exit joined))
+    (check-equal? '((output "out\nerr\n" 8) (eof 8) (exit 0)) (processes-test/recorder:wait-for-exit joined))
     (check-equal? #f (processes:error-output joined-process))
-    (check-equal? '((output "out\n" 4) (eof 4) (exit 0)) (recorder:wait-for-exit apart))
+    (check-equal? '((output "out\n" 4) (eof 4) (exit 0)) (processes-test/recorder:wait-for-exit apart))
     (check-equal? "err\n" (utf8->string (processes:error-output apart-process)))))
 
 (test "processes:report-error-output reports the first line of standard error as a warning from the who given, and nothing when there is none"
-  (let* ([r (recorder:make)]
+  (let* ([r (processes-test/recorder:make)]
          [complaining (processes:start "sh" '("-c" "echo 'bad flag' >&2; echo more >&2; exit 2")
-                        (recorder:on-output r) (recorder:on-exit r) (processes:options [separate-stderr #t]))]
-         [joined-recorder (recorder:make)]
-         [joined (processes:start "sh" '("-c" "echo err >&2") ignore-output (recorder:on-exit joined-recorder))])
-    (check-equal? '((eof 0) (exit 2)) (recorder:wait-for-exit r))
-    (recorder:wait-for-exit joined-recorder)
+                        (processes-test/recorder:on-output r) (processes-test/recorder:on-exit r) (processes:options [separate-stderr #t]))]
+         [joined-recorder (processes-test/recorder:make)]
+         [joined (processes:start "sh" '("-c" "echo err >&2") ignore-output (processes-test/recorder:on-exit joined-recorder))])
+    (check-equal? '((eof 0) (exit 2)) (processes-test/recorder:wait-for-exit r))
+    (processes-test/recorder:wait-for-exit joined-recorder)
     (let ([reported (reports-during (lambda () (processes:report-error-output complaining 'my-lister)))])
       (check-equal? 1 (length reported))
       (check (warning? (car reported)))
@@ -112,7 +112,7 @@
       (violation (lambda () (processes:report-error-output 'complaining 'my-lister))))))
 
 (test "output not yet delivered stops reading at processes:log-size bytes, so a flood comes in pieces no larger, whole and in order"
-  (setting:with processes:log-size 1000
+  (processes-test/setting:with processes:log-size 1000
     (lambda ()
     (let* ([pieces '()] [done? #f])
       (processes:start "head" '("-c" "100000" "/dev/zero")
@@ -130,15 +130,15 @@
                      (and (= (cdar pieces) (+ at (caar pieces))) (loop (cdr pieces) (cdar pieces)))))))))))
 
 (test "a raise in on-output or on-exit goes to report, and delivery goes on"
-  (let* ([r (recorder:make)]
-         [record-output (recorder:on-output r)]
+  (let* ([r (processes-test/recorder:make)]
+         [record-output (processes-test/recorder:on-output r)]
          [reported (reports-during
                      (lambda ()
                        (processes:start "printf" '("x")
                          (lambda (bytes end) (if (eof-object? bytes) (record-output bytes end) (car bytes)))
-                         (recorder:on-exit r))
-                       (recorder:wait-for-exit r)))])
-    (check-equal? '((eof 1) (exit 0)) (recorder:events r))
+                         (processes-test/recorder:on-exit r))
+                       (processes-test/recorder:wait-for-exit r)))])
+    (check-equal? '((eof 1) (exit 0)) (processes-test/recorder:events r))
     (check-equal? 1 (length reported))
     (check-equal? 'car (condition-who (car reported))))
   (let* ([status #f]
@@ -212,20 +212,20 @@
     (advice-add! processes:start logged)
     (let ([r (start-recorded "true" '())])
       (advice-remove! processes:start logged)
-      (check-equal? '((eof 0) (exit 0)) (recorder:wait-for-exit r))
+      (check-equal? '((eof 0) (exit 0)) (processes-test/recorder:wait-for-exit r))
       (check-equal? '("true") started))))
 
 (test "input is written in order by a thread of the plugin, and closing it ends the program's input once the queue is written"
-  (let* ([r (recorder:make)] [cat (processes:start "cat" '() (recorder:on-output r) (recorder:on-exit r))])
+  (let* ([r (processes-test/recorder:make)] [cat (processes:start "cat" '() (processes-test/recorder:on-output r) (processes-test/recorder:on-exit r))])
     (processes:send! cat "one ")
     (processes:send! cat (string->utf8 "two"))
     (processes:close-input! cat)
-    (check-equal? '((output "one two" 7) (eof 7) (exit 0)) (recorder:wait-for-exit r))))
+    (check-equal? '((output "one two" 7) (eof 7) (exit 0)) (processes-test/recorder:wait-for-exit r))))
 
 (test "input sent after the program ended does nothing; input sent after it was closed raises"
-  (let ([r (recorder:make)])
-    (let ([ended (processes:start "true" '() ignore-output (recorder:on-exit r))])
-      (recorder:wait-for-exit r)
+  (let ([r (processes-test/recorder:make)])
+    (let ([ended (processes:start "true" '() ignore-output (processes-test/recorder:on-exit r))])
+      (processes-test/recorder:wait-for-exit r)
       (processes:send! ended "after the end does nothing")))
   (let ([closed (processes:start "cat" '() ignore-output)])
     (processes:close-input! closed)
@@ -235,32 +235,32 @@
     (check-equal? '(processes:close-input! "not a process") (violation (lambda () (processes:close-input! 'cat))))))
 
 (test "on a terminal of the size given, the program's streams are the terminal, a resize reaches it, and closing the input sends C-d"
-  (let* ([lines '()] [r (recorder:make)]
+  (let* ([lines '()] [r (processes-test/recorder:make)]
          [tty (processes:start-for-user "sh" '("-c" "stty size; read line; stty size; tty")
                 (processes:options [terminal '(24 . 80)]))])
-    (processes:attach! tty 0 (processes:line-receiver 0 (lambda (line end) (set! lines (cons line lines)))) (recorder:on-exit r))
+    (processes:attach! tty 0 (processes:line-receiver 0 (lambda (line end) (set! lines (cons line lines)))) (processes-test/recorder:on-exit r))
     (test-runner:wait-until (lambda () (pair? lines)))
     (processes:resize! tty 30 100)
     (processes:send! tty "go\n")
-    (check-equal? '((exit 0)) (recorder:wait-for-exit r))
+    (check-equal? '((exit 0)) (processes-test/recorder:wait-for-exit r))
     (let ([lines (reverse lines)])
       (check-equal? '("24 80" "go" "30 100") (list-head lines 3))
       (check-equal? "/dev/" (substring (list-ref lines 3) 0 5)))
     (check-equal? '(processes:resize! "not a number of rows from 0 to 65535") (violation (lambda () (processes:resize! tty -1 10))))
     (check-equal? '(processes:resize! "not a number of columns from 0 to 65535")
       (violation (lambda () (processes:resize! tty 10 'wide)))))
-  (let ([r (recorder:make)])
+  (let ([r (processes-test/recorder:make)])
     (processes:close-input!
-      (processes:start "cat" '() (recorder:on-output r) (recorder:on-exit r) (processes:options [terminal '(24 . 80)])))
-    (check-equal? '(exit 0) (car (reverse (recorder:wait-for-exit r)))))
+      (processes:start "cat" '() (processes-test/recorder:on-output r) (processes-test/recorder:on-exit r) (processes:options [terminal '(24 . 80)])))
+    (check-equal? '(exit 0) (car (reverse (processes-test/recorder:wait-for-exit r)))))
   (let ([cat (processes:start "cat" '() ignore-output)])
     (check-equal? '(processes:resize! "not a process with a terminal") (violation (lambda () (processes:resize! cat 10 10))))
     (check-equal? #f (processes:foreground-group cat))
     (processes:stop! cat)))
 
 (test "a terminal's foreground group is the program's own until a job holds the terminal, and #f once stopped"
-  (let* ([r (recorder:make)]
-         [job-shell (processes:start "sh" '("-c" "read line; set -m; sleep 5") (recorder:on-output r) (recorder:on-exit r)
+  (let* ([r (processes-test/recorder:make)]
+         [job-shell (processes:start "sh" '("-c" "read line; set -m; sleep 5") (processes-test/recorder:on-output r) (processes-test/recorder:on-exit r)
                       (processes:options [terminal '(24 . 80)]))])
     (test-runner:wait-until (lambda () (and (processes:pid job-shell) (processes:foreground-group job-shell))))
     (check-equal? (processes:pid job-shell) (processes:foreground-group job-shell))
@@ -270,4 +270,4 @@
     (check (integer? (processes:foreground-group job-shell)))
     (processes:stop! job-shell)
     (check-equal? #f (processes:foreground-group job-shell))
-    (check-equal? '(exit -1) (car (reverse (recorder:wait-for-exit r))))))
+    (check-equal? '(exit -1) (car (reverse (processes-test/recorder:wait-for-exit r))))))

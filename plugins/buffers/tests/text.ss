@@ -1,8 +1,8 @@
-(import (tuna) (test) (buffers) (document) (md) (cards) (buffers-test))
+(import (tuna) (test) (buffers) (document) (buffers-test md) (buffers-test cards) (buffers-test))
 
 (buffers:define-layer responses (travels) (sticky after))
 
-(define r (buffers-test:fresh (cards:rows '() (cards:row '((label . "one"))) (cards:row '((label . "two"))))))
+(define r (buffers-test:fresh (buffers-test/cards:rows '() (buffers-test/cards:row '((label . "one"))) (buffers-test/cards:row '((label . "two"))))))
 
 (define (whole doc) (document:length doc))
 
@@ -10,46 +10,46 @@
   (check-equal? "one\ntwo\n" (buffers:text-between (buffers:document r) 0 4))
   (check-equal? '((1 . "one\n") (2 . "two\n")) (buffers:atom-texts (buffers:document r) 0 4))
   (check-equal? '((2 . "two\n")) (buffers:atom-texts (buffers:document r) 2 4))
-  (let ([mixed (buffers-test:fresh (md:doc '() (md:para '() "a " (cards:tag '((label . "TAG"))) " b\n")))])
+  (let ([mixed (buffers-test:fresh (buffers-test/md:doc '() (buffers-test/md:para '() "a " (buffers-test/cards:tag '((label . "TAG"))) " b\n")))])
     (check-equal? "a TAG b\n" (buffers:text-between (buffers:document mixed) 0 (whole (buffers:document mixed))))
     (check-equal? " TAG " (buffers:text-between (buffers:document mixed) 3 6))))
 
 (test "a character U+FFFC in the text is no atom"
-  (let* ([literal (buffers-test:fresh (md:doc '() (md:para '() (string #\x #\xFFFC #\y #\newline))))] [doc (buffers:document literal)])
+  (let* ([literal (buffers-test:fresh (buffers-test/md:doc '() (buffers-test/md:para '() (string #\x #\xFFFC #\y #\newline))))] [doc (buffers:document literal)])
     (check-equal? '() (buffers:atom-texts doc 0 (whole doc)))
     (check-equal? 4 (string-length (buffers:text-between doc 0 (whole doc))))))
 
 (test "an atom of a kind with no text clause or of an undefined kind gives none; a raw byte gives U+FFFD"
-  (let* ([odd (buffers-test:fresh (list 'cards:rows '() (cards:blank '()) (vector 'nowhere:atom '()) (cards:row '((label . "ok")))))]
+  (let* ([odd (buffers-test:fresh (list 'buffers-test/cards:rows '() (buffers-test/cards:blank '()) (vector 'nowhere:atom '()) (buffers-test/cards:row '((label . "ok")))))]
          [raw (buffers-test:fresh (list 'buffers:text '() "a" (vector 'document:raw-byte '((byte . 233))) "b\n"))])
     (check-equal? '((1 . "") (2 . "") (3 . "ok\n")) (buffers:atom-texts (buffers:document odd) 0 (whole (buffers:document odd))))
     (check-equal? #\xFFFD (string-ref (buffers:text-between (buffers:document raw) 0 6) 1))))
 
 (test "a text procedure that raises, or returns what is not a string, goes to report as the kind's module's, and its atom gives none"
-  (let* ([odd (buffers-test:fresh (cards:rows '() (cards:broken '()) (cards:number '()) (cards:row '((label . "ok")))))]
+  (let* ([odd (buffers-test:fresh (buffers-test/cards:rows '() (buffers-test/cards:broken '()) (buffers-test/cards:number '()) (buffers-test/cards:row '((label . "ok")))))]
          [texts #f]
          [reported (buffers-test:reports-during
                      (lambda ()
                        (set! texts (buffers:atom-texts (buffers:document odd) 0 (whole (buffers:document odd))))))])
     (check-equal? '((1 . "") (2 . "") (3 . "ok\n")) texts)
-    (check-equal? '(car cards:number) (map condition-who reported))
+    (check-equal? '(car buffers-test/cards:number) (map condition-who reported))
     (check-equal? '("a text procedure returned what is not a string" (42))
       (list (condition-message (cadr reported)) (condition-irritants (cadr reported))))))
 
 (test "content a node takes only as text goes in as its text, atoms included"
-  (let ([form (buffers-test:fresh (cards:rows '() (cards:plain '() "x\n")))])
-    (buffers:replace! form 2 2 (cards:field '() "a " (cards:tag '((label . "TAG"))) " "))
-    (check-equal? '(cards:rows () (cards:plain () "a TAG x\n")) (buffers-test:root form))))
+  (let ([form (buffers-test:fresh (buffers-test/cards:rows '() (buffers-test/cards:plain '() "x\n")))])
+    (buffers:replace! form 2 2 (buffers-test/cards:field '() "a " (buffers-test/cards:tag '((label . "TAG"))) " "))
+    (check-equal? '(buffers-test/cards:rows () (buffers-test/cards:plain () "a TAG x\n")) (buffers-test:root form))))
 
 (test "a travelling span after an atom moves by the length its text adds"
-  (let ([form (buffers-test:fresh (cards:rows '() (cards:plain '() "x\n")))]
-        [source (buffers-test:fresh (md:doc '() (md:para '() (cards:field '() "a" (cards:tag '((label . "TAG"))) "bc" (cards:blank '()) "de") "\n")))])
+  (let ([form (buffers-test:fresh (buffers-test/cards:rows '() (buffers-test/cards:plain '() "x\n")))]
+        [source (buffers-test:fresh (buffers-test/md:doc '() (buffers-test/md:para '() (buffers-test/cards:field '() "a" (buffers-test/cards:tag '((label . "TAG"))) "bc" (buffers-test/cards:blank '()) "de") "\n")))])
     (buffers:add-span! (buffers:layer source responses) 8 10 'x)
     (let ([field (buffers:piece source 2 11)])
-      (check-equal? '(((cards:field () "a" #(cards:tag ((label . "TAG"))) "bc" #(cards:blank ()) "de")) "aTAGbcde")
+      (check-equal? '(((buffers-test/cards:field () "a" #(buffers-test/cards:tag ((label . "TAG"))) "bc" #(buffers-test/cards:blank ()) "de")) "aTAGbcde")
         (list (document:datums (buffers:piece-document field)) (buffers:piece-text field)))
       (buffers:replace! form 2 2 field))
-    (check-equal? '(cards:rows () (cards:plain () "aTAGbcdex\n")) (buffers-test:root form))
+    (check-equal? '(buffers-test/cards:rows () (buffers-test/cards:plain () "aTAGbcdex\n")) (buffers-test:root form))
     (check-equal? '((8 10 x)) (buffers-test:all-spans (buffers:layer form responses) form))
     (check-equal? "de" (document:text (buffers:document form) 8 10))))
 

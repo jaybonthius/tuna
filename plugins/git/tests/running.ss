@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (hooks) (options) (processes) (git) (repositories))
+(import (tuna) (test) (test-runner) (hooks) (options) (processes) (git) (git-test repositories))
 
 (define (log-lines repository)
   (map (lambda (c) (list (git:command-exit c) (git:command-arguments c))) (git:commands repository)))
@@ -13,9 +13,9 @@
       (advice-remove! report keep)
       (values result (reverse reported)))))
 
-(repositories:sample! "repo")
+(git-test/repositories:sample! "repo")
 
-(define repo (git:find-repository (repositories:path "repo")))
+(define repo (git:find-repository (git-test/repositories:path "repo")))
 
 (test "a query returns git's standard output as bytes, writes its input's bytes, and is not logged"
   (check-equal? "main\n" (utf8->string (git:query repo '("rev-parse" "--abbrev-ref" "HEAD"))))
@@ -141,7 +141,7 @@
          [queued (git:start repo '("tag" "never") (lambda (c) (void)))])
     (test-runner:wait-until (lambda () (eq? (git:running repo) waiting)))
     (git:stop! queued)
-    (repositories:write-file! "repo/release" "")
+    (git-test/repositories:write-file! "repo/release" "")
     (test-runner:wait-until (lambda () (not (git:queued? repo))))
     (check-equal? 0 (git:command-exit waiting))
     (check-equal? -1 (git:command-exit queued))

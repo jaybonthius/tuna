@@ -1,8 +1,8 @@
-(import (tuna) (test) (git) (repositories))
+(import (tuna) (test) (git) (git-test repositories))
 
-(repositories:sample! "repo")
+(git-test/repositories:sample! "repo")
 
-(define repo (git:find-repository (repositories:path "repo")))
+(define repo (git:find-repository (git-test/repositories:path "repo")))
 
 (test "git:config reads a key's value or #f, and git:set-config! sets a key or removes it with #f"
   (check-equal? "../origin-repo.git" (git:config repo "remote.origin.url"))
@@ -15,8 +15,8 @@
 
 (test "git:remotes and git:remote-branches name the remotes and their branches"
   (check-equal? '("origin") (git:remotes repo))
-  (repositories:git! "repo" "remote" "add" "fork" "../origin-repo.git")
-  (repositories:git! "repo" "fetch" "-q" "fork")
+  (git-test/repositories:git! "repo" "remote" "add" "fork" "../origin-repo.git")
+  (git-test/repositories:git! "repo" "fetch" "-q" "fork")
   (check-equal? '("fork" "origin") (git:remotes repo))
   (check-equal? '("fork/main" "origin/main") (git:remote-branches repo)))
 
@@ -31,6 +31,6 @@
 
 (test "git:user gives user.name and user.email"
   (check-equal? '(#f #f) (call-with-values (lambda () (git:user repo)) list))
-  (repositories:git! "repo" "config" "user.name" "Ada")
-  (repositories:git! "repo" "config" "user.email" "ada@example.org")
+  (git-test/repositories:git! "repo" "config" "user.name" "Ada")
+  (git-test/repositories:git! "repo" "config" "user.email" "ada@example.org")
   (check-equal? '("Ada" "ada@example.org") (call-with-values (lambda () (git:user repo)) list)))

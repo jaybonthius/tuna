@@ -4,7 +4,7 @@
 (import (echo-area-test beneath))
 
 (import (test-user) (layout) (layout-split) (views) (buffers) (document) (keys) (commands) (options) (faces) (ask) (editing)
-        (echo-area) (echo-area-test) (poker) (lines))
+        (echo-area) (echo-area-test) (echo-area-test poker) (echo-area-test lines))
 
 (define view echo-area-test:view)
 (define messages echo-area-test:messages)
@@ -95,8 +95,8 @@
 
 (test "a killed log made again by another module's code is silent after that module unloads, and so is one made by code acting for no module"
   (buffers:kill! (buffers:find "*Messages*"))
-  (poker:poke)
-  (unload-owner! (module-owner '(poker)))
+  (echo-area-test/poker:poke)
+  (unload-owner! (module-owner '(echo-area-test poker)))
   (check-equal? (list "Poked\n" #t) (list (messages) (buffers:silent? (buffers:find "*Messages*"))))
   (buffers:kill! (buffers:find "*Messages*"))
   (let* ([late? #t] [late (lambda (ended) (ended) (when late? (set! late? #f) (echo-area:message! "Late")))])
@@ -147,7 +147,7 @@
 (test "the what-line example says which line point is on"
   (views:set-buffer! (view) (buffers:make "lines" "one\ntwo\nthree\n"))
   (views:set-point! (view) 6)
-  (views:with-view (view) (commands:run lines:what-line))
+  (views:with-view (view) (commands:run echo-area-test/lines:what-line))
   (check-equal? "Line 2" (echo-area:current-message)))
 
 (test "advice on message! sees every message, reports included, with the face each shows in"

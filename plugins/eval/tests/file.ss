@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (caught-reports) (plugins) (eval) (eval-test))
+(import (tuna) (test) (test-runner) (eval-test caught-reports) (plugins) (eval) (eval-test))
 
 (test "eval-file evaluates a file that is no module form by form as the REPL's owner, and eval-text does so with text and no path, giving the last form's values"
   (eval-test:write-file! "scratch.ss" "(define scratch-owner (current-owner))\n(define scratch-value 1)\n")

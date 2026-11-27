@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (timers) (buffers) (document) (marks) (buffers-test))
+(import (tuna) (test) (test-runner) (timers) (buffers) (document) (buffers-test marks) (buffers-test))
 
 (buffers:define-layer hl (priority 10))
 (buffers:define-layer low)
@@ -145,13 +145,13 @@
     (check-equal? '((2 5 locked)) (spans-of g t))))
 
 (test "a layer keeps its type's clauses while the type is undefined, and has no keymap then"
-  (let* ([t (buffers-test:fresh "abcdefgh\n")] [m (buffers:layer t marks:marks)])
+  (let* ([t (buffers-test:fresh "abcdefgh\n")] [m (buffers:layer t buffers-test/marks:marks)])
     (buffers:add-span! m 3 5 'm)
     (check-equal? 'mark-keys (buffers:layer-keymap m))
-    (unload-owner! (module-owner '(marks)))
+    (unload-owner! (module-owner '(buffers-test marks)))
     (buffers:replace! t 5 5 "zz")
     (check-equal? '(((3 7 m)) #f) (list (spans-of m t) (buffers:layer-keymap m)))
     (buffers:splice! t 3 7 (document:from-datum))
     (check-equal? '() (spans-of m t))
-    (load-module! '(marks))
+    (load-module! '(buffers-test marks))
     (check-equal? 'mark-keys (buffers:layer-keymap m))))
