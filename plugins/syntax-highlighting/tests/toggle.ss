@@ -1,0 +1,21 @@
+(import (tuna) (test) (test-runner) (test-user) (modes) (buffers) (views) (layout) (options) (echo-area) (minibuffer) (completion)
+        (command-picker) (syntax-highlighting) (chez-scheme) (rainbow-delimiters) (chez-scheme-test scheme-buffers)
+        (completion-test sessions))
+
+(test "modes:toggle-minor-mode offers syntax-highlighting:mode, on by default: turned off, the buffer's faces go and its brackets stay"
+  (let ([commented (chez-scheme-test/scheme-buffers:scheme-buffer "commented.ss" "; note\n(a)\n")])
+    (views:set-buffer! (layout:selected-view) commented)
+    (buffers:with-buffer commented (options:set-local! rainbow-delimiters:mode #t))
+    (test-runner:wait-until
+      (lambda () (and (equal? '(("; note" comment)) (chez-scheme-test/scheme-buffers:faces commented))
+                      (= 2 (length (chez-scheme-test/scheme-buffers:brackets commented))))))
+    (test-user:press! "M-x")
+    (test-user:type! "modes:toggle-minor-mode")
+    (test-user:press! "RET")
+    (test-user:type! "syntax-highlighting:mode")
+    (test-user:press! "RET")
+    (check-equal? #f (completion-test/sessions:prompt))
+    (check-equal? #f (buffers:with-buffer commented (syntax-highlighting:mode)))
+    (test-runner:wait-until (lambda () (null? (chez-scheme-test/scheme-buffers:faces commented))))
+    (check-equal? 2 (length (chez-scheme-test/scheme-buffers:brackets commented)))
+    (check-equal? "syntax-highlighting:mode disabled in current buffer" (echo-area:current-message))))
