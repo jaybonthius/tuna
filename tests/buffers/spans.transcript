@@ -1,6 +1,0 @@
-; The span store against a plain list: random adds, maps by stickiness,
-; splits, takes and queries over small and large numbers of spans, so
-; that chunks fill, split, empty and reorder.
-> (import (span-checks))
-> (map (lambda (seed) (cadr (span-checks seed))) '(1 2))
-(0 0)

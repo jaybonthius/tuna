@@ -1,0 +1,9 @@
+@layer defaults, themes, preferences;
+
+@layer themes {
+  :root {
+    color-scheme: dark;
+    --tuna-cursor: var(--tuna-amber-9);
+    --faces-keyword-color: var(--tuna-orange-11);
+  }
+}

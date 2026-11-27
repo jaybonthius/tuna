@@ -241,10 +241,11 @@
       (save-order!)))
 
   (define (with-current b thunk)
-    (if (and (eq? (current-buffer) b) (eq? (scopes:current) (buffer-scope b)))
-        (thunk)
-        (parameterize ([current-buffer b] [scopes:current (buffer-scope b)])
-          (thunk))))
+    (let ([scope (or (buffer-scope b) (scopes:current))])
+      (if (and (eq? (current-buffer) b) (eq? (scopes:current) scope))
+          (thunk)
+          (parameterize ([current-buffer b] [scopes:current scope])
+            (thunk)))))
 
   ;; A frozen document replaces the buffer's own, so the next freeze
   ;; passes only what later edits made.
@@ -1731,7 +1732,7 @@
     (document:text doc start end (range-atom-texts doc start end)))
 
   (tables:set! kinds 'document:raw-byte
-    (make-kind-entry 'document:raw-byte 'atom #f 'both 'all #f #f #f #t #f (lambda (atom) "\xFFFD;") '(buffers)))
+    (make-kind-entry 'document:raw-byte 'atom #f 'both 'all #f #f #f #t #f (lambda (atom) "\xFFFD;") (current-owner)))
 
   (timers:run-when-idle 1 trim-logs!)
   (timers:run-when-idle 1 forget-unmade!))
