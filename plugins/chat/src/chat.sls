@@ -283,7 +283,12 @@
 
 (define %folds (make-hashtable equal-hash equal?))
 
+;; Questions are numbered in the order they are first drawn: two drawn
+;; in one millisecond would tie on the clock, and the older must still
+;; come first.
 (define %question-seen (make-hashtable equal-hash equal?))
+
+(define %questions-drawn 0)
 
 (define %own-notices (make-eq-hashtable))
 
@@ -694,7 +699,8 @@
     (for-each
       (lambda (q id)
         (unless (hashtable-contains? %question-seen (cons (car entry) id))
-          (hashtable-set! %question-seen (cons (car entry) id) (real-time)))
+          (set! %questions-drawn (fx+ %questions-drawn 1))
+          (hashtable-set! %question-seen (cons (car entry) id) %questions-drawn))
         (unless (%question-node-of b id)
           (let ([at (fx- (document:node-end (%part b 'chat:%questions)) 1)])
             (buffers:splice! b at at (document:from-datum (%question-datum entry c q)))
@@ -775,10 +781,13 @@
 
 ;; reconcile! enters a node's children only, so the root's marks are
 ;; rewritten by putting a new opening in place of its own.
+;; Folds are the session's, so a conversation that goes on in another
+;; session with the same items draws them again with that session's folds.
 (define (%write-marks! entry c b)
   (let ([marks (%marks entry c)] [root (%root b)])
     (unless (and (eq? (%attribute root 'source) (car entry))
                  (equal? (%attribute root 'session) (%session entry c)))
+      (%datums-changed!)
       (buffers:splice! b 0 1 (document:slice (document:from-datum (%chat marks)) 0 1)))))
 
 ;; The conversation is rebuilt from the source's records, so its rewrites
@@ -1189,13 +1198,10 @@
     (%datums-changed!)
     (%rewrite! entry c b)))
 
-(define (%tell text)
-  (raise-continuable (condition (make-warning) (make-message-condition text))))
-
 (commands:define-command (toggle-thinking)
   "Shows the agents' finished thinking in every chat, or folds it."
   (options:set! thinking-shown? (not (thinking-shown?)))
-  (%tell (if (thinking-shown?) "Finished thinking is shown" "Finished thinking is folded")))
+  (ask:message (if (thinking-shown?) "Finished thinking is shown" "Finished thinking is folded")))
 
 (define (%item-at entry c b position)
   (let ([wrapper (%enclosing-of b position '(chat:%item))])

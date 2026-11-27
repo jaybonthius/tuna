@@ -429,17 +429,14 @@
   "Summarises the conversation, with INSTRUCTIONS for the summary."
   (pi:compact! (%current-chat 'pi-chat:compact) instructions))
 
-(define (%tell text)
-  (raise-continuable (condition (make-warning) (make-message-condition text))))
-
 (commands:define-command (toggle-auto-compaction)
   "Turns Pi's own compaction on or off."
   (let ([chat (%current-chat 'pi-chat:toggle-auto-compaction)])
     (pi:set-auto-compaction! chat (not (pi:chat-auto-compaction? chat)))
-    (%tell (if (pi:chat-auto-compaction? chat) "Pi compacts on its own" "Pi no longer compacts on its own"))))
+    (ask:message (if (pi:chat-auto-compaction? chat) "Pi compacts on its own" "Pi no longer compacts on its own"))))
 
 (define (%export chat path)
-  (%tell (string-append "Exported the session to " (pi:export-html! chat path))))
+  (ask:message (string-append "Exported the session to " (pi:export-html! chat path))))
 
 (commands:define-command (export-html)
   "Writes the session as HTML and says where."
@@ -522,7 +519,7 @@
 (tables:set! slash-commands "/name"
   (lambda (chat argument)
     (if (string=? argument "")
-        (%tell (or (pi:chat-session-name chat) "The session has no name"))
+        (ask:message (or (pi:chat-session-name chat) "The session has no name"))
         (pi:set-session-name! chat argument))))
 (tables:set! slash-commands "/compact" (lambda (chat argument) (pi:compact! chat argument)))
 (tables:set! slash-commands "/clone" (lambda (chat argument) (pi:clone! chat)))

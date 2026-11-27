@@ -1,0 +1,5 @@
+(library chez-json
+  (git "https://github.com/jaybonthius/chez-json.git")
+  (commit "542c745ae1dcbe914b033df7cb8483ec4d9c26f3")
+  (library-directories ("src" . "build/obj/src"))
+  (build))

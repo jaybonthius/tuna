@@ -1,0 +1,28 @@
+#!/bin/sh
+case " $* " in
+  *" --version "*) echo "${PI_FAKE_VERSION:-1.5.0}"; exit 0 ;;
+esac
+dir=$PI_FAKE/$$
+mkdir -p "$dir"
+printf '%s\n' "$@" > "$dir/args"
+pwd > "$dir/cwd"
+: > "$dir/in"
+: > "$dir/out"
+mkfifo "$dir/lines"
+# An asynchronous list reads /dev/null unless given standard input, and
+# Tuna sees Pi's output end only once nothing else holds it open.
+exec 3<&0
+{ cat <&3 >> "$dir/in"; echo '#exit 0' >> "$dir/out"; } > /dev/null 2>&1 &
+tail -n +1 -f "$dir/out" > "$dir/lines" 2> /dev/null &
+tailer=$!
+echo $$ >> "$PI_FAKE/started"
+status=0
+while IFS= read -r line; do
+  case $line in
+    '#exit '*) status=${line#'#exit '}; break ;;
+  esac
+  printf '%s\n' "$line"
+done < "$dir/lines"
+kill $tailer
+[ -e "$dir/stderr" ] && cat "$dir/stderr" >&2
+exit "$status"

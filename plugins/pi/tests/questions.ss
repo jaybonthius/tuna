@@ -1,0 +1,97 @@
+(import (tuna) (test) (test-runner) (pi) (test-pi) (pi-test))
+
+(define chat (pi-test:started (getenv "HOME")))
+
+(define f (pi-test:fake chat))
+
+(define (ref object key) (let ([pair (assoc key object)]) (and pair (cdr pair))))
+
+(define (responses) (filter (lambda (r) (equal? (ref r "type") "extension_ui_response")) (test-pi:requests f)))
+
+(test "each question Pi waits on is a record, oldest first"
+  (test-pi:say! f (test-pi:ui-request "d1" "select" '("title" . "Allow rm?") '("options" . #("Allow" "Block")))
+                (test-pi:ui-request "d2" "confirm" '("title" . "Clear session?") '("message" . "All messages will be lost."))
+                (test-pi:ui-request "d3" "input" '("title" . "Name") '("placeholder" . "a name"))
+                (test-pi:ui-request "d4" "editor" '("title" . "Edit") '("prefill" . "Line 1\nLine 2")))
+  (test-runner:wait-until (lambda () (= 4 (length (pi:chat-dialogs chat)))))
+  (check-equal? '((#t select "Allow rm?" #f ("Allow" "Block") #f #f)
+                  (#t confirm "Clear session?" "All messages will be lost." () #f #f)
+                  (#t input "Name" #f () "a name" #f)
+                  (#t editor "Edit" #f () "Line 1\nLine 2" #f))
+    (map (lambda (d) (list (pi:dialog? d) (pi:dialog-method d) (pi:dialog-title d) (pi:dialog-message d) (pi:dialog-options d)
+                           (pi:dialog-text d) (pi:dialog-deadline d)))
+         (pi:chat-dialogs chat)))
+  (check-equal? '("d1" "d2" "d3" "d4") (map pi:dialog-id (pi:chat-dialogs chat))))
+
+(test "an answer is a string, or a boolean for a confirm, and cancelling is no answer; each question leaves the chat"
+  (let ([ds (pi:chat-dialogs chat)])
+    (pi:answer! chat (car ds) "Block")
+    (pi:answer! chat (cadr ds) #t)
+    (pi:answer! chat (caddr ds) "Zeppo")
+    (pi:cancel! chat (cadddr ds))
+    (check-equal? '() (pi:chat-dialogs chat))
+    (test-runner:wait-until (lambda () (= 4 (length (responses)))))
+    (check-equal? '((("id" . "d1") ("value" . "Block")) (("id" . "d2") ("confirmed" . #t)) (("id" . "d3") ("value" . "Zeppo"))
+                    (("id" . "d4") ("cancelled" . #t)))
+      (map (lambda (r) (list-tail r 1)) (responses)))
+    (pi:answer! chat (car ds) "again")
+    (check-equal? '(pi:answer! "not a boolean") (pi-test:violation (lambda () (pi:answer! chat (cadr ds) "yes"))))
+    (check-equal? '(pi:answer! "not a string") (pi-test:violation (lambda () (pi:answer! chat (car ds) #t))))
+    (pi-test:barrier f)
+    (check-equal? 4 (length (responses)))))
+
+(test "a question leaves at its deadline, when Pi stops waiting"
+  (test-pi:say! f (test-pi:ui-request "d5" "confirm" '("title" . "Quick?") '("timeout" . 300)))
+  (test-runner:wait-until (lambda () (= 1 (length (pi:chat-dialogs chat)))))
+  (check (time? (pi:dialog-deadline (car (pi:chat-dialogs chat)))))
+  (test-runner:wait-until (lambda () (null? (pi:chat-dialogs chat)))))
+
+(test "extensions' status texts and widgets are the latest per key, and an absent text or lines clears one"
+  (test-pi:say! f (test-pi:ui-request "s1" "setStatus" '("statusKey" . "pool") '("statusText" . "1 pool(s)"))
+                (test-pi:ui-request "s2" "setStatus" '("statusKey" . "stash") '("statusText" . "2 stashed"))
+                (test-pi:ui-request "s3" "setStatus" '("statusKey" . "pool") '("statusText" . "3 pool(s)"))
+                (test-pi:ui-request "s4" "setStatus" '("statusKey" . "stash"))
+                (test-pi:ui-request "w1" "setWidget" '("widgetKey" . "plan") '("widgetLines" . #("Step 1" "Step 2")))
+                (test-pi:ui-request "w2" "setWidget" '("widgetKey" . "foot") '("widgetLines" . #("below"))
+                                    '("widgetPlacement" . "belowEditor"))
+                (test-pi:ui-request "w3" "setWidget" '("widgetKey" . "gone") '("widgetLines" . #("x")))
+                (test-pi:ui-request "w4" "setWidget" '("widgetKey" . "gone"))
+                (test-pi:ui-request "t1" "setTitle" '("title" . "pi - x")))
+  (pi-test:barrier f)
+  (check-equal? '(("pool" . "3 pool(s)")) (pi:chat-statuses chat))
+  (check-equal? '((#t "plan" above ("Step 1" "Step 2")) (#t "foot" below ("below")))
+    (map (lambda (w) (list (pi:widget? w) (pi:widget-key w) (pi:widget-placement w) (pi:widget-lines w))) (pi:chat-widgets chat))))
+
+(test "a widget keeps no machine data, a name in capitals, a colon and a JSON object or array; one of only that goes"
+  (test-pi:say! f (test-pi:ui-request "w5" "setWidget" '("widgetKey" . "subagent-async")
+                    '("widgetLines" . #("PI_SUBAGENT_ASYNC_JSON:{\"kind\":\"pi-subagents.async-status-snapshot\",\"version\":1,\"runs\":[{\"id\":\"a1b2c3\",\"children\":[{\"id\":\"step:0\"}]}]}")))
+                (test-pi:ui-request "w6" "setWidget" '("widgetKey" . "mixed") '("widgetLines" . #("Running 1 run" "RUN_2:[1, 2]" "done")))
+                (test-pi:ui-request "w7" "setWidget" '("widgetKey" . "named")
+                  '("widgetLines" . #("NOTE: {not json}" "TODO:" "COUNT:3" "Note:{\"a\": 1}" "X:{\"a\": 1} trailing")))
+                (test-pi:ui-request "w8" "setWidget" '("widgetKey" . "bare") '("widgetLines" . #("{\"a\": 1}" "[1]"))))
+  (pi-test:barrier f)
+  (check-equal? '(("plan" ("Step 1" "Step 2")) ("foot" ("below")) ("mixed" ("Running 1 run" "done"))
+                  ("named" ("NOTE: {not json}" "TODO:" "COUNT:3" "Note:{\"a\": 1}" "X:{\"a\": 1} trailing"))
+                  ("bare" ("{\"a\": 1}" "[1]")))
+    (map (lambda (w) (list (pi:widget-key w) (pi:widget-lines w))) (pi:chat-widgets chat)))
+  (test-pi:say! f (test-pi:ui-request "w9" "setWidget" '("widgetKey" . "mixed") '("widgetLines" . #("RUN_2:[3]"))))
+  (pi-test:barrier f)
+  (check-equal? '("plan" "foot" "named" "bare") (map pi:widget-key (pi:chat-widgets chat))))
+
+(test "an extension that sets the editor's text calls pi:editor-text-requested"
+  (test-pi:say! f (test-pi:ui-request "e1" "set_editor_text" '("text" . "/review")))
+  (pi-test:barrier f)
+  (check-equal? '("/review") (pi-test:editor-texts)))
+
+(test "a question gone at its deadline stays gone when pi loads again and replays its request, as does one whose deadline passed while pi was off"
+  (test-pi:say! f (test-pi:ui-request "d6" "confirm" '("title" . "Soon?") '("timeout" . 300)))
+  (test-runner:wait-until (lambda () (= 1 (length (pi:chat-dialogs chat)))))
+  (let ([deadline (pi:dialog-deadline (car (pi:chat-dialogs chat)))])
+    (unload-owner! (module-owner '(pi)))
+    (test-runner:wait-until (lambda () (time>? (current-time 'time-utc) deadline))))
+  (load-module! '(pi))
+  (load-module! '(pi-test))
+  (let ([chat (car (pi:chats))])
+    (pi-test:idle chat)
+    (pi-test:barrier (pi-test:fake chat))
+    (check-equal? '() (pi:chat-dialogs chat))))
