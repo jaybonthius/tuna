@@ -1,0 +1,137 @@
+(import (tuna) (test) (test-user) (layout) (layout-split) (views) (buffers) (commands)
+        (layout-test parts))
+
+(define atom layout-test/parts:atom)
+(define name-of layout-test/parts:name-of)
+(define shown layout-test/parts:selected-name)
+
+(define (named name) (buffers:make (buffers:free-name name) (string-append name "\n")))
+
+(define (user-buffers) (remp (lambda (b) (buffers:internal-name? (buffers:name b))) (buffers:all)))
+
+(define (kill-all-but! keep)
+  (for-each (lambda (b) (unless (memq b keep) (buffers:kill! b))) (user-buffers)))
+
+(define (alone! v)
+  (layout-test/parts:set-parts! (atom v))
+  (layout:select! v))
+
+(test "C-x <left> and C-x <right> step through the selected view's buffer history, a count that many times, and move no buffer in the buffer list"
+  (let ([one (named "one")] [two (named "two")] [three (named "three")])
+    (alone! (views:make one))
+    (layout:switch-to-buffer two)
+    (layout:switch-to-buffer three)
+    (test-user:press! "C-x <left>")
+    (check-equal? (buffers:name two) (shown))
+    (test-user:press! "C-x <left>")
+    (check-equal? (buffers:name one) (shown))
+    (test-user:press! "C-x <right>")
+    (check-equal? (buffers:name two) (shown))
+    (test-user:press! "C-x C-<right>")
+    (check-equal? (buffers:name three) (shown))
+    (test-user:press! "C-u 2 C-x <left>")
+    (check-equal? (buffers:name one) (shown))
+    (check-equal? (list three two) (list-head (user-buffers) 2))))
+
+(test "with nothing to step to they say so, and they refuse a locked view"
+  (let ([lonely (named "lonely")])
+    (alone! (views:make lonely))
+    (kill-all-but! (list lonely))
+    (check-raises (layout-test/parts:raised-with 'layout:previous-buffer "No previous buffer") (layout:previous-buffer 1))
+    (check-raises (layout-test/parts:raised-with 'layout:next-buffer "No next buffer") (layout:next-buffer 1))
+    (let ([echo (layout-test/parts:place-echo! (named "*Echo*"))])
+      (layout:select! echo)
+      (check-raises (layout-test/parts:raised-with 'layout:previous-buffer "a locked part") (layout:previous-buffer 1))
+      (check-raises (layout-test/parts:raised-with 'layout:bury-buffer "a locked part") (layout:bury-buffer)))))
+
+(test "q in a view no display made buries its buffer: it goes to the back of the buffer list and the view shows its previous buffer"
+  (let ([lonely (named "lonely")] [four (named "four")] [five (named "five")])
+    (alone! (views:make lonely))
+    (kill-all-but! (list lonely four five))
+    (layout:switch-to-buffer four)
+    (layout:switch-to-buffer five)
+    (commands:run layout:quit-view)
+    (check-equal? (buffers:name four) (shown))
+    (check (eq? five (car (last-pair (user-buffers)))))
+    (commands:run layout:bury-buffer)
+    (check-equal? (buffers:name lonely) (shown))
+    (kill-all-but! (list lonely))
+    (check-equal? '((layout:quit-view "no other buffer to show"))
+                  (layout-test/parts:refusals-during (lambda () (commands:run layout:quit-view))))
+    (check-equal? (buffers:name lonely) (shown))
+    (check-equal? '((layout:bury-buffer "no other buffer to show"))
+                  (layout-test/parts:refusals-during (lambda () (commands:run layout:bury-buffer))))))
+
+(define (in-selected b) (let ([v (layout:selected-view)]) (views:set-buffer! v b) v))
+
+(define (start-notes!)
+  (let* ([notes (buffers:make (buffers:free-name "notes") "one\ntwo\n")] [v (views:make notes)])
+    (alone! v)
+    (values notes v)))
+
+(test "q undoes a display that made the view's part: it deletes the part"
+  (let-values ([(notes v) (start-notes!)])
+    (let ([below (layout:display-buffer (named "*Pager*") layout-split:display-below)])
+      (layout:select! below)
+      (commands:run layout:quit-view)
+      (check-equal? (list v) (layout:views))
+      (check (eq? v (layout:selected-view))))))
+
+(test "q undoes a display that changed the view's buffer: the view shows its buffer before at its point, and a second display there keeps the record"
+  (let-values ([(notes v) (start-notes!)])
+    (views:set-point! v 5)
+    (let ([mail (named "mail")])
+      (check (eq? v (layout:display-buffer mail in-selected)))
+      (check (eq? v (layout:display-buffer mail in-selected)))
+      (commands:run layout:quit-view)
+      (check-equal? (list (buffers:name notes) 5) (list (shown) (views:point v))))))
+
+(test "a quit with no record of a display that made the part buries the buffer, and a buried buffer is the last the buffer list offers"
+  (let-values ([(notes v) (start-notes!)])
+    (let ([pager (named "*Pager*")] [mail (named "mail")])
+      (layout:switch-to-buffer pager)
+      (layout:switch-to-buffer notes)
+      (let ([right (layout:display-buffer (named "other") layout-split:display-right)])
+        (views:set-point! v 3)
+        (layout:display-buffer mail in-selected)
+        (commands:run layout:quit-view)
+        (check-equal? (list (buffers:name notes) 3) (list (shown) (views:point v)))
+        (check (eq? mail (car (last-pair (user-buffers)))))
+        (commands:run layout:quit-view)
+        (check-equal? (buffers:name pager) (shown))
+        (check (eq? v (layout:selected-view)))
+        (check-equal? (list v right) (layout:views))))))
+
+(test "a display's record no longer counts once the view shows another buffer; with nothing else to show, q deletes the part when it can go"
+  (let-values ([(notes v) (start-notes!)])
+    (let* ([right (layout:display-buffer (named "other") layout-split:display-right)] [mail (named "mail")])
+      (layout:select! right)
+      (layout:display-buffer mail in-selected)
+      (views:set-buffer! right notes)
+      (commands:run layout:quit-view)
+      (check-equal? (buffers:name mail) (name-of right))
+      (kill-all-but! (list (views:buffer right)))
+      (commands:run layout:quit-view)
+      (check-equal? (list v) (layout:views))
+      (check (eq? v (layout:selected-view))))))
+
+(test "q never deletes a locked part"
+  (let-values ([(notes v) (start-notes!)])
+    (let ([echo (layout-test/parts:place-echo! (named "*Echo*"))])
+      (layout:select! echo)
+      (check-equal? '((layout:quit-view "a locked part"))
+                    (layout-test/parts:refusals-during (lambda () (commands:run layout:quit-view))))
+      (check-equal? (list v echo) (layout:views)))))
+
+(test "C-x 4 0 kills the buffer and deletes the view; in the last view of its level the buffer is killed and the deletion refused"
+  (let* ([one (views:make (named "one"))] [four (views:make (named "four"))] [four-buffer (views:buffer four)]
+         [one-buffer (views:buffer one)])
+    (layout-test/parts:set-parts! (layout-split:container '((direction . row)) (atom one) (atom four)))
+    (layout:select! four)
+    (test-user:press! "C-x 4 0")
+    (check-equal? (list one) (layout:views))
+    (check (not (buffers:live? four-buffer)))
+    (check-equal? '((layout:delete-part! "the last view of its level"))
+                  (layout-test/parts:refusals-during (lambda () (commands:run layout:kill-buffer-and-view))))
+    (check (not (buffers:live? one-buffer)))
+    (check-equal? (list one) (layout:views))))
