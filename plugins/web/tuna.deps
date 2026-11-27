@@ -12,11 +12,11 @@
   (build))
 (library chez-haml
   (git "https://github.com/jaybonthius/chez-haml.git")
-  (commit "9fa69ebbf4aea9f7dd078e846f52d8cfa9172c3b")
+  (commit "2dcde95b747ad3e011ae1ed60c7cadfff9b24ade")
   (library-directories ("src" . "build/obj/src"))
   (build))
 (library chez-datastar
   (git "https://github.com/jaybonthius/chez-datastar.git")
-  (commit "33086c0207efdeff00a8ff3c4254f3c75d48fd73")
+  (commit "af3efa3d6ce71f6a4bc21b348c8bf88e8f2982fa")
   (library-directories ("src" . "build/obj/src"))
   (build))

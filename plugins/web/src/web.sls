@@ -6,9 +6,10 @@
 ;; The server's threads run this code, so none of it may be a top-level
 ;; definition, which can change under a running thread.
 (module %internals
-  (client-record? connected-clients give-screen! call-page ask-and-wait start-server! restart-server!
+  (client-record? code-client? connected-clients give-screen! call-page ask-and-wait start-server! restart-server!
    stop-server! allow-hosts! refresh-head-files! refresh-upload-handlers! post-start! release-first-screens!
-   home-path? valid-name?)
+   home-path? valid-name? on-main-thread? open-code-client! post-code-input! close-code-client! close-owner-clients!
+   wait-until-applied listening-url as-page-would)
 
   (define main-thread (get-thread-id))
   (define lock (make-mutex))
@@ -29,16 +30,30 @@
   ;; know, after the page's stream was opened again.
   (define-record-type (client make-client client-record?)
     (sealed #t)
-    (fields id number pending (mutable next) (mutable removed?) (mutable stream)
+    (fields id number code pending (mutable next) (mutable removed?) (mutable stream)
             (mutable through) (mutable removal-timer)
             (mutable last) (mutable count) (mutable in-flight) (mutable sent-at) (mutable unconfirmed)
             (mutable waiting) (mutable calls) (mutable links) (mutable scripts-version) (mutable title) (mutable first)
-            (mutable asks) (mutable held) (mutable deferred) (mutable item-tasks) (mutable quit-cancelled))
+            (mutable asks) (mutable held) (mutable deferred) (mutable item-tasks) (mutable quit-cancelled)
+            (mutable applied-waiters))
     (protocol
       (lambda (new)
-        (lambda (id number links scripts-version)
-          (new id number (make-eqv-hashtable) 1 #f #f 0 #f #f 0 #f 0 '() #f '() links scripts-version "Tuna" #f
-               '() 0 '() '() #f)))))
+        (lambda (id number code links scripts-version)
+          (new id number code (make-eqv-hashtable) 1 #f #f 0 #f #f 0 #f 0 '() #f '() links scripts-version "Tuna" #f
+               '() 0 '() '() #f '())))))
+
+  (define-record-type code-page
+    (sealed #t)
+    (fields receive-screen receive-call answer owner))
+
+  (define-record-type code-question
+    (sealed #t)
+    (fields id name value))
+
+  (define (code-client? v)
+    (and (client-record? v) (client-code v) #t))
+
+  (define (on-main-thread?) (fx= (get-thread-id) main-thread))
 
   (define-record-type head-file
     (sealed #t)
@@ -49,6 +64,7 @@
   (define clients-by-id (make-hashtable string-hash string=?))
   (define connected '())
   (define opening '())
+  (define code-clients '())
   (define first-screens (make-condition))
   (define added 0)
   (define queued 0)
@@ -61,6 +77,8 @@
   (define allowed '())
   (define proxy-secret #f)
   (define reported-types '())
+  (define listening-port #f)
+  (define first-free-port 7337)
 
   (define stylesheet-entries '())
   (define script-entries '())
@@ -134,7 +152,8 @@
 
   ;; A client whose page waits for its first screen is drawn too.
   (define (connected-clients)
-    (with-lock (fold-right (lambda (c cs) (if (memq c cs) cs (add-connected-to c cs))) connected opening)))
+    (with-lock
+      (fold-right (lambda (c cs) (if (memq c cs) cs (add-connected-to c cs))) connected (append opening code-clients))))
 
   (define (add-connected-to c cs)
     (cond
@@ -155,10 +174,38 @@
     (hashtable-delete! clients-by-id (client-id c))
     (set! connected (remq c connected))
     (set! opening (remq c opening))
+    (set! code-clients (remq c code-clients))
     (let ([stream (client-stream c)])
       (when stream
         (client-stream-set! c #f)
-        (enqueue! (lambda () (reload-page stream))))))
+        (enqueue! (lambda () (reload-page stream)))))
+    (wake-applied! c))
+
+  ;; Caller holds the lock. A page without a stream applies nothing until
+  ;; a later screen, so a closed stream ends the wait too.
+  (define (unapplied? c)
+    (and (not (client-removed? c)) (client-stream c) (or (client-in-flight c) (client-waiting c)) #t))
+
+  ;; Caller holds the lock.
+  (define (wake-applied! c)
+    (unless (unapplied? c)
+      (let ([waiters (client-applied-waiters c)])
+        (client-applied-waiters-set! c '())
+        (for-each (lambda (resume) (resume void)) waiters))))
+
+  (define (wait-until-applied c)
+    (suspend
+      (lambda (resume)
+        (unless (with-lock
+                  (and (unapplied? c)
+                       (begin (client-applied-waiters-set! c (cons resume (client-applied-waiters c))) #t)))
+          (resume void)))))
+
+  ;; Caller holds the lock.
+  (define (take-question! id c)
+    (let ([e (hashtable-ref questions id #f)])
+      (and e (eq? (car e) c)
+           (begin (hashtable-delete! questions id) (cdr e)))))
 
   (define (forget-client! c)
     (let ([timer (client-removal-timer c)])
@@ -176,24 +223,33 @@
   ;; quits: a page resends an item whose post failed, though Tuna may have
   ;; received it.
   (define (admit! c seq item)
-    (with-lock
-      (let ([pending (client-pending c)])
-        (cond
-          [(or (client-removed? c) (fx< seq (client-next c)) (hashtable-contains? pending seq)) #f]
-          [else
-           (when (eq? (field item "quit") #t)
-             (quit-item-task! c))
-           (hashtable-set! pending seq item)
-           (let loop ()
-             (let* ([n (client-next c)] [next (hashtable-ref pending n #f)])
-               (when next
-                 (hashtable-delete! pending n)
-                 (client-next-set! c (fx+ n 1))
-                 (set! queued (fx+ queued 1))
-                 (post-item c (lambda () (run-item c n next)))
-                 (loop))))
-           (and (fx>= (hashtable-size pending) max-held-items)
-                (begin (remove-client! c) #t))]))))
+    (with-lock (admit-held! c seq item)))
+
+  ;; Caller holds the lock.
+  (define (admit-held! c seq item)
+    (let ([pending (client-pending c)])
+      (cond
+        [(or (client-removed? c) (fx< seq (client-next c)) (hashtable-contains? pending seq)) #f]
+        [else
+         (when (eq? (field item "quit") #t)
+           (quit-item-task! c))
+         (hashtable-set! pending seq item)
+         (let loop ()
+           (let* ([n (client-next c)] [next (hashtable-ref pending n #f)])
+             (when next
+               (hashtable-delete! pending n)
+               (client-next-set! c (fx+ n 1))
+               (set! queued (fx+ queued 1))
+               (post-item c (lambda () (run-item c n next)))
+               (loop))))
+         (and (fx>= (hashtable-size pending) max-held-items)
+              (begin (remove-client! c) #t))])))
+
+  (define (post-code-input! c item)
+    (unless (with-lock
+              (and (not (client-removed? c))
+                   (begin (admit-held! c (client-next c) item) #t)))
+      (assertion-violation 'web:post-input! "a closed client" c)))
 
   ;; While a command waits for its page's answer, the client's later
   ;; items wait too, so they act on what the command made of the answer;
@@ -239,16 +295,18 @@
   ;; answers about what the asking command has done so far.
   (define (ask-and-wait c name value)
     (let* ([id (begin (set! last-question (fx+ last-question 1)) last-question)]
-           [script (format "tuna.ask(~a, ~s, ~a)" id name (parameterize ([json-escape-html? #t]) (json->string value)))])
+           [ask (if (client-code c)
+                    (make-code-question id name value)
+                    (format "tuna.ask(~a, ~s, ~a)" id name (parameterize ([json-escape-html? #t]) (json->string value))))])
       (client-held-set! c (fx+ (client-held c) 1))
       (guard (e [#t (with-lock (hashtable-delete! questions id)) (release-deferred! c) (raise e)])
         (let ([answer (suspend
                         (lambda (resume)
                           (unless (with-lock
-                                    (and (client-stream c) (not (client-removed? c))
+                                    (and (or (client-code c) (client-stream c)) (not (client-removed? c))
                                          (begin
                                            (hashtable-set! questions id (cons c resume))
-                                           (client-asks-set! c (append (client-asks c) (list script)))
+                                           (client-asks-set! c (append (client-asks c) (list ask)))
                                            #t)))
                             (resume (lambda () #f)))))])
           (release-deferred! c)
@@ -271,10 +329,7 @@
       (when (pair? item)
         (let ([id (field item "id")] [c (with-lock (client-with-id (field item "client")))])
           (when (and c (fixnum? id))
-            (let ([resume (with-lock
-                            (let ([e (hashtable-ref questions id #f)])
-                              (and e (eq? (car e) c)
-                                   (begin (hashtable-delete! questions id) (cdr e)))))])
+            (let ([resume (with-lock (take-question! id c))])
               (when resume
                 (let ([value (let ([p (assoc "value" item)]) (if p (cdr p) 'null))])
                   (resume (lambda () value)))))))))
@@ -404,7 +459,7 @@
     (let ([size (event-size content)])
       (client-waiting-set! c #f)
       (if (fx> size stream-limit)
-          (too-large c size)
+          (begin (too-large c size) (wake-applied! c))
           (let ([n (fx+ (client-count c) 1)] [stream (client-stream c)] [calls (reverse (client-calls c))])
             (client-count-set! c n)
             (client-in-flight-set! c n)
@@ -418,7 +473,51 @@
                   (stream-failed c))
                 (for-each (lambda (script) (execute-script stream script)) calls)))))))
 
+  ;; The raise may come inside another plugin's draw or command, so the
+  ;; removal hook runs in a task of its own. A cancel is its caller's.
+  (define (call-code-page c procedure . arguments)
+    (let ([owner (code-page-owner (client-code c))])
+      (guard (e [(not (cancelled? e))
+                 (unless (and (unloaded? e) (eq? (unloaded-owner e) owner))
+                   (report e))
+                 (when (with-lock (and (not (client-removed? c)) (begin (remove-client! c) #t)))
+                   (post-as-web (lambda () (forget-client! c))))
+                 #f])
+        (call-as-owner owner (lambda () (apply procedure c arguments))))))
+
+  ;; Values cross to a code page and back as JSON, as they would to a
+  ;; browser page, so the code that sent or asked sees none a page could
+  ;; not give.
+  (define (as-page-would value)
+    (string->json (json->string value)))
+
+  ;; A code page applies a screen as it receives it, so none is held back.
+  (define (give-code-screen! c screen title)
+    (let ([content (if (bytevector? screen) screen (html->bytevector screen))])
+      (when (with-lock
+              (let ([last (client-last c)])
+                (and (not (client-removed? c))
+                     (not (and last (bytevector=? content last) (equal? title (client-title c))))
+                     (begin (client-last-set! c content) (client-title-set! c title) #t))))
+        (call-code-page c (code-page-receive-screen (client-code c)) screen title))
+      (let ([asks (with-lock (let ([asks (client-asks c)]) (client-asks-set! c '()) asks))]
+            [answer (code-page-answer (client-code c))])
+        (for-each
+          (lambda (q)
+            (let ([resume (with-lock (take-question! (code-question-id q) c))])
+              (when resume
+                (let ([value (call-code-page c
+                               (lambda (client name value) (as-page-would (answer client name value)))
+                               (code-question-name q) (as-page-would (code-question-value q)))])
+                  (resume (lambda () value))))))
+          asks))))
+
   (define (give-screen! c screen title)
+    (if (client-code c)
+        (give-code-screen! c screen title)
+        (give-page-screen! c screen title)))
+
+  (define (give-page-screen! c screen title)
     (let ([content (if (bytevector? screen) screen (html->bytevector screen))]
           [through (client-through c)]
           [now (real-time)])
@@ -455,18 +554,24 @@
             (client-in-flight-set! c #f)
             (let ([waiting (client-waiting c)])
               (when waiting
-                (dispatch-screen! c (car waiting) (cdr waiting) (real-time))))))))
+                (dispatch-screen! c (car waiting) (cdr waiting) (real-time))))
+            (wake-applied! c)))))
     no-content)
 
   (define (call-page c name value)
-    (let ([script (format "tuna.call(~s, ~a)" name
-                    (parameterize ([json-escape-html? #t]) (json->string value)))])
-      (with-lock
-        (let ([stream (client-stream c)])
-          (when stream
-            (if (client-waiting c)
-                (client-calls-set! c (cons script (client-calls c)))
-                (enqueue! (lambda () (execute-script stream script)))))))))
+    (let ([json (parameterize ([json-escape-html? #t]) (json->string value))])
+      (if (client-code c)
+          (let ([call (lambda ()
+                        (unless (with-lock (client-removed? c))
+                          (call-code-page c (code-page-receive-call (client-code c)) name (string->json json))))])
+            (if (on-main-thread?) (call) (post-as-web call)))
+          (let ([script (format "tuna.call(~s, ~a)" name json)])
+            (with-lock
+              (let ([stream (client-stream c)])
+                (when stream
+                  (if (client-waiting c)
+                      (client-calls-set! c (cons script (client-calls c)))
+                      (enqueue! (lambda () (execute-script stream script)))))))))))
 
   (define (open-stream! c stream)
     (let ([old (client-stream c)])
@@ -483,7 +588,8 @@
     (client-calls-set! c '())
     (unless (memq c connected)
       (set! connected (add-connected-to c connected)))
-    (sync-head! c))
+    (sync-head! c)
+    (wake-applied! c))
 
   (define (stream-closed! c stream)
     (when (with-lock
@@ -493,6 +599,7 @@
                    (client-waiting-set! c #f)
                    (client-calls-set! c '())
                    (set! connected (remq c connected))
+                   (wake-applied! c)
                    #t)))
       (post-as-web (lambda () (schedule-removal! c)))))
 
@@ -783,7 +890,7 @@
         (let* ([id (random-id)]
                [c (with-lock
                     (set! added (fx+ added 1))
-                    (let ([c (make-client id added links scripts-version)])
+                    (let ([c (make-client id added #f links scripts-version)])
                       (hashtable-set! clients-by-id id c)
                       (set! opening (cons c opening))
                       c))])
@@ -839,9 +946,11 @@
   (define (checked handle)
     (handler (lambda (request) (if (allowed? request) (handle request) forbidden))))
 
-  (define (allow-hosts!)
-    (let ([names (cons* (format "127.0.0.1:~a" (port)) (format "localhost:~a" (port))
-                        (map string-downcase (hosts)))])
+  (define (allow-hosts!) (allow-port! listening-port))
+
+  (define (allow-port! p)
+    (let ([names (append (if p (list (format "127.0.0.1:~a" p) (format "localhost:~a" p)) '())
+                         (map string-downcase (hosts)))])
       (with-lock (set! allowed names))))
 
   (define (report-later e)
@@ -917,7 +1026,10 @@
                   (make-message-condition "web:proxy-secret-file is not set, so only 127.0.0.1 is listened on"))))
       (and secret address)))
 
+  ;; The names are allowed before the port is listened on, so the first
+  ;; request finds them.
   (define (listen p addresses)
+    (allow-port! p)
     (start-server
       (map (lambda (address) (http-listener address p)) addresses)
       (list (make-host (list (format "127.0.0.1:~a" p))
@@ -943,20 +1055,34 @@
   (define (current-settings) (list (port) (listen-also) (proxy-secret-file)))
 
   ;; An address that cannot be listened on, such as a proxy network not up
-  ;; yet, leaves Tuna on 127.0.0.1 rather than nowhere.
+  ;; yet, leaves Tuna on 127.0.0.1 rather than nowhere; it is reported
+  ;; only then, since a port in use fails both.
+  (define (listen-at p also)
+    (if also
+        (guard (e [(not (cancelled? e))
+                   (let ([s (listen p '("127.0.0.1"))])
+                     (report e)
+                     s)])
+          (listen p (list "127.0.0.1" also)))
+        (listen p '("127.0.0.1"))))
+
+  ;; A bind fails at once on a port another process holds, so Tunas that
+  ;; start together each get a port of their own.
+  (define (listen-free also)
+    (let loop ([p first-free-port])
+      (let ([s (guard (e [(and (error? e) (fx< p 65535)) #f]) (listen-at p also))])
+        (if s (values s p) (loop (fx+ p 1))))))
+
   (define (start-server!)
     (set! started? #t)
-    (let ([p (port)] [also (proxy-address)] [me (list 'sender)])
-      (allow-hosts!)
-      (set! server
-        (if also
-            (guard (e [(not (cancelled? e)) (report e) (listen p '("127.0.0.1"))])
-              (listen p (list "127.0.0.1" also)))
-            (listen p '("127.0.0.1"))))
+    (let ([also (proxy-address)] [me (list 'sender)])
+      (let-values ([(s p) (if (port) (values (listen-at (port) also) (port)) (listen-free also))])
+        (set! server s)
+        (set! listening-port p))
       (set! server-settings (current-settings))
       (with-lock (set! sender me))
       (fork-task (lambda (restore) (send-loop me)))
-      (printf "Tuna is at http://127.0.0.1:~a/\n" p)
+      (printf "Tuna is at ~a\n" (listening-url))
       (flush-output-port (current-output-port))))
 
   (define (stop-server!)
@@ -965,6 +1091,7 @@
       (condition-broadcast wake))
     (let ([s server])
       (set! server #f)
+      (set! listening-port #f)
       (when s (server-stop! s))))
 
   ;; Taking back a setting, as at exit or when the configuration is
@@ -997,13 +1124,36 @@
       added-now)
     (set! added-now '()))
 
+  ;; A code page's client is in no table a request reads, so no request
+  ;; can reach it.
+  (define (open-code-client! receive-screen receive-call answer)
+    (let ([c (with-lock
+               (set! added (fx+ added 1))
+               (let ([c (make-client (format "code-~a" added) added
+                          (make-code-page receive-screen receive-call answer (current-owner)) '() 0)])
+                 (set! code-clients (cons c code-clients))
+                 c))])
+      (client-added c)
+      c))
+
+  (define (close-code-client! c)
+    (when (with-lock (and (not (client-removed? c)) (begin (remove-client! c) #t)))
+      (forget-client! c)))
+
+  (define (close-owner-clients! owner)
+    (for-each close-code-client!
+      (with-lock (filter (lambda (c) (eq? (code-page-owner (client-code c)) owner)) code-clients))))
+
+  (define (listening-url)
+    (and listening-port (format "http://127.0.0.1:~a/" listening-port)))
+
   (record-writer (record-type-descriptor client)
     (lambda (c p wr) (fprintf p "#<client ~a>" (client-number c)))))
 
 (import %internals)
 
-(options:define-option port 7337 (lambda (v) (and (fixnum? v) (fx<= 1 v 65535)))
-  "The port Tuna listens on, on 127.0.0.1 and on web:listen-also."
+(options:define-option port #f (lambda (v) (or (not v) (and (fixnum? v) (fx<= 1 v 65535))))
+  "The port Tuna listens on, on 127.0.0.1 and on web:listen-also; #f for 7337 or the next free port above it."
   (lambda (v) (restart-server!)))
 
 (options:define-option hosts '() (lambda (v) (and (list? v) (for-all string? v)))
@@ -1023,7 +1173,7 @@
   "The file, of mode 600, whose text a request from a peer other than 127.0.0.1 or ::1 must give as Tuna-Proxy-Secret."
   (lambda (v) (restart-server!)))
 
-(hooks:define-hook client-added "Called with a client when its page is served.")
+(hooks:define-hook client-added "Called with a client when its page is served or it is opened.")
 
 (hooks:define-hook client-removed "Called with a client that has been removed.")
 
@@ -1078,6 +1228,44 @@
   (guard (e [(json-error? e) (assertion-violation 'web:ask-page "(json) cannot write it" value)])
     (json->string value))
   (ask-and-wait client name value))
+
+(define (open-client receive-screen receive-call answer)
+  (unless (on-main-thread?)
+    (assertion-violation 'web:open-client "not on the main thread"))
+  (for-each
+    (lambda (v)
+      (unless (procedure? v)
+        (assertion-violation 'web:open-client "not a procedure" v)))
+    (list receive-screen receive-call answer))
+  (open-code-client! receive-screen receive-call answer))
+
+(define (post-input! client item)
+  (unless (code-client? client)
+    (assertion-violation 'web:post-input! "not a client web:open-client opened" client))
+  (unless (and (list? item) (for-all (lambda (p) (and (pair? p) (string? (car p)))) item))
+    (assertion-violation 'web:post-input! "not an item" item))
+  (post-code-input! client
+    (guard (e [(json-error? e) (assertion-violation 'web:post-input! "(json) cannot write it" item)])
+      (as-page-would item))))
+
+(define (close-client! client)
+  (unless (code-client? client)
+    (assertion-violation 'web:close-client! "not a client web:open-client opened" client))
+  (unless (on-main-thread?)
+    (assertion-violation 'web:close-client! "not on the main thread"))
+  (close-code-client! client))
+
+(define (wait-for-applied client)
+  (unless (client-record? client)
+    (assertion-violation 'web:wait-for-applied "not a client" client))
+  (wait-until-applied client))
+
+(define (url) (listening-url))
+
+(advice-add! owner-unloading
+  (lambda (next owner)
+    (next owner)
+    (close-owner-clients! owner)))
 
 (advice-add! batch-ended
   (lambda (ended)

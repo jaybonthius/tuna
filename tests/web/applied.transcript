@@ -1,0 +1,42 @@
+Tuna is at http://127.0.0.1:PORT/
+> (http:wait-for-server)
+> (define p (http:page))
+> (http:connect! p)
+> (define c (car (web:clients)))
+> (define (waiter) (spawn-task (lambda (restore) (web:wait-for-applied c))))
+; web:wait-for-applied pauses the calling task until the page has
+; confirmed the screen in flight and the screen waiting behind it.
+> (web:send-screen! c (haml (:p "one")) "Tuna")
+> (http:show (http:next p))
+(screen 1 0 "<p>one</p>")
+> (define w (waiter))
+> (web:send-screen! c (haml (:p "two")) "Tuna")
+> (http:confirm! p 1)
+204
+> (http:show (http:next p))
+(screen 2 0 "<p>two</p>")
+> (task-state w)
+paused
+> (http:confirm! p 2)
+204
+> (testing:wait-until (lambda () (eq? (task-state w) 'done)))
+; With every screen applied, it returns at once.
+> (web:wait-for-applied c)
+; A page whose stream closes applies nothing until a later screen, so the
+; wait ends; so does it when the client is removed.
+> (web:send-screen! c (haml (:p "three")) "Tuna")
+> (http:show (http:next p))
+(screen 3 0 "<p>three</p>")
+> (define w (waiter))
+> (http:close! p)
+> (testing:wait-until (lambda () (eq? (task-state w) 'done)))
+> (http:connect! p)
+> (web:send-screen! c (haml (:p "four")) "Tuna")
+> (cadr (http:take p 2))
+(screen 4 0 "<p>four</p>")
+> (define w (waiter))
+> (http:goodbye! p)
+204
+> (testing:wait-until (lambda () (eq? (task-state w) 'done)))
+> (web:wait-for-applied 'nobody)
+! web:wait-for-applied: not a client with irritant nobody

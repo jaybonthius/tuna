@@ -32,7 +32,7 @@
    current-press make-press current-keys current-shifted current-session current-event make-quit
    running-press session-wrappers session-wrappers-set! press-handed? press-handed?-set! press-wrapped? press-wrapped?-set! press-session
    push-temporary! end-temporary! end-temporaries! end-owned! test-temporaries! quit-paused!
-   set-prefix! prefix-keys push-universal-arguments! give-page-settings!
+   set-prefix! prefix-keys push-universal-arguments! give-page-settings! client-quit-keys
    call-ending-idleness)
 
   (define main-thread (get-thread-id))
@@ -820,15 +820,15 @@
 
   ;; A key typed to a read is data, so a reading client's page marks none
   ;; as a quit.
-  (define (page-quit-keys c)
+  (define (client-quit-keys c)
     (let ([s (eq-hashtable-ref sessions c #f)])
       (if (and s (session-reading s)) '() (quit-keys))))
 
   (define (page-settings c)
-    (vector (page-quit-keys c) (left-option-meta?) (right-option-meta?)))
+    (vector (client-quit-keys c) (left-option-meta?) (right-option-meta?)))
 
   (define (current-settings? c v)
-    (and (eq? (vector-ref v 0) (page-quit-keys c))
+    (and (eq? (vector-ref v 0) (client-quit-keys c))
          (eq? (vector-ref v 1) (left-option-meta?))
          (eq? (vector-ref v 2) (right-option-meta?))))
 
@@ -888,6 +888,14 @@
   (check-keymap 'keys:unbind! keymap)
   (check-sequence 'keys:unbind! keys)
   (tables:remove! keymap keys))
+
+(define (sequence-keys keys)
+  (check-sequence 'keys:sequence-keys keys)
+  (let loop ([i (fx- (string-length keys) 1)] [end (string-length keys)] [found '()])
+    (cond
+      [(fx< i 0) (cons (substring keys 0 end) found)]
+      [(char=? (string-ref keys i) #\space) (loop (fx- i 1) i (cons (substring keys (fx+ i 1) end) found))]
+      [else (loop (fx- i 1) end found)])))
 
 (define (remap! keymap command replacement)
   (check-main-thread 'keys:remap!)
@@ -1164,6 +1172,12 @@
        (lambda ()
          (check-main-thread 'keys:push-keymap!)
          (end-temporary! t)))]))
+
+(define (page-quit-keys client)
+  (check-main-thread 'keys:page-quit-keys)
+  (unless (web:client? client)
+    (assertion-violation 'keys:page-quit-keys "not a client" client))
+  (client-quit-keys client))
 
 (define (item-key item)
   (unless (and (list? item) (for-all pair? item))

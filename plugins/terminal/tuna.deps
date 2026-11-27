@@ -1,6 +1,6 @@
 (library chez-haml
   (git "https://github.com/jaybonthius/chez-haml.git")
-  (commit "9fa69ebbf4aea9f7dd078e846f52d8cfa9172c3b")
+  (commit "2dcde95b747ad3e011ae1ed60c7cadfff9b24ade")
   (library-directories ("src" . "build/obj/src"))
   (build))
 ;; Chez looks for the build/config.ss that (ghostty ffi) includes in the
