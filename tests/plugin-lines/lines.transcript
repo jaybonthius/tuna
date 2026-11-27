@@ -28,7 +28,7 @@
 > (import (uses))
 ! attempt to reference unbound identifier use-plugin at line 3, char 2 of $HOME/.config/tuna/lib/uses.sls
 > (use-plugin plain (local "~/src/plain"))
-! attempt to reference unbound identifier plugin at line 4, char 2 of $HOME/src/plain/plain.sls
+! attempt to reference unbound identifier plugin at line 4, char 2 of $HOME/src/plain/src/plain.sls
 > (plugin compat (git "https://github.com/bob/compat"))
 ! plugin: a plugin line outside an index's main module (plugin compat (git "https://github.com/bob/compat"))
 > (import (only integration))
@@ -56,7 +56,7 @@
 ; folder.
 > (plugins:remove! 'other)
 ! use-plugin: a second line for consult
-> (list (memq 'other (plugins:installed)) (file-exists? "~/src/other/other.sls"))
+> (list (memq 'other (plugins:installed)) (file-exists? "~/src/other/src/other.sls"))
 (#f #t)
 > (other:name)
 ! other:name: module (other) is unloaded

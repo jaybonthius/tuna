@@ -3,7 +3,7 @@
 > (list (spell:dictionary-path) (spell:language))
 ("/home/groucho/words" "en-GB")
 > (plugins:commit 'spell)
-"3fd4dae9f9a717a04e239684e7402419d6a26e0d"
+"7de8adec6864dc138d3001a19ad33c5a396706b6"
 > (definition-changes spell:dictionary-path)
 ((#<owner (init) 1> override #f) (#<owner (spell) 1> define #f))
 > (options:settings spell:language)

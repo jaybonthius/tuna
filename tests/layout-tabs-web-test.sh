@@ -20,7 +20,7 @@ cat > "$home/init.ss" <<'END'
     (and (= (http:status r) 200)
          (equal? (http:header r "content-type") "text/css; charset=utf-8")
          (string=? (http:body r)
-                   (call-with-input-file (string-append (getenv "TUNA_LIBRARY") "/" file) get-string-all)))))
+                   (call-with-input-file (string-append (getenv "TUNA_LIBRARY") "/" (path-first file) "/src/" file) get-string-all)))))
 END
 
 cat > "$dir/layout-tabs-web/pages.transcript" <<'END'

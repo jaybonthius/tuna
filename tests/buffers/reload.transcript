@@ -6,7 +6,7 @@
 > (buffers:add-span! (buffers:layer b hl) 1 3 'x)
 > (define a (buffers:anchor b 3))
 > (define e (buffers:replace! b 1 1 "q"))
-> (define path (string-append (getenv "TUNA_LIBRARY") "/buffers.sls"))
+> (define path (string-append (getenv "TUNA_LIBRARY") "/buffers/src/buffers.sls"))
 > (let ([p (open-file-output-port path (file-options no-fail no-truncate) (buffer-mode block) (native-transcoder))])
     (set-port-position! p (port-length p))
     (put-string p "\n(define (extra) 1)\n")

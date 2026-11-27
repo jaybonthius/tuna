@@ -2,7 +2,7 @@ SCHEME ?= /usr/lib/csv10.4.1/ta6le/scheme
 CHEZ_DIR := $(patsubst %/,%,$(dir $(SCHEME)))
 OBJ := build/obj
 LIBDIRS := src::$(OBJ)/src:lib/chez-lang/src::$(OBJ)/lib/chez-lang/src
-TEST_LIBDIRS := $(LIBDIRS):start::$(OBJ)/start:tests/lib::$(OBJ)/tests/lib
+TEST_LIBDIRS := $(LIBDIRS):start/src::$(OBJ)/start/src:tests/lib::$(OBJ)/tests/lib
 TEST_TIMEOUT ?= 60
 BROWSER_TEST_TIMEOUT ?= 300
 TESTS := $(sort $(wildcard tests/*-test.sps))
@@ -38,8 +38,8 @@ $(TRANSCRIPTS:%=run/%): run/%: exe
 # pins, built from the copy chez-treesitter vendors, so no test fetches it.
 PYTHON_GRAMMAR := build/test-grammars/libtree-sitter-python-293fdc02038e.so
 
-$(PYTHON_GRAMMAR):
-	sh tests/build-grammar.sh libraries/chez-treesitter/vendor/tree-sitter-python \
+$(PYTHON_GRAMMAR): | exe
+	sh tests/build-grammar.sh build/bin/libraries/chez-treesitter/vendor/tree-sitter-python \
 	  293fdc02038ee2bf0e2e206711b69c90ac0d413f $@
 
 $(filter run/tests/treesit-highlight/% run/tests/treesit/%,$(TRANSCRIPTS:%=run/%)) run/tests/faces-browser-test.sh: $(PYTHON_GRAMMAR)
@@ -48,21 +48,19 @@ repl: build
 	$(SCHEME) --libdirs $(LIBDIRS) --compile-imported-libraries
 
 # One file, so running Tuna needs no Chez installation. Tuna's own
-# library goes beside it as source, since a module is unloaded, reloaded
-# and evaluated from its file.
+# plugins go beside it as source, since a module is unloaded, reloaded
+# and evaluated from its file. build/bin/libraries is kept, since
+# building H2O and libghostty again takes minutes.
 exe: build
 	mkdir -p build/boot/fasl $(OBJ)/boot build/bin
 	$(SCHEME) -q --script boot/make-boot.ss $(CHEZ_DIR)
 	cd build/boot && ld -r -b binary -z noexecstack -o boot-files.o petite.boot scheme.boot tuna.boot
 	cc -O2 -I$(CHEZ_DIR) -o build/bin/tuna boot/main.c build/boot/boot-files.o \
 	  $(CHEZ_DIR)/libkernel.a $(CHEZ_DIR)/liblz4.a $(CHEZ_DIR)/libz.a -lm -ltinfo
-	rm -rf build/bin/start build/bin/start-cache build/bin/plugins build/bin/plugins-cache build/bin/libraries
-	cp -R start build/bin/start
-	sh boot/copy-library.sh plugins build/bin/plugins
-	sh boot/copy-library.sh libraries build/bin/libraries
+	rm -rf build/bin/start build/bin/start-cache build/bin/plugins build/bin/plugins-cache
+	cp -R start/src build/bin/start
+	cp -R plugins build/bin/plugins
 	sh boot/build-plugins.sh build/bin/tuna
 
-# Tuna's build writes into its libraries' checkouts, beside their sources.
 clean:
 	rm -rf build
-	for library in libraries/*/; do git -C "$$library" clean -fdxq; done

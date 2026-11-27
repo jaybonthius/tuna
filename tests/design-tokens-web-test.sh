@@ -21,7 +21,7 @@ cat > "$home/init.ss" <<'END'
     (and (= (http:status r) 200)
          (equal? (http:header r "content-type") "font/woff2")
          (equal? (http:response-body r)
-                 (call-with-port (open-file-input-port (string-append (getenv "TUNA_LIBRARY") "/design-tokens/fonts/" file))
+                 (call-with-port (open-file-input-port (string-append (getenv "TUNA_LIBRARY") "/design-tokens/src/design-tokens/fonts/" file))
                    get-bytevector-all)))))
 (define (page-has? text)
   (let ([page (http:body (http:get "/"))])
@@ -33,7 +33,7 @@ cat > "$home/init.ss" <<'END'
     (and (= (http:status r) 200)
          (equal? (http:header r "content-type") "text/css; charset=utf-8")
          (string=? (http:body r)
-                   (call-with-input-file (string-append (getenv "TUNA_LIBRARY") "/" file) get-string-all)))))
+                   (call-with-input-file (string-append (getenv "TUNA_LIBRARY") "/" (path-first file) "/src/" file) get-string-all)))))
 END
 cat > "$home/lib/dusk.sls" <<'END'
 #!tuna

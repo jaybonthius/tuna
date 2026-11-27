@@ -51,6 +51,6 @@
 (16 22 #((16 17 ((face . variable.definition))) (20 21 ((face . number)))))
 ; The ancestor and parent predicates read one walk of the queried range,
 ; never tree-sitter's parent of a node, which descends from the root.
-> (let ([form (call-with-input-file (string-append library "/treesit/highlight.sls") read)])
+> (let ([form (call-with-input-file (string-append library "/treesit/src/treesit/highlight.sls") read)])
     (assoc 'import (cdddr form)))
 (import (chezscheme) (document) (except (tree-sitter) node-parent))

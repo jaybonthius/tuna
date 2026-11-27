@@ -1,6 +1,6 @@
 ; lib/'s shadowed replaces the installed plugin's, which is reported at
 ; start.
-! import: (shadowed) in lib/ replaces $HOME/.local/share/tuna/plugins/shadowed/shadowed.sls
+! import: (shadowed) in lib/ replaces $HOME/.local/share/tuna/plugins/shadowed/src/shadowed.sls
 ; A module may define a name #!tuna provides; its own code means its own
 ; definition, and other code sees the prefixed name.
 > (import (lists))

@@ -21,8 +21,8 @@ fail() {
   failures=$((failures + 1))
 }
 
-mkdir -p "$dir/home/.config/tuna" "$dir/plugin" "$dir/work"
-cat > "$dir/plugin/markdown-shell.sls" <<'END'
+mkdir -p "$dir/home/.config/tuna" "$dir/plugin/src" "$dir/work"
+cat > "$dir/plugin/src/markdown-shell.sls" <<'END'
 #!tuna
 (import (md4c) (process) (djot))
 

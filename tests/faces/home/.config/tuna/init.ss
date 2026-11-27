@@ -17,8 +17,12 @@
 
 (import (console))
 
+(define (own-path name)
+  (let ([plugin (if (string=? (path-first name) "") (path-root name) (path-first name))])
+    (string-append (getenv "TUNA_LIBRARY") "/" plugin "/src/" name)))
+
 (define (library-file name)
-  (call-with-input-file (string-append (getenv "TUNA_LIBRARY") "/" name) get-string-all))
+  (call-with-input-file (own-path name) get-string-all))
 
 (define (without-comments s)
   (let loop ([from 0] [acc '()])
@@ -82,10 +86,10 @@
     (list-sort string<?
       (apply append
         (map (lambda (folder)
-               (if (file-directory? (string-append library "/" folder))
+               (if (file-directory? (string-append library "/" folder "/src/" folder))
                    (map (lambda (f) (string-append folder "/" f))
                         (filter (lambda (f) (let ([n (string-length f)]) (and (> n 4) (string=? (substring f (- n 4) n) ".css"))))
-                                (directory-list (string-append library "/" folder))))
+                                (directory-list (string-append library "/" folder "/src/" folder))))
                    '()))
              (directory-list library))))))
 

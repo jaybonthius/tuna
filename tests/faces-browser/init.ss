@@ -44,7 +44,7 @@
 ;; does, so the test switches the theme without loading and unloading it.
 (define (theme! on?)
   (if on?
-      (tables:set! web:stylesheets 'theme (string-append (getenv "TUNA_LIBRARY") "/modus/modus.css"))
+      (tables:set! web:stylesheets 'theme (string-append (getenv "TUNA_LIBRARY") "/modus/src/modus/modus.css"))
       (tables:remove! web:stylesheets 'theme)))
 
 (define (user-css! file) (tables:set! web:stylesheets 'user file))

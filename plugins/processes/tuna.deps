@@ -1,0 +1,5 @@
+(library chez-process
+  (git "https://github.com/jaybonthius/chez-process.git")
+  (commit "1d3356c0f82248125ae4771d116f94597046f2df")
+  (library-directories ("src" . "build/obj/src"))
+  (build "make" "build/obj/src/process/libchez-process.so"))

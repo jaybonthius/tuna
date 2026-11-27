@@ -17,13 +17,13 @@
 (import (options) (plugins))
 (import (tuna)) ; spelling below
 (use-plugin spell (git "https://github.com/bob/spell") ; bob's fork
-  (commit "8b4b6539a14d1ff9f6e592427e832cafb7810170")   ; pinned
+  (commit "7aef47d91aac4e80e99afe4724b175c2929d9003")   ; pinned
   (config
     ;; British
     (options:set! spell:language "en-GB")
     (display (list 'config (spell:check "w")))
     (newline)))
-(use-plugin dict (git "https://github.com/bob/dict") (commit "cec7bd830047ec245168f9b553e4309681ec6ac8") ; newest
+(use-plugin dict (git "https://github.com/bob/dict") (commit "970b0a43ee40c28577c410f6df9d800b8872405e") ; newest
   (config (display "[dict config]\n")))
 (import (console))
 ; plugins:remove! comments out the line, config forms and all.
@@ -33,13 +33,13 @@
 (import (options) (plugins))
 (import (tuna)) ; spelling below
 #;(use-plugin spell (git "https://github.com/bob/spell") ; bob's fork
-  (commit "8b4b6539a14d1ff9f6e592427e832cafb7810170")   ; pinned
+  (commit "7aef47d91aac4e80e99afe4724b175c2929d9003")   ; pinned
   (config
     ;; British
     (options:set! spell:language "en-GB")
     (display (list 'config (spell:check "w")))
     (newline)))
-(use-plugin dict (git "https://github.com/bob/dict") (commit "cec7bd830047ec245168f9b553e4309681ec6ac8") ; newest
+(use-plugin dict (git "https://github.com/bob/dict") (commit "970b0a43ee40c28577c410f6df9d800b8872405e") ; newest
   (config (display "[dict config]\n")))
 (import (console))
 > (plugins:installed)

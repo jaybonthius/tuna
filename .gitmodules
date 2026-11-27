@@ -1,38 +1,6 @@
 [submodule "lib/chez-lang"]
 	path = lib/chez-lang
 	url = https://github.com/jaybonthius/chez-lang.git
-[submodule "libraries/chez-h2o"]
-	path = libraries/chez-h2o
-	url = https://github.com/jaybonthius/chez-h2o.git
-	ignore = untracked
-[submodule "libraries/chez-json"]
-	path = libraries/chez-json
-	url = https://github.com/jaybonthius/chez-json.git
-[submodule "libraries/chez-haml"]
-	path = libraries/chez-haml
-	url = https://github.com/jaybonthius/chez-haml.git
-[submodule "libraries/chez-datastar"]
-	path = libraries/chez-datastar
-	url = https://github.com/jaybonthius/chez-datastar.git
-[submodule "libraries/chez-process"]
-	path = libraries/chez-process
-	url = https://github.com/jaybonthius/chez-process.git
-[submodule "libraries/chez-md4c"]
-	path = libraries/chez-md4c
-	url = https://github.com/jaybonthius/chez-md4c.git
-[submodule "libraries/chez-libghostty"]
-	path = libraries/chez-libghostty
-	url = https://github.com/jaybonthius/chez-libghostty.git
-	ignore = untracked
-[submodule "libraries/chez-pcre2"]
-	path = libraries/chez-pcre2
-	url = https://github.com/jaybonthius/chez-pcre2.git
-[submodule "libraries/chez-json-rpc"]
-	path = libraries/chez-json-rpc
-	url = https://github.com/jaybonthius/chez-json-rpc.git
-[submodule "libraries/chez-treesitter"]
-	path = libraries/chez-treesitter
-	url = https://github.com/jaybonthius/chez-treesitter.git
 [submodule "plugins/treesit/nvim-treesitter"]
-	path = plugins/treesit/nvim-treesitter
+	path = plugins/treesit/src/treesit/nvim-treesitter
 	url = https://github.com/nvim-treesitter/nvim-treesitter.git

@@ -44,10 +44,8 @@ async function startTuna() {
   fs.mkdirSync(config, { recursive: true });
   fs.copyFileSync(path.join(here, "init.ss"), path.join(config, "init.ss"));
   makeRepository();
-  // Some plugins build native code beside their sources, which other
-  // tests read from the same build at the same time.
   const library = path.join(home, "library");
-  execFileSync("sh", [path.join(here, "../../boot/copy-library.sh"), path.join(path.dirname(bin), "plugins"), library]);
+  fs.cpSync(path.join(path.dirname(bin), "plugins"), library, { recursive: true });
   const port = await freePort();
   const child = spawn(bin, [`--eval=(options:set! web:port ${port})`],
     { cwd: work, env: { ...gitEnv, TUNA_LIBRARY: library }, stdio: ["pipe", "pipe", "pipe"] });

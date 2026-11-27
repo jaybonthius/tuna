@@ -108,7 +108,7 @@
 ;; cannot import them.
 (parameterize ([library-directories
                 (append (library-directories)
-                        (list (cons "start" (string-append object-root "/start"))
+                        (list (cons "start/src" (string-append object-root "/start/src"))
                               (cons "tests/lib" (string-append object-root "/tests/lib"))))]
                [generate-inspector-information #t])
   (build-each maybe-compile-program

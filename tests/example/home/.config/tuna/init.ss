@@ -1,6 +1,6 @@
 (import (hooks) (options) (tables) (timers) (scopes) (plugins))
 (import (tuna))
-(use-plugin spell (git "https://github.com/bob/spell") (commit "3fd4dae"))
+(use-plugin spell (git "https://github.com/bob/spell") (commit "7de8ade"))
 (use-plugin files)
 (use-plugin fill)
 (use-plugin prog)

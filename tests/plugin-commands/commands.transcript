@@ -1,6 +1,6 @@
 ; The example configuration, with five lines that rely on an index.
 > (plugins:commit 'spell)
-"3fd4dae9f9a717a04e239684e7402419d6a26e0d"
+"7de8adec6864dc138d3001a19ad33c5a396706b6"
 > (consult:buffer)
 "compat buffer"
 ; embark-consult is a folder of embark's repository, at its newest commit.
@@ -24,7 +24,7 @@
 > (display (call-with-input-file "~/.config/tuna/init.ss" get-string-all))
 (import (hooks) (options))
 (import (tuna))
-(use-plugin spell (git "https://github.com/bob/spell") (commit "3fd4dae"))
+(use-plugin spell (git "https://github.com/bob/spell") (commit "7de8ade"))
 (use-plugin files)
 (use-plugin fill)
 (use-plugin prog)
@@ -52,7 +52,7 @@
 (use-plugin consult)
 (use-plugin embark)
 (use-plugin embark-consult)
-(use-plugin vertico (git "https://github.com/minad/vertico") (commit "201f0e3a116cab75bedbdf71c0abca65edac1ec0"))
+(use-plugin vertico (git "https://github.com/minad/vertico") (commit "2fa46991d0a64a6e96da1167f4e3d69eee348e72"))
 (import (console))
 > (list (and (memq 'vertico (plugins:installed)) #t) (module-owner '(vertico)))
 (#t #f)
@@ -74,40 +74,40 @@
 > (plugins:update! 'spell)
 #<owner (spell) 2>
 > (list (spell:dictionary-path) (plugins:commit 'spell))
-("/home/groucho/words" "305eb586f3cff79f16d40237931febb7cfcfd4dc")
+("/home/groucho/words" "ee0a457d7027f96ed2bd871eba5f029c3c474caf")
 > (call-with-input-file "~/.config/tuna/init.ss" (lambda (p) (read p) (read p) (read p)))
-(use-plugin spell (git "https://github.com/bob/spell") (commit "305eb586f3cff79f16d40237931febb7cfcfd4dc"))
-> (plugins:update! 'spell "3fd4dae")
+(use-plugin spell (git "https://github.com/bob/spell") (commit "ee0a457d7027f96ed2bd871eba5f029c3c474caf"))
+> (plugins:update! 'spell "7de8ade")
 #<owner (spell) 3>
 > (plugins:commit 'spell)
-"3fd4dae9f9a717a04e239684e7402419d6a26e0d"
+"7de8adec6864dc138d3001a19ad33c5a396706b6"
 > (advice-remove! module-loaded announce-load)
 ; A line with no source gets only its commit, and still takes its source
 ; from the index.
-> (plugins:update! 'compat "5ecc38a")
+> (plugins:update! 'compat "1bd3bab")
 > (show-lines)
-(use-plugin spell (git "https://github.com/bob/spell") (commit "3fd4dae9f9a717a04e239684e7402419d6a26e0d"))
+(use-plugin spell (git "https://github.com/bob/spell") (commit "7de8adec6864dc138d3001a19ad33c5a396706b6"))
 (use-plugin files)
 (use-plugin fill)
 (use-plugin prog)
 (use-plugin sources (git "https://github.com/groucho/tuna-sources"))
-(use-plugin compat (commit "5ecc38a88d05e60def075308cf4d4d9eec4558ee"))
+(use-plugin compat (commit "1bd3bab0d8aecf094c26ea6e5630cba89a04c160"))
 (use-plugin consult)
 (use-plugin embark)
 (use-plugin embark-consult)
-(use-plugin vertico (git "https://github.com/minad/vertico") (commit "201f0e3a116cab75bedbdf71c0abca65edac1ec0"))
+(use-plugin vertico (git "https://github.com/minad/vertico") (commit "2fa46991d0a64a6e96da1167f4e3d69eee348e72"))
 > (consult:buffer)
 "compat buffer"
 ; When a module fails to load, the plugin goes back to its commit and its
 ; line is unchanged.
-> (plugins:install! '(use-plugin flaky (git "https://github.com/bob/flaky") (commit "5a8f694")))
+> (plugins:install! '(use-plugin flaky (git "https://github.com/bob/flaky") (commit "42b4ec4")))
 > (use-plugin flaky)
 > (flaky:version)
 1
 > (plugins:update! 'flaky)
 ! flaky: broken
 > (list (flaky:version) (plugins:commit 'flaky))
-(1 "5a8f6943897459be214b5eb6183f5e7ac331d74f")
+(1 "42b4ec4194846559af839bec8531cbff0d9fc357")
 > (plugins:update! 'flaky "nope")
 ! update-plugin!: commit nope not found in https://github.com/bob/flaky
 ; Going back puts back only the plugin's own line, so a line another task
@@ -118,29 +118,29 @@
 posted ran
 ! flaky: broken
 > (show-lines)
-(use-plugin spell (git "https://github.com/bob/spell") (commit "3fd4dae9f9a717a04e239684e7402419d6a26e0d"))
+(use-plugin spell (git "https://github.com/bob/spell") (commit "7de8adec6864dc138d3001a19ad33c5a396706b6"))
 (use-plugin files)
 (use-plugin fill)
 (use-plugin prog)
 (use-plugin sources (git "https://github.com/groucho/tuna-sources"))
-(use-plugin compat (commit "5ecc38a88d05e60def075308cf4d4d9eec4558ee"))
+(use-plugin compat (commit "1bd3bab0d8aecf094c26ea6e5630cba89a04c160"))
 (use-plugin consult)
 (use-plugin embark)
 (use-plugin embark-consult)
-(use-plugin vertico (git "https://github.com/minad/vertico") (commit "201f0e3a116cab75bedbdf71c0abca65edac1ec0"))
-(use-plugin flaky (git "https://github.com/bob/flaky") (commit "5a8f6943897459be214b5eb6183f5e7ac331d74f"))
+(use-plugin vertico (git "https://github.com/minad/vertico") (commit "2fa46991d0a64a6e96da1167f4e3d69eee348e72"))
+(use-plugin flaky (git "https://github.com/bob/flaky") (commit "42b4ec4194846559af839bec8531cbff0d9fc357"))
 (use-plugin notes (local "~/src/notes"))
 ; A line typed at the REPL has none in the configuration to put back, so
 ; going back takes out the line plugins:update! wrote.
 > (plugins:remove! 'flaky)
-> (use-plugin flaky (git "https://github.com/bob/flaky") (commit "5a8f694"))
+> (use-plugin flaky (git "https://github.com/bob/flaky") (commit "42b4ec4"))
 > (let ([before (call-with-input-file "~/.config/tuna/init.ss" get-string-all)])
     (plugins:update! 'flaky)
     (string=? before (call-with-input-file "~/.config/tuna/init.ss" get-string-all)))
 ! flaky: broken
 #t
 > (list (flaky:version) (plugins:commit 'flaky))
-(1 "5a8f6943897459be214b5eb6183f5e7ac331d74f")
+(1 "42b4ec4194846559af839bec8531cbff0d9fc357")
 ; plugins:remove! unloads the plugin's modules, then comments out its line
 ; and deletes its folder.
 > (plugins:remove! 'vertico)

@@ -1,4 +1,5 @@
-(with-output-to-file "gen.sls"
+(unless (file-directory? "src") (mkdir "src"))
+(with-output-to-file "src/gen.sls"
   (lambda () (display "#!tuna\n(define (version) 2)\n"))
   'replace)
-(display "wrote gen.sls\n")
+(display "wrote src/gen.sls\n")

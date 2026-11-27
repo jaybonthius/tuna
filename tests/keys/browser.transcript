@@ -64,5 +64,5 @@
 ; The page script is in the web plugin's scripts, beside this plugin.
 > (tables:ref web:scripts 'keys)
 "keys/keys.js"
-> (file-exists? (string-append (getenv "TUNA_LIBRARY") "/keys/keys.js"))
+> (file-exists? (string-append (getenv "TUNA_LIBRARY") "/keys/src/keys/keys.js"))
 #t

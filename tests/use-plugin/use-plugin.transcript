@@ -15,7 +15,7 @@
 (use-plugin compat (git "https://github.com/bob/compat"))
 (use-plugin consult)
 (use-plugin embark)
-(use-plugin embark-consult (commit "c332a5a"))
+(use-plugin embark-consult (commit "cc3ff8f"))
 (use-plugin files)
 (use-plugin notes (local "~/src/notes"))
 (import (console))

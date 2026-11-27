@@ -1,1 +1,0 @@
-../../../libraries/chez-datastar/tests/datastar/bundles/datastar.js

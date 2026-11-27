@@ -7,7 +7,7 @@
       (press! "C-g")
       (timers:sleep 0.05)
       d))
-> (define bs (show-file! (string-append library "/buffers.sls")))
+> (define bs (show-file! (string-append library "/buffers/src/buffers.sls")))
 > (settle-names bs)
 > (define (at! b string offset)
     (let* ([t (text b)] [n (string-length string)])

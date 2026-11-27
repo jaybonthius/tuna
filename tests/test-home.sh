@@ -1,6 +1,6 @@
 #!/bin/sh
-# Tuna's own library is the one built beside the executable, since some
-# of its plugins build native code. The plugins come before their compiled
+# Tuna's own plugins are the ones built beside the executable, since some
+# of them build native code. The plugins come before their compiled
 # objects, so each object is newer than its source, which is how Chez
 # decides an object is current.
 set -eu

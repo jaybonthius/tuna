@@ -1,4 +1,4 @@
-import { spawn, execFileSync } from "child_process";
+import { spawn } from "child_process";
 import fs from "fs";
 import net from "net";
 import os from "os";
@@ -46,10 +46,8 @@ async function startTuna() {
   fs.mkdirSync(grammars, { recursive: true });
   const grammar = "libtree-sitter-python-293fdc02038e.so";
   fs.copyFileSync(path.join(path.dirname(path.dirname(bin)), "test-grammars", grammar), path.join(grammars, grammar));
-  // Some plugins build native code beside their sources, which other
-  // tests read from the same build at the same time.
   const library = path.join(home, "library");
-  execFileSync("sh", [path.join(here, "../../boot/copy-library.sh"), path.join(path.dirname(bin), "plugins"), library]);
+  fs.cpSync(path.join(path.dirname(bin), "plugins"), library, { recursive: true });
   const port = await freePort();
   const child = spawn(bin, [`--eval=(options:set! web:port ${port})`],
     { cwd: work, env: { ...process.env, HOME: home, TUNA_LIBRARY: library }, stdio: ["pipe", "pipe", "pipe"] });

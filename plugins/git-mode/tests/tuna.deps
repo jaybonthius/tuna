@@ -1,0 +1,5 @@
+(library chez-test
+  (git "https://github.com/jaybonthius/chez-test.git")
+  (commit "d89c87c3d9fad2f4ae853c01c5d8b333d8128dfa")
+  (library-directories ("src" . "build/obj/src"))
+  (build))

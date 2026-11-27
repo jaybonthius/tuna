@@ -1,7 +1,7 @@
 ; Every highlights query of nvim-treesitter, at the commit Tuna pins,
 ; reads in the dialect: compiled for Python's grammar, each fails, if at
 ; all, only on what tree-sitter itself checks, its node types and fields.
-> (define root (string-append library "/treesit/nvim-treesitter/runtime/queries"))
+> (define root (string-append library "/treesit/src/treesit/nvim-treesitter/runtime/queries"))
 > (define all (filter file-exists? (map (lambda (l) (format "~a/~a/highlights.scm" root l)) (sort string<? (directory-list root)))))
 > (> (length all) 300)
 #t
@@ -17,7 +17,7 @@
 ; cannot resolve, so the tag is held beside the commit it named when the
 ; pin was chosen.
 > (define pins '(("python" "https://github.com/tree-sitter/tree-sitter-python" "293fdc02038ee2bf0e2e206711b69c90ac0d413f" "v0.25.0")))
-> (define parsers (read-file (string-append library "/treesit/nvim-treesitter/lua/nvim-treesitter/parsers.lua")))
+> (define parsers (read-file (string-append library "/treesit/src/treesit/nvim-treesitter/lua/nvim-treesitter/parsers.lua")))
 > (define (entry language key)
     (let* ([at (offset-of parsers (string-append "\n  " language " = {"))]
            [end (offset-of parsers "\n  },\n" at)]

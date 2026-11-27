@@ -7,7 +7,7 @@
 > (list (spell:dictionary-path) (spell:language))
 ("/home/groucho/words" "en-GB")
 > (plugins:commit 'spell)
-"3fd4dae9f9a717a04e239684e7402419d6a26e0d"
+"7de8adec6864dc138d3001a19ad33c5a396706b6"
 > (define (spell:check path) "mine")
 > (spell:check "x")
 "mine"
@@ -18,19 +18,19 @@
 > (define (replace-commit! text)
     (let* ([file "~/.config/tuna/init.ss"]
            [old (call-with-input-file file get-string-all)]
-           [at (let loop ([i 0]) (if (string=? (substring old i (+ i 7)) "3fd4dae") i (loop (+ i 1))))])
+           [at (let loop ([i 0]) (if (string=? (substring old i (+ i 7)) "7de8ade") i (loop (+ i 1))))])
       (call-with-output-file file
         (lambda (p) (put-string p (string-append (substring old 0 at) text (substring old (+ at 7) (string-length old)))))
         'replace)))
-> (replace-commit! "305eb58")
+> (replace-commit! "ee0a457")
 > (plugins:load-configuration!)
 > (plugins:commit 'spell)
-"3fd4dae9f9a717a04e239684e7402419d6a26e0d"
+"7de8adec6864dc138d3001a19ad33c5a396706b6"
 > (unload-owner! (module-owner '(spell)))
 ! use-plugin: replaced $HOME/.local/share/tuna/plugins/spell, installed from another source or commit than its line's
 > (call-as-owner (plugins:configuration-owner)
-    (lambda () (plugins:eval-form '(use-plugin spell (git "https://github.com/bob/spell") (commit "305eb58")))))
+    (lambda () (plugins:eval-form '(use-plugin spell (git "https://github.com/bob/spell") (commit "ee0a457")))))
 > (plugins:commit 'spell)
-"305eb586f3cff79f16d40237931febb7cfcfd4dc"
+"ee0a457d7027f96ed2bd871eba5f029c3c474caf"
 > (list (spell:dictionary-path) (spell:language))
 ("/home/groucho/words" "en-GB")

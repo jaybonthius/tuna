@@ -74,9 +74,9 @@ expect_file "a datum set again" "$saved/user/hist/entries.ss" '("first" "thread"
 
 # A fork is another source, so it starts empty and keeps its own data; the
 # original's stays for its return.
-mkdir -p "$home/src/notes" "$home/src/notes-fork"
-printf '#!tuna\n(import (saved))\n(saved:define-saved hits 0 fixnum?)\n' > "$home/src/notes/notes.sls"
-cp "$home/src/notes/notes.sls" "$home/src/notes-fork/notes.sls"
+mkdir -p "$home/src/notes/src" "$home/src/notes-fork/src"
+printf '#!tuna\n(import (saved))\n(saved:define-saved hits 0 fixnum?)\n' > "$home/src/notes/src/notes.sls"
+cp "$home/src/notes/src/notes.sls" "$home/src/notes-fork/src/notes.sls"
 use_notes() {
   printf '(import (tuna) (saved))\n(use-plugin notes (local "~/src/%s"))\n(import (console))\n' "$1" > "$home/.config/tuna/init.ss"
 }

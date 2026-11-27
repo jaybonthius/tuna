@@ -21,7 +21,7 @@ cat > "$home/init.ss" <<'END'
     (and (= (http:status r) 200)
          (equal? (http:header r "content-type") "text/css; charset=utf-8")
          (string=? (http:body r)
-                   (call-with-input-file (string-append (getenv "TUNA_LIBRARY") "/" file) get-string-all)))))
+                   (call-with-input-file (string-append (getenv "TUNA_LIBRARY") "/" (path-first file) "/src/" file) get-string-all)))))
 (define (linked name)
   (let ([path (find (lambda (f) (string=? (path-last f) (string-append name "?v=1"))) (http:head-files))])
     (substring path 0 (- (string-length path) 4))))

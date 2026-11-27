@@ -1,7 +1,7 @@
 (import (options) (plugins))
 (import (tuna)) ; spelling below
 (use-plugin spell (git "https://github.com/bob/spell") ; bob's fork
-  (commit "3693805")   ; pinned
+  (commit "189d646")   ; pinned
   (config
     ;; British
     (options:set! spell:language "en-GB")

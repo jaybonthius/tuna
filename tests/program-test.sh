@@ -63,17 +63,18 @@ for case in exit:3 raise:255; do
   [ "$status" -eq "${case#*:}" ] || fail "--script that ends by ${case%:*} exited with status $status"
 done
 
-# Without TUNA_LIBRARY, Tuna's own library is plugins/ beside the program,
-# however the program is started, and holds the bundled plugins; the
-# libraries they name are in libraries/ beside it, and its start folder
-# is start/.
-mkdir -p "$dir/bin/plugins" "$dir/home/.config/tuna"
+# Without TUNA_LIBRARY, Tuna's own plugins are in plugins/ beside the
+# program, however the program is started; the libraries they name are
+# in libraries/ beside it, and its start folder is start/. The libraries
+# are linked, not copied: they are large, and a start only reads them.
+mkdir -p "$dir/bin" "$dir/home/.config/tuna"
 cp "$tuna" "$dir/bin/tuna"
-sh boot/copy-library.sh "$(dirname "$tuna")/plugins" "$dir/bin/plugins"
-sh boot/copy-library.sh "$(dirname "$tuna")/libraries" "$dir/bin/libraries"
+cp -R "$(dirname "$tuna")/plugins" "$dir/bin/plugins"
+ln -s "$(cd "$(dirname "$tuna")" && pwd)/libraries" "$dir/bin/libraries"
 cp -R "$(dirname "$tuna")/start" "$dir/bin/start"
 printf '(import (console))\n' > "$dir/home/.config/tuna/init.ss"
-printf '#!tuna\n(define (where) "beside the program")\n' > "$dir/bin/plugins/own.sls"
+mkdir -p "$dir/bin/plugins/own/src"
+printf '#!tuna\n(define (where) "beside the program")\n' > "$dir/bin/plugins/own/src/own.sls"
 ln -s "$dir/bin/tuna" "$dir/linked-tuna"
 for program in "$dir/bin/tuna" "$dir/linked-tuna"; do
   output=$(echo '(import (own)) (own:where)' | env -u TUNA_LIBRARY HOME="$dir/home" "$program" 2>&1)

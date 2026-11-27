@@ -6,25 +6,25 @@
 > (wrap:build-facts)
 ("Chez Scheme Version 10.4.1" () "0" #t "$HOME/.local/share/tuna/plugins/wrap")
 > (show ".cache/tuna/builds/wrap.log")
-build of 64d7a8187825fb8a1aff128735f0ea4f70d7b37e, status 0
+build of e628184f015669be0d013e8ec65f5bac57fc2d75, status 0
 built
 ; A failed build fails the update, which goes back to the previous commit
 ; and builds it again. init.ss is unchanged, and the log holds both builds.
-> (plugins:update! 'wrap "a8fdfe6")
+> (plugins:update! 'wrap "e7a7728")
 ! update-plugin!: the build of wrap failed with status 255: Exception in build: cc is missing (output in $HOME/.cache/tuna/builds/wrap.log)
 > (plugins:commit 'wrap)
-"64d7a8187825fb8a1aff128735f0ea4f70d7b37e"
+"e628184f015669be0d013e8ec65f5bac57fc2d75"
 > (wrap:add 2 3)
 5
 > (show ".cache/tuna/builds/wrap.log")
-build of a8fdfe648a7cd4051d4027c1d649431dd1aa06ee, status 255
+build of e7a772823f9a85db3421da13e30cf236c85fd8a4, status 255
 starting
 Exception in build: cc is missing
-build of 64d7a8187825fb8a1aff128735f0ea4f70d7b37e, status 0
+build of e628184f015669be0d013e8ec65f5bac57fc2d75, status 0
 built
 > (show ".config/tuna/init.ss")
 (import (tuna))
-(use-plugin wrap (git "https://github.com/bob/wrap") (commit "64d7a81"))
+(use-plugin wrap (git "https://github.com/bob/wrap") (commit "e628184"))
 (use-plugin loc (local "~/src/loc"))
 
 (define (show path)
@@ -35,23 +35,23 @@ built
 (import (console))
 ; An update to the same commit builds again, and an update moves the
 ; submodules with the plugin.
-> (plugins:update! 'wrap "64d7a81")
+> (plugins:update! 'wrap "e628184")
 > (show ".cache/tuna/builds/wrap.log")
-build of 64d7a8187825fb8a1aff128735f0ea4f70d7b37e, status 0
+build of e628184f015669be0d013e8ec65f5bac57fc2d75, status 0
 built
-> (plugins:update! 'wrap "7e11764")
+> (plugins:update! 'wrap "c144a25")
 > (show ".local/share/tuna/plugins/wrap/vendor/cadd/add.c")
 int cadd(int a, int b) { return a + b + 100; }
 ; An update whose module fails to load goes back to the previous commit
 ; and builds it again.
-> (plugins:update! 'wrap "a4f68cf")
+> (plugins:update! 'wrap "f06377a")
 ! car: () is not a pair
 > (plugins:commit 'wrap)
-"7e117645e8cca0cfc2a08aa88e8e1fe55a0a67f6"
+"c144a25c04606c2329f79c83033d74635b6c58e6"
 > (show ".cache/tuna/builds/wrap.log")
-build of a4f68cf3dc87e877b2fe76aa712d455164d1792b, status 0
+build of f06377aa338d25be0d040dd753ab72b64bc71a7d, status 0
 built
-build of 7e117645e8cca0cfc2a08aa88e8e1fe55a0a67f6, status 0
+build of c144a25c04606c2329f79c83033d74635b6c58e6, status 0
 built
 ; A failed build fails the install and leaves the plugin as it was.
 > (use-plugin broken (git "https://github.com/bob/broken"))
@@ -63,13 +63,13 @@ built
 > (list (exists? ".local/share/tuna/plugins/broken") (plugins:installed))
 (#f (wrap loc))
 > (show ".cache/tuna/builds/broken.log")
-build of ecaf98a4501b7475d6ce5e12d47bda00fe75dd86, status 3
+build of e07b9f2c935e2385c56703a2bdc893c98e668cfa, status 3
 no compiler
 ; plugins:install! builds what it installs.
 > (plugins:remove! 'wrap)
-> (plugins:install! '(use-plugin wrap (git "https://github.com/bob/wrap") (commit "64d7a81")))
+> (plugins:install! '(use-plugin wrap (git "https://github.com/bob/wrap") (commit "e628184")))
 > (list (exists? ".local/share/tuna/plugins/wrap/build/libwrap.so") (plugins:commit 'wrap))
-(#t "64d7a8187825fb8a1aff128735f0ea4f70d7b37e")
+(#t "e628184f015669be0d013e8ec65f5bac57fc2d75")
 ; Tuna does not build a local plugin: its folder is its author's.
 > (loc:where)
 "local"

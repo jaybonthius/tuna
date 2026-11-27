@@ -5,34 +5,22 @@ case $tuna in
   /*) ;;
   *) tuna=$PWD/$tuna ;;
 esac
-library=$(dirname "$tuna")/plugins
-libraries=$(dirname "$tuna")/libraries
+bin=$(dirname "$tuna")
 
-for script in "$library"/*/build.ss; do
-  [ -f "$script" ] || continue
-  (cd "$(dirname "$script")" && "$tuna" --script build.ss)
-done
-
-if [ -f "$library/tuna.deps" ]; then
-  "$tuna" --script "$(dirname "$0")/build-libraries.ss" "$tuna" "$libraries" "$library/tuna.deps" \
-    "$(dirname "$tuna")/../libraries"
-fi
-
-# Loading each main module once makes a plugin that fails to compile, or
-# compiles with a warning, fail the build. The objects it leaves are kept
-# for tests, which would otherwise compile the same plugins in every home.
+# tuna --install builds and loads each plugin once, so a plugin that fails
+# to compile, or compiles with a warning, fails the build. The objects it
+# leaves are kept for tests, which would otherwise compile the same
+# plugins in every home.
 home=$(mktemp -d "${TMPDIR:-/tmp}/tuna-build-plugins.XXXXXX")
 trap 'rm -rf "$home"' EXIT
-mkdir -p "$home/.config/tuna"
-for module in "$library"/*.sls; do
-  printf '(import (%s))\n' "$(basename "$module" .sls)"
-done > "$home/.config/tuna/init.ss"
-echo '(exit)' >> "$home/.config/tuna/init.ss"
-output=$(cd "$home" && HOME="$home" TUNA_LIBRARY="$library" "$tuna" < /dev/null 2>&1)
-if [ -n "$output" ]; then
-  echo "$output"
+status=0
+(cd "$home" && HOME="$home" env -u TUNA_LIBRARY -u XDG_CONFIG_HOME -u XDG_DATA_HOME -u XDG_CACHE_HOME \
+  "$tuna" --install < /dev/null 2> "$home/errors") || status=$?
+if [ "$status" -ne 0 ] || [ -s "$home/errors" ]; then
+  cat "$home/errors" >&2
+  echo "tuna --install failed with status $status" >&2
   exit 1
 fi
-rm -rf "$(dirname "$tuna")/plugins-cache" "$(dirname "$tuna")/start-cache"
-cp -R "$home/.cache/tuna/library" "$(dirname "$tuna")/plugins-cache"
-cp -R "$home/.cache/tuna/start$(cd "$(dirname "$tuna")" && pwd)/start" "$(dirname "$tuna")/start-cache"
+rm -rf "$bin/plugins-cache" "$bin/start-cache"
+cp -R "$home/.cache/tuna/library" "$bin/plugins-cache"
+cp -R "$home/.cache/tuna/start$(cd "$bin" && pwd)/start" "$bin/start-cache"

@@ -161,7 +161,7 @@ Al <span class="node" data-at="25" data-to="31"><a href="https://x"><span data-a
 > (begin (views:set-mark! wv 1) (views:set-point! wv 20003))
 > (held-lines wv)
 (1)
-> (let* ([css (call-with-input-file (string-append (getenv "TUNA_LIBRARY") "/views/views.css") get-string-all)]
+> (let* ([css (call-with-input-file (string-append (getenv "TUNA_LIBRARY") "/views/src/views/views.css") get-string-all)]
          [rule (search css ".view.nowrap .line.region-line {" 0)])
     (substring css (search css "border-image" rule) (+ (search css ";" rule) 1)))
 "border-image: linear-gradient(var(--tuna-region, Highlight)) 0 fill / 0 / 0 calc(infinity * 1px) 0 0;"

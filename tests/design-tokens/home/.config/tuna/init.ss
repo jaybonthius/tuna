@@ -3,8 +3,12 @@
 (use-plugin design-tokens)
 (use-plugin faces)
 
+(define (own-path name)
+  (let ([plugin (if (string=? (path-first name) "") (path-root name) (path-first name))])
+    (string-append (getenv "TUNA_LIBRARY") "/" plugin "/src/" name)))
+
 (define (library-file name)
-  (call-with-input-file (string-append (getenv "TUNA_LIBRARY") "/" name) get-string-all))
+  (call-with-input-file (own-path name) get-string-all))
 
 (define (search s sub from)
   (let ([n (string-length sub)] [m (string-length s)])
@@ -89,7 +93,7 @@
        (occurrences tokens-css "@font-face")))
 
 (define (missing-font-files)
-  (filter (lambda (file) (not (file-exists? (string-append (getenv "TUNA_LIBRARY") "/design-tokens/" file))))
+  (filter (lambda (file) (not (file-exists? (own-path (string-append "design-tokens/" file)))))
           (append (map caddr (font-faces)) '("fonts/FiraSans-OFL.txt" "fonts/FiraCode-OFL.txt"))))
 
 (define semantic-names

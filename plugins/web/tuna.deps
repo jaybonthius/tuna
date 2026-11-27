@@ -1,0 +1,22 @@
+;; (h2o ffi) includes build/h2o/layout.ss from its own folder, so H2O's
+;; build goes there.
+(library chez-h2o
+  (git "https://github.com/jaybonthius/chez-h2o.git")
+  (commit "5acd9edd773ef02834e1803b5d013c50167038a6")
+  (library-directories ("src" . "build/obj/src"))
+  (build "make" "-s" "h2o" "H2O_BUILD=src/h2o/build/h2o"))
+(library chez-json
+  (git "https://github.com/jaybonthius/chez-json.git")
+  (commit "542c745ae1dcbe914b033df7cb8483ec4d9c26f3")
+  (library-directories ("src" . "build/obj/src"))
+  (build))
+(library chez-haml
+  (git "https://github.com/jaybonthius/chez-haml.git")
+  (commit "9fa69ebbf4aea9f7dd078e846f52d8cfa9172c3b")
+  (library-directories ("src" . "build/obj/src"))
+  (build))
+(library chez-datastar
+  (git "https://github.com/jaybonthius/chez-datastar.git")
+  (commit "33086c0207efdeff00a8ff3c4254f3c75d48fd73")
+  (library-directories ("src" . "build/obj/src"))
+  (build))

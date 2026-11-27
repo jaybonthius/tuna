@@ -48,7 +48,7 @@
 > (faces p)
 (("x" variable.definition) ("len" function.builtin) ("y" constant))
 > (define library (getenv "TUNA_LIBRARY"))
-> (write-file (string-append library "/python/queries/python/highlights.scm")
+> (write-file (string-append library "/python/src/python/queries/python/highlights.scm")
     "; extends\n((identifier) @keyword (#eq? @keyword \"len\"))\n")
 > (reload-modules! '((python)))
 > (faces p)

@@ -1,0 +1,5 @@
+(library chez-pcre2
+  (git "https://github.com/jaybonthius/chez-pcre2.git")
+  (commit "cbd2a870fa2d527d91171f08c8eb49c9d4e08904")
+  (library-directories ("src" . "build/obj/src"))
+  (build))

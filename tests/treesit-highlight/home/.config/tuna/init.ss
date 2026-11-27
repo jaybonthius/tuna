@@ -9,8 +9,8 @@
     (path-parent (path-parent (car (command-line)))) (substring python-commit 0 12)))
 
 (define shipped-folders
-  (list (string-append library "/python/queries")
-        (string-append library "/treesit/nvim-treesitter/runtime/queries")))
+  (list (string-append library "/python/src/python/queries")
+        (string-append library "/treesit/src/treesit/nvim-treesitter/runtime/queries")))
 (define shipped (query-files shipped-folders "python" "highlights"))
 
 (define default-excluded

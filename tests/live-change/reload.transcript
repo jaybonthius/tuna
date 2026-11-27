@@ -18,7 +18,7 @@ checking a against /home/groucho/words
 > (files:save! "b")
 saving b 
 "b"
-> (put-version! "spell-macro.sls" ".local/share/tuna/plugins/spell/spell.sls")
+> (put-version! "spell-macro.sls" ".local/share/tuna/plugins/spell/src/spell.sls")
 > (reload-modules! '((spell)))
 > (files:save! "c")
 saving c 
@@ -39,7 +39,7 @@ saving c
 > (define (use-words) (spell:with-words "q"))
 > (define loads '())
 > (advice-add! module-loaded (lambda (loaded name) (set! loads (cons name loads)) (loaded name)))
-> (put-version! "spell-macro-2.sls" ".local/share/tuna/plugins/spell/spell.sls")
+> (put-version! "spell-macro-2.sls" ".local/share/tuna/plugins/spell/src/spell.sls")
 > (reload-modules! '((spell)))
 speller unloading
 > loads
@@ -56,7 +56,7 @@ speller unloading
 ; A version whose body raises goes to report, and the previous version is
 ; loaded again, its changes with it.
 > (set! loads '())
-> (put-version! "spell-raises.sls" ".local/share/tuna/plugins/spell/spell.sls")
+> (put-version! "spell-raises.sls" ".local/share/tuna/plugins/spell/src/spell.sls")
 > (reload-modules! '((spell)))
 speller unloading
 ! car: () is not a pair
@@ -69,19 +69,19 @@ speller unloading
 > (spell:check "d")
 checking d against /home/groucho/words
 ; So does a version that fails to compile, again and again.
-> (put-version! "spell-syntax-error.sls" ".local/share/tuna/plugins/spell/spell.sls")
+> (put-version! "spell-syntax-error.sls" ".local/share/tuna/plugins/spell/src/spell.sls")
 > (reload-modules! '((spell)))
 speller unloading
-! invalid syntax (if) at line 4, char 20 of $HOME/.local/share/tuna/plugins/spell/spell.sls
+! invalid syntax (if) at line 4, char 20 of $HOME/.local/share/tuna/plugins/spell/src/spell.sls
 > (speller:go)
 (v2 "z")
 > (reload-modules! '((spell)))
 speller unloading
-! invalid syntax (if) at line 4, char 20 of $HOME/.local/share/tuna/plugins/spell/spell.sls
+! invalid syntax (if) at line 4, char 20 of $HOME/.local/share/tuna/plugins/spell/src/spell.sls
 > (speller:go)
 (v2 "z")
 ; A fixed file reloads.
-> (put-version! "spell-macro-3.sls" ".local/share/tuna/plugins/spell/spell.sls")
+> (put-version! "spell-macro-3.sls" ".local/share/tuna/plugins/spell/src/spell.sls")
 > (reload-modules! '((spell)))
 speller unloading
 > (speller:go)

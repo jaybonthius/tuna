@@ -1,5 +1,5 @@
 (import (tuna))
-(use-plugin gen (git "https://github.com/bob/gen") (commit "da13deb"))
+(use-plugin gen (git "https://github.com/bob/gen") (commit "4835765"))
 
 (define (show path)
   (display (call-with-input-file (string-append (getenv "HOME") "/" path) get-string-all)))

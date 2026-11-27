@@ -1,0 +1,10 @@
+(library chez-json-rpc
+  (git "https://github.com/jaybonthius/chez-json-rpc.git")
+  (commit "6a3c8ff29922c2b57ebeb7ce2a32d2d268b00c22")
+  (library-directories ("src" . "build/obj/src"))
+  (build))
+(library chez-json
+  (git "https://github.com/jaybonthius/chez-json.git")
+  (commit "542c745ae1dcbe914b033df7cb8483ec4d9c26f3")
+  (library-directories ("src" . "build/obj/src"))
+  (build))

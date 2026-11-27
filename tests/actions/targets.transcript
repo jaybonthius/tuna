@@ -12,7 +12,7 @@
 ; A Tuna name is a name wherever it is written, and h describes it, its
 ; read answered with the export, which the text alone would not find.
 > (define library (getenv "TUNA_LIBRARY"))
-> (define bs (show! (files:visit (string-append library "/buffers.sls"))))
+> (define bs (show! (files:visit (string-append library "/buffers/src/buffers.sls"))))
 > (settle-names bs)
 > (at! bs "(define (insert! " 11)
 > (define a (act! "C-."))
@@ -22,7 +22,7 @@
 > (result a)
 > (help-title)
 "buffers:insert!"
-> (define hs (show! (files:visit (string-append library "/help.sls"))))
+> (define hs (show! (files:visit (string-append library "/help/src/help.sls"))))
 > (settle-names hs)
 > (at! hs "(define (%read-name)" 12)
 > (define a (act! "C-."))

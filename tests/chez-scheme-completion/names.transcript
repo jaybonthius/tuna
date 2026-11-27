@@ -6,7 +6,7 @@
            (let ([n (chez-scheme:find-name b s)])
              (and n (list (chez-scheme:name-export n) (chez-scheme:name-library n) (chez-scheme:name-kind n)))))
          spellings))
-> (define bs (show-file! (string-append library "/buffers.sls")))
+> (define bs (show-file! (string-append library "/buffers/src/buffers.sls")))
 > (settle-names bs)
 > (described bs '(insert! document:text buffers:insert!))
 ((buffers:insert! (buffers) procedure) (document:text (document) procedure) #f)
