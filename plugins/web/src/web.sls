@@ -1140,9 +1140,14 @@
         (lambda ()
           (spawn-task
             (lambda (restore)
-              (unless (and server (equal? server-settings (current-settings)))
-                (stop-server!)
-                (start-server!))))))))
+              (let ([now (current-settings)])
+                (cond
+                  [(and server (equal? server-settings now)) (void)]
+                  ;; Listening again would close the pages' streams, and
+                  ;; another process could take the port in between.
+                  [(and server (eqv? (car now) listening-port) (equal? (cdr server-settings) (cdr now)))
+                   (set! server-settings now)]
+                  [else (stop-server!) (start-server!)]))))))))
 
   ;; Started after the batch the plugin loads in, so that what that batch
   ;; posted runs first, such as settings from the command line, whichever

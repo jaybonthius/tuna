@@ -8,7 +8,7 @@
     start! start-run! attach! send! close-input! resize! stop! signal!
     all-processes find-process post-waiting-deliveries! set-log-limit! set-cancel-holder! set-poster!)
   (import (except (chezscheme) process)
-          (only (tuna) call-as-owner report on-unload unloaded?)
+          (only (tuna) call-as-owner owner-live? report on-unload unloaded?)
           (prefix (process) native-))
 
   ;; Chez creates this library once per process, so the processes, their
@@ -539,7 +539,7 @@
   ;; size, the oldest is lost.
   (define (deliver-errors! p)
     (let ([on-errors (process-on-errors p)])
-      (when (and on-errors (not (process-stopped? p)))
+      (when (and on-errors (not (process-stopped? p)) (owner-live? (process-owner p)))
         (let-values ([(bytes end eof?)
                       (apply values
                         (with-process-mutex p
@@ -740,7 +740,10 @@
               (call-as-owner (process-owner p) (lambda () (report status)))
               (report status)))
         (let ([attachments (process-attachments p)] [shared '()])
-          (define (attached? a) (memq a (process-attachments p)))
+          ;; An unloading owner stays attached until its unload action
+          ;; runs, and the unload pauses before that, so a delivery can
+          ;; come between.
+          (define (attached? a) (and (memq a (process-attachments p)) (owner-live? (attachment-owner a))))
           (define (bytes-from from)
             (cond
               [(assv from shared) => cdr]

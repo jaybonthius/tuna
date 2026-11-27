@@ -17,11 +17,20 @@
       (check-equal? 0 status)
       (check-equal? "" errors))))
 
-(test "a set port is listened on exactly, and #f moves web back to a free port"
+;; Not parameterize: its winders would put the port back at the pause,
+;; before web's task writes.
+(define (output-of thunk)
+  (let ([out (current-output-port)])
+    (let-values ([(o get) (open-string-output-port)])
+      (current-output-port o)
+      (thunk)
+      (current-output-port out)
+      (get))))
+
+(test "a port set to the one web listens on keeps its listener, and #f moves web back to a free port"
   (let ([p (web-test/http:url-port (web:url))])
-    (options:set! web:port p)
-    (web-test/tasks:settle)
+    (check-equal? "" (output-of (lambda () (options:set! web:port p) (web-test/tasks:settle))))
     (check-equal? (format "http://127.0.0.1:~a/" p) (web:url))
-    (options:set! web:port #f)
-    (web-test/tasks:settle)
+    (let ([said (output-of (lambda () (options:set! web:port #f) (web-test/tasks:settle)))])
+      (check-equal? (format "Tuna is at ~a\n" (web:url)) said))
     (check (>= (web-test/http:url-port (web:url)) 7337))))

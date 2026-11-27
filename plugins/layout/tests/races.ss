@@ -175,19 +175,23 @@
     (check (not (layout:part-mode?)))))
 
 (test "quits landing in draws are never reported as errors, drawing goes on, and once they stop every client shows the newest screen"
-  (let* ([phone (test-user:open-client)] [n 0] [started 0] [finished 0]
+  (let* ([phone (test-user:open-client)] [n 0] [started 0] [finished 0] [storming #t]
+         ;; A draw takes less time than the quitter sleeps, and under load
+         ;; the steps keep in time with the quits, which end each step's
+         ;; pause, so a quit would seldom find a draw running. Each draw
+         ;; waits for one instead.
          [heavy (lambda (screen client)
                   (set! started (+ started 1))
-                  (let ([s (haml (:div (map (lambda (i) (haml (:p "line " i))) (iota 2000)) (:p.newest "n " n)))])
+                  (let ([s (haml (:div (:p.newest "n " n)))] [until (+ (real-time) 50)])
+                    (let wait () (when (and storming (< (real-time) until)) (wait)))
                     (set! finished (+ finished 1))
                     s))]
          [newest (lambda (c) (test-user:element-text (car (test-user:elements (test-user:screen c) "newest"))))]
          [until (+ (real-time) 1500)])
     (advice-add! layout:screen heavy)
-    ;; A loaded machine draws and quits less often, so the storm goes on
-    ;; until more than a hundred draws were quit, giving up 20 s on.
     (stress! (lambda () (and (< (real-time) (+ until 20000)) (or (< (real-time) until) (<= (- started finished) 100))))
       (lambda (k) (set! n (+ n 1)) (timers:sleep 0)))
+    (set! storming #f)
     (check (> (- started finished) 100))
     (test-user:settle)
     (check-equal? (list (format "n ~a" n) (format "n ~a" n)) (list (newest (test-user:client)) (newest phone)))

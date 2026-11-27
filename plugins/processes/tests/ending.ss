@@ -1,4 +1,5 @@
-(import (tuna) (test) (test-runner) (timers) (buffers) (document) (processes) (processes-test recorder) (processes-test setting) (processes-test agent-chat) (processes-test searcher))
+(import (tuna) (test) (test-runner) (timers) (buffers) (document) (processes) (processes-test recorder) (processes-test setting) (processes-test agent-chat) (processes-test searcher)
+        (processes-test slow-unloader))
 
 (define (violation thunk)
   (guard (c [(assertion-violation? c) (list (condition-who c) (condition-message c))])
@@ -72,6 +73,21 @@
     (check-equal? '((output "first\n" 6)) (processes-test/recorder:events r))
     (check-equal? -1 (processes:status search))
     (check (not (memq search (processes:all))))))
+
+(test "output that arrives while a module that follows the process unloads is not handed to it, and nothing is reported"
+  (let ([ticker (processes:start-for-user "sh" '("-c" "while :; do echo tick; sleep 0.01; done"))]
+        [r (processes-test/recorder:make)] [reported '()])
+    (processes-test/slow-unloader:follow! ticker (processes-test/recorder:on-output r))
+    (test-runner:wait-until (lambda () (pair? (processes-test/recorder:events r))))
+    (let ([keep (lambda (next c) (set! reported (cons c reported)))])
+      (advice-add! report keep)
+      (unload-owner! (module-owner '(processes-test slow-unloader)))
+      (advice-remove! report keep))
+    (let ([handed (processes-test/recorder:events r)])
+      (timers:sleep 0.1)
+      (check-equal? handed (processes-test/recorder:events r)))
+    (check-equal? '() (map condition-message reported))
+    (processes:stop! ticker)))
 
 (test "the page's chat with Pi follows its user process again after its own reload, a reload of processes and processes turned off, losing no line"
   (processes-test/agent-chat:chat)
