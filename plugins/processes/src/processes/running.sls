@@ -475,9 +475,11 @@
                    (process-status-set! p status)
                    (process-eof?-set! p #t))
                  (lambda () (values status out err)))))])
-      (resume result)
+      ;; The delivery, which takes the process out of the list, is posted
+      ;; first, so it runs before the caller resumes.
       (when (with-mutex (process-mutex p) (claim-delivery! p))
-        (post-delivery! p))))
+        (post-delivery! p))
+      (resume result)))
 
   ;; Called with the mutex held.
   (define (room p)
