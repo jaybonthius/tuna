@@ -130,7 +130,7 @@
         text))))
 
 (define %help
-  "y or SPC replace, n or DEL skip, ! all, . replace and exit, , replace and show, ^ back, u undo, U undo all, e edit replacement, E edit exactly, C-r edit, C-w delete and edit, q or RET exit")
+  "y, Y or SPC replace, n, N, DEL or <delete> skip, ! all, . replace and exit, , replace and show, ^ back, u undo, U undo all, e edit replacement, E edit exactly, C-r edit, C-w delete and edit, q or RET exit")
 
 (define (prompt s)
   (%check 'replace:prompt s)
@@ -138,12 +138,12 @@
       (list %help)
       (let ([r (%session-replacement s)] [m (%session-match s)])
         (list (string-append "Query replacing " (if (%session-regexp? s) "regexp " "")
-                             (search:query-text (%session-query s))
+                             (%shown (search:query-text (%session-query s)))
                              " with "
                              (cond
                                [(procedure? r) "a procedure"]
-                               [(and m (not (%session-shown s))) (%replacement-text s m)]
-                               [else r])
+                               [(and m (not (%session-shown s))) (%shown (%replacement-text s m))]
+                               [else (%shown r)])
                              ": (? for help) ")))))
 
 (define (%range s)
@@ -620,9 +620,12 @@
 (keys:bind! isearch:keymap "M-%" isearch-query-replace)
 (keys:bind! isearch:keymap "C-M-%" isearch-query-replace-regexp)
 (keys:bind! keymap "y" act)
+(keys:bind! keymap "Y" act)
 (keys:bind! keymap "SPC" act)
 (keys:bind! keymap "n" skip)
+(keys:bind! keymap "N" skip)
 (keys:bind! keymap "DEL" skip)
+(keys:bind! keymap "<delete>" skip)
 (keys:bind! keymap "." act-and-exit)
 (keys:bind! keymap "," act-and-show)
 (keys:bind! keymap "!" act-on-all)
