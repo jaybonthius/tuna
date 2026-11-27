@@ -114,5 +114,9 @@
     (check (<= (length (keys:active-keymaps (test-user:client))) 3))
     (undo:go-to! b 0)
     (check-equal? "alpha beta gamma\ndelta epsilon\n" (editing-test/scene:text))
+    ;; A click names a place on the client's last screen. The storm can
+    ;; leave an edit before 8, and a click on the screen drawn before the
+    ;; undo would follow the undo's edits to another place.
+    (test-user:settle)
     (test-user:click! (editing-test/scene:view) 8)
     (check-equal? '((8 #f)) (editing-test/scene:cursors))))

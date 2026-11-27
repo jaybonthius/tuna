@@ -848,7 +848,10 @@
                     (and (not (eq? (task-state t) 'done))
                          (begin (task-joiners-set! t (cons (lambda () (resume void)) (task-joiners t))) #t)))
             (resume void)))))
-    (values (task-how t) (task-detail t)))
+    ;; finish! sets the state before how and detail, so a join that read
+    ;; done outside the lock reads them under it.
+    (let ([end (with-task-lock t (cons (task-how t) (task-detail t)))])
+      (values (car end) (cdr end))))
 
   ;; The waiter records the condition it waits on, so a request can wake
   ;; it; a pending request lands when it wakes, as at a pause.

@@ -972,6 +972,9 @@
     (set! top-level (copy-environment (scheme-environment) #t))
     (eval '(import (tuna core replaced)) top-level)
     (define-top-level-syntax 'define top-level-define top-level)
+    (for-each
+      (lambda (keyword) (define-top-level-syntax (syntax->datum keyword) (top-level-definer keyword) top-level))
+      top-level-definers)
     (define-top-level-syntax 'import top-level-import top-level)
     (interaction-environment top-level))
 
@@ -980,8 +983,13 @@
   (define (top-level-define-value symbol current value)
     (cond
       [(changeable? current) (override-set! current value)]
-      [else (errorf 'define "~s is ~s's definition and cannot be defined again"
-              symbol (hashtable-ref exporters symbol #f))]))
+      [else (error 'define (refusal-message symbol))]))
+
+  (define (refusal-message symbol)
+    (format (if (and (top-level-bound? symbol top-level) (changeable? (top-level-value symbol top-level)))
+                "~s is ~s's changeable procedure; override it with define"
+                "~s is ~s's definition and cannot be defined again")
+            symbol (hashtable-ref exporters symbol #f)))
 
   (define (top-level-define x)
     (syntax-case x ()
@@ -992,6 +1000,28 @@
        (and (identifier? #'name) (exported-name? (syntax->datum #'name)))
        #'(top-level-define-value 'name name expr)]
       [(k . rest) #'(define . rest)]))
+
+  ;; meta needs no keyword of its own: the definition it wraps expands
+  ;; through these, and form-defined-names would not take the top level's
+  ;; define for Chez's.
+  (define top-level-definers
+    (list #'define-syntax #'define-values #'define-record-type #'define-record #'define-enumeration
+          #'define-condition-type #'define-ftype #'define-structure #'module #'alias
+          #'trace-define #'trace-define-syntax))
+
+  (define (top-level-definer keyword)
+    (lambda (x)
+      (lambda (lookup)
+        (syntax-case x ()
+          [(_ . rest)
+           (let ([form #`(#,keyword . rest)])
+             (for-each
+               (lambda (id)
+                 (let ([symbol (syntax->datum id)])
+                   (when (exported-name? symbol)
+                     (syntax-violation (syntax->datum keyword) (refusal-message symbol) x id))))
+               (form-defined-names form lookup))
+             form)]))))
 
   (define (top-level-import x)
     (syntax-case x ()

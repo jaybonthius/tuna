@@ -126,6 +126,29 @@
   (check-equal? '(advice-add! "not a changeable procedure")
     (raised-text '(advice-add! macros:make-entry (lambda (make . arguments) (apply make arguments))))))
 
+(test "Chez's other definition forms cannot define a module's name again, and a changeable procedure's refusal says define overrides it"
+  (check-equal?
+    '((define-values "macros:low is (macros)'s definition and cannot be defined again")
+      (define-values "macros:hello is (macros)'s changeable procedure; override it with define")
+      (define-syntax "macros:define-command is (macros)'s definition and cannot be defined again")
+      (define-record-type "macros:entry is (macros)'s definition and cannot be defined again")
+      (define-record "macros:entry is (macros)'s definition and cannot be defined again")
+      (alias "macros:high is (macros)'s definition and cannot be defined again")
+      (define-syntax "macros:high is (macros)'s definition and cannot be defined again")
+      (define-values "macros:low is (macros)'s definition and cannot be defined again"))
+    (map raised-text
+         '((define-values (macros:low) (values 2))
+           (define-values (fresh-value macros:hello) (values 1 (lambda () "hi")))
+           (define-syntax macros:define-command (syntax-rules () [(_) 1]))
+           (define-record-type macros:entry (fields a))
+           (define-record macros:entry (a))
+           (alias macros:high car)
+           (meta define-syntax macros:high (syntax-rules () [(_) 1]))
+           (let () (define-values (macros:low) (values 7)) macros:low))))
+  (check-equal? '(1 9 k #t "hi")
+    (fixtures:at-repl '(list macros:low macros:high (macros:entry-key (macros:make-entry 'k)) (macros:entry? (macros:make-entry 'k)) (macros:hello))))
+  (check-equal? '(2 1) (fixtures:at-repl '(begin (define-values (fresh-value macros-free) (values 2 1)) (list fresh-value macros-free)))))
+
 (test "a property needs the identifier it is keyed by"
   (fixtures:write-lib-module! '(nodefiner) '((define (d) 1) (define-property d definer #t)))
   (let ([c (raised '(import (nodefiner)))])

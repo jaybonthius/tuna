@@ -159,6 +159,17 @@
     (check-equal? '(cancelled thread) (ended c))
     (check-equal? '(stopped #f) (ended s))))
 
+;; The join comes the moment the state reads done, when the thread may
+;; still be ending the task.
+(test "a join of a thread's task that has just ended gives how it ended and its values"
+  (let loop ([i 0] [wrong '()])
+    (if (= i 20000)
+        (check-equal? '() wrong)
+        (let ([t (fork-task (lambda (restore) 'v))])
+          (let wait () (unless (done? t) (wait)))
+          (let ([e (ended t)])
+            (loop (+ i 1) (if (equal? e '(returned (v))) wrong (cons e wrong))))))))
+
 (test "when threads race to resume a task, one resumes it and the rest raise"
   (do ([trial 0 (+ trial 1)]) ((= trial 30))
     (let* ([resume #f]
