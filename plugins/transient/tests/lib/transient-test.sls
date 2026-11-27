@@ -1,5 +1,5 @@
 #!tuna
-(import (web) (views) (buffers) (layout) (test-user))
+(import (views) (buffers) (test-user))
 
 (define (%first element class)
   (let ([found (test-user:elements element class)])
@@ -30,27 +30,10 @@
   (let ([b (buffers:find " *transient*")])
     (and b (let ([vs (views:showing b)]) (and (pair? vs) (car vs))))))
 
-;; A page sends a click as the place of the innermost node drawn around
-;; what was clicked.
-(define (entry-token key)
-  (let ([nodes (filter (lambda (n)
-                         (exists (lambda (k) (equal? key (test-user:element-text k))) (test-user:elements n "transient-key")))
-                       (test-user:elements (test-user:screen) "node"))])
-    (string->number (test-user:element-attribute (car (last-pair nodes)) "data-at"))))
-
-(define (%mouse! client view action button place)
-  (web:post-input! client
-    (append place
-            (list (cons "type" "mouse") (cons "action" action) (cons "button" button) (cons "clicks" 1)
-                  (cons "modifiers" (vector)) (cons "view" (views:id view)) (cons "showing" (views:shown-count view))
-                  (cons "version" (buffers:version (views:buffer view))) (cons "report" 1))))
-  (test-user:settle))
-
-(define (click! client view button place)
-  (%mouse! client view "down" button place)
-  (%mouse! client view "click" button place))
+(define (%entry-key client key)
+  (find (lambda (k) (equal? key (test-user:element-text k))) (test-user:elements (test-user:screen client) "transient-key")))
 
 (define click-entry!
   (case-lambda
-    [(key) (click-entry! (test-user:client) key 1)]
-    [(client key button) (click! client (popup-view) button (list (cons "token" (entry-token key))))]))
+    [(key) (click-entry! (test-user:client) key "<mouse-1>")]
+    [(client key mouse-key) (test-user:click-element! client (%entry-key client key) mouse-key)]))

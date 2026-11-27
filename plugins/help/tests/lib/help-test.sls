@@ -1,5 +1,5 @@
 #!tuna
-(import (web) (views) (buffers) (layout) (test-user))
+(import (views) (buffers) (test-user))
 
 (define (%help-element)
   (let ([found (test-user:elements (test-user:screen) "help")])
@@ -58,8 +58,6 @@
   (let ([b (buffers:find "*Help*")])
     (and b (let ([vs (views:showing b)]) (and (pair? vs) (car vs))))))
 
-;; A page sends a click as the place of the node drawn around what was
-;; clicked.
 (define (link-token name)
   (let ([nodes (filter (lambda (n)
                          (exists (lambda (l) (equal? name (test-user:element-text l)))
@@ -67,16 +65,6 @@
                        (test-user:elements (%help-element) "node"))])
     (string->number (test-user:element-attribute (car (last-pair nodes)) "data-at"))))
 
-(define (%mouse! view action button place)
-  (web:post-input! (test-user:client)
-    (append place
-            (list (cons "type" "mouse") (cons "action" action) (cons "button" button) (cons "clicks" 1)
-                  (cons "modifiers" (vector)) (cons "view" (views:id view)) (cons "showing" (views:shown-count view))
-                  (cons "version" (buffers:version (views:buffer view))) (cons "report" 1))))
-  (test-user:settle))
-
-(define (click! view place)
-  (%mouse! view "down" 1 place)
-  (%mouse! view "click" 1 place))
-
-(define (click-link! name) (click! (help-view) (list (cons "token" (link-token name)))))
+(define (click-link! name)
+  (test-user:click-element!
+    (find (lambda (link) (equal? name (test-user:element-text link))) (test-user:elements (%help-element) "ui-link"))))

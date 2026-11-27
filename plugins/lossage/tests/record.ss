@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (web) (views) (layout) (hooks) (options) (commands) (keys) (lossage) (lossage-test mouse)
+(import (tuna) (test) (test-user) (web) (views) (layout) (hooks) (options) (commands) (keys) (lossage)
         (command-picker))
 
 (load-module! '(lossage-test))
@@ -28,12 +28,10 @@
 
 (test "a mouse key is recorded by its key, without its position; mouse movements are not, though the command one runs is"
   (test-user:show! "|0123456789")
+  (test-user:settle)
   (mark!)
-  (lossage-test/mouse:mouse! "down" 8 '() 0)
-  (lossage-test/mouse:mouse! "move" 8 '() 2)
-  (lossage-test/mouse:mouse! "move" 8 '("shift") 3)
-  (lossage-test/mouse:mouse! "click" 8 '() 3)
-  (check-equal? '("<down-mouse-8>" lossage-test:honk lossage-test:honk lossage-test:honk "<mouse-8>" lossage-test:honk) (since-mark)))
+  (test-user:drag! (layout:selected-view) 1 3 "<drag-mouse-8>")
+  (check-equal? '("<down-mouse-8>" lossage-test:honk lossage-test:honk "<drag-mouse-8>" lossage-test:honk) (since-mark)))
 
 (test "every client's keys go in one record, in the order they came, each prefix as it is typed"
   (let ([other (test-user:open-client)])

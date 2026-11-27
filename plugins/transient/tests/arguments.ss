@@ -72,9 +72,6 @@
   (check-equal? plain (transient-test:menu))
   (test-user:press! "DEL")
   (test-user:type! "ours\n")
-  ;; The reader's answer resumes the switch's command after the batch of
-  ;; the RET that gave it.
-  (test-user:settle)
   (check-equal? (merge-drawn "--ff-only" "--no-ff" "*--strategy=ours") (transient-test:menu)))
 
 (test "while a valued switch has a value, its key takes it out"
@@ -83,7 +80,6 @@
 
 (test "an empty answer puts in nothing, and C-g quits the prompt, the switch keeping its value"
   (test-user:press! "- s RET")
-  (test-user:settle)
   (check-equal? plain (transient-test:menu))
   (test-user:press! "- s")
   ;; Pressed as a key no page marks as a quit: a page's quit also reaches

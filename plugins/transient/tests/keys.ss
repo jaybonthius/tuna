@@ -70,7 +70,7 @@
     (test-user:press! "s")
     (transient-test:click-entry! "s")
     (test-user:press! other "s")
-    (transient-test:click-entry! other "s" 1)
+    (transient-test:click-entry! other "s" "<mouse-1>")
     (check-equal? '(#t #t #t #t) (map in-user-view? log))
     (check-equal? m-drawn (transient-test:menu))
     (check-equal? m-drawn (transient-test:menu other))
@@ -110,11 +110,12 @@
 (test "a press or click of any button on the menu outside its entries does nothing, the middle button on an entry presses it, and a click in the user's view closes the menu"
   (test-user:press! "C-c t")
   (set! log '())
-  (for-each (lambda (button) (transient-test:click! (test-user:client) (transient-test:popup-view) button '(("token" . 1)))) '(1 2 3))
+  (for-each (lambda (key) (test-user:click-element! (car (test-user:elements (test-user:screen) "transient-group")) key))
+            '("<mouse-1>" "<mouse-2>" "<mouse-3>"))
   (check-equal? '(() #t) (list log (equal? m-drawn (transient-test:menu))))
-  (transient-test:click-entry! (test-user:client) "s" 2)
+  (transient-test:click-entry! (test-user:client) "s" "<mouse-2>")
   (check-equal? '(#t) (map in-user-view? log))
-  (transient-test:click! (test-user:client) user-view 1 '(("at" . 1) ("count" . 0)))
+  (test-user:click! user-view 1)
   (check-equal? '(#f none) (list (transient-test:menu) (car log))))
 
 (test "a command run by other code than a key leaves the menu open"

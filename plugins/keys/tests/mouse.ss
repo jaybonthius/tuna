@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (views) (hooks) (tables) (commands) (keys) (keys-test))
+(import (tuna) (test) (test-user) (views) (layout) (hooks) (tables) (commands) (keys) (keys-test))
 
 (define (mouse-item action button clicks modifiers)
   (list (cons "type" "mouse") (cons "action" action) (cons "button" button) (cons "clicks" clicks)
@@ -85,6 +85,7 @@
   (let ([entry (lambda (client posn) (if posn (list clicked-keymap) '()))])
     (hooks:add! keys:find-keymaps entry -50)
     (test-user:show! "|0123456789")
+    (test-user:settle)
     (thunk)
     (hooks:remove! keys:find-keymaps entry)))
 
@@ -94,31 +95,33 @@
 (test "a command reads the event that ran it, a posn of views' making; outside a command there is none"
   (with-clicked-keymap
     (lambda ()
-      (keys-test:mouse! "click" 8 1 '() 7)
-      (check-equal? '((("<mouse-8>" 7) "<mouse-8>" #f)) (take-seen!))))
+      (test-user:click! (layout:selected-view) 7 "<mouse-8>")
+      (check-equal? '((("<down-mouse-8>" 7) "<down-mouse-8>" #f) (("<mouse-8>" 7) "<mouse-8>" #f)) (take-seen!))))
   (check-equal? #f (keys:command-event)))
 
 (test "a mouse key that nothing binds tries fewer clicks, then a drag as the click at its start, then the key without shift"
   (with-clicked-keymap
     (lambda ()
-      (keys-test:mouse! "click" 8 3 '() 7)
-      (keys-test:mouse! "down" 8 2 '("shift") 8)
-      (keys-test:mouse! "drag" 8 2 '() 9)
-      (check-equal? '((("<triple-mouse-8>" 7) "<triple-mouse-8>" #f) (("S-<double-down-mouse-8>" 8) "S-<double-down-mouse-8>" #t)
-                      (("<double-mouse-8>" 8) "<double-drag-mouse-8>" #f))
+      (test-user:click! (layout:selected-view) 7 "<triple-mouse-8>")
+      (test-user:drag! (layout:selected-view) 8 9 "S-<double-drag-mouse-8>")
+      (check-equal? '((("<triple-down-mouse-8>" 7) "<triple-down-mouse-8>" #f) (("<triple-mouse-8>" 7) "<triple-mouse-8>" #f)
+                      (("S-<double-down-mouse-8>" 8) "S-<double-down-mouse-8>" #t) (("S-<double-mouse-8>" 8) "S-<double-drag-mouse-8>" #t))
                     (take-seen!))
       (keys:bind! clicked-keymap "<double-mouse-8>" keys:ignore)
-      (keys-test:mouse! "click" 8 3 '() 7)
-      (check-equal? '() (take-seen!))
+      (test-user:click! (layout:selected-view) 7 "<triple-mouse-8>")
+      (check-equal? '((("<triple-down-mouse-8>" 7) "<triple-down-mouse-8>" #f)) (take-seen!))
       (tables:remove! clicked-keymap "<double-mouse-8>"))))
 
 (test "a press or a move that nothing binds is dropped without a warning and keeps the pending keys; an unbound click is undefined"
   (with-clicked-keymap
     (lambda ()
       (test-user:press! "C-x")
-      (check-equal? '() (keys-test:report-messages (lambda () (keys-test:mouse! "down" 9 1 '() 1) (keys-test:mouse! "move" 9 1 '() 2))))
-      (check-equal? "C-x" (keys:pending (test-user:client)))
-      (check-equal? '("C-x <mouse-9> is undefined") (keys-test:report-messages (lambda () (keys-test:mouse! "click" 9 1 '() 2))))
+      (check-equal? '("C-x <drag-mouse-9> is undefined")
+                    (keys-test:report-messages (lambda () (test-user:drag! (layout:selected-view) 1 2 "<drag-mouse-9>"))))
+      (check-equal? #f (keys:pending (test-user:client)))
+      (test-user:press! "C-x")
+      (check-equal? '("C-x <mouse-9> is undefined")
+                    (keys-test:report-messages (lambda () (test-user:click! (layout:selected-view) 2 "<mouse-9>"))))
       (check-equal? #f (keys:pending (test-user:client))))))
 
 (test "keys:ignore keeps a mouse key from the keymaps searched later, and a mouse key pressed as a key is looked up as a typed one"
@@ -129,8 +132,8 @@
     (lambda ()
       (let ([entry (lambda (client posn) (if posn (list near-keymap) '()))])
         (hooks:add! keys:find-keymaps entry -60)
-        (keys-test:mouse! "click" 8 1 '() 7)
-        (check-equal? '() (take-seen!))
+        (test-user:click! (layout:selected-view) 7 "<mouse-8>")
+        (check-equal? '((("<down-mouse-8>" 7) "<down-mouse-8>" #f)) (take-seen!))
         (check-equal? record-event (keys:lookup (test-user:client) "<mouse-8>"))
         (keys:press! (test-user:client) "<mouse-8>")
         (check-equal? '(("<mouse-8>" "<mouse-8>" #f)) (take-seen!))
@@ -142,17 +145,18 @@
   (with-clicked-keymap
     (lambda ()
       (test-user:press! "C-c")
-      (keys-test:mouse! "click" 8 1 '() 5)
+      (test-user:click! (layout:selected-view) 5 "<mouse-8>")
       (check-equal? '((("<mouse-8>" 5) "C-c <mouse-8>" #f)) (take-seen!)))))
 
 (test "entries of find-keymaps get the event's start posn, and #f for a typed key"
   (let* ([posns '()]
          [entry (lambda (client posn) (when (eq? client (test-user:client)) (set! posns (cons posn posns))) '())])
     (test-user:show! "|0123456789")
-    (keys-test:mouse! "down" 9 1 '() 2)
+    (test-user:settle)
     (hooks:add! keys:find-keymaps entry -50)
-    (check-equal? '("<drag-mouse-9> is undefined") (keys-test:report-messages (lambda () (keys-test:mouse! "drag" 9 1 '() 4))))
+    (check-equal? '("<drag-mouse-9> is undefined")
+                  (keys-test:report-messages (lambda () (test-user:drag! (layout:selected-view) 2 4 "<drag-mouse-9>"))))
     (test-user:press! "C-x")
     (check-equal? '("C-x C-g is undefined") (keys-test:report-messages (lambda () (test-user:press! "C-g"))))
     (hooks:remove! keys:find-keymaps entry)
-    (check-equal? '(2 #f #f) (map (lambda (p) (and p (views:posn-point p))) (reverse posns)))))
+    (check-equal? '(2 4 2 #f #f) (map (lambda (p) (and p (views:posn-point p))) (reverse posns)))))

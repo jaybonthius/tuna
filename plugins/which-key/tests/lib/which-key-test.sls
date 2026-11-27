@@ -1,5 +1,5 @@
 #!tuna
-(import (web) (views) (buffers) (layout) (commands) (keys) (tables) (test-user))
+(import (commands) (keys) (tables) (test-user))
 
 (tables:define-table keymap "Harpo's horn.")
 
@@ -36,23 +36,6 @@
                   (map %entry (test-user:elements shown "which-key-entry")))))]))
 
 (define (shows?) (and (popup) #t))
-
-;; A click as views' page script sends one in the selected view.
-(define (click! button at)
-  (let* ([v (layout:selected-view)] [b (views:buffer v)])
-    (web:post-input! (test-user:client)
-      (list (cons "type" "mouse") (cons "action" "click") (cons "button" button) (cons "clicks" 1)
-            (cons "modifiers" (vector)) (cons "view" (views:id v)) (cons "showing" (views:shown-count v))
-            (cons "version" (buffers:version b)) (cons "at" at)))
-    (test-user:settle)))
-
-(define (wheel! direction at)
-  (let* ([v (layout:selected-view)] [b (views:buffer v)])
-    (web:post-input! (test-user:client)
-      (list (cons "type" "mouse") (cons "action" "wheel") (cons "direction" direction)
-            (cons "modifiers" (vector)) (cons "view" (views:id v)) (cons "showing" (views:shown-count v))
-            (cons "version" (buffers:version b)) (cons "at" at)))
-    (test-user:settle)))
 
 (keys:bind! keymap "h" honk)
 (keys:bind! keymap "s" squeak)

@@ -8,7 +8,6 @@
 (define tabs-children layout-tabs-test/parts:tabs-children)
 (define raised-with layout-tabs-test/parts:raised-with)
 (define refusals-during layout-tabs-test/parts:refusals-during)
-(define mouse! layout-tabs-test/parts:mouse!)
 (define name-of layout-tabs-test/parts:name-of)
 
 (define (named name) (or (buffers:find name) (buffers:make name (string-append name "\n"))))
@@ -19,9 +18,19 @@
 
 (define (start-of n) (document:node-start n))
 
-(define (click! at) (mouse! (list layout-tabs:keymap) 1 at))
+(define click-tab!
+  (case-lambda
+    [(at) (click-tab! at "<mouse-1>")]
+    [(at key)
+     (test-user:settle)
+     (test-user:click-element! (layout-tabs-test/parts:tab-part "layout-tabs-label" at) key)]))
 
-(define close-keymaps (list layout-tabs:close-keymap layout-tabs:keymap))
+(define click-close!
+  (case-lambda
+    [(at) (click-close! at "<mouse-1>")]
+    [(at key)
+     (test-user:settle)
+     (test-user:click-element! (layout-tabs-test/parts:tab-part "layout-tabs-close" at) key)]))
 
 (test "C-x t 2 wraps a view in no tabs in a tabs container, as its first tab, and selects a new view of its buffer at its point in a tab after it"
   (let ([v (views:make (buffers:make (buffers:free-name "notes") "one\ntwo\n"))])
@@ -137,27 +146,28 @@
 (test "a press on a tab selects the view the tab leads to, as its element marks its child and carries layout-tabs:keymap; its release does nothing"
   (let-values ([(a b c d) (split-tab!)])
     (layout:select! c)
-    (click! (start-of (layout:view-node a)))
+    (click-tab! (start-of (layout:view-node a)))
     (check-equal? "a" (selected))
-    (click! (start-of (cadr (tabs-children))))
+    (click-tab! (start-of (cadr (tabs-children))))
     (check-equal? "c" (selected))
     (layout:select! d)
     (layout:select! b)
     (layout:select! d)
-    (click! (start-of (cadr (tabs-children))))
+    (click-tab! (start-of (cadr (tabs-children))))
     (check-equal? "b" (selected))
-    (mouse! (list) 1 (start-of (layout:view-node c)))
+    (test-user:settle)
+    (test-user:click-element! (layout-tabs-test/parts:view-element (start-of (layout:view-node c))))
     (check-equal? "c" (selected))
-    (mouse! (list layout-tabs:keymap) 1 (start-of (layout:view-node a)) (buffers:version layout:buffer) '("click"))
-    (check-equal? "c" (selected))))
+    (check-equal? keys:ignore (keys:lookup-in (list layout-tabs:keymap) "<mouse-1>"))))
 
 (test "a click on a tab closed since its screen was drawn is stale"
   (let-values ([(a b c d) (split-tab!)])
     (layout:select! c)
-    (let ([version (buffers:version layout:buffer)] [at (start-of (layout:view-node a))])
+    (test-user:settle)
+    (let ([label (layout-tabs-test/parts:tab-part "layout-tabs-label" (start-of (layout:view-node a)))])
       (layout:delete-part! (layout:view-node a))
       (check-equal? '((#f "Stale click: what was clicked is gone"))
-                    (refusals-during (lambda () (mouse! (list layout-tabs:keymap) 1 at version '("down" "click")))))
+                    (refusals-during (lambda () (test-user:click-element! label))))
       (check-equal? "c" (selected)))))
 
 (test "C-x t 0 closes the tab holding the selected view, with every part in it, and selects the view selected last before"
@@ -207,7 +217,7 @@
     (check-equal? "k" (selected))
     (commands:run layout-tabs:next-tab 1)
     (check-equal? "g" (selected))
-    (click! (start-of (layout:view-node h)))
+    (click-tab! (start-of (layout:view-node h)))
     (check-equal? "g" (selected))))
 
 (test "a display rule's new tab goes after the selected view's tab and is selected, so it is shown"
@@ -258,9 +268,9 @@
     (layout:select! q)
     (test-user:settle)
     (check-equal? 2 (length (test-user:elements (test-user:screen) "tabs-strip")))
-    (click! (start-of (layout:view-node p)))
+    (click-tab! (start-of (layout:view-node p)))
     (check-equal? "p" (selected))
-    (click! (start-of (layout:view-node g)))
+    (click-tab! (start-of (layout:view-node g)))
     (check-equal? "g" (selected))))
 
 (test "recent-tab goes to the tab used last before the selected view's, so repeating it goes back and forth; a count goes further"
@@ -353,20 +363,20 @@
   (let ([r1 (fresh "r1")] [r2 (fresh "r2")] [r3 (fresh "r3")])
     (set-parts! (layout-tabs:container '() (atom r1) (layout-split:container '((direction . row)) (atom r2) (atom r3))))
     (layout:select! r1)
-    (mouse! close-keymaps 1 (start-of (cadr (tabs-children))))
+    (click-close! (start-of (cadr (tabs-children))))
     (check-equal? '("r1" 1) (list (selected) (length (tabs-children))))
     (let ([r4 (layout-tabs:add-tab! r1 (named "other"))])
-      (mouse! (list layout-tabs:keymap) 2 (start-of (car (tabs-children))))
+      (click-tab! (start-of (car (tabs-children))) "<mouse-2>")
       (check-equal? (list "other" 1) (list (selected) (length (tabs-children))))
       (layout:select! (layout-tabs:add-tab! r4 (named "other")))
-      (mouse! close-keymaps 2 (start-of (car (tabs-children))))
+      (click-close! (start-of (car (tabs-children))) "<mouse-2>")
       (check-equal? 1 (length (tabs-children))))))
 
 (test "a tab holding a locked part stays when its close button is clicked, and the button's press does nothing"
   (let ([r5 (fresh "r5")] [r6 (fresh "r6")])
     (set-parts! (layout-tabs:container '() (atom r5) (atom r6 '(locked . #t))))
     (layout:select! r5)
-    (mouse! close-keymaps 1 (start-of (cadr (tabs-children))))
+    (click-close! (start-of (cadr (tabs-children))))
     (check-equal? 2 (length (tabs-children)))
     (check-equal? '(("<down-mouse-1>" . keys:ignore) ("<mouse-1>" . layout-tabs:mouse-close-tab))
                   (map (lambda (b) (cons (car b) (commands:command-name (cdr b)))) (keys:bindings layout-tabs:close-keymap)))))
@@ -374,12 +384,14 @@
 (test "a tab's child names the tab even when it is a tabs container, whose first tab's child starts where the outer tab's child is entered"
   (let ([r7 (fresh "r7")] [r8 (fresh "r8")] [r9 (fresh "r9")])
     (set-parts! (layout-tabs:container '() (atom r7) (layout-tabs:container '() (atom r8) (atom r9))))
-    (layout:select! r7)
+    ;; Only the tab shown draws its child, so the inner strip shows while
+    ;; a view in it is selected.
+    (layout:select! r8)
     (let ([inner-first (document:token (buffers:document layout:buffer) (+ (start-of (cadr (tabs-children))) 1))])
       (check-equal? (+ (start-of (cadr (tabs-children))) 1) (start-of inner-first))
-      (mouse! close-keymaps 1 (start-of inner-first))
+      (click-close! (start-of inner-first))
       (check-equal? '(layout:level (layout-tabs:container "r7" (layout-tabs:container "r9"))) (outline))
-      (mouse! close-keymaps 1 (start-of (cadr (tabs-children))))
+      (click-close! (start-of (cadr (tabs-children))))
       (check-equal? '(layout:level (layout-tabs:container "r7")) (outline)))))
 
 (test "the kind's stylesheet is in web's table of stylesheets"

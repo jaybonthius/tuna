@@ -11,10 +11,6 @@
     (advice-remove! report keep)
     reported))
 
-;; A command a key's read resumes runs after the batch of that key, so
-;; its screen is drawn one batch later.
-(define (after-read) (test-user:settle))
-
 (test-user:show! "|(help-test/harpo:squeeze 3) help-test/harpo:honk\n")
 
 (define notes (views:buffer (layout:selected-view)))
@@ -125,7 +121,6 @@
   (test-user:type! typed)
   (matched typed)
   (test-user:press! "RET")
-  (after-read)
   (help-test:title))
 
 (test "run by a key, C-h f, v and o read a name, the name at point first, and C-h x and a a command, the command at point first"
@@ -154,13 +149,11 @@
     (test-user:type! "help:%scop")
     (matched "help:%scop")
     (test-user:press! "RET")
-    (after-read)
     (check-equal? before (help-test:title))
     (check-equal? '(cancelled) (cancels-during (lambda () (test-user:press! "C-g"))))
     (test-user:press! "C-h x")
     (test-user:type! "help:%fol")
     (matched "help:%fol")
     (test-user:press! "RET")
-    (after-read)
     (check-equal? before (help-test:title))
     (check-equal? '(cancelled) (cancels-during (lambda () (test-user:press! "C-g"))))))

@@ -62,19 +62,10 @@
                 (bands)))
 
 (test "a band names its column's positions and carries the layout's keymap, so a click on it selects that column"
-  (let* ([band (car (test-user:elements (test-user:screen desktop) "strip-edge"))]
-         [at (number band "data-at")]
-         [mark (read (open-input-string (views:keymap-mark layout:keymap)))])
+  (let ([band (car (test-user:elements (test-user:screen desktop) "strip-edge"))])
     (check-equal? 'button (car band))
     (check-equal? (views:keymap-mark layout:keymap) (test-user:element-attribute band "data-keymap"))
-    (for-each
-      (lambda (action)
-        (web:post-input! desktop
-          `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
-            ("view" . ,(views:id layout:screen-view)) ("version" . ,(buffers:version layout:buffer))
-            ("showing" . ,(views:shown-count layout:screen-view)) ("token" . ,at) ("keymaps" . ,(vector mark))))
-        (test-user:settle))
-      '("down" "click"))
+    (test-user:click-element! desktop band "<mouse-1>")
     (check-equal? (id "b") (views:id (layout:selected-view)))
     (layout:select! (list-ref vs 2))
     (test-user:settle)))

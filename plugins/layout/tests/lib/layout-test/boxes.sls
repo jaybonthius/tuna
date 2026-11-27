@@ -5,8 +5,10 @@
 
 (commands:define-command (box-command) "Does nothing." #f)
 
+;; A box's element is marked with its tokens, as a tab's is with its
+;; child's, so a click on it names the box.
 (define (draw-box node children focused draw-child client)
-  (haml (:section.box (map draw-child children))))
+  (haml (:section.box ([data-at (document:node-start node)] [data-to (document:node-end node)]) (map draw-child children))))
 
 (define (draw-broken node children focused draw-child client)
   (car '()))

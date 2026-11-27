@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (test-user) (web) (options) (tables) (timers) (commands) (keys) (echo-area) (which-key)
+(import (tuna) (test) (test-runner) (test-user) (web) (options) (tables) (timers) (commands) (keys) (echo-area) (layout) (which-key)
         (which-key-test))
 
 (options:set! which-key:delay 0.5)
@@ -128,12 +128,16 @@
 
 (test "after a mouse key or a wheel key that starts a sequence, no popup shows"
   (test-user:show! "|text")
-  (which-key-test:click! 3 1)
+  (test-user:settle)
+  (test-user:click! (layout:selected-view) 1 "<mouse-3>")
   (check-equal? "<mouse-3>" (keys:pending (test-user:client)))
   (past-the-delay)
   (check-equal? #f (which-key-test:shows?))
   (test-user:press! "a")
-  (which-key-test:wheel! "down" 1)
+  ;; A page sends a wheel key only from an element that takes the wheel,
+  ;; as a terminal does, so the key is pressed as keys takes any key.
+  (keys:press! (test-user:client) "<wheel-down>")
+  (test-user:settle)
   (check-equal? "<wheel-down>" (keys:pending (test-user:client)))
   (past-the-delay)
   (check-equal? #f (which-key-test:shows?))

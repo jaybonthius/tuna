@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (layout-split) (buffers) (document) (views) (web) (keys) (test-user))
+(import (layout) (layout-split) (buffers) (document) (views) (test-user))
 
 (define (tree) (car (document:datums (buffers:document layout:buffer))))
 
@@ -41,25 +41,18 @@
 
 (define (order-names) (map name-of (layout:selection-order)))
 
-;; The page sends a marked keymap's number, before its state.
-(define (mark-number keymap) (read (open-input-string (views:keymap-mark keymap))))
-
-(define click!
+;; The layout's screen names a part only through an element marked with
+;; the part's tokens, such as a view's or a tab's, so a click names it
+;; through that element.
+(define marked-element
   (case-lambda
-    [(at) (click! at 1 '())]
-    [(at button keymaps) (click! at button keymaps (buffers:version layout:buffer))]
-    [(at button keymaps version)
-     (let ([s layout:screen-view] [client (test-user:client)])
-       (for-each
-         (lambda (action)
-           (web:post-input! client
-             (append
-               (list (cons "type" "mouse") (cons "action" action) (cons "button" button) (cons "clicks" 1)
-                     (cons "modifiers" '#()) (cons "token" at) (cons "view" (views:id s)) (cons "version" version)
-                     (cons "showing" (views:shown-count s)))
-               (if (null? keymaps) '() (list (cons "keymaps" (list->vector (map mark-number keymaps))))))))
-         '("down" "click"))
-       (test-user:settle))]))
+    [(class at) (marked-element (test-user:client) class at)]
+    [(client class at)
+     (or (find (lambda (e) (equal? (number->string at) (test-user:element-attribute e "data-at")))
+               (test-user:elements (test-user:screen client) class))
+         (assertion-violation 'layout-test/parts:marked-element "no element of the class marked at the position" class at))]))
+
+(define (view-element v) (marked-element "layout-view" (document:node-start (layout:view-node v))))
 
 (define (place-echo! b)
   (layout:display-buffer b (layout-split:display-at-side (layout:direction down) 90 'content '((locked . #t)))))
@@ -82,17 +75,6 @@
          (cons (string->number (test-user:element-attribute (car (test-user:elements e "view")) "data-view"))
                (has-class? e "selected")))
        (test-user:elements (test-user:screen client) "layout-view")))
-
-(define (click-text! view at)
-  (let ([client (test-user:client)])
-    (for-each
-      (lambda (action)
-        (web:post-input! client
-          (list (cons "type" "mouse") (cons "action" action) (cons "button" 1) (cons "clicks" 1)
-                (cons "modifiers" '#()) (cons "at" at) (cons "view" (views:id view))
-                (cons "version" (buffers:version (views:buffer view))) (cons "showing" (views:shown-count view)))))
-      '("down" "click"))
-    (test-user:settle)))
 
 (define (part)
   (let* ([n (layout:selected-part)] [doc (buffers:document layout:buffer)])

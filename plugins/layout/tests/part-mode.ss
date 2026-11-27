@@ -77,7 +77,7 @@
     (test-user:press! "C-x w w ESC")
     (check (not (layout:part-mode?)))
     (test-user:press! "C-x w w")
-    (layout-test/parts:click-text! v1 0)
+    (test-user:click! v1 1)
     (check (not (layout:part-mode?)))
     (check (eq? v1 (layout:selected-view)))))
 

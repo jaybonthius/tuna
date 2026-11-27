@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (buffers) (document) (views) (web) (test-user))
+(import (layout) (buffers) (document) (views) (test-user))
 
 (define (tree) (car (document:datums (buffers:document layout:buffer))))
 
@@ -29,24 +29,14 @@
       (lambda (c at) (when (document:node? c) (set! acc (cons c acc)))))
     (reverse acc)))
 
-;; The page sends a marked keymap's number, before its state.
-(define (mark-number keymap) (read (open-input-string (views:keymap-mark keymap))))
+(define (tab-part class at)
+  (let ([tab (find (lambda (e) (equal? (number->string at) (test-user:element-attribute e "data-at")))
+                   (test-user:elements (test-user:screen) "tab"))])
+    (car (test-user:elements tab class))))
 
-(define mouse!
-  (case-lambda
-    [(keymaps button at) (mouse! keymaps button at (buffers:version layout:buffer) '("down" "click"))]
-    [(keymaps button at version actions)
-     (let ([s layout:screen-view] [client (test-user:client)])
-       (for-each
-         (lambda (action)
-           (web:post-input! client
-             (append
-               (list (cons "type" "mouse") (cons "action" action) (cons "button" button) (cons "clicks" 1)
-                     (cons "modifiers" '#()) (cons "token" at) (cons "view" (views:id s)) (cons "version" version)
-                     (cons "showing" (views:shown-count s)))
-               (if (null? keymaps) '() (list (cons "keymaps" (list->vector (map mark-number keymaps))))))))
-         actions)
-       (test-user:settle))]))
+(define (view-element at)
+  (find (lambda (e) (equal? (number->string at) (test-user:element-attribute e "data-at")))
+        (test-user:elements (test-user:screen) "layout-view")))
 
 (define (raised-with who message)
   (lambda (e)

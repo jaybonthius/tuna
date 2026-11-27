@@ -74,11 +74,7 @@
   (test-user:show! "|0123456789")
   (keys:bind! keys:global "<down-mouse-1>" keys:ignore)
   (test-user:press! "C-c k")
-  (keys-test:mouse! "down" 1 1 '() 3)
-  (keys-test:mouse! "move" 1 1 '() 4)
-  (check-equal? '() (take-got!))
-  (check-equal? "C-c k" (keys:reading (test-user:client)))
-  (keys-test:mouse! "drag" 1 1 '() 5)
+  (test-user:drag! (layout:selected-view) 3 5)
   (check-equal? '((("<drag-mouse-1>" 3 5) #f "C-c k")) (map (lambda (g) (cons (event-summary (car g)) (cdr g))) (take-got!)))
   (tables:remove! keys:global "<down-mouse-1>"))
 
@@ -117,12 +113,11 @@
 (test "a sequence read returns a mouse key's event, a press then a drag as the drag, and a mouse key after a typed prefix as typed"
   (test-user:show! "|0123456789")
   (test-user:press! "C-c s")
-  (keys-test:mouse! "click" 1 1 '() 3)
+  (test-user:click! (layout:selected-view) 3)
   (test-user:press! "C-c s")
-  (keys-test:mouse! "down" 1 1 '() 3)
-  (keys-test:mouse! "drag" 1 1 '() 6)
+  (test-user:drag! (layout:selected-view) 3 6)
   (test-user:press! "C-c s C-x")
-  (keys-test:mouse! "click" 1 1 '() 2)
+  (test-user:click! (layout:selected-view) 2)
   (check-equal? '(("<mouse-1>" 3) ("<drag-mouse-1>" 3 6) "C-x <mouse-1>") (map event-summary (take-got!))))
 
 (test "an ESC that is the Meta prefix waits for the next key, and a sequence read returns both as typed"

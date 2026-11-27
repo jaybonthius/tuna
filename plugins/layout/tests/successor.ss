@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (layout) (layout-split) (layout-tabs) (echo-area) (minibuffer) (views) (buffers) (document)
+(import (tuna) (test) (test-user) (layout) (layout-split) (layout-tabs) (echo-area) (minibuffer) (views) (buffers)
         (layout-test parts) (layout-test focus))
 
 (define atom layout-test/parts:atom)
@@ -13,7 +13,9 @@
 
 (define (select-in-order! . vs) (for-each layout:select! vs))
 
-(define (click-part! v) (layout-test/parts:click! (document:node-start (layout:view-node v))))
+(define (click-part! v)
+  (test-user:settle)
+  (test-user:click-element! (layout-test/parts:view-element v)))
 
 (test "a prompt that ended leaves its locked part in the order, and the successor passes over it and records no use"
   (let* ([a (begin! "a")] [b (begin (test-user:press! "C-x 3") (made-beside a "b"))])

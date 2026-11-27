@@ -41,12 +41,29 @@
   (layout-scroll:container '() (atom a '(size . 1/2))
     (layout-split:container '((direction . column) (size . 1/2)) (atom p '(locked . #t)) (atom b))))
 
+(define reports 0)
+
+;; A strip draws a column its page has not reported in view as a
+;; placeholder, and the column past the last it shows whole as a band.
+(define (report-strip-shows! v)
+  (test-user:settle)
+  (set! reports (+ reports 1))
+  (let ([strip (car (test-user:elements (test-user:screen) "layout-strip"))] [ids (vector (views:id v))])
+    (web:post-input! (test-user:client)
+      (list (cons "type" "scroller")
+            (cons "scroller" (string->number (test-user:element-attribute strip "data-scroller")))
+            (cons "placement" (string->number (test-user:element-attribute strip "data-placement")))
+            (cons "report" reports) (cons "items" ids) (cons "whole" ids) (cons "settled" #f))))
+  (test-user:settle))
+
 (test "a click on a strip column's placeholder or band names the column, and the strip's first and last moves reach it"
   (holding-locked! strip-of-locked)
-  (layout-test/parts:click! (start-of (enclosing b)))
+  (report-strip-shows! a)
+  (test-user:click-element! (layout-test/parts:marked-element "strip-placeholder" (start-of (enclosing b))))
   (check-equal? "b" (selected))
   (holding-locked! strip-of-locked)
-  (layout-test/parts:click! (start-of (enclosing b)) 1 (list layout:keymap))
+  (report-strip-shows! a)
+  (test-user:click-element! (layout-test/parts:marked-element "strip-edge" (start-of (enclosing b))))
   (check-equal? "b" (selected))
   (layout:select! p)
   (layout:select! a)
@@ -74,7 +91,9 @@
   (test-user:press! "C-x t o")
   (check-equal? "b" (selected))
   (holding-locked! (lambda () (layout-tabs:container '() (atom a) (column-of-locked))))
-  (layout-test/parts:click! (start-of (enclosing b)) 1 (list layout-tabs:keymap))
+  (test-user:settle)
+  (test-user:click-element!
+    (car (test-user:elements (layout-test/parts:marked-element "tab" (start-of (enclosing b))) "layout-tabs-label")))
   (check-equal? "b" (selected)))
 
 (define (float-layers)
@@ -118,7 +137,9 @@
     (let ([explorer (layout-test/focus:explorer!)])
       (select-in-order! b explorer a)
       (layout-test/focus:ask!)
-      (layout-test/parts:click! (start-of (layout:view-node a)) 1 (list layout-tabs:close-keymap layout-tabs:keymap))
+      (test-user:settle)
+      (test-user:click-element!
+        (car (test-user:elements (layout-test/parts:marked-element "tab" (start-of (layout:view-node a))) "layout-tabs-close")))
       (check-equal? '(" *Minibuf*" ("explorer" "b" "echo" " *Minibuf*")) (list (selected) (shown)))
       (layout-test/focus:end-prompt!)
       (check-equal? "b" (selected)))))

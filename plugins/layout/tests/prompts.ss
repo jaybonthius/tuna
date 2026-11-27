@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (layout) (layout-split) (layout-tabs) (layout-float) (editing) (echo-area) (minibuffer)
-        (completion) (buffer-picker) (help) (status-line) (views) (buffers) (document) (options) (tables) (commands) (keys)
+        (completion) (buffer-picker) (help) (status-line) (views) (buffers) (options) (tables) (commands) (keys)
         (layout-test parts) (layout-test focus))
 
 (options:set! help:select-view? #t)
@@ -19,10 +19,13 @@
 (define end-prompt! layout-test/focus:end-prompt!)
 (define prompt-view layout-test/focus:prompt-view)
 
-(define (click-part! v) (layout-test/parts:click! (document:node-start (layout:view-node v))))
+(define (click-part! v)
+  (test-user:settle)
+  (test-user:click-element! (layout-test/parts:view-element v)))
 
-(define (click-status! v button)
-  (layout-test/parts:click! (document:node-start (layout:view-node v)) button (list status-line:keymap)))
+(define (click-status! v key)
+  (test-user:settle)
+  (test-user:click-element! (car (test-user:elements (layout-test/parts:view-element v) "status-line")) key))
 
 (define (two!)
   (let* ([a (begin! "a")] [b (begin (test-user:press! "C-x 3") (made-beside a "b"))])
@@ -82,11 +85,11 @@
 (test "the status line's mouse-3 selects the clicked view before deleting it, so a waiting prompt is left unselected"
   (let-values ([(a b) (two!)])
     (ask!)
-    (click-status! a 3)
+    (click-status! a "<mouse-3>")
     (check-equal? '("b" #t) (list (selected) (and (minibuffer:current-prompt) #t)))
     (end-prompt!))
   (let-values ([(a b) (two!)])
-    (click-status! a 3)
+    (click-status! a "<mouse-3>")
     (check-equal? '("b" ("b" "echo")) (list (selected) (shown)))))
 
 (define (describe-car!)

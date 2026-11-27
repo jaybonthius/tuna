@@ -11,10 +11,6 @@
 (define (raised-by who message)
   (lambda (c) (and (who-condition? c) (eq? who (condition-who c)) (string=? message (condition-message c)))))
 
-;; A command a key's read resumes runs after the batch of that key, so
-;; its screen is drawn one batch later.
-(define (after-read) (test-user:settle))
-
 (test-user:show! "|one\ntwo\n")
 
 (define notes (views:buffer (layout:selected-view)))
@@ -25,7 +21,6 @@
 
 (test "C-h k reads a whole key sequence and shows in *Help* what it runs, the module that bound it and the command's description, with point at the start of the title"
   (test-user:press! "C-h k C-c h")
-  (after-read)
   (check-equal? '("# C-c h runs the command help-test/harpo:honk, bound by (help-test harpo)"
                   "<help-test/harpo:honk> is a command in (help-test harpo)." "It is on [C-c h]." "It is for <help-test/harpo:mode>."
                   "Honks once.")
@@ -66,22 +61,20 @@
 (test "a click is looked up at its position, and C-h k reads past a press to the click, naming who bound it"
   (keys:bind! help-test/harpo:keymap "<mouse-1>" help-test/harpo:honk)
   (test-user:press! "C-h k")
-  (help-test:click! (view) '(("at" . 2) ("count" . 0)))
-  (after-read)
+  (test-user:click! (view) 2)
   (check-equal? "<mouse-1> at that spot runs the command help-test/harpo:honk, bound by (test-file help keys)" (help-test:title))
   (keys:unbind! help-test/harpo:keymap "<mouse-1>"))
 
 (test "keys that run nothing are said to be undefined in the echo area, and *Help* stays as it was"
   (let ([before (help-test:title)])
     (test-user:press! "C-h k C-c z")
-    (after-read)
     (check-equal? '("C-c z is undefined" #t) (list (echo-area:current-message) (equal? before (help-test:title))))))
 
 (test "a quit key cancels C-h k, describing nothing, and the echo area says Quit"
   (let ([before (help-test:title)])
     (for-each
       (lambda (keys)
-        (check-equal? '(cancelled) (report-messages (lambda () (test-user:press! "C-h k") (test-user:press! keys) (after-read))))
+        (check-equal? '(cancelled) (report-messages (lambda () (test-user:press! "C-h k") (test-user:press! keys))))
         (check-equal? before (help-test:title)))
       '("C-g" "C-x C-g" "ESC"))
     (check-equal? "Quit" (echo-area:current-message))))
@@ -95,7 +88,6 @@
   (test-user:press! "C-h c")
   (check-equal? "Describe the following key or mouse click: " (keys:reading-prompt (test-user:client)))
   (test-user:press! "C-c h")
-  (after-read)
   (check-equal? "C-c h runs help-test/harpo:honk" (echo-area:current-message)))
 
 (test "C-h c shows the first line in the echo area, without the binder"
@@ -107,7 +99,6 @@
 (test "C-h w reads a command and shows the keys that run it"
   (test-user:press! "C-h w")
   (test-user:type! "help-test/harpo:honk\n")
-  (after-read)
   (check-equal? "help-test/harpo:honk is on C-c h, C-x h" (echo-area:current-message))
   (help:where-is help-test/harpo:quiet (view))
   (check-equal? "help-test/harpo:quiet is on no key" (echo-area:current-message)))

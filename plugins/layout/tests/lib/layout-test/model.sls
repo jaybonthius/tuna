@@ -453,35 +453,45 @@
       (let ([atoms (filter (lambda (a) (memv (%node-id a) (%node-ids n))) (%atoms (%layout)))])
         (%check! 'part-view (%node-id (%mru atoms (%order-ids))) (views:id (layout:part-view n)))))))
 
-(define (%click! client node button)
-  (let ([s layout:screen-view])
-    (for-each
-      (lambda (action)
-        (web:post-input! client
-          `(("token" . ,(document:node-start node)) ("type" . "mouse") ("action" . ,action) ("button" . ,button)
-            ("clicks" . 1) ("modifiers" . #()) ("view" . ,(views:id s)) ("version" . ,(buffers:version layout:buffer))
-            ("showing" . ,(views:shown-count s))
-            ,@(if (= button 3) `(("keymaps" . ,(vector (%mark-number status-line:keymap)))) '()))))
-      '("down" "click"))
-    (test-user:settle)))
-
-(define (%mark-number keymap) (read (open-input-string (views:keymap-mark keymap))))
+;; A page names a part only through an element of the layout's screen
+;; marked with the part's tokens, such as a view's or a tab's; a view
+;; drawn inside it marks its own buffer's.
+(define (%marked-elements client)
+  (let ([screen (car (test-user:elements (test-user:screen client) "layout-screen"))])
+    (let walk ([node screen])
+      (if (and (pair? node) (symbol? (car node)) (not (eq? (car node) '\x40;)))
+          (if (and (not (eq? node screen)) (test-user:element-attribute node "data-view"))
+              '()
+              (let ([below (apply append (map walk (cdr node)))])
+                (if (and (test-user:element-attribute node "data-at") (test-user:element-attribute node "data-to"))
+                    (cons node below)
+                    below)))
+          '()))))
 
 (define (%op-click! client)
-  (let ([n (%pick-one (%nodes layout:buffer))] [before (%before)])
-    (when n
-      (%refused? (lambda () (%click! client n 1)))
-      (let* ([atoms (filter (lambda (a) (memv (%node-id a) (%node-ids n))) (%atoms (car before)))]
-             [m (%mru atoms (caddr before))])
-        (%check! 'click (if (and m (not (%locked? m))) (%node-id m) (car (caddr before))) (%selected-id))))))
+  (test-user:settle)
+  (let ([e (%pick-one (%marked-elements client))] [before (%before)])
+    (when e
+      (let ([n (document:token (buffers:document layout:buffer) (string->number (test-user:element-attribute e "data-at")))])
+        (%refused? (lambda () (test-user:click-element! client e "<mouse-1>")))
+        (let* ([atoms (filter (lambda (a) (memv (%node-id a) (%node-ids n))) (%atoms (car before)))]
+               [m (%mru atoms (caddr before))])
+          (%check! 'click (if (and m (not (%locked? m))) (%node-id m) (car (caddr before))) (%selected-id)))))))
 
 (define (%op-mouse-3! client)
   (let ([v (%pick-one (layout:views))])
     (when (and v (not (layout:locked? (layout:view-node v))))
       (layout:select! v)
-      (let ([before (%before)])
-        (%refused? (lambda () (%click! client (layout:view-node v) 3)))
-        (%check-edit! 'mouse-3 before)))))
+      (test-user:settle)
+      (let ([drawn (find (lambda (e) (equal? (number->string (document:node-start (layout:view-node v)))
+                                             (test-user:element-attribute e "data-at")))
+                         (test-user:elements (test-user:screen client) "layout-view"))]
+            [before (%before)])
+        (when drawn
+          (let ([lines (test-user:elements drawn "status-line")])
+            (when (pair? lines)
+              (%refused? (lambda () (test-user:click-element! client (car lines) "<mouse-3>")))
+              (%check-edit! 'mouse-3 before))))))))
 
 (define (%op-reach! client)
   (let ([before (%before)] [command (%pick-one (list layout:select-left layout:select-right layout:select-up layout:select-down

@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (web) (keys) (commands) (editing) (layout) (options))
+(import (tuna) (test) (test-user) (web) (keys) (commands) (editing) (layout) (options) (views) (buffers))
 
 (define (raised-by who)
   (lambda (e) (and (who-condition? e) (eq? who (condition-who e)))))
@@ -26,6 +26,12 @@
   "Asks its client's page a question and keeps the answer."
   (set! asked (web:ask-page (web:current-client) "times-ten" 4)))
 
+(commands:define-command (insert-read-key)
+  "Reads a key and inserts it at the start of the selected view's buffer."
+  (let ([key (keys:read-key)])
+    (buffers:insert! (views:buffer (layout:selected-view)) 1 key)))
+
+(keys:bind! keys:global "C-c r" insert-read-key)
 (keys:bind! keys:global "C-c w" wait-for-ever)
 (keys:bind! keys:global "C-c n" note-client)
 (keys:bind! keys:global "C-c a" ask-the-page)
@@ -129,3 +135,13 @@
     (spawn-task (lambda (restore) (set! ran #t)))
     (test-user:settle)
     (check ran)))
+
+(test "settle returns once a command that a key's read resumed has continued and been drawn"
+  (test-user:show! "|one")
+  (test-user:press! "C-c r x")
+  (let ([id (number->string (views:id (layout:selected-view)))])
+    (check-equal? '("xone")
+                  (map test-user:element-text
+                       (test-user:elements (find (lambda (e) (equal? id (test-user:element-attribute e "data-view")))
+                                                 (test-user:elements-with (test-user:screen) "data-view"))
+                                           "line")))))
