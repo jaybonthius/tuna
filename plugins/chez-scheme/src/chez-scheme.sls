@@ -238,7 +238,7 @@
 
   (define (repl-libraries)
     (filter (lambda (name) (member name (library-list)))
-            (append '((tuna core replaced) (chezscheme) (tuna))
+            (append '((tuna replaced) (chezscheme) (tuna))
                     (loaded-modules))))
 
   ;; The first name for a spelling is the one Chez resolves, so the

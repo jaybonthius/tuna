@@ -13,7 +13,7 @@
 (write-plugin-module! "shadowed" '(shadowed) '((define (where) "the plugin")))
 (write-plugin-module! "other" '(other) '((define (name) 'other)))
 (write-plugin-module! "command-line" '(command-line) '((define (where) "the plugin")))
-(fixtures:write-lib-module! '(tuna core) '((define (where) "lib/")))
+(fixtures:write-lib-module! '(tuna other) '((define (where) "lib/")))
 (fixtures:write-lib-module! '(tuna extra) '((define (where) "lib/")))
 (fixtures:write-lib-module! '(lang extra) '((define (where) "lib/")))
 (fixtures:write-lib-module! '(jobs-test words) '((define (where) "lib/")))
@@ -40,7 +40,7 @@
 (test "Tuna's own names resolve only to Tuna's own libraries"
   (for-each
     (lambda (form) (check-equal? '(load-module! "not a module") (raised-text form)))
-    '((import (tuna extra)) (import (only (tuna core) where)) (import (only (lang extra) where)))))
+    '((import (tuna extra)) (import (only (tuna other) where)) (import (only (lang extra) where)))))
 
 (test "the owners' names, and names that would replace Chez's own, are not module names"
   (check-equal? '("library (init) not found" "library (repl) not found")

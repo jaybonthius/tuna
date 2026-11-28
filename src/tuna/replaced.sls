@@ -1,11 +1,11 @@
-(library (tuna core replaced)
+(library (tuna replaced)
   (export exit dynamic-wind with-mutex condition-wait sleep register-signal-handler
           fork-thread set-timer timer-interrupt-handler make-engine with-interrupts-disabled
           critical-section disable-interrupts enable-interrupts $primitive generate-interrupt-trap
           library-search-handler collect-request-handler keyboard-interrupt-handler)
   (import (only (chezscheme) define define-syntax syntax-rules _ ... lambda let quote syntax-violation case-lambda)
           (prefix (only (chezscheme) mutex-acquire mutex-release) chez:)
-          (rename (only (tuna core kernel) exit tuna-dynamic-wind tuna-condition-wait tuna-sleep
+          (rename (only (tuna kernel) exit tuna-dynamic-wind tuna-condition-wait tuna-sleep
                         tuna-register-signal-handler)
                   (tuna-dynamic-wind dynamic-wind*)
                   (tuna-condition-wait condition-wait)

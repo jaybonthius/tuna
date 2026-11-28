@@ -1,4 +1,4 @@
-(library (tuna core kernel)
+(library (tuna kernel)
   (export
     on-main-thread?
     check-main-thread
@@ -100,7 +100,7 @@
     module-loaded
     owner-unloading
     exit-anyway?)
-  (import (except (chezscheme) exit) (prefix (only (chezscheme) exit) chez:) (tuna core conditions))
+  (import (except (chezscheme) exit) (prefix (only (chezscheme) exit) chez:) (tuna conditions))
 
   ;;; Threads
 

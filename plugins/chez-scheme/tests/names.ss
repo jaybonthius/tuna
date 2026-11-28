@@ -117,27 +117,27 @@
   (check-equal? '((buffers:insert! (buffers) procedure) (document:text (document) procedure) #f)
                 (described bs '(insert! document:text buffers:insert!))))
 
-(test "a module's file is offered its own helpers, not its imports'; its body imports (tuna core replaced) ahead of its first line's libraries"
+(test "a module's file is offered its own helpers, not its imports'; its body imports (tuna replaced) ahead of its first line's libraries"
   (final-faces zeppo #t)
   (check-equal? '((zeppo:%tune (zeppo) procedure) (zeppo:sing (zeppo) procedure) (zeppo:volume (zeppo) variable)
                   (spawn-task (tuna) procedure) (buffers:insert! (buffers) procedure) #f)
                 (described zeppo '(%tune sing volume spawn-task buffers:insert! buffers:%replace)))
-  (check-equal? '((sleep (tuna core replaced) procedure) (dynamic-wind (tuna core replaced) procedure) (car (chezscheme) procedure))
+  (check-equal? '((sleep (tuna replaced) procedure) (dynamic-wind (tuna replaced) procedure) (car (chezscheme) procedure))
                 (described zeppo '(sleep dynamic-wind car))))
 
 (define plain (buffers:make "plain" ""))
 
 (test "a buffer with no scope of its own sees the REPL's names: every export of the REPL's libraries, helpers included, the first library's for a name two export, and no module's %scope"
   (check (eq? (chez-scheme:repl-names) (chez-scheme:names plain)))
-  (check-equal? '((sleep (tuna core replaced) procedure) (dynamic-wind (tuna core replaced) procedure) (car (chezscheme) procedure)
+  (check-equal? '((sleep (tuna replaced) procedure) (dynamic-wind (tuna replaced) procedure) (car (chezscheme) procedure)
                   (zeppo:%tune (zeppo) procedure) (zeppo:volume (zeppo) variable) #f)
                 (described plain '(sleep dynamic-wind car zeppo:%tune zeppo:volume zeppo:%scope)))
   (check-equal? 1 (length (filter (lambda (n) (eq? 'dynamic-wind (chez-scheme:name-spelling n))) (vector->list (chez-scheme:repl-names)))))
   (check (for-all chez-scheme:name? (vector->list (chez-scheme:repl-names)))))
 
-(test "the REPL's libraries are (tuna core replaced), (chezscheme) and (tuna), the others Chez has loaded, then each loaded module"
+(test "the REPL's libraries are (tuna replaced), (chezscheme) and (tuna), the others Chez has loaded, then each loaded module"
   (let ([libraries (chez-scheme:tuna-libraries)])
-    (check-equal? '((tuna core replaced) (chezscheme) (tuna)) (list-head libraries 3))
+    (check-equal? '((tuna replaced) (chezscheme) (tuna)) (list-head libraries 3))
     (check (member '(zeppo) libraries))))
 
 (test "a configuration gets its own imports' names, then the REPL's"

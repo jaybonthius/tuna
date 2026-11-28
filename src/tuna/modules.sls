@@ -1,4 +1,4 @@
-(library (tuna core modules)
+(library (tuna modules)
   (export
     tuna-module-body
     define-public
@@ -15,7 +15,7 @@
     eval-in-module
     start-top-level!
     install-exit-runner!)
-  (import (except (chezscheme) exit) (tuna core kernel) (tuna core conditions) (tuna core names)
+  (import (except (chezscheme) exit) (tuna kernel) (tuna conditions) (tuna names)
           (prefix (only (chezscheme) exit fork-thread dynamic-wind with-mutex sleep set-timer
                         timer-interrupt-handler make-engine collect-request-handler
                         keyboard-interrupt-handler condition-wait register-signal-handler
@@ -471,7 +471,7 @@
          (with-syntax ([this-module (datum->syntax #'k 'this-module)]
                        [%scope (datum->syntax #'k '%scope)]
                        [scope-symbol (datum->syntax #'k (prefixed-symbol (syntax->datum #'name) '%scope))]
-                       [replaced (datum->syntax #'k '(tuna core replaced))]
+                       [replaced (datum->syntax #'k '(tuna replaced))]
                        [specs (datum->syntax #'k (import-specs #'(form ...)))]
                        [assigned (datum->syntax #'k (assigned-private-names (syntax->datum #'(form ...))))])
            #'(begin
@@ -970,7 +970,7 @@
 
   (define (start-top-level!)
     (set! top-level (copy-environment (scheme-environment) #t))
-    (eval '(import (tuna core replaced)) top-level)
+    (eval '(import (tuna replaced)) top-level)
     (define-top-level-syntax 'define top-level-define top-level)
     (for-each
       (lambda (keyword) (define-top-level-syntax (syntax->datum keyword) (top-level-definer keyword) top-level))

@@ -1,4 +1,4 @@
-(library (tuna core names)
+(library (tuna names)
   (export module-name? prefixed-symbol)
   (import (chezscheme))
 

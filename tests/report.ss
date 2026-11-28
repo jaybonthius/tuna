@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (only (tuna core kernel) call-reporting))
+(import (tuna) (test) (test-runner) (only (tuna kernel) call-reporting))
 
 ;; Chez finds a module stale when its source is newer than its object, and
 ;; file times step with the kernel's clock tick, 1 to 10 ms, so a rewrite

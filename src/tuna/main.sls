@@ -1,7 +1,7 @@
 (library (tuna main)
   (export main)
   (import (except (chezscheme) exit) (prefix (only (chezscheme) exit) chez-) (lang loader)
-          (tuna version) (tuna core kernel) (tuna core modules))
+          (tuna version) (tuna kernel) (tuna modules))
 
   ;; The kernel reads only these; the rest of the command line is the
   ;; plugins'.

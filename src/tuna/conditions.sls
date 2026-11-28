@@ -1,4 +1,4 @@
-(library (tuna core conditions)
+(library (tuna conditions)
   (export
     condition-text write-condition warning-only? call-with-only-handler
     &cancelled make-cancelled cancelled? cancelled-reason

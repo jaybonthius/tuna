@@ -10,4 +10,4 @@
     definition-changes definition-documentation
     load-module! reload-modules! eval-in-module
     report tick batch-ended module-loaded exit-anyway?)
-  (import (tuna core conditions) (tuna core kernel) (tuna core modules)))
+  (import (tuna conditions) (tuna kernel) (tuna modules)))

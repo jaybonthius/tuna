@@ -211,7 +211,7 @@
     (if (list? clause) (filter spec-datum? (cdr clause)) '()))
 
   ;; A scope lists its sources in the order that resolves a name. A
-  ;; module's body imports (tuna core replaced) inside its first line's
+  ;; module's body imports (tuna replaced) inside its first line's
   ;; libraries and outside its own imports, and a configuration loads
   ;; into the REPL's environment, the only file with use-plugin lines.
   (define (scope-of lexemes text)
@@ -231,7 +231,7 @@
                             (eq? (lexeme-kind (vector-ref lexemes 0)) 'directive)
                             (substring text 0 (lexeme-end (vector-ref lexemes 0))))]
            [line-specs (cond
-                         [(equal? first-line "#!tuna") '((tuna core replaced) (chezscheme) (tuna))]
+                         [(equal? first-line "#!tuna") '((tuna replaced) (chezscheme) (tuna))]
                          [else '()])]
            [module-file? (pair? line-specs)])
       (let loop ([i 0] [specs '()] [own #f] [found? module-file?] [configuration? #f])

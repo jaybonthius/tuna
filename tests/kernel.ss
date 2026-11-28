@@ -1,6 +1,6 @@
 (import (tuna) (test) (test-runner)
         (rename (only (chezscheme) sleep fork-thread) (sleep chez:sleep) (fork-thread chez:fork-thread))
-        (only (tuna core kernel) tuna-register-signal-handler call-reporting))
+        (only (tuna kernel) tuna-register-signal-handler call-reporting))
 
 ;; The kernel reports the end of every task a cancel ends, and these tests
 ;; cancel hundreds; any other report still fails the file.

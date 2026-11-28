@@ -86,7 +86,7 @@
   (help:describe-name 'dynamic-wind (view))
   (test-user:settle)
   (check-equal? "dynamic-wind" (help-test:title))
-  (check (holds? (help-text) "(tuna core replaced)")))
+  (check (holds? (help-text) "(tuna replaced)")))
 
 (define (minibuffer-session)
   (let ([v (layout:find-view (buffers:find " *Minibuf*"))])
