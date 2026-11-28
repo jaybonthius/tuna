@@ -153,6 +153,13 @@
 
 (define-condition-type %&folder &i/o-filename %make-folder %folder?)
 
+(define-condition-type %&visited-elsewhere &i/o-filename %make-visited-elsewhere %visited-elsewhere?)
+
+(define (%raise-visited-elsewhere who path buffer)
+  (raise (condition (%make-visited-elsewhere path) (make-who-condition who) (make-format-condition)
+                    (make-message-condition "Buffer ~a already visits ~a")
+                    (make-irritants-condition (list (buffers:name buffer) (abbreviated-path path))))))
+
 ;; A job's raise would go to report as well as to the task waiting for
 ;; it, so a worker hands back its failure as data.
 (jobs:define-worker (%reader path emit)
@@ -554,11 +561,7 @@
     (and (failure? result)
          (let ([irritants (map (lambda (x) (if (string? x) (abbreviated-path x) x)) (failure-irritants result))]
                [format? (failure-format? result)])
-           (raise (condition (cond
-                               [(failure-violation? result) (make-assertion-violation)]
-                               [(failure-already-exists? result) (make-i/o-file-already-exists-error (failure-filename result))]
-                               [(failure-filename result) => make-i/o-filename-error]
-                               [else (make-i/o-error)])
+           (raise (condition (failure-base-condition result)
                              (make-who-condition who)
                              (make-message-condition
                                (if format? (apply format (failure-message result) irritants) (failure-message result)))
@@ -636,7 +639,7 @@
       (lambda (e)
         (let ([path (entry-path e)])
           (when (and (%within? path to) (not (%within? path from)))
-            (error who "another buffer visits the file" (abbreviated-path path)))))
+            (%raise-visited-elsewhere who path (entry-buffer e)))))
       visited))
 
   (define (move-entries-under! from to)
@@ -686,8 +689,8 @@
   (let* ([path (true-path path)]
          [read (run-job 'files:read-document %reader path (lambda (read) (void)) #f)])
     (when (eq? read 'folder)
-      (raise (condition (%make-folder path) (make-who-condition 'files:read-document)
-                        (make-message-condition "is a folder") (make-irritants-condition (list (abbreviated-path path))))))
+      (raise (condition (%make-folder path) (make-who-condition 'files:read-document) (make-format-condition)
+                        (make-message-condition "~a is a folder") (make-irritants-condition (list (abbreviated-path path))))))
     (remember-read! read)
     (values (contents-document read) (contents-length read) (contents-hash read))))
 
@@ -795,31 +798,30 @@
            (%with-final-slash (cdr override))
            (or (%found-directory buffer) (%home-folder))))]))
 
-(define (%cancel who path)
-  (raise (condition (%make-canceled) (make-who-condition who)
-                    (make-message-condition "canceled") (make-irritants-condition (list (abbreviated-path path))))))
+(define (%cancel who)
+  (raise (condition (%make-canceled) (make-who-condition who) (make-message-condition "Canceled"))))
 
 (define (%confirm-overwrite who path)
   (when (and (file-exists? path) (not (ask:y-or-n? "File exists; overwrite? ")))
-    (%cancel who path)))
+    (%cancel who)))
 
 (define (%confirm-save who path)
   (let ([folder (path-parent path)])
     (cond
       [(not (file-exists? folder))
        (unless (ask:y-or-n? (format "Folder ~a does not exist; create? " (abbreviated-path folder)))
-         (%cancel who folder))
+         (%cancel who))
        (run-job who %folder-maker folder (lambda (made) (void)) #f)]
       [(and (file-exists? path) (not (writable? path))
             (not (ask:yes-or-no? "File is write-protected; try to save anyway? ")))
-       (%cancel who path)])))
+       (%cancel who)])))
 
 (define (%check-file-to-save who path buffer)
   (let ([other (buffer-at path)])
     (when (file-directory? path)
-      (error who "is a folder" (abbreviated-path path)))
+      (errorf who "~a is a folder" (abbreviated-path path)))
     (when (and other (not (eq? other buffer)))
-      (error who "another buffer visits the file" (abbreviated-path path)))
+      (%raise-visited-elsewhere who path other))
     path))
 
 (define (%ask-file-name who question buffer)
@@ -857,7 +859,7 @@
                       (let ([on-disk (car (run-operation 'files:save-buffer %fingerprinter (list (entry-path e))))])
                         (and on-disk (not (equal? on-disk (list (entry-length e) (entry-hash e)))))))))
              (not (ask:yes-or-no? (format "~a changed on disk since it was read; save anyway? " (abbreviated-path (entry-path e))))))
-    (%cancel 'files:save-buffer (entry-path e))))
+    (%cancel 'files:save-buffer)))
 
 (commands:define-command (save-buffer [buffer (buffers:current)])
   "Saves BUFFER to its file when it is modified, asking for a file when it visits none and files:offer-save? is true there."
@@ -890,9 +892,9 @@
   (check-task 'files:write-file)
   (let* ([path (true-path (%file-in-folder path buffer))] [other (buffer-at path)])
     (when (file-directory? path)
-      (error 'files:write-file "is a folder" (abbreviated-path path)))
+      (errorf 'files:write-file "~a is a folder" (abbreviated-path path)))
     (when (and other (not (eq? other buffer)))
-      (assertion-violation 'files:write-file "another buffer visits the file" (abbreviated-path path)))
+      (%raise-visited-elsewhere 'files:write-file path other))
     (let ([e (move-entry! buffer path)])
       (with-entry-lock 'files:write-file e
         (lambda ()
@@ -989,7 +991,10 @@
 
 (commands:define-command (revert-from-file [buffer (buffers:current)])
   "Reads BUFFER's file again and replaces the lines that differ, as one edit."
-  (let ([e (file-entry 'files:revert-from-file buffer)])
+  (check-buffer 'files:revert-from-file buffer)
+  (let ([e (entry-of buffer)])
+    (unless e
+      (errorf 'files:revert-from-file "~a visits no file" (buffers:name buffer)))
     (check-task 'files:revert-from-file)
     (with-entry-lock 'files:revert-from-file e
       (lambda ()
@@ -1037,6 +1042,15 @@
 
 (define (canceled-condition? v)
   (%canceled? v))
+
+(define (same-file-condition? v)
+  (same-file? v))
+
+(define (inside-itself-condition? v)
+  (inside-itself? v))
+
+(define (visited-elsewhere-condition? v)
+  (%visited-elsewhere? v))
 
 (saved:define-saved recent-files '() (lambda (v) (and (list? v) (for-all string? v))))
 

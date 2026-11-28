@@ -2,7 +2,7 @@
   (export resolve-folder resolved-path resolved-modified modification-stamp folder-state state-stamp state-names
           read-folder folder-read-attributes folder-read-space folder-read-entries
           listed-name listed-attributes listed-broken?
-          non-empty-folders failure? failure-message failure-irritants failure-format?)
+          non-empty-folders failure? failure-message failure-irritants failure-format? failure-base-condition)
   (import (chezscheme) (files attributes) (files paths))
 
   ;; What a job sends back is plain data, so each result is a vector, read
@@ -15,10 +15,19 @@
   (define (listed-name e) (vector-ref e 0))
   (define (listed-attributes e) (vector-ref e 1))
   (define (listed-broken? e) (vector-ref e 2))
-  (define (failure? v) (and (vector? v) (fx= (vector-length v) 4) (eq? (vector-ref v 0) 'failed)))
+  (define (failure? v) (and (vector? v) (fx= (vector-length v) 6) (eq? (vector-ref v 0) 'failed)))
   (define (failure-message f) (vector-ref f 1))
   (define (failure-irritants f) (vector-ref f 2))
   (define (failure-format? f) (vector-ref f 3))
+  (define (failure-filename f) (vector-ref f 4))
+  (define (failure-missing? f) (vector-ref f 5))
+
+  (define (failure-base-condition f)
+    (let ([filename (failure-filename f)])
+      (cond
+        [(not filename) (make-i/o-error)]
+        [(failure-missing? f) (make-i/o-file-does-not-exist-error filename)]
+        [else (make-i/o-filename-error filename)])))
 
   ;; A job's raise would go to report as well as to the task waiting for
   ;; it, so a worker hands back its failure as data. The main thread
@@ -32,7 +41,9 @@
                                        (map plain (condition-irritants c))
                                        '())])
                     (vector 'failed message irritants
-                            (and (format-condition? c) (guard (e [#t #f]) (apply format message irritants) #t))))])
+                            (and (format-condition? c) (guard (e [#t #f]) (apply format message irritants) #t))
+                            (and (i/o-filename-error? c) (plain (i/o-error-filename c)))
+                            (i/o-file-does-not-exist-error? c)))])
       (thunk)))
 
   (define (folder? a) (eq? (file-attributes-type a) (file-type folder)))
@@ -54,7 +65,8 @@
       (lambda ()
         (let ([a (read-file-attributes folder)])
           (unless (folder? a)
-            (raise (condition (make-error) (make-message-condition "not a folder") (make-irritants-condition (list folder)))))
+            (raise (condition (make-i/o-filename-error folder) (make-format-condition) (make-message-condition "~a is not a folder")
+                              (make-irritants-condition (list folder)))))
           (vector (modification-stamp a) (list-sort string<? (directory-list folder)))))))
 
   (define (state-stamp state) (vector-ref state 0))
@@ -72,13 +84,15 @@
                 (let ([a (read-file-attributes path names)])
                   (vector name a (and (eq? (file-attributes-type a) (file-type link)) (not (file-exists? path))))))))
           (unless (folder? self)
-            (raise (condition (make-error) (make-message-condition "not a folder") (make-irritants-condition (list folder)))))
-          (vector self
-                  (guard (c [(i/o-error? c) #f]) (file-system-space folder))
-                  (list->vector
-                    (cons* (vector "." self #f)
-                           (vector ".." (read-file-attributes (string-append folder "..") names) #f)
-                           (filter values (map entry (directory-list folder))))))))))
+            (raise (condition (make-i/o-filename-error folder) (make-format-condition) (make-message-condition "~a is not a folder")
+                              (make-irritants-condition (list folder)))))
+          ;; The names are read before .., so a folder that cannot be
+          ;; listed is the one its failure names.
+          (let* ([listed (directory-list folder)] [parent (read-file-attributes (string-append folder "..") names)])
+            (vector self
+                    (guard (c [(i/o-error? c) #f]) (file-system-space folder))
+                    (list->vector
+                      (cons* (vector "." self #f) (vector ".." parent #f) (filter values (map entry listed))))))))))
 
   (define (non-empty-folders paths)
     (filter (lambda (path) (and (file-directory? path #f) (pair? (directory-list path)))) paths)))

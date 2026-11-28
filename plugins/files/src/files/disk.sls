@@ -1,7 +1,7 @@
 (library (files disk)
   (export true-folders-path writable? readable? make-folders read-file revert-file save-file fnv-basis
-          failure failure? failure-violation? failure-message failure-irritants failure-format? failure-filename
-          failure-already-exists?
+          failure failure? failure-violation? failure-message failure-irritants failure-format?
+          failure-base-condition same-file? inside-itself?
           rename-path copy-path delete-path trash-path make-new-folder
           contents-document contents-length contents-hash contents-bom? contents-crlf? contents-missing?
           contents-folder-missing? contents-write-protected?
@@ -54,6 +54,10 @@
           h
           (loop (fx+ i 1) (fxand (fx* (fxxor h (bytevector-u8-ref bv i)) 16777619) #xFFFFFFFF)))))
 
+  (define-condition-type &same-file &i/o-filename make-same-file same-file?)
+
+  (define-condition-type &inside-itself &i/o-filename make-inside-itself inside-itself?)
+
   ;; Irritants cross to the main thread as text, since a job sends only
   ;; plain data. A violation stays one, so a defect here does not pass for
   ;; a disk error. The main thread formats the message, so that it names
@@ -71,7 +75,12 @@
          (list 'failed (violation? c) message irritants
                (and (format-condition? c) (guard (e [#t #f]) (apply format message irritants) #t))
                (and (i/o-filename-error? c) (plain (i/o-error-filename c)))
-               (i/o-file-already-exists-error? c)))]))
+               (cond
+                 [(i/o-file-already-exists-error? c) 'already-exists]
+                 [(i/o-file-does-not-exist-error? c) 'does-not-exist]
+                 [(same-file? c) 'same-file]
+                 [(inside-itself? c) 'inside-itself]
+                 [else #f])))]))
 
   (define (failure? v) (and (pair? v) (eq? (car v) 'failed)))
   (define (failure-violation? f) (cadr f))
@@ -79,7 +88,20 @@
   (define (failure-irritants f) (cadddr f))
   (define (failure-format? f) (list-ref f 4))
   (define (failure-filename f) (list-ref f 5))
-  (define (failure-already-exists? f) (list-ref f 6))
+  (define (failure-kind f) (list-ref f 6))
+
+  (define (failure-base-condition f)
+    (let ([filename (failure-filename f)])
+      (cond
+        [(failure-violation? f) (make-assertion-violation)]
+        [(not filename) (make-i/o-error)]
+        [else
+         (case (failure-kind f)
+           [(already-exists) (make-i/o-file-already-exists-error filename)]
+           [(does-not-exist) (make-i/o-file-does-not-exist-error filename)]
+           [(same-file) (make-same-file filename)]
+           [(inside-itself) (make-inside-itself filename)]
+           [else (make-i/o-filename-error filename)])])))
 
   (define (read-bytes path)
     (let ([bytes (call-with-port (open-file-input-port path) get-bytevector-all)])
@@ -338,10 +360,10 @@
   (define (check-not-inside who from to)
     (cond
       [(string=? to from)
-       (raise (condition (make-i/o-filename-error to) (make-who-condition who)
+       (raise (condition (make-same-file to) (make-who-condition who)
                          (make-message-condition "the same file") (make-irritants-condition (list from))))]
       [(inside? to from)
-       (raise (condition (make-i/o-filename-error to) (make-who-condition who)
+       (raise (condition (make-inside-itself to) (make-who-condition who)
                          (make-message-condition "cannot put a folder inside itself")
                          (make-irritants-condition (list from to))))]))
 

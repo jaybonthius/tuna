@@ -39,6 +39,14 @@
     (check-equal? "/src/new.txt" (answer r))
     (check-equal? '("~/src/new.txt" "~/src/text.txt") (list-head (file-picker:file-name-history) 2))))
 
+(test "a name typed with no folder is in the folder the read started from"
+  (let ([r (read-from "~/src/")])
+    (test-user:press! "C-a C-k")
+    (test-user:type! "rel.txt")
+    (choices)
+    (test-user:press! "RET")
+    (check-equal? (file-picker-test/tree:path "src/rel.txt") (minibuffer-test/reading:result r))))
+
 (test "C-x C-f asks through ask:file-name, so a reader set in place of file-picker's answers it"
   (check (eq? file-picker:read-file-name (ask:file-name-reader)))
   (let ([asked '()])
@@ -177,8 +185,9 @@
     (check-equal? (file-picker-test/tree:path "notes/a.txt") (shown-path))
     (test-user:press! "C-x 0")))
 
-(test "C-x C-f on a folder raises is a folder"
-  (check-raises (lambda (c) (and (message-condition? c) (string=? "is a folder" (condition-message c))))
+(test "C-x C-f on a folder raises that it is a folder, naming it"
+  (check-raises (lambda (c) (equal? (list "~a is a folder" (list (files:abbreviated-path (file-picker-test/tree:path "src"))))
+                                    (list (condition-message c) (condition-irritants c))))
                 (file-picker:find-file (file-picker-test/tree:path "src"))))
 
 (test "file-picker:read-file-name raises on a folder that is no string"

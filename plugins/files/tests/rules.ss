@@ -132,7 +132,8 @@
   (files:write-file "~/work/total.ss" draft)
   (check-equal? (list "total.ss" #f ";(+ 1 2)\n")
     (list (buffers:name draft) (files:buffer-visiting "~/work/sum.ss") (files-test:read-text "~/work/total.ss")))
-  (check-raises (raised-by 'files:write-file) (files:write-file "~/work/n.txt" draft)))
+  (check-raises (lambda (c) (and (files:visited-elsewhere-condition? c) (eq? 'files:write-file (condition-who c))))
+    (files:write-file "~/work/n.txt" draft)))
 
 (test "modified means changed since the last read, save or not-modified"
   (let ([m (files:visit "~/work/m.txt")] [other-buffer (buffers:make "other" "x")])

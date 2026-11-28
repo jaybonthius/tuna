@@ -70,6 +70,18 @@
   (check-equal? '("  ." "  .." "  .hidden" "* A.txt" "* b.txt" "  sub") (marks))
   (test-user:press! "U"))
 
+(test "with the region active, d flags, u unmarks and t toggles every entry whose name the region touches"
+  (dired-test:goto! ".hidden")
+  (test-user:press! "C-SPC n n d")
+  (check-equal? '("  ." "  .." "D .hidden" "D A.txt" "  b.txt" "  sub") (marks))
+  (dired-test:goto! "A.txt")
+  (test-user:press! "C-SPC n n t")
+  (check-equal? '("  ." "  .." "D .hidden" "D A.txt" "* b.txt" "  sub") (marks))
+  (dired-test:goto! ".hidden")
+  (test-user:press! "C-SPC n n u")
+  (check-equal? '("  ." "  .." "  .hidden" "  A.txt" "* b.txt" "  sub") (marks))
+  (test-user:press! "U"))
+
 (test "* / marks folders, * @ links and * * executable files, and a prefix unmarks"
   (dired-test:symlink! "A.txt" "src/link")
   (chmod (dired-test:home-path "src/b.txt") #o755)

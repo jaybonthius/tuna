@@ -60,6 +60,26 @@
     (buffers:kill! a)
     (buffers:kill! b)))
 
+(define (refusal thunk)
+  (guard (c [(error? c)
+             (list (map (lambda (refused?) (refused? c))
+                        (list files:same-file-condition? files:inside-itself-condition? files:visited-elsewhere-condition?))
+                   (i/o-error-filename c))])
+    (thunk)))
+
+(test "a refusal its caller words is a condition of its own, naming the path it refuses: the same file, a folder put inside itself, a file another buffer visits"
+  (files-test:folder! "~/k")
+  (files-test:write-text! "~/k/a.txt" "a\n")
+  (files-test:write-text! "~/k/b.txt" "b\n")
+  (let ([b (files:visit "~/k/b.txt")])
+    (check-equal? (list (list '(#t #f #f) (files-test:expand "~/k/a.txt"))
+                        (list '(#f #t #f) (files-test:expand "~/k/in"))
+                        (list '(#f #f #t) (files-test:expand "~/k/b.txt")))
+      (list (refusal (lambda () (files:copy-file "~/k/a.txt" "~/k/a.txt")))
+            (refusal (lambda () (files:copy-file "~/k" "~/k/in")))
+            (refusal (lambda () (files:rename-file "~/k/a.txt" "~/k/b.txt" (file-options no-fail))))))
+    (buffers:kill! b)))
+
 (test "a rename replaces only a file or an empty folder, also across file systems, where it copies; nothing moves when refused"
   (let* ([other (format "/dev/shm/tuna-files-~a" (get-process-id))] [in-other (lambda (name) (string-append other "/" name))])
     (files:make-folder (in-other "full"))

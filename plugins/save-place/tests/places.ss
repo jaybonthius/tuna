@@ -56,3 +56,21 @@
     (check-equal? 6 (views:last-point b))
     (buffers:kill! b))
   (check-equal? (cons (save-place-test/visits:home-file "preview.txt") 6) (place "preview.txt")))
+
+(define (log-file? path) (string=? "log" (path-extension path)))
+
+(test "save-place:ignored-file-predicate set to a user's own predicate keeps no place for the files it accepts"
+  (save-place-test/visits:write-file! "run.log" "one\ntwo\n")
+  (save-place-test/visits:write-file! "run.md" "one\ntwo\n")
+  (options:with ([save-place:ignored-file-predicate log-file?])
+    (save-place-test/visits:leave! "run.log" 5)
+    (save-place-test/visits:leave! "run.md" 5))
+  (check-equal? (list #f (cons (save-place-test/visits:home-file "run.md") 5)) (list (place "run.log") (place "run.md"))))
+
+(test "a file renamed after its place was kept opens at its start, and the place stays under the old name"
+  (save-place-test/visits:write-file! "before.txt" "one\ntwo\n")
+  (save-place-test/visits:leave! "before.txt" 5)
+  (files:rename-file (save-place-test/visits:home-file "before.txt") (save-place-test/visits:home-file "after.txt"))
+  (check-equal? (list (cons (save-place-test/visits:home-file "before.txt") 5) #f)
+    (list (place "before.txt") (save-place-test/visits:reopened-point "after.txt"))))
+

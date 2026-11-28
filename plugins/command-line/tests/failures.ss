@@ -15,7 +15,7 @@
 
 (test "a file that cannot be visited is reported and skipped, and the files before it stay visited"
   (check-equal? 1 (length reported))
-  (check-equal? '(files:read-document "is a folder" ("~/folder"))
+  (check-equal? '(files:read-document "~a is a folder" ("~/folder"))
                 (list (condition-who (car reported)) (condition-message (car reported)) (condition-irritants (car reported))))
   (check (files:buffer-visiting (command-line-test:home-path "e.txt"))))
 

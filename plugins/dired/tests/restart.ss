@@ -13,7 +13,7 @@
       (begin (for-each (lambda (n) (delete-tree! (string-append path "/" n))) (directory-list path)) (delete-directory path))
       (delete-file path)))
 
-(test "the open listings' folders are saved, so a restart lists them again; one gone since is left out, and a message names it"
+(test "the open listings' folders are saved, so a restart lists them again; a killed one is not, and one gone since is left out, and a message names it"
   (passes "restart/first.ss")
   (delete-tree! (string-append home "/notes"))
   (passes "restart/second.ss"))

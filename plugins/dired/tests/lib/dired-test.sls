@@ -1,5 +1,5 @@
 #!tuna
-(import (test-runner) (test-user) (options) (ask) (echo-area) (document) (buffers) (views) (layout) (dired))
+(import (test-runner) (test-user) (eval-test caught-reports) (options) (ask) (echo-area) (document) (buffers) (views) (layout) (dired))
 
 (define (home-path name) (string-append (getenv "HOME") "/" name))
 
@@ -69,6 +69,12 @@
   (echo-area:message! "")
   (press-until! keys echo-area:current-message)
   (echo-area:current-message))
+
+;; The command's raise is reported, which the echo area shows; the
+;; report is caught, so it does not fail the test file.
+(define (refused keys)
+  (let* ([said #f] [reports (eval-test/caught-reports:during (lambda () (set! said (press-for-message! keys))))])
+    (list said (length reports))))
 
 (define (press-until-shown! keys name)
   (press-until! keys (lambda () (equal? name (buffers:name (views:buffer (view)))))))

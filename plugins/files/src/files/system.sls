@@ -27,6 +27,8 @@
       (load-shared-object #f)
       (foreign-procedure "strerror_r" (int uptr size_t) uptr)))
 
+  (define enoent 2)
+
   ;; Worded as Chez's own file procedures word a failure, so the user
   ;; reads one form whichever raised it.
   (define (raise-system-failure who path errno)
@@ -35,6 +37,7 @@
                       void
                       (lambda () (c-string->string (c-strerror-r errno buffer 256)))
                       (lambda () (foreign-free buffer))))])
-      (raise (condition (make-i/o-filename-error path) (make-who-condition who) (make-format-condition)
+      (raise (condition (if (fx= errno enoent) (make-i/o-file-does-not-exist-error path) (make-i/o-filename-error path))
+                        (make-who-condition who) (make-format-condition)
                         (make-message-condition "failed for ~a: ~(~a~)")
                         (make-irritants-condition (list path reason)))))))

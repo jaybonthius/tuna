@@ -45,9 +45,8 @@
   (dired-test:press-until-read! "g")
   (options:set! dired:recursive-deletes (dired:recursion never))
   (check-equal? 2 (dired:mark-where! b (lambda (e) #t) #\*))
-  (let ([result (asked-and-said "D")])
-    (check-equal? '("Delete * [2 files]? ") (car result))
-    (check (dired-test:starts-with? "1 of 2 files failed: keep: " (cadr result))))
+  (check-equal? '(("Delete * [2 files]? ") "1 of 2 files failed: Cannot delete keep: it holds files")
+    (asked-and-said "D"))
   (check-equal? '("  ." "  .." "* keep") (lines))
   (options:unset! dired:recursive-deletes))
 
@@ -91,11 +90,10 @@
   (check-equal? (list '("  ." "  .." "* z.txt") "z.txt" (dired-test:home-path "ops/z.txt") "z.txt")
     (list (lines) (buffers:name y) (files:path y) (dired-test:point-name))))
 
-(test "a file renamed to itself fails, and the message says which"
+(test "a file renamed or copied to itself fails, and the message says so in a sentence"
   (test-user:press! "U")
-  (let ([result (asked-and-said "R")])
-    (check-equal? '("Rename z.txt to: ") (car result))
-    (check (dired-test:starts-with? "1 of 1 file failed: z.txt: " (cadr result))))
+  (check-equal? '(("Rename z.txt to: ") "1 of 1 file failed: Cannot move z.txt to itself") (asked-and-said "R"))
+  (check-equal? '(("Copy z.txt to: ") "1 of 1 file failed: Cannot copy z.txt to itself") (asked-and-said "C"))
   (test-user:press! "C-/"))
 
 (define into #f)
@@ -176,9 +174,7 @@
     (dired-test:goto! "t.txt")
     (options:set! ask:file-name-reader (dired-test:answer "~/ops/third/u.txt"))
     (options:set! ask:y-or-n-reader (dired-test:answer #t))
-    (let ([result (asked-and-said "R")])
-      (check-equal? '("Rename t.txt to: ") (car result))
-      (check (dired-test:starts-with? "1 of 1 file failed: t.txt: " (cadr result))))
+    (check-equal? '(("Rename t.txt to: ") "1 of 1 file failed: Cannot move t.txt: another buffer visits u.txt") (asked-and-said "R"))
     (check-equal? (list '("." ".." "t.txt" "u.txt") (dired-test:home-path "ops/third/u.txt"))
       (list (map dired-test:entry-name (dired-test:entries (views:buffer (dired-test:view)))) (files:path u)))))
 
@@ -204,7 +200,7 @@
   (options:set! ask:y-or-n-reader (dired-test:answer #t))
   (let ([result (asked-and-said "C")])
     (check-equal? '("Copy l to: " "Overwrite ~/ops/dst/l? ") (car result))
-    (check (dired-test:starts-with? "1 of 1 file failed: l: " (cadr result))))
+    (check (dired-test:starts-with? "1 of 1 file failed: Cannot copy l: " (cadr result))))
   (check (dired-test:exists? "ops/dst/l/precious.txt")))
 
 (test "C-u D, R and C act on the entry at point even with others marked; C-u w names the marked entries"
@@ -237,3 +233,77 @@
   (check-equal? '("b.txt")
     (parameterize ([commands:prefix-argument '(4)]) (map path-last (dired:operation-paths (dired-test:view) #f))))
   (check-equal? '("d.txt") (map path-last (dired:operation-paths (dired-test:view) '(4)))))
+
+(test "D, C and R on . or .. say they cannot operate on them, and ask nothing"
+  (dired-test:touch! "ops/dots/a.txt" "a\n")
+  (layout:switch-to-buffer (dired:visit (dired-test:home-path "ops/dots")))
+  (dired-test:questions)
+  (dired-test:goto! ".")
+  (check-equal? '("Cannot operate on . or .." 1) (dired-test:refused "D"))
+  (check-equal? '("Cannot operate on . or .." 1) (dired-test:refused "C"))
+  (dired-test:goto! "..")
+  (check-equal? '("Cannot operate on . or .." 1) (dired-test:refused "R"))
+  (check-equal? '(() ("  ." "  .." "  a.txt")) (list (dired-test:questions) (lines))))
+
+(test "the question names how several files were chosen: D for the flagged, * for the marked, and a count as the next N"
+  (for-each (lambda (name) (dired-test:touch! (string-append "ops/dots/" name) "x\n")) '("b.txt" "c.txt" "d.txt"))
+  (dired-test:press-until-read! "g")
+  (options:set! dired:deletion-confirmer (dired-test:answer #f))
+  (dired-test:goto! "a.txt")
+  (test-user:press! "d d")
+  (dired-test:press-for-message! "x")
+  (test-user:press! "U")
+  (dired-test:goto! "a.txt")
+  (test-user:press! "m m")
+  (dired-test:press-for-message! "D")
+  (test-user:press! "U")
+  (dired-test:goto! "c.txt")
+  (dired-test:press-for-message! "2 D")
+  (dired-test:goto! "d.txt")
+  (dired-test:press-for-message! "- 2 D")
+  (check-equal? '("Delete D [2 files]? " "Delete * [2 files]? " "Delete [next 2 files]? " "Delete [next -2 files]? ")
+    (dired-test:questions))
+  (options:unset! dired:deletion-confirmer))
+
+(define names-while-asking #f)
+
+(define (note-marked-files reply)
+  (lambda (question folder)
+    (set! names-while-asking
+      (let ([names (buffers:find " *Marked Files*")])
+        (and names (pair? (views:showing names)) (document:text (buffers:document names)))))
+    ((dired-test:answer reply) question folder)))
+
+(test "R and C of several files show their names while they ask for the target, and take them away when answered"
+  (dired-test:folder! "ops/dots/into")
+  (dired-test:press-until-read! "g")
+  (dired-test:goto! "a.txt")
+  (options:set! ask:file-name-reader (note-marked-files "~/ops/dots/into/"))
+  (check-equal? '(("Copy [next 2 files] to: ") "Copied 2 files") (asked-and-said "2 C"))
+  (check-equal? '("a.txt\nb.txt\n" #f) (list names-while-asking (buffers:find " *Marked Files*")))
+  (test-user:press! "U")
+  (dired-test:goto! "c.txt")
+  (test-user:press! "m m")
+  (check-equal? '(("Move * [2 files] to: ") "Moved 2 files") (asked-and-said "R"))
+  (check-equal? '("c.txt\nd.txt\n" #f) (list names-while-asking (buffers:find " *Marked Files*")))
+  (check-equal? '("  ." "  .." "  a.txt" "  b.txt" "  into") (lines)))
+
+(test "+ of a name that exists says it cannot create the folder, naming it"
+  (options:set! ask:file-name-reader (dired-test:answer "~/ops/dots/into"))
+  (check-equal? '("Cannot create folder ~/ops/dots/into: it exists" 1) (dired-test:refused "+"))
+  (dired-test:questions))
+
+(test "C of a folder into a folder inside it fails, naming the target from the listing's folder"
+  (dired-test:folder! "ops/dots/into/inner")
+  (dired-test:goto! "into")
+  (options:set! ask:yes-or-no-reader (dired-test:answer #t))
+  (options:set! ask:file-name-reader (dired-test:answer "~/ops/dots/into/inner/copy"))
+  (check-equal? '(("Copy into to: " "Recursive copies of into? ") "1 of 1 file failed: Cannot copy into into its own folder into/inner/copy")
+    (asked-and-said "C"))
+  (check (not (dired-test:exists? "ops/dots/into/inner/copy"))))
+
+(test "R or C of several files into a path that is not a folder says so, naming it"
+  (dired-test:goto! "a.txt")
+  (options:set! ask:file-name-reader (dired-test:answer "~/ops/dots/b.txt"))
+  (check-equal? '("~/ops/dots/b.txt is not a folder" 1) (dired-test:refused "2 C"))
+  (check-equal? '("Copy [next 2 files] to: ") (dired-test:questions)))

@@ -125,7 +125,7 @@
 
   (define (failure-condition who f)
     (let ([irritants (map (lambda (x) (if (string? x) (files:abbreviated-path x) x)) (failure-irritants f))])
-      (condition (make-i/o-error) (make-who-condition who)
+      (condition (failure-base-condition f) (make-who-condition who)
                  (make-message-condition (if (failure-format? f) (apply format (failure-message f) irritants) (failure-message f)))
                  (make-irritants-condition (if (failure-format? f) '() irritants)))))
 
@@ -422,15 +422,23 @@
   (let ([state (guard (c [(i/o-error? c) #f]) (job-result 'dired:stale? %state-reader (folder listing)))])
     (and state (not (%read-at? listing state)))))
 
+(define (%no-such-folder who c)
+  (let ([path (%with-slash (i/o-error-filename c))])
+    (raise (condition (make-i/o-file-does-not-exist-error path) (make-who-condition who) (make-format-condition)
+                      (make-message-condition "Cannot read ~a: no such folder")
+                      (make-irritants-condition (list (files:abbreviated-path path)))))))
+
 (define (visit folder-path)
   (unless (string? folder-path)
     (assertion-violation 'dired:visit "not a string" folder-path))
   (%check-task 'dired:visit)
-  (let* ([found (job-result 'dired:visit %resolver folder-path)]
+  (let* ([found (guard (c [(i/o-file-does-not-exist-error? c) (%no-such-folder 'dired:visit c)])
+                  (job-result 'dired:visit %resolver folder-path))]
          [resolved (%with-slash (resolved-path found))] [modified (resolved-modified found)])
     (unless modified
-      (raise (condition (make-i/o-filename-error resolved) (make-who-condition 'dired:visit)
-                        (make-message-condition "not a folder") (make-irritants-condition (list (files:abbreviated-path resolved))))))
+      (raise (condition (make-i/o-filename-error resolved) (make-who-condition 'dired:visit) (make-format-condition)
+                        (make-message-condition "~a is not a folder")
+                        (make-irritants-condition (list (files:abbreviated-path (resolved-path found)))))))
     (let ([b (%listing-of resolved)])
       (if b
           (begin
@@ -446,10 +454,7 @@
   (%check-listing who buffer)
   (%check-task who)
   (let* ([folder-path (folder buffer)]
-         [read (guard (c [(i/o-error? c)
-                          (raise (condition (make-i/o-filename-error folder-path) (make-who-condition who)
-                                            (make-message-condition "no such folder")
-                                            (make-irritants-condition (list (files:abbreviated-path folder-path)))))])
+         [read (guard (c [(i/o-file-does-not-exist-error? c) (%no-such-folder who c)])
                  (job-result who %reader folder-path))])
     (when (and (buffers:live? buffer) (equal? (folder buffer) folder-path))
       (%write-read! buffer read carried))))
@@ -711,6 +716,9 @@
     (lambda (a) (and (not (eq? (file-attributes-type a) (file-type folder)))
                      (not (fx= 0 (fxand (file-attributes-mode a) #o111)))))))
 
+(define (%count-prefix prefix)
+  (and (fixnum? prefix) (not (fx= prefix 0)) prefix))
+
 (define operation-paths
   (case-lambda
     [(view) (operation-paths view (commands:prefix-argument))]
@@ -718,21 +726,21 @@
      (%check-view 'dired:operation-paths view)
      (let* ([b (views:buffer view)] [doc (buffers:document b)]
             [at (%entry-containing doc (views:point view))]
-            [paths
-             (map (lambda (e) (document:node-attribute e 'path))
-               (remp %trivial?
-                 (cond
-                   [(and (fixnum? prefix) (not (fx= prefix 0))) (%entries-from doc at prefix)]
-                   [(or (pair? prefix) (eq? prefix '-)) (if at (list at) '())]
-                   [else
-                    (let ([marked (filter (lambda (e) (eqv? (document:node-attribute e 'mark) #\*)) (%entries b))])
-                      (cond
-                        [(pair? marked) marked]
-                        [at (list at)]
-                        [else '()]))])))])
-       (when (null? paths)
-         (error 'dired:operation-paths "no file on this line"))
-       paths)]))
+            [chosen
+             (cond
+               [(%count-prefix prefix) (%entries-from doc at prefix)]
+               [(or (pair? prefix) (eq? prefix '-)) (if at (list at) '())]
+               [else
+                (let ([marked (filter (lambda (e) (eqv? (document:node-attribute e 'mark) #\*)) (%entries b))])
+                  (cond
+                    [(pair? marked) marked]
+                    [at (list at)]
+                    [else '()]))])]
+            [paths (map (lambda (e) (document:node-attribute e 'path)) (remp %trivial? chosen))])
+       (cond
+         [(pair? paths) paths]
+         [(null? chosen) (error 'dired:operation-paths "no file on this line")]
+         [else (error 'dired:operation-paths "Cannot operate on . or ..")]))]))
 
 (define %current-paths
   (case-lambda
@@ -747,19 +755,45 @@
 
 (define (%count-text n) (if (= n 1) "1 file" (format "~a files" n)))
 
-(define (%files-text paths)
-  (if (null? (cdr paths)) (%name (car paths)) (format "* [~a]" (%count-text (length paths)))))
+(define (%chosen-by)
+  (or (%count-prefix (commands:prefix-argument)) #\*))
 
-(define (%failure-text c)
-  (if (message-condition? c)
-      (let ([irritants (if (irritants-condition? c) (condition-irritants c) '())])
-        (if (null? irritants) (condition-message c) (format "~a ~s" (condition-message c) irritants)))
-      (format "~s" c)))
+(define (%files-text paths chosen-by)
+  (cond
+    [(null? (cdr paths)) (%name (car paths))]
+    [(fixnum? chosen-by) (format "[next ~a files]" chosen-by)]
+    [else (format "~a [~a]" chosen-by (%count-text (length paths)))]))
+
+(define (%path-from folder path)
+  (let ([n (string-length folder)])
+    (if (and (fx< n (string-length path)) (string=? folder (substring path 0 n)))
+        (substring path n (string-length path))
+        (files:abbreviated-path path))))
+
+;; The sentence names the path, so the irritants of a refusal, which name
+;; it again, are left out; a violation keeps them, as they are what a
+;; report of the defect needs.
+(define (%reason c)
+  (cond
+    [(not (message-condition? c)) (format "~s" c)]
+    [(and (violation? c) (irritants-condition? c) (pair? (condition-irritants c)))
+     (format "~a with irritants ~s" (condition-message c) (condition-irritants c))]
+    [else (condition-message c)]))
+
+(define (%failure-text verb path c)
+  (let ([name (%name path)] [from (%parent-folder path)])
+    (cond
+      [(files:same-file-condition? c) (format "Cannot ~a ~a to itself" verb name)]
+      [(files:inside-itself-condition? c)
+       (format "Cannot ~a ~a into its own folder ~a" verb name (%path-from from (i/o-error-filename c)))]
+      [(files:visited-elsewhere-condition? c)
+       (format "Cannot ~a ~a: another buffer visits ~a" verb name (%path-from from (i/o-error-filename c)))]
+      [else (format "Cannot ~a ~a: ~a" verb name (%reason c))])))
 
 ;; Each path is tried alone, so one failure leaves the others done. The
 ;; summary is returned, for the caller to say once the listings are read
 ;; again, as Dired removes the lines before it says it is done.
-(define (%for-each-path! verb paths act!)
+(define (%for-each-path! verb done-verb paths act!)
   (let ([done 0] [declined '()] [failures '()])
     (for-each
       (lambda (path)
@@ -771,19 +805,19 @@
     (let ([failures (reverse failures)] [declined (reverse declined)])
       (string-append
         (if (null? failures)
-            (format "~a ~a" verb (%count-text done))
+            (format "~a ~a" done-verb (%count-text done))
             (format "~a of ~a failed: ~{~a~^; ~}" (length failures) (%count-text (length paths))
-                    (map (lambda (f) (format "~a: ~a" (%name (car f)) (%failure-text (cdr f)))) failures)))
+                    (map (lambda (f) (%failure-text verb (car f) (cdr f))) failures)))
         (if (null? declined)
             ""
             (format "; declined ~{~a~^, ~}" (map %name declined)))))))
 
-(define (%show-names-while names thunk)
+(define (%show-names-while buffer-name names thunk)
   (if (null? (cdr names))
       (thunk)
       (let* ([b (begin
-                  (let ([old (buffers:find " *Deletions*")]) (when old (buffers:kill! old)))
-                  (buffers:make " *Deletions*" (apply string-append (map (lambda (n) (string-append n "\n")) names))))]
+                  (let ([old (buffers:find buffer-name)]) (when old (buffers:kill! old)))
+                  (buffers:make buffer-name (apply string-append (map (lambda (n) (string-append n "\n")) names))))]
              [selected (layout:selected-view)] [view (layout:display-buffer b)])
         ;; Tuna's dynamic-wind runs its out at each pause, and the question
         ;; pauses, so the names are taken away after the answer instead.
@@ -802,18 +836,18 @@
     (lambda (path)
       (or (not (member path folders))
           (case option
-            [(never) (error 'dired "a folder that holds files" (files:abbreviated-path path))]
+            [(never) (error 'dired "it holds files")]
             [(always) #t]
             [else (ask:yes-or-no? (format question (%name path)))])))))
 
-(define (%delete-paths! paths)
+(define (%delete-paths! paths chosen-by)
   (let* ([trash? (files:delete-by-moving-to-trash?)]
          [verb (if trash? "Trash" "Delete")])
-    (if (%show-names-while (map %name paths)
-          (lambda () ((deletion-confirmer) (format "~a ~a? " verb (%files-text paths)))))
+    (if (%show-names-while " *Deletions*" (map %name paths)
+          (lambda () ((deletion-confirmer) (format "~a ~a? " verb (%files-text paths chosen-by)))))
         (let ([allowed? (%recursion-allowed? (recursive-deletes)
                           (if trash? "Recursively trash ~a? " "Recursively delete ~a? ") paths)])
-          (let ([summary (%for-each-path! (if trash? "Trashed" "Deleted") paths
+          (let ([summary (%for-each-path! (if trash? "trash" "delete") (if trash? "Trashed" "Deleted") paths
                            (lambda (path)
                              (and (allowed? path)
                                   (begin
@@ -826,7 +860,7 @@
 (commands:define-command (delete [paths (%current-paths 'dired:delete)])
   "Asks, then deletes PATHS, or moves them to the trash when files:delete-by-moving-to-trash? is true."
   (%check-paths 'dired:delete paths)
-  (%delete-paths! paths))
+  (%delete-paths! paths (%chosen-by)))
 
 (commands:define-command (delete-flagged [buffer (buffers:current)])
   "Deletes the entries of the listing BUFFER flagged D."
@@ -835,7 +869,7 @@
                     (filter (lambda (e) (eqv? (document:node-attribute e 'mark) #\D)) (%entries buffer)))])
     (if (null? paths)
         (ask:message "(No deletions requested)")
-        (%delete-paths! paths))))
+        (%delete-paths! paths #\D))))
 
 ;; By the views after the selected one, as Emacs's dired-dwim-target-next
 ;; takes the next windows, rather than by which view was selected last.
@@ -850,23 +884,21 @@
 (define (%target-question verb paths)
   (if (null? (cdr paths))
       (format "~a ~a to: " verb (%name (car paths)))
-      (format "~a ~a to: " (if (string=? verb "Rename") "Move" verb) (%files-text paths))))
+      (format "~a ~a to: " (if (string=? verb "Rename") "Move" verb) (%files-text paths (%chosen-by)))))
 
+;; The folder is found before the names are shown, since they may take
+;; the view of the other listing it is found in.
 (define (%read-target who verb)
-  (ask:file-name (%target-question verb (%current-paths who)) (%target-folder)))
-
-(define (%expand path)
-  (if (and (fx> (string-length path) 0) (char=? (string-ref path 0) #\~)
-           (or (fx= (string-length path) 1) (char=? (string-ref path 1) #\/)))
-      (string-append (%home) (substring path (if (fx= (string-length path) 1) 1 2) (string-length path)))
-      path))
+  (let* ([paths (%current-paths who)] [question (%target-question verb paths)] [start (%target-folder)])
+    (%show-names-while " *Marked Files*" (map %name paths)
+      (lambda () (ask:file-name question start)))))
 
 (define (%targets who paths target)
-  (let ([target (%expand target)])
+  (let ([target (files:expanded-path target (files:directory))])
     (if (or (pair? (cdr paths)) (file-directory? target) (char=? (string-ref target (fx- (string-length target) 1)) #\/))
         (begin
           (unless (file-directory? target)
-            (error who "not a folder" (files:abbreviated-path target)))
+            (errorf who "~a is not a folder" (files:abbreviated-path target)))
           (map (lambda (p) (cons p (string-append (%with-slash target) (%name p)))) paths))
         (list (cons (car paths) target)))))
 
@@ -890,12 +922,12 @@
 ;; the file it made. Overwriting is asked only when files refuses the
 ;; target, so its refusals of the same file and of a file another buffer
 ;; visits come before the question.
-(define (%operate! who verb paths target allowed? act! mark)
+(define (%operate! who verb done-verb paths target allowed? act! mark)
   (%check-paths who paths)
   (unless (string? target)
     (assertion-violation who "not a string" target))
   (let* ([pairs (%targets who paths target)] [landed '()] [carried (%no-carried-marks)]
-         [summary (%for-each-path! verb paths
+         [summary (%for-each-path! verb done-verb paths
                     (lambda (path)
                       (let ([to (cdr (assoc path pairs))] [mark (or mark (%mark-of path))])
                         (and (allowed? path) (%act-replacing! act! path to)
@@ -912,11 +944,11 @@
 
 (commands:define-command (rename [paths (%current-paths 'dired:rename)] [target (%read-target 'dired:rename "Rename")])
   "Renames the one path of PATHS to TARGET, or moves each into the folder TARGET; buffers visiting them follow."
-  (%operate! 'dired:rename "Moved" paths target (lambda (path) #t) files:rename-file #f))
+  (%operate! 'dired:rename "move" "Moved" paths target (lambda (path) #t) files:rename-file #f))
 
 (commands:define-command (copy [paths (%current-paths 'dired:copy)] [target (%read-target 'dired:copy "Copy")])
   "Copies the one path of PATHS to TARGET, or each into the folder TARGET; copies listed are marked C."
-  (%operate! 'dired:copy "Copied" paths target
+  (%operate! 'dired:copy "copy" "Copied" paths target
     (%recursion-allowed? (recursive-copies) "Recursive copies of ~a? " paths)
     files:copy-file #\C))
 
@@ -924,12 +956,16 @@
   "Makes the folder PATH and any missing folder above it, then puts point on the first folder made."
   (unless (string? path)
     (assertion-violation 'dired:make-folder "not a string" path))
-  (let* ([path (%expand path)]
+  (let* ([path (files:expanded-path path (files:directory))]
          [path (if (char=? (string-ref path (fx- (string-length path) 1)) #\/) (substring path 0 (fx- (string-length path) 1)) path)]
          [first (let loop ([p path])
                   (let ([parent (path-parent p)])
                     (if (or (string=? parent "") (string=? parent p) (file-exists? parent)) p (loop parent))))])
-    (files:make-folder path)
+    (guard (c [(i/o-file-already-exists-error? c)
+               (raise (condition (make-i/o-file-already-exists-error path) (make-who-condition 'dired:make-folder)
+                                 (make-format-condition) (make-message-condition "Cannot create folder ~a: it exists")
+                                 (make-irritants-condition (list (files:abbreviated-path path)))))])
+      (files:make-folder path))
     (let* ([parent (%resolved-folder first)] [made (string-append parent (path-last first))])
       (%refresh-folders! (list parent) (%no-carried-marks))
       (let ([view (views:current)] [b (%listing-of parent)])

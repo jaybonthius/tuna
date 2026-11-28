@@ -30,6 +30,11 @@
     (check-equal? (map projects-test/trees:path '("src/app/pkg/" "src/app/" "notes/proj/"))
       (map projects-test/trees:root-of '("src/app/pkg" "src/app/lib" "notes/proj")))))
 
+(test "an extra root marker is a whole name, so a pattern such as *.gemspec makes no root"
+  (projects-test/trees:write-file! "notes/gem/a.gemspec" "")
+  (options:with ([projects:extra-root-markers (list "*.gemspec")])
+    (check-equal? #f (projects-test/trees:root-of "notes/gem"))))
+
 (test "a finder added at the default depth is asked before projects:try-vc"
   (let ([notes-finder (lambda (folder)
                         (and (string=? folder (projects-test/trees:path "notes/"))

@@ -9,12 +9,6 @@
 
 (define (%home) (or (getenv "HOME") "/"))
 
-(define (%expand path)
-  (let ([n (string-length path)])
-    (if (and (fx> n 0) (char=? (string-ref path 0) #\~) (or (fx= n 1) (char=? (string-ref path 1) #\/)))
-        (string-append (%home) (substring path 1 n))
-        path)))
-
 (define (%after-last-slash input)
   (let loop ([i (string-length input)])
     (cond
@@ -96,7 +90,7 @@
     [(question directory h)
      (unless (string? directory)
        (assertion-violation 'file-picker:read-file-name "not a string" directory))
-     (let* ([dir (%expand directory)]
+     (let* ([dir (files:expanded-path directory)]
             [dir (if (and (fx> (string-length dir) 0) (char=? (string-ref dir (fx- (string-length dir) 1)) #\/))
                      dir
                      (string-append dir "/"))])
@@ -112,7 +106,7 @@
                                  (category completion:file-category)))
                          h)))])
          (when h (%substitute-newest! h))
-         (%expand (substitute-file-name name))))]))
+         (files:expanded-path (substitute-file-name name) dir)))]))
 
 (define (%file-name-char? t)
   (and (char? t)

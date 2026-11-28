@@ -84,18 +84,33 @@
       (begin (for-each (lambda (n) (delete-tree! (string-append path "/" n))) (directory-list path)) (delete-directory path))
       (delete-file path)))
 
-(test "a listing whose folder is gone stays as it was read, and g raises no such folder, naming it"
+(test "a listing whose folder is gone stays as it was read, and g says it cannot read the folder, naming it"
   (let ([gone (dired:visit (dired-test:home-path "v/sub"))])
     (delete-tree! (dired-test:home-path "v/sub"))
-    (check-raises (lambda (c) (and (error? c) (eq? 'dired:refresh (condition-who c)) (equal? "no such folder" (condition-message c))
-                                   (equal? '("~/v/sub/") (condition-irritants c))))
-      (dired:refresh gone))
+    (layout:switch-to-buffer gone)
+    (check-equal? '("Cannot read ~/v/sub/: no such folder" 1) (dired-test:refused "g"))
+    (check-raises (lambda (c) (and (i/o-filename-error? c) (eq? 'dired:refresh (condition-who c)))) (dired:refresh gone))
     (check-equal? '("  ." "  .." "  deep.txt") (dired-test:lines gone))))
 
-(test "visiting a file or a missing path raises"
+(test "g in a listing of a folder that exists but cannot be read gives the reason, not that the folder is gone"
+  (dired-test:folder! "v/locked")
+  (let ([locked (dired:visit (dired-test:home-path "v/locked"))])
+    (chmod (dired-test:home-path "v/locked") #o000)
+    (layout:switch-to-buffer locked)
+    (let ([said (dired-test:refused "g")])
+      (chmod (dired-test:home-path "v/locked") #o755)
+      (check-equal? '("failed for ~/v/locked/: permission denied" 1) said))))
+
+(test "visiting a file or a missing path raises; C-x d of a file says it is not a folder"
   (check-raises (lambda (c) (and (error? c) (eq? 'dired:visit (condition-who c)))) (dired:visit (dired-test:home-path "v/f.txt")))
-  (check-raises (lambda (c) (and (error? c) (eq? 'dired:visit (condition-who c)) (equal? "failed for ~/v/none: no such file or directory" (condition-message c))))
-    (dired:visit (dired-test:home-path "v/none"))))
+  (options:set! ask:file-name-reader (lambda (q folder) "~/v/f.txt"))
+  (check-equal? '("~/v/f.txt is not a folder" 1) (dired-test:refused "C-x d"))
+  (options:unset! ask:file-name-reader)
+  (check-raises (lambda (c) (and (i/o-file-does-not-exist-error? c) (eq? 'dired:visit (condition-who c))))
+    (dired:visit (dired-test:home-path "v/none")))
+  (options:set! ask:file-name-reader (lambda (q folder) "~/v/none"))
+  (check-equal? '("Cannot read ~/v/none/: no such folder" 1) (dired-test:refused "C-x d"))
+  (options:unset! ask:file-name-reader))
 
 (test "a home reached through a symbolic link names a listing, and a worker's failure, with ~ too"
   (let ([home (getenv "HOME")])
@@ -103,7 +118,8 @@
     (dired-test:folder! "linked")
     (putenv "HOME" (string-append home "-link"))
     (check-equal? "~/linked/" (buffers:name (dired:visit "~/linked")))
-    (check-raises (lambda (c) (equal? "failed for ~/v/none: no such file or directory" (condition-message c))) (dired:visit "~/v/none"))
+    (check-raises (lambda (c) (equal? '("Cannot read ~a: no such folder" ("~/v/none/")) (list (condition-message c) (condition-irritants c))))
+      (dired:visit "~/v/none"))
     (putenv "HOME" home)))
 
 (define (on-last-entry place view)

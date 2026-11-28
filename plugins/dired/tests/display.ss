@@ -90,8 +90,10 @@
   (check-equal? "16B" (dired-test:drawn-field "dired-size" "new.txt"))
   (advice-remove! dired:size-text with-unit))
 
-(test "a time within six months gives the hour, an older one the year, as ls -l does"
-  (check-equal? (list "Sep 13  2020" 12) (list (dired:time-text 1600000000) (string-length (dired:time-text (time-second (current-time 'time-utc)))))))
+(test "a time within six months gives the hour, an older or a future one the year, as ls -l does"
+  (let ([now (time-second (current-time 'time-utc))])
+    (check-equal? (list "Sep 13  2020" 12) (list (dired:time-text 1600000000) (string-length (dired:time-text now))))
+    (check-equal? '(#t #f) (map (lambda (t) (and (memv #\: (string->list (dired:time-text t))) #t)) (list (- now 86400) (+ now (* 40 86400)))))))
 
 (test "dired:folders-first? lists folders before files, and the header says so"
   (dired-test:folder! "d/zfolder")
@@ -117,3 +119,19 @@
   (dired-test:press-until-listed! "g")
   (check (not (contains? (car (summary-shown)) " available ")))
   (options:unset! dired:free-space?))
+
+(define (name-face name)
+  (let ([entry (find (lambda (e) (dired-test:holding? e "dired-name" name)) (dired-test:drawn "dired-entry"))])
+    (test-user:element-attribute (car (test-user:elements entry "dired-name")) "data-face")))
+
+(test "a name is drawn in the face of its mark, else of its kind: marked, flagged, folder, link and broken link"
+  (dired-test:symlink! "new.txt" "d/link")
+  (dired-test:symlink! "nowhere" "d/broken")
+  (dired-test:press-until-listed! "g")
+  (dired-test:goto! "mid.c")
+  (test-user:press! "m")
+  (dired-test:goto! "old.txt")
+  (test-user:press! "d")
+  (test-user:settle)
+  (check-equal? '("dired.marked" "dired.flagged" "dired.folder" "dired.link" "dired.broken-link" #f)
+    (map name-face '("mid.c" "old.txt" "zfolder" "link" "broken" "new.txt"))))
