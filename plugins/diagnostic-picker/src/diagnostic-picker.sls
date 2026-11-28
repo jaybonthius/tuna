@@ -1,5 +1,5 @@
 #!tuna
-(import (diagnostics) (completion) (jump-history) (projects) (files) (buffers) (document) (views) (commands) (keys))
+(import (diagnostics) (completion) (jump-history) (projects) (files) (buffers) (document) (layout) (commands) (keys))
 
 (define (%line-and-column d)
   (let ([b (diagnostics:diagnostic-buffer d)] [start (diagnostics:diagnostic-start d)])
@@ -44,20 +44,22 @@
                      (error 'diagnostic-picker:diagnostic "The buffer is in no project"))
                    (diagnostics:under (projects:root project)))
                  (diagnostics:in (buffers:current)))]
-         [preview (and (for-all diagnostics:diagnostic-path ds)
-                       (let-values ([(show end) (completion:location-preview (views:current) jump-history:after-jump)])
-                         (cons show end)))]
          [of (lambda (severity) (filter (lambda (d) (eq? (diagnostics:diagnostic-severity d) severity)) ds))]
          [by-value (map (lambda (d) (cons (%value d) d)) ds)])
     (when (null? ds)
       (error 'diagnostic-picker:diagnostic "No diagnostics"))
-    (let ([chosen (completion:read "Go to diagnostic: "
-                    (filter values
-                      (map (lambda (severity title narrow)
-                             (let ([these (of severity)])
-                               (and (pair? these) (%source title narrow these preview))))
-                           '(error warning info hint) '("Errors" "Warnings" "Infos" "Hints") '(#\e #\w #\i #\h))))])
-      (cdr (assoc chosen by-value)))))
+    (layout:call-with-display-view
+      (lambda (display-view)
+        (let* ([preview (and (for-all diagnostics:diagnostic-path ds)
+                             (let-values ([(show end) (completion:location-preview display-view jump-history:after-jump)])
+                               (cons show end)))]
+               [chosen (completion:read "Go to diagnostic: "
+                         (filter values
+                           (map (lambda (severity title narrow)
+                                  (let ([these (of severity)])
+                                    (and (pair? these) (%source title narrow these preview))))
+                                '(error warning info hint) '("Errors" "Warnings" "Infos" "Hints") '(#\e #\w #\i #\h))))])
+          (cdr (assoc chosen by-value)))))))
 
 (commands:define-command (diagnostic [d (%read-diagnostic)])
   "Goes to D, read from the current buffer's diagnostics, or with C-u from its project's, in a view already showing its buffer if there is one, as jump-history:jump-to goes."

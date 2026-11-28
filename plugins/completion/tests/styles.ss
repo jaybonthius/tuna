@@ -1,12 +1,12 @@
-(import (tuna) (test) (test-user) (saved) (options) (tables) (minibuffer) (completion) (completion-list) (editing) (completion-test sessions))
+(import (tuna) (test) (test-user) (saved) (options) (tables) (minibuffer) (completion) (completion-list) (editing) (completion-test sessions) (minibuffer-test reading))
 
 (saved:define-saved words-history '() list?)
 
 (define (with-read sources thunk)
-  (let ([r (completion-test/sessions:start! (lambda () (completion:read "? " sources words-history)))])
+  (let ([r (minibuffer-test/reading:start! (lambda () (completion:read "? " sources words-history)))])
     (thunk (completion-test/sessions:session))
     (test-user:press! "C-g")
-    (check-raises cancelled? (completion-test/sessions:result r))))
+    (check-raises cancelled? (minibuffer-test/reading:result r))))
 
 (define (offered sources text)
   (let ([found #f])

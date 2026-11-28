@@ -1,6 +1,6 @@
 (import (tuna) (test) (test-runner) (test-user) (hooks) (options) (tables) (modes) (buffers) (document) (views)
         (layout) (layout-split) (files) (projects) (editing) (jump-history) (completion) (completion-list) (minibuffer)
-        (outline) (outline-picker) (completion-test sessions) (completion-test picking) (outline-picker-test reading) (minibuffer-test reading))
+        (outline) (outline-picker) (completion-test sessions) (completion-test picking) (outline-picker-test reading) (minibuffer-test screen))
 
 (define (home path) (string-append (getenv "HOME") "/" path))
 
@@ -75,7 +75,7 @@
   (go! src 2 0)
   (test-user:press! "M-g I")
   (check-equal? '(("Functions: other.toy" "z") ("Functions: src.toy" "alpha") ("Variables: src.toy" "beta")) (rows))
-  (check-equal? '("Go to item (3 buffers, Project shop): ") (minibuffer-test/reading:questions))
+  (check-equal? '("Go to item (3 buffers, Project shop): ") (minibuffer-test/screen:questions))
   (quit!))
 
 (test "each group names its kind and its buffer, and a kind's narrow character shows that kind in every buffer"
@@ -92,14 +92,14 @@
   (check-equal? '(("Functions: far.toy" "far") ("Functions: other.toy" "z") ("Functions: src.toy" "alpha")
                   ("Variables: src.toy" "beta"))
                 (rows))
-  (check-equal? '("Go to item (4 buffers): ") (minibuffer-test/reading:questions))
+  (check-equal? '("Go to item (4 buffers): ") (minibuffer-test/screen:questions))
   (quit!))
 
 (test "in no project it reads the current buffer alone"
   (go! far 1 0)
   (test-user:press! "M-g I")
   (check-equal? '(("Functions: far.toy" "far")) (rows))
-  (check-equal? '("Go to item (1 buffer): ") (minibuffer-test/reading:questions))
+  (check-equal? '("Go to item (1 buffer): ") (minibuffer-test/screen:questions))
   (quit!))
 
 (test "C-n over another buffer's entry previews that buffer in the starting view, and C-g puts the view back"

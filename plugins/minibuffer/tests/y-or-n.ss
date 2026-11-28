@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (options) (keys) (commands) (modes) (buffers) (views) (layout) (editing) (echo-area) (ask) (minibuffer) (minibuffer-test reading))
+(import (tuna) (test) (test-user) (options) (keys) (commands) (modes) (buffers) (views) (layout) (editing) (echo-area) (ask) (minibuffer) (minibuffer-test reading) (minibuffer-test screen))
 
 (define (asking) (minibuffer-test/reading:start! (lambda () (minibuffer:ask-y-or-n "Save it? "))))
 
@@ -6,7 +6,7 @@
 
 (test "a y-or-n question asks with (y or n); y, Y and SPC answer yes, n, N, DEL and <delete> answer no; the answer is echoed"
   (let ([r (asking)])
-    (check-equal? '("Save it? (y or n) ") (minibuffer-test/reading:questions))
+    (check-equal? '("Save it? (y or n) ") (minibuffer-test/screen:questions))
     (minibuffer-test/reading:quit! r))
   (for-each
     (lambda (key answer)
@@ -22,7 +22,7 @@
     (test-user:type! "q")
     (check-equal? 'waiting (minibuffer-test/reading:result r))
     (check-equal? "" (minibuffer-test/reading:input))
-    (check-equal? " [Please answer y or n]" (minibuffer-test/reading:bracket))
+    (check-equal? " [Please answer y or n]" (minibuffer-test/screen:bracket))
     (test-user:press! "y")
     (check-equal? #t (minibuffer-test/reading:result r))))
 
@@ -63,7 +63,7 @@
       (lambda ()
         (check-equal? '(#f #f) (list (minibuffer:y-or-n-mode) (modes:command-for-view? minibuffer:answer-yes (layout:selected-view))))))
     (check-equal? '(#f #f) (list (modes:on? minibuffer:y-or-n-mode elsewhere) (modes:command-for-view? minibuffer:answer-no elsewhere)))
-    (check-equal? '("no y-or-n question waits") (minibuffer-test/reading:report-messages (lambda () (run minibuffer:answer-yes))))
+    (check-equal? '("no y-or-n question waits") (minibuffer-test/screen:report-messages (lambda () (run minibuffer:answer-yes))))
     (minibuffer-test/reading:quit! r)))
 
 (test "run where point is in no y-or-n question, an answer answers the innermost one, and the prompt holding point stays"
@@ -80,13 +80,13 @@
 
 (test "a yes-or-no question asks again on another answer, saying Please answer yes or no"
   (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:ask-yes-or-no "Delete it? ")))])
-    (check-equal? '("Delete it? (yes or no) ") (minibuffer-test/reading:questions))
+    (check-equal? '("Delete it? (yes or no) ") (minibuffer-test/screen:questions))
     (test-user:type! "maybe")
     (test-user:press! "RET")
     (test-user:settle)
     (check-equal? 'waiting (minibuffer-test/reading:result r))
     (check-equal? "" (minibuffer-test/reading:input))
-    (check-equal? " [Please answer yes or no]" (minibuffer-test/reading:bracket))
+    (check-equal? " [Please answer yes or no]" (minibuffer-test/screen:bracket))
     (test-user:type! "yes")
     (test-user:press! "RET")
     (check-equal? #t (minibuffer-test/reading:result r))))

@@ -1,6 +1,6 @@
-(import (tuna) (test) (test-user) (test-runner) (options) (tables) (timers) (faces) (buffers) (document) (views) (layout) (files) (projects)
-        (jump-history) (completion) (completion-list) (xref) (xref-picker) (completion-test sessions) (completion-test picking)
-        (xref-test words))
+(import (tuna) (test) (test-user) (test-runner) (options) (tables) (saved) (timers) (faces) (buffers) (document) (views) (layout) (files)
+        (projects) (minibuffer) (jump-history) (completion) (completion-list) (xref) (xref-picker) (completion-test sessions) (minibuffer-test reading) (completion-test picking)
+        (minibuffer-test screen) (xref-test words))
 
 (define (view) (layout:selected-view))
 
@@ -55,6 +55,23 @@
   (check-equal? '(("defs.txt" "1: def total") ("sub/twice.txt" "2: def total")) (rows))
   (quit!))
 
+(test "M-. asks Definitions of the identifier searched, and M-? References of it"
+  (at-total!)
+  (test-user:press! "M-.")
+  (rows)
+  (check-equal? '("Definitions of total: ") (minibuffer-test/screen:questions))
+  (quit!)
+  (test-user:press! "M-? RET")
+  (check-equal? '(("uses.txt" "1: x = total") ("uses.txt" "2: y = average + total")) (rows))
+  (check-equal? '("References of total: ") (minibuffer-test/screen:questions))
+  (quit!)
+  (kill-others!))
+
+(test "xref-picker:choose-and-go raises on what is not a list of items"
+  (for-each
+    (lambda (items) (check-raises assertion-violation? (xref-picker:choose-and-go items "Definitions of total")))
+    (list '() (list 'total))))
+
 (test "the selected item's place is shown in the view the search started from; a quit puts it back, kills the buffers the preview opened and records nothing"
   (at-total!)
   (let ([start (view)])
@@ -78,6 +95,58 @@
   (check-equal? '("uses.txt" 1) (here))
   (kill-others!))
 
+(test "M-. keeps a history of its own: M-p recalls the row chosen before, and no entry of another read"
+  (saved:set! minibuffer:history '("elsewhere"))
+  (saved:set! xref-picker:xref-history '())
+  (at-total!)
+  (test-user:press! "M-.")
+  (rows)
+  (test-user:press! "C-n")
+  (completion-test/picking:press-until-ended! "RET" xref:find-definitions)
+  (at-total!)
+  (test-user:press! "M-.")
+  (rows)
+  (test-user:press! "M-p")
+  (check-equal? "sub/twice.txt:2: def total" (minibuffer-test/reading:input))
+  (check-equal? '("beginning of history") (minibuffer-test/screen:report-messages (lambda () (test-user:press! "M-p"))))
+  (quit!)
+  (check-equal? '("elsewhere") (minibuffer:history))
+  (kill-others!))
+
+(define (views-shown)
+  (remp buffers:internal-name? (map (lambda (v) (buffers:name (views:buffer v))) (layout:views))))
+
+(test "C-x 4 . previews in another view, made for the read, while the start view keeps its buffer; C-g deletes it, and RET shows the choice there and selects it"
+  (layout:reset-layout)
+  (at-total!)
+  (let ([start (view)] [before (places)])
+    (test-user:press! "C-x 4 .")
+    (rows)
+    (test-runner:wait-until (lambda () (equal? (views-shown) '("uses.txt" "defs.txt"))))
+    (test-user:press! "C-n")
+    (test-runner:wait-until (lambda () (equal? (views-shown) '("uses.txt" "twice.txt"))))
+    (quit!)
+    (check-equal? (list '("uses.txt") '("uses.txt" 1) before) (list (views-shown) (here) (places)))
+    (test-user:press! "C-x 4 .")
+    (rows)
+    (test-user:press! "C-n")
+    (completion-test/picking:press-until-ended! "RET" xref:find-definitions-other-view)
+    (check-equal? (list '("uses.txt" "twice.txt") #f '("twice.txt" 2)) (list (views-shown) (eq? start (view)) (here)))
+    (layout:reset-layout)
+    (kill-others!)))
+
+(test "with a preview delay C-x 4 . makes no view until an item has stayed selected that long, then previews in it; C-g deletes it"
+  (options:set! xref-picker:preview-delay 0.3)
+  (layout:reset-layout)
+  (at-total!)
+  (test-user:press! "C-x 4 .")
+  (rows)
+  (check-equal? '("uses.txt") (views-shown))
+  (test-runner:wait-until (lambda () (equal? (views-shown) '("uses.txt" "defs.txt"))))
+  (quit!)
+  (check-equal? '("uses.txt") (views-shown))
+  (options:unset! xref-picker:preview-delay))
+
 (test "with xref-picker:preview-delay an item is shown once it has stayed selected that long"
   (options:set! xref-picker:preview-delay 0.3)
   (at-total!)
@@ -100,10 +169,11 @@
     (let wait () (when held? (timers:sleep 0.01) (wait))))
   (apropos view pattern))
 
-(test "C-M-. asks the backend's apropos with the whole input once it is long enough and has rested, quits the ask a newer input replaces, and goes to the item chosen"
+(test "C-M-. asks the backend's apropos with the whole input once it is long enough and has rested, quits the ask a newer input replaces, goes to the item chosen and keeps a history of its own"
   (options:set! completion:async-min-input 2)
   (options:set! completion:async-delay 0.1)
   (advice-add! xref:apropos hold)
+  (saved:set! minibuffer:history '("elsewhere"))
   (set! held? #t)
   (at-total!)
   (test-user:press! "C-M-.")
@@ -123,6 +193,7 @@
     (check-equal? (list (cons faces:shadow "~/code/defs.txt:2")) (completion:annotation s m)))
   (completion-test/picking:press-until-ended! "RET" xref-picker:find-apropos)
   (check-equal? (list '("defs.txt" 2) '("uses.txt" 1)) (list (here) (car (places))))
+  (check-equal? (list '("av") '("elsewhere")) (list (list-head (xref-picker:symbol-history) 1) (minibuffer:history)))
   (advice-remove! xref:apropos hold)
   (options:unset! completion:async-min-input)
   (options:unset! completion:async-delay))
@@ -132,3 +203,11 @@
     (check-equal? (list (cons faces:shadow "~/code/defs.txt:2") (cons faces:shadow "function"))
                   (annotate (xref:make-item "def average" defs 2 0 "function") #f))
     (check-equal? (list (cons faces:shadow "~/code/defs.txt:2")) (annotate (xref:make-item "def average" defs 2 0) #f))))
+
+(test "a quit of C-M-. is reported as cancelled, leaves the view as it was and records nothing"
+  (at-total!)
+  (let ([before (places)])
+    (test-user:press! "C-M-.")
+    (test-user:type! "tot")
+    (quit!)
+    (check-equal? (list '("uses.txt" 1) before #f) (list (here) (places) (minibuffer:current-prompt)))))

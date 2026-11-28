@@ -6,14 +6,10 @@
 (define (%current-buffer)
   (let ([v (views:current)]) (and v (views:buffer v))))
 
-(define (%buffer-preview view)
-  (lambda (b)
-    (if b (views:preview-buffer! view b) (views:end-preview! view))))
-
-(define (buffers view)
-  (unless (or (not view) (views:view? view))
-    (assertion-violation 'buffer-picker:buffers "neither a view nor #f" view))
-  (let* ([current (%current-buffer)]
+(define (buffers display-view)
+  (unless (or (not display-view) (procedure? display-view))
+    (assertion-violation 'buffer-picker:buffers "neither a procedure nor #f" display-view))
+  (let* ([current (%current-buffer)] [shown #f]
          [live (remp (lambda (b) (or (eq? b current) (buffers:internal-name? (buffers:name b)))) (buffers:all))]
          [on-screen (map views:buffer (layout:views))]
          [ordered (append (remp (lambda (b) (memq b on-screen)) live)
@@ -27,10 +23,14 @@
       (title "Buffers")
       (narrow #\b)
       (category completion:buffer-category)
-      (preview (and view (%buffer-preview view)) (and view (lambda (chosen) (views:end-preview! view)))))))
+      (preview (and display-view (lambda (b)
+                                   (cond
+                                     [b (set! shown (display-view b)) (views:preview-buffer! shown b)]
+                                     [shown (views:end-preview! shown)])))
+               (and display-view (lambda (chosen) (when shown (views:end-preview! shown))))))))
 
-(options:define-option sources (list (lambda (view) (buffers #f))) (lambda (v) (and (list? v) (for-all procedure? v)))
-  "Procedures of a view, called by buffer-picker:switch-to-buffer with the view it switches, each returning a source; buffer-picker:buffers given that view previews in it.")
+(options:define-option sources (list (lambda (display-view) (buffers #f))) (lambda (v) (and (list? v) (for-all procedure? v)))
+  "Procedures called by buffer-picker:switch-to-buffer, each returning a source, with the procedure layout:call-with-display-view gives, of a buffer, that returns the view the switch shows it in; buffer-picker:buffers given it previews there.")
 
 (define read-buffer
   (case-lambda
@@ -42,11 +42,12 @@
      (completion:read question (list (buffers #f)) h (and default (buffers:name default)))]))
 
 (define (%read-switch)
-  (let* ([view (views:current)]
-         [v (completion:read-or-input "Switch to buffer: " (map (lambda (p) (p view)) (sources)) buffer-history)])
-    (cond
-      [(or (buffers:buffer? v) (pair? v)) v]
-      [else (or (buffers:find v) (buffers:make v ""))])))
+  (layout:call-with-display-view
+    (lambda (display-view)
+      (let ([v (completion:read-or-input "Switch to buffer: " (map (lambda (p) (p display-view)) (sources)) buffer-history)])
+        (cond
+          [(or (buffers:buffer? v) (pair? v)) v]
+          [else (or (buffers:find v) (buffers:make v ""))])))))
 
 (define (%location? v)
   (and (pair? v) (string? (car v)) (pair? (cdr v)) (integer? (cadr v)) (exact? (cadr v))
@@ -62,9 +63,9 @@
        (views:set-point! (layout:selected-view) (editing:line-position b (cadr target) (cddr target))))]
     [else (assertion-violation 'buffer-picker:switch-to-buffer "neither a buffer nor a location" target)]))
 
-(commands:define-command (switch-to-buffer-other-view [target (%read-switch)])
-  "Shows TARGET, as buffer-picker:switch-to-buffer does, in another view, which it selects."
-  (layout:call-with-overriding-action layout:display-in-other-view (lambda () (switch-to-buffer target))))
+(commands:define-command (switch-to-buffer-other-view)
+  "Reads a buffer or a location as buffer-picker:switch-to-buffer does, under layout:display-in-other-view as the overriding action, so the read previews in the view the choice then shows in, another view, which it selects."
+  (layout:call-with-overriding-action layout:display-in-other-view (lambda () (switch-to-buffer (%read-switch)))))
 
 (commands:define-command (kill-buffer [buffer (read-buffer "Kill buffer: " buffer-history (%current-buffer))])
   "Kills BUFFER."

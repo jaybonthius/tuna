@@ -708,7 +708,9 @@
                [else
                 (let ([b (open-buffer! path doc length hash read)])
                   (when (and read (contents-missing? read))
-                    (ask:message "(New file)"))
+                    (ask:message (if (contents-folder-missing? read)
+                                     (format "(New file; folder ~a does not exist)" (abbreviated-path (path-parent path)))
+                                     "(New file)")))
                   (buffers:with-buffer b (after-visit b))
                   b)]))))])))
 

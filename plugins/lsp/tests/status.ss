@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-runner) (test-user) (hooks) (options) (tables) (keys) (buffers) (document) (views) (layout)
-        (files) (xref) (completion) (completion-list) (status-line) (lsp) (lsp-test servers))
+        (files) (xref) (completion) (completion-list) (status-line) (lsp) (lsp-test servers) (minibuffer-test screen))
 
 (options:set! lsp:send-changes-delay 0.05)
 
@@ -103,7 +103,7 @@
   (lsp-test/servers:press-until-ended! "C-n RET" lsp:show-events)
   (check (pair? (views:showing (jsonrpc-events (symbol->string style)))))
   (test-user:press! "C-c k")
-  (check-equal? "Connection: " (lsp-test/servers:question))
+  (check-equal? "Connection: " (minibuffer-test/screen:question))
   (check-equal? '(cancelled) (lsp-test/servers:reports-during (lambda () (test-user:press! "C-g")))))
 
 (test "what a server writes to its standard error goes to its events log"

@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (views) (buffers) (layout) (options) (tables) (commands) (keys) (editing) (minibuffer)
-        (transient) (transient-test) (transient-test magit))
+        (transient) (transient-test) (transient-test magit) (minibuffer-test screen))
 
 (define (merge-drawn f n s)
   (list "Merge" (list "Arguments" (list "- f" "Fast-forward only" f) (list "- n" "No fast-forward" n) (list "- s" "Strategy" s))
@@ -13,9 +13,6 @@
     (thunk)
     (advice-remove! report keep)
     (reverse reported)))
-
-(define (question)
-  (map test-user:element-text (test-user:elements (test-user:screen) "minibuffer-question")))
 
 (test-user:show! "|one\ntwo\n")
 
@@ -50,7 +47,7 @@
 (transient:define-menu strategies "A menu of strategies." (incompatible ("--strategy=" "--ff-only")))
 
 (transient:add! strategies #f (transient:switch "f" "Fast-forward only" "--ff-only")
-  (transient:valued-switch "s" "Strategy" "--strategy=" (lambda (question) "ours")))
+  (transient:valued-switch "s" "Strategy" "--strategy=" (lambda (minibuffer-test/screen:questions) "ours")))
 
 (commands:define-command (show-strategies) "Shows the strategies." (transient:show! strategies))
 
@@ -64,7 +61,7 @@
 
 (test "a valued switch reads its value, asking its description and :, and while the command chosen waits the menu stays open and takes no keys"
   (test-user:press! "C-c m - s")
-  (check-equal? '("Strategy: ") (question))
+  (check-equal? '("Strategy: ") (minibuffer-test/screen:questions))
   (test-user:press! "m")
   (check-equal? "m" (minibuffer:input (minibuffer:current-prompt)))
   (check (not (memq transient-test/magit:merge-menu (keys:active-keymaps (test-user:client)))))
@@ -115,6 +112,6 @@
 
 (test "when the plugin unloads while a valued switch's prompt waits, the command chosen quits, and the prompt goes"
   (test-user:press! "C-c m - s")
-  (check-equal? '("Strategy: ") (question))
+  (check-equal? '("Strategy: ") (minibuffer-test/screen:questions))
   (check-equal? '(cancelled) (report-messages (lambda () (unload-owner! (module-owner '(transient))) (test-user:settle))))
   (check-equal? '(#f #f) (list (transient-test:menu) (minibuffer:current-prompt))))

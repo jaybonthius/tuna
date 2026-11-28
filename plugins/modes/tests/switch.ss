@@ -1,6 +1,7 @@
 (import (tuna) (test) (test-user) (test-runner) (modes) (prog) (python) (buffers) (document) (views) (layout) (keys) (commands)
         (hooks) (options) (tables) (ask) (files) (undo) (editing) (echo-area) (minibuffer) (completion) (command-picker) (help)
-        (buffers-test) (completion-test sessions) (status-line) (status-line-test) (modes-test text) (modes-test fill) (modes-test code) (modes-test view))
+        (buffers-test) (completion-test sessions) (minibuffer-test reading) (status-line) (status-line-test) (modes-test text) (modes-test fill) (modes-test code) (modes-test view)
+        (minibuffer-test screen))
 
 (define (home-file name) (string-append (getenv "HOME") "/" name))
 
@@ -45,10 +46,6 @@
   (test-user:type! "modes:switch-major-mode")
   (test-user:press! "RET"))
 
-(define (question)
-  (let ([shown (test-user:elements (test-user:screen) "minibuffer-question")])
-    (and (pair? shown) (test-user:element-text (car (reverse shown))))))
-
 (define (raised-saying? who text)
   (lambda (c)
     (and (who-condition? c) (eq? who (condition-who c))
@@ -61,7 +58,7 @@
 (define (switch! name)
   (ask-major!)
   (answer! name)
-  (check-equal? #f (completion-test/sessions:prompt)))
+  (check-equal? #f (minibuffer-test/reading:prompt)))
 
 (write-file! "build.py" "import os\nprint(os.name)\n")
 
@@ -81,7 +78,7 @@
   (views:set-point! v 10)
   (views:set-mark! v 4)
   (ask-major!)
-  (check-equal? "Major mode: " (question))
+  (check-equal? "Major mode: " (minibuffer-test/screen:question))
   (check-equal? '("chez-scheme:mode" "modes-test/code:mode" "modes-test/text:mode" "modes:fundamental" "modes:special" "prog:mode"
                     "python:mode")
                 (offered))
@@ -114,8 +111,8 @@
   (buffers:with-buffer b (options:set-local! modes-test/fill:column 60))
   (ask-major!)
   (answer! "zz")
-  (check (completion-test/sessions:prompt))
-  (check-equal? " [No match]" (completion-test/sessions:prompt-message))
+  (check (minibuffer-test/reading:prompt))
+  (check-equal? " [No match]" (minibuffer-test/screen:bracket))
   (quit!)
   (check-equal? (list "Quit" modes:fundamental 60) (list (echo-area:current-message) (modes:major-mode b) (local modes-test/fill:column b))))
 
@@ -249,18 +246,18 @@
   (views:set-buffer! v help-buffer)
   (check-equal? '("help:mode is set only by its plugin")
                 (reports-of (lambda () (test-user:press! "M-x") (test-user:type! "modes:switch-major-mode") (test-user:press! "RET"))))
-  (check-equal? (list #f help:mode) (list (completion-test/sessions:prompt) (modes:major-mode help-buffer)))
+  (check-equal? (list #f help:mode) (list (minibuffer-test/reading:prompt) (modes:major-mode help-buffer)))
   (views:set-buffer! v b))
 
 (test "from a waiting prompt the command refuses, naming minibuffer:mode, and the prompt still waits with its input"
   (reset!)
-  (let ([outer (completion-test/sessions:start! (lambda () (minibuffer:read "Name: ")))])
+  (let ([outer (minibuffer-test/reading:start! (lambda () (minibuffer:read "Name: ")))])
     (test-user:type! "abc")
     (check-equal? '("minibuffer:mode is set only by its plugin")
                   (reports-of (lambda () (test-user:press! "M-x") (test-user:type! "modes:switch-major-mode") (test-user:press! "RET"))))
-    (check-equal? (list "abc" #t) (list (completion-test/sessions:input) (completion-test/sessions:waiting? outer)))
+    (check-equal? (list "abc" #t) (list (minibuffer-test/reading:input) (minibuffer-test/reading:waiting? outer)))
     (test-user:press! "C-g")
-    (check-equal? #f (completion-test/sessions:waiting? outer))))
+    (check-equal? #f (minibuffer-test/reading:waiting? outer))))
 
 (test "from code, a plugin-only mode, a buffer in one, a mode not defined or a killed buffer raises and changes nothing"
   (reset!)
@@ -287,7 +284,7 @@
     (lambda (prefix)
       (reset!)
       (ask-major! prefix)
-      (check-equal? "Major mode: " (question))
+      (check-equal? "Major mode: " (minibuffer-test/screen:question))
       (check-equal? '("chez-scheme:mode" "modes-test/code:mode" "modes-test/text:mode" "modes:fundamental" "modes:special" "prog:mode"
                     "python:mode")
                     (offered))

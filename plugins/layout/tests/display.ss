@@ -202,3 +202,76 @@
     (test-user:press! "C-x 4 4 C-c p")
     (check-equal? "*Pager*" (name-of b))
     (options:set! layout:display-action layout-split:display-right)))
+
+(test "call-with-display-view gives the selected view when no display is overridden"
+  (let ([a (car (start! "a" "b"))])
+    (layout:call-with-display-view
+      (lambda (view)
+        (check (eq? a (view (fresh-name "mail"))))
+        (check-equal? 2 (length (layout:views)))))))
+
+(test "under an overriding action, call-with-display-view finds a view at the first ask, changes what no view shows, and the display goes there"
+  (options:set! layout:display-action layout:use-other-view)
+  (let-values ([(a b) (apply values (start! "a" "b"))])
+    (let ([mail (fresh-name "mail")] [b-buffer (views:buffer b)])
+      (layout:call-with-overriding-action layout:display-in-other-view
+        (lambda ()
+          (layout:call-with-display-view
+            (lambda (view)
+              (check (eq? b (view mail)))
+              (check (eq? b (view (fresh-name "other"))))
+              (views:preview-buffer! b mail)
+              (views:end-preview! b)
+              (check (eq? b-buffer (views:buffer b)))))
+          (layout:switch-to-buffer mail)))
+      (check (eq? mail (views:buffer b)))
+      (check (eq? b (layout:selected-view)))
+      (check (memq b-buffer (views:previous-buffers b)))
+      (check (not (memq mail (views:previous-buffers b))))))
+  (options:set! layout:display-action layout-split:display-right))
+
+(test "a view call-with-display-view made is deleted when its procedure raises, and is not made when the procedure never asks"
+  (let ([a (car (start! "a"))])
+    (layout:call-with-overriding-action layout:display-in-other-view
+      (lambda ()
+        (check-raises (lambda (c) (eq? c 'quit))
+          (layout:call-with-display-view
+            (lambda (view)
+              (let ([made (view (fresh-name "mail"))])
+                (check (not (eq? made a)))
+                (check-equal? 2 (length (layout:views)))
+                (raise 'quit)))))
+        (check-equal? 1 (length (layout:views)))
+        (layout:call-with-display-view (lambda (view) #f))
+        (check-equal? 1 (length (layout:views)))))))
+
+(test "call-with-display-view takes a procedure, and its view procedure a buffer"
+  (check-raises (layout-test/parts:raised-with 'layout:call-with-display-view "not a procedure") (layout:call-with-display-view 5))
+  (layout:call-with-display-view
+    (lambda (view)
+      (check-raises (layout-test/parts:raised-with 'layout:call-with-display-view "not a buffer") (view "mail")))))
+
+(test "the view an overriding action finds for a read begins with the buffer of the view the read started from, not the buffer asked for"
+  (let ([a (car (start! "a"))] [mail (fresh-name "mail")])
+    (layout:call-with-overriding-action layout:display-in-other-view
+      (lambda ()
+        (check-raises (lambda (c) (eq? c 'quit))
+          (layout:call-with-display-view
+            (lambda (view)
+              (let ([made (view mail)])
+                (check (eq? (views:buffer a) (views:buffer made)))
+                (raise 'quit)))))))
+    (check-equal? 1 (length (layout:views)))))
+
+(test "finding the view leaves a preview another read shows in a view as it is"
+  (let-values ([(a b) (apply values (start! "a" "b"))])
+    (let ([outer (fresh-name "outer")] [b-buffer (views:buffer b)])
+      (views:preview-buffer! b outer)
+      (layout:call-with-overriding-action layout:display-in-other-view
+        (lambda ()
+          (layout:call-with-display-view
+            (lambda (view)
+              (view (fresh-name "mail"))
+              (check-equal? (list #t outer) (list (views:previewing? b) (views:buffer b)))))))
+      (views:end-preview! b)
+      (check (eq? b-buffer (views:buffer b))))))

@@ -1,12 +1,12 @@
 (import (tuna) (test) (test-user) (test-runner) (options) (hooks) (faces) (modes) (buffers) (views) (minibuffer) (completion)
-        (completion-list) (completion-test sessions))
+        (completion-list) (completion-test sessions) (minibuffer-test reading))
 
 (define (quit! r)
   (test-user:press! "C-g")
-  (check-raises cancelled? (completion-test/sessions:result r)))
+  (check-raises cancelled? (minibuffer-test/reading:result r)))
 
 (define (read-words words)
-  (completion-test/sessions:start!
+  (minibuffer-test/reading:start!
     (lambda () (completion:read "Word: " (list (completion:source (candidates (list->vector words)))) #f))))
 
 (define (frame)
@@ -59,7 +59,7 @@
     (quit! r))
   (options:unset! completion:read-preselect)
   (let* ([feed #f]
-         [r (completion-test/sessions:start!
+         [r (minibuffer-test/reading:start!
               (lambda ()
                 (completion:read "Item: "
                   (list (completion:source (stream (lambda (emit) (set! feed emit) (lambda (prefix) (void)))) (in-order)))
@@ -75,7 +75,7 @@
     (quit! r)))
 
 (test "a narrowed read names the sources it shows after the count"
-  (let ([r (completion-test/sessions:start!
+  (let ([r (minibuffer-test/reading:start!
              (lambda ()
                (completion:read-or-input "? "
                  (list (completion:source (candidates (vector "notes" "todo")) (title "Buffers") (narrow #\b))
@@ -95,11 +95,11 @@
     (test-user:press! "C-n C-n C-n")
     (check-equal? "a4" (completion-test/sessions:selected-text (session)))
     (test-user:press! "RET")
-    (check-equal? "a4" (completion-test/sessions:result r)))
+    (check-equal? "a4" (minibuffer-test/reading:result r)))
   (options:unset! completion-list:lines))
 
 (define (read-from-a1)
-  (completion-test/sessions:start!
+  (minibuffer-test/reading:start!
     (lambda ()
       (minibuffer:call-with-setup (lambda (p) (minibuffer:set-input! p "a1"))
         (lambda () (completion:read "Word: " (list (completion:source (candidates (vector "a1" "a2" "a3" "a4")))) #f))))))
@@ -125,7 +125,7 @@
   (options:unset! completion-list:fixed-height?))
 
 (test "the list's keys move the selection: C-n, C-p, the arrows, M-< and M->; M-} and M-{ move between groups"
-  (let ([r (completion-test/sessions:start!
+  (let ([r (minibuffer-test/reading:start!
              (lambda ()
                (completion:read "? "
                  (list (completion:source (candidates (vector "a1" "a2" "b1" "b2")) (in-order)

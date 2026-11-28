@@ -1,5 +1,6 @@
 (import (tuna) (test) (test-runner) (test-user) (hooks) (options) (commands) (keys) (buffers) (document) (views)
-        (layout) (layout-split) (editing) (files) (minibuffer) (completion) (completion-list) (jump-history) (xref) (xref-test words))
+        (layout) (layout-split) (editing) (files) (minibuffer) (completion) (completion-list) (jump-history) (xref) (xref-test words)
+        (minibuffer-test screen))
 
 (define (raised? who message)
   (lambda (c)
@@ -42,10 +43,6 @@
     (let ([ms (completion:session-matches s)])
       (map (lambda (k) (completion:text s (completion:matches-ref ms k))) (iota (completion:matches-count ms))))))
 
-(define (question)
-  (let ([shown (test-user:elements (test-user:screen) "minibuffer-question")])
-    (and (pair? shown) (test-user:element-text (car shown)))))
-
 (define (prompting?) (and (minibuffer:current-prompt) #t))
 
 (define uses (files:visit (xref-test/words:path "uses.txt")))
@@ -76,7 +73,7 @@
   (to-word! "total" 1)
   (test-user:press! "M-.")
   (check-equal? '("~/code/defs.txt:1: def total" "~/code/sub/twice.txt:2: def total") (choices))
-  (check-equal? "Definitions of total: " (question))
+  (check-equal? "Definitions of total: " (minibuffer-test/screen:question))
   (press-until-ended! "C-n RET" xref:find-definitions)
   (check-equal? '(("twice.txt" 2) (("uses.txt" 1))) (list (here) (places)))
   (test-user:press! "M-,"))
@@ -104,7 +101,7 @@
 
 (test "C-u M-. asks, naming the identifier at point as the default and completing over the backend's identifiers, and takes a name that is not one"
   (test-user:press! "C-u M-.")
-  (check-equal? "Find definitions of (default total): " (question))
+  (check-equal? "Find definitions of (default total): " (minibuffer-test/screen:question))
   (test-user:type! "ta")
   (check-equal? '("total" "tally") (choices))
   (test-user:press! "C-a C-k")
@@ -114,16 +111,16 @@
 
 (test "M-? asks by default, as xref:prompt-for-identifier lists it, and RET on the empty input takes the identifier at point"
   (test-user:press! "M-?")
-  (check-equal? "Find references of (default total): " (question))
+  (check-equal? "Find references of (default total): " (minibuffer-test/screen:question))
   (test-user:press! "RET")
   (check-equal? '("~/code/uses.txt:1: x = total" "~/code/uses.txt:2: y = average + total") (choices))
-  (check-equal? "References of total: " (question))
+  (check-equal? "References of total: " (minibuffer-test/screen:question))
   (quit!))
 
 (test "where there is no identifier at point the question names no default"
   (views:set-point! (view) (- (document:length (buffers:document uses)) 1))
   (test-user:press! "M-.")
-  (check-equal? "Find definitions of: " (question))
+  (check-equal? "Find definitions of: " (minibuffer-test/screen:question))
   (quit!))
 
 (test "with xref:prompt-for-identifier #f and xref:auto-jump-to-first-reference?, M-? goes to the first reference; with #t, M-. asks too"
@@ -167,7 +164,7 @@
   (to-word! "average" 2)
   (test-user:press! "C-c x")
   (check-equal? '("~/code/defs.txt:3: a" "~/code/uses.txt:1: b") (choices))
-  (check-equal? "Found: " (question))
+  (check-equal? "Found: " (minibuffer-test/screen:question))
   (press-until-ended! "RET" show-two)
   (check-equal? '(("defs.txt" 3) ("uses.txt" 2)) (list (here) (car (places))))
   (test-user:press! "M-,"))
@@ -182,7 +179,7 @@
   (let ([shown '()])
     (options:set! xref:references-display (lambda (items title) (set! shown (list title (map xref:item-summary items)))))
     (test-user:press! "C-M-.")
-    (check-equal? "Search for symbols matching: " (question))
+    (check-equal? "Search for symbols matching: " (minibuffer-test/screen:question))
     (test-user:type! "ta")
     (test-user:press! "RET")
     (check-equal? '("Symbols matching ta" ("def total" "def tally" "def total")) shown)

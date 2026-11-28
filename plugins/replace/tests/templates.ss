@@ -1,16 +1,11 @@
-(import (tuna) (test) (test-runner) (test-user) (saved) (keys) (views) (minibuffer) (completion) (replace) (isearch-test) (replace-test))
+(import (tuna) (test) (test-runner) (test-user) (saved) (keys) (views) (minibuffer) (completion) (replace) (isearch-test) (replace-test)
+        (minibuffer-test reading) (minibuffer-test screen))
 
 (define asked replace-test:asked)
 
 (define text replace-test:text)
 
 (define (prompt-for from to) (string-append "Query replacing " from " with " to ": (? for help) "))
-
-(define (question)
-  (let ([shown (test-user:elements (test-user:screen) "minibuffer-question")])
-    (and (pair? shown) (test-user:element-text (car shown)))))
-
-(define (input) (minibuffer:input (minibuffer:current-prompt)))
 
 (test "a regexp replacement expands \\&, \\N and \\#, the count so far, and the prompt shows it for the match"
   (isearch-test:show! "t" "ab-cd ef-gh\n")
@@ -78,11 +73,11 @@
   (saved:set! replace:history '(("foo" . "y") ("foo" . "x")))
   (isearch-test:show! "h" "aa foo x → y\n")
   (test-user:press! "M-%")
-  (check-equal? "Query replace (default foo → y): " (question))
+  (check-equal? "Query replace (default foo → y): " (minibuffer-test/screen:question))
   (test-user:press! "M-p")
-  (check-equal? "foo → y" (input))
+  (check-equal? "foo → y" (minibuffer-test/reading:input))
   (test-user:press! "M-p")
-  (check-equal? "foo → x" (input))
+  (check-equal? "foo → x" (minibuffer-test/reading:input))
   (test-user:press! "RET")
   (check-equal? (list 7 (prompt-for "foo" "x") "foo") (asked))
   (test-user:press! "q")

@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (options) (keys) (jobs) (buffers) (views) (layout) (layout-split)
-        (files) (completion) (completion-list) (buffer-picker) (completion-test sessions) (completion-test picking))
+        (files) (minibuffer) (completion) (completion-list) (buffer-picker) (completion-test sessions) (minibuffer-test reading) (minibuffer-test screen) (completion-test picking))
 
 (define (check-eq? a b) (check (eq? a b)))
 
@@ -101,6 +101,16 @@
     (check-equal? '(cancelled) (completion-test/picking:quit!))
     (layout:delete-part! (layout:view-node right))))
 
+(test "C-x b leaves out a buffer whose name starts with a space, which its whole name typed still reaches"
+  (only! "notes")
+  (buffers:make " hidden" "h\n")
+  (test-user:press! "C-x b")
+  (check-equal? '("notes") (completion-test/picking:choices))
+  (test-user:type! " hidden")
+  (check-equal? '() (completion-test/picking:choices))
+  (test-user:press! "RET")
+  (check-equal? " hidden" (shown-name)))
+
 (test "C-x k kills the buffer chosen, the current one by default"
   (only! "notes" "other")
   (layout:switch-to-buffer (buffers:find "notes"))
@@ -111,10 +121,10 @@
 
 (test "buffer-picker:read-buffer returns the buffer chosen, its default first"
   (let* ([bs (only! "notes" "other")]
-         [r (completion-test/sessions:start! (lambda () (buffer-picker:read-buffer "Buffer: " buffer-picker:buffer-history (cadr bs))))])
+         [r (minibuffer-test/reading:start! (lambda () (buffer-picker:read-buffer "Buffer: " buffer-picker:buffer-history (cadr bs))))])
     (check-equal? "other" (car (completion-test/picking:choices)))
     (test-user:press! "RET")
-    (check-eq? (cadr bs) (completion-test/sessions:result r))))
+    (check-eq? (cadr bs) (minibuffer-test/reading:result r))))
 
 (test "a location chosen in C-x b visits its file and goes to its line and column; a line past the last goes to the end"
   (let* ([path (home-file "lines.txt" "one\ntwo\nthree\n")]
@@ -135,7 +145,9 @@
         (completion-test/picking:press-until-ended! "RET" buffer-picker:switch-to-buffer)
         (check-equal? "one\ntwo\nthree\n|" (test-user:text))))
     (check-raises (lambda (c) (and (who-condition? c) (eq? 'buffer-picker:switch-to-buffer (condition-who c))))
-                  (buffer-picker:switch-to-buffer 5))))
+                  (buffer-picker:switch-to-buffer 5))
+    (check-raises (lambda (c) (and (who-condition? c) (eq? 'buffer-picker:buffers (condition-who c))))
+                  (buffer-picker:buffers 'view))))
 
 (jobs:define-worker (notes-files directory emit)
   (emit (list->vector
@@ -167,18 +179,18 @@
   (only! "notes")
   (test-user:press! "C-x b")
   (test-user:type! "b ")
-  (check-equal? (list "b " #f) (list (completion-test/sessions:input) (completion:narrowed (completion-test/picking:session))))
+  (check-equal? (list "b " #f) (list (minibuffer-test/reading:input) (completion:narrowed (completion-test/picking:session))))
   (check-equal? '(cancelled) (completion-test/picking:quit!))
   (test-user:press! "C-x k")
   (test-user:type! "b ")
-  (check-equal? (list "b " #f) (list (completion-test/sessions:input) (completion:narrowed (completion-test/picking:session))))
+  (check-equal? (list "b " #f) (list (minibuffer-test/reading:input) (completion:narrowed (completion-test/picking:session))))
   (check-equal? '(cancelled) (completion-test/picking:quit!))
   (with-sources (list buffer-picker:buffers notes-source)
     (lambda ()
       (test-user:press! "C-x b")
       (completion-test/picking:choices)
       (test-user:type! "b ")
-      (check-equal? (list "" "Buffers") (list (completion-test/sessions:input) (completion:narrowed (completion-test/picking:session))))
+      (check-equal? (list "" "Buffers") (list (minibuffer-test/reading:input) (completion:narrowed (completion-test/picking:session))))
       (check-equal? '(cancelled) (completion-test/picking:quit!)))))
 
 (test "with completion:any-order as the styles, C-x b matches the words of its input in any order"
@@ -206,6 +218,76 @@
     (test-user:press! "RET")
     (check-equal? (list "notes" "notes" #f) (list (buffers:name (views:buffer first)) (shown-name) (eq? first (view))))
     (test-user:press! "C-x 0")))
+
+(define (views-shown)
+  (map (lambda (v) (list (buffers:name (views:buffer v)) (views:previewing? v)))
+       (remp (lambda (v) (buffers:internal-name? (buffers:name (views:buffer v)))) (layout:views))))
+
+(define (src-after! . names)
+  (layout:reset-layout)
+  (let ([bs (apply only! names)])
+    (for-each layout:switch-to-buffer bs)
+    (view)))
+
+(test "C-x 4 b with previews shows each buffer in the other view, which the first preview makes; C-g deletes it, and RET shows the choice there and selects it"
+  (with-sources (list buffer-picker:buffers)
+    (lambda ()
+      (let ([start (src-after! "older" "newer" "src")])
+        (test-user:press! "C-x 4 b")
+        (completion-test/picking:choices)
+        (check-equal? '(("src" #f) ("newer" #t)) (views-shown))
+        (test-user:press! "C-n")
+        (check-equal? '(("src" #f) ("older" #t)) (views-shown))
+        (check-equal? '(cancelled) (completion-test/picking:quit!))
+        (check-equal? (list '(("src" #f)) #t) (list (views-shown) (eq? start (view))))
+        (test-user:press! "C-x 4 b")
+        (completion-test/picking:choices)
+        (test-user:press! "C-n RET")
+        (check-equal? (list '(("src" #f) ("older" #f)) #f) (list (views-shown) (eq? start (view))))
+        (check-equal? '("src") (map buffers:name (views:previous-buffers (view))))
+        (check-equal? '("older" "src" "newer") (list-head (order) 3))))))
+
+(test "C-x 4 b with previews at a waiting prompt previews in another view, and the view the user worked in keeps its buffer"
+  (with-sources (list buffer-picker:buffers)
+    (lambda ()
+      (src-after! "older" "newer" "src")
+      (let ([outer (minibuffer-test/reading:start! (lambda () (minibuffer:read "Name: ")))])
+        (test-user:press! "C-x 4 b")
+        (completion-test/picking:choices)
+        (check-equal? (list '("Switch to buffer: ") '(("src" #f) ("newer" #t)))
+                      (list (minibuffer-test/screen:questions) (views-shown)))
+        (check-equal? '(cancelled) (completion-test/picking:quit!))
+        (check-equal? (list '("Name: ") '(("src" #f))) (list (minibuffer-test/screen:questions) (views-shown)))
+        (check-equal? 'cancelled (minibuffer-test/reading:quit! outer))))))
+
+(test "C-x 4 b from a view that shows no buffer makes its view with the buffer first previewed, and a quit deletes it"
+  (with-sources (list buffer-picker:buffers)
+    (lambda ()
+      (layout:reset-layout)
+      (only!)
+      (check-equal? #f (views:buffer (view)))
+      (buffers:make "back" "b\n")
+      (let ([names (lambda ()
+                     (remp (lambda (n) (and n (buffers:internal-name? n)))
+                           (map (lambda (v) (let ([b (views:buffer v)]) (and b (buffers:name b)))) (layout:views))))])
+        (test-user:press! "C-x 4 b")
+        (completion-test/picking:choices)
+        (check-equal? '(#f "back") (names))
+        (check-equal? '(cancelled) (completion-test/picking:quit!))
+        (check-equal? 1 (length (names))))
+      (buffers:kill! (buffers:find "*Messages*")))))
+
+(test "C-x 4 b without previews makes no view until the choice, which shows in another view"
+  (let ([start (src-after! "older" "newer" "src")])
+    (test-user:press! "C-x 4 b")
+    (completion-test/picking:choices)
+    (check-equal? '(("src" #f)) (views-shown))
+    (check-equal? '(cancelled) (completion-test/picking:quit!))
+    (check-equal? '(("src" #f)) (views-shown))
+    (test-user:press! "C-x 4 b")
+    (completion-test/picking:choices)
+    (test-user:press! "RET")
+    (check-equal? (list '(("src" #f) ("newer" #f)) #f) (list (views-shown) (eq? start (view))))))
 
 (test "b and k act on a buffer chosen in any read of buffers"
   (check-eq? buffer-picker:switch-to-buffer (keys:lookup-in (list completion:buffer-action-keymap) "b"))

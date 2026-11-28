@@ -1,6 +1,6 @@
 (import (tuna) (test) (test-user) (options) (hooks) (tables) (keys) (commands) (kill-ring) (faces) (views) (layout)
         (files) (ask) (minibuffer) (completion) (completion-list) (completion-annotations) (file-picker)
-        (completion-test sessions) (completion-test picking) (file-picker-test tree))
+        (completion-test sessions) (minibuffer-test reading) (completion-test picking) (file-picker-test tree))
 
 (define (home-relative path)
   (let ([home (getenv "HOME")])
@@ -8,23 +8,21 @@
 
 (define (choices) (completion-test/picking:choices))
 
-(define (input) (completion-test/sessions:input))
-
 (define (read-from directory)
-  (completion-test/sessions:start! (lambda () (file-picker:read-file-name "File: " directory))))
+  (minibuffer-test/reading:start! (lambda () (file-picker:read-file-name "File: " directory))))
 
-(define (answer r) (home-relative (completion-test/sessions:result r)))
+(define (answer r) (home-relative (minibuffer-test/reading:result r)))
 
 (define (quit-read! r)
   (test-user:press! "C-g")
-  (check-raises cancelled? (completion-test/sessions:result r)))
+  (check-raises cancelled? (minibuffer-test/reading:result r)))
 
 (define (shown-path) (files:path (views:buffer (layout:selected-view))))
 
 (test "C-x C-f reads a name from the home folder for a buffer that visits no file, written ~, listing its folders with a / and every file"
   (test-user:show! "|")
   (test-user:press! "C-x C-f")
-  (check-equal? "~/" (input))
+  (check-equal? "~/" (minibuffer-test/reading:input))
   (test-user:type! "src/")
   (check-equal? '(".hidden" "blob.bin" "link.txt" "text.txt") (choices))
   (test-user:type! "te")
@@ -33,8 +31,8 @@
   (check-equal? (file-picker-test/tree:path "src/text.txt") (shown-path)))
 
 (test "the read starts from the folder of the current buffer's file, and takes a path that does not exist, with ~ expanded"
-  (let ([r (completion-test/sessions:start! (lambda () (file-picker:read-file-name "File: ")))])
-    (check-equal? "~/src/" (input))
+  (let ([r (minibuffer-test/reading:start! (lambda () (file-picker:read-file-name "File: ")))])
+    (check-equal? "~/src/" (minibuffer-test/reading:input))
     (test-user:type! "new.txt")
     (choices)
     (test-user:press! "RET")
@@ -60,7 +58,7 @@
     (test-user:type! "n/s")
     (check-equal? '("notes/sub/") (choices))
     (test-user:press! "TAB")
-    (check-equal? "~/notes/sub/" (input))
+    (check-equal? "~/notes/sub/" (minibuffer-test/reading:input))
     (check-equal? '("b.sls") (choices))
     (quit-read! r)))
 
@@ -68,7 +66,7 @@
   (let ([r (read-from "~/src/")])
     (check-equal? '("text.txt" ".hidden" "blob.bin" "link.txt") (choices))
     (check-equal? (list "~/src/" #f #f)
-                  (list (input) (completion-test/picking:selected) (completion:session-busy? (completion-test/picking:session))))
+                  (list (minibuffer-test/reading:input) (completion-test/picking:selected) (completion:session-busy? (completion-test/picking:session))))
     (test-user:press! "C-n")
     (check-equal? "text.txt" (completion-test/picking:selected))
     (test-user:type! "te")
@@ -92,7 +90,7 @@
   (let ([r (read-from "~/notes/")])
     (check-equal? '() (discarded-drawn))
     (test-user:type! "~/src/")
-    (check-equal? (list "~/notes/~/src/" '(".hidden" "blob.bin" "link.txt" "text.txt")) (list (input) (choices)))
+    (check-equal? (list "~/notes/~/src/" '(".hidden" "blob.bin" "link.txt" "text.txt")) (list (minibuffer-test/reading:input) (choices)))
     (check-equal? '("~/notes/") (discarded-drawn))
     (test-user:type! "te")
     (choices)
@@ -102,7 +100,7 @@
   (let ([r (read-from "~/notes/")])
     (test-user:type! "/")
     (check (member "tmp/" (choices)))
-    (check-equal? (list "~/notes//" '("~/notes/")) (list (input) (discarded-drawn)))
+    (check-equal? (list "~/notes//" '("~/notes/")) (list (minibuffer-test/reading:input) (discarded-drawn)))
     (test-user:press! "DEL")
     (check-equal? '() (discarded-drawn))
     (quit-read! r)))
@@ -122,11 +120,11 @@
     (hooks:add! commands:after-command tidy)
     (let ([r (read-from "~/notes/")])
       (test-user:type! "~/")
-      (check-equal? (list "~/" '()) (list (input) (discarded-drawn)))
+      (check-equal? (list "~/" '()) (list (minibuffer-test/reading:input) (discarded-drawn)))
       (quit-read! r))
     (hooks:remove! commands:after-command tidy))
-  (let ([r (completion-test/sessions:start! (lambda () (minibuffer:read "Name: ")))])
-    (check-equal? #f (file-picker:file-name-prompt? (completion-test/sessions:prompt)))
+  (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:read "Name: ")))])
+    (check-equal? #f (file-picker:file-name-prompt? (minibuffer-test/reading:prompt)))
     (test-user:type! "a//b")
     (check-equal? '() (discarded-drawn))
     (quit-read! r))
@@ -182,6 +180,16 @@
 (test "C-x C-f on a folder raises is a folder"
   (check-raises (lambda (c) (and (message-condition? c) (string=? "is a folder" (condition-message c))))
                 (file-picker:find-file (file-picker-test/tree:path "src"))))
+
+(test "file-picker:read-file-name raises on a folder that is no string"
+  (check-raises assertion-violation? (file-picker:read-file-name "File: " 'home)))
+
+(test "a quit of C-x C-f leaves the shown buffer as it was"
+  (let ([before (views:buffer (layout:selected-view))])
+    (test-user:press! "C-x C-f")
+    (test-user:type! "ab")
+    (check-equal? '(cancelled) (completion-test/picking:quit!))
+    (check-equal? (list #f #t) (list (minibuffer:current-prompt) (eq? before (views:buffer (layout:selected-view)))))))
 
 (test "f finds a file chosen in any read of file names"
   (check (eq? file-picker:find-file (keys:lookup-in (list completion:file-action-keymap) "f"))))

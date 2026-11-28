@@ -92,12 +92,6 @@
   (send! c `(("jsonrpc" . "2.0") ("method" . "textDocument/publishDiagnostics")
              ("params" ("uri" . ,(lsp:path->uri path)) ("diagnostics" . ,(list->vector diagnostics))))))
 
-(define (question)
-  (let ([shown (test-user:elements (test-user:screen) "minibuffer-question")])
-    (and (pair? shown) (test-user:element-text (car shown)))))
-
-(define (input) (minibuffer:input (minibuffer:current-prompt)))
-
 (tables:define-table fake-keymap)
 
 (hooks:define-hook fake-mode-hook)

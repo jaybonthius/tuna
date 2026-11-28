@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (test-runner) (options) (hooks) (timers) (keys) (buffers) (document) (views) (layout) (minibuffer)
-        (completion) (completion-popup) (editing) (web) (completion-test sessions))
+        (completion) (completion-popup) (editing) (web) (completion-test sessions) (minibuffer-test reading))
 
 (define (session) (completion-test/sessions:session))
 
@@ -129,14 +129,14 @@
                                  (list (completion:source (candidates (vector "alpha" "almond"))))))))])
     (with-region prompt-words
       (lambda ()
-        (let ([r (completion-test/sessions:start! (lambda () (minibuffer:read "Eval: " #f)))])
+        (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:read "Eval: " #f)))])
           (test-user:type! "al")
           (test-user:press! "C-M-i")
           (check-equal? '("alpha" "almond") (popup-rows))
           (check-equal? '() (test-user:elements (test-user:screen) "completion-list"))
           (test-user:press! "C-g")
           (test-user:press! "C-g")
-          (check-raises cancelled? (completion-test/sessions:result r)))))))
+          (check-raises cancelled? (minibuffer-test/reading:result r)))))))
 
 (test "by default completion at point never starts by itself"
   (with-region greek

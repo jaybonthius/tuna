@@ -1,6 +1,6 @@
 (import (tuna) (test) (test-user) (test-runner) (saved) (options) (tables) (jobs) (layout) (minibuffer) (completion) (completion-list) (editing)
         (only (completion matcher) store-matches make-store pattern-spans)
-        (completion-test sessions))
+        (completion-test sessions) (minibuffer-test reading))
 
 (saved:define-saved h '() list?)
 
@@ -14,7 +14,7 @@
 
 (define (quit! r)
   (test-user:press! "C-g")
-  (check-raises cancelled? (completion-test/sessions:result r)))
+  (check-raises cancelled? (minibuffer-test/reading:result r)))
 
 (define (after-slash input)
   (let loop ([i (string-length input)])
@@ -26,13 +26,16 @@
   (for-each
     (lambda (module message)
       (check-raises (syntax-error? message) (load-module! (list 'completion-test 'bad-source module))))
-    '(no-candidates candidates-and-job job-and-stream title-twice unknown-clause preview-show-only)
+    '(no-candidates candidates-and-job job-and-stream title-twice unknown-clause preview-show-only
+      own-matching-split own-matching-styles)
     '("a candidates, job or stream clause is required"
       "more than one of the candidates, job and stream clauses"
       "more than one of the candidates, job and stream clauses"
       "clause given twice"
       "invalid clause"
-      "invalid clause")))
+      "invalid clause"
+      "own-matching takes no split or styles clause"
+      "own-matching takes no split or styles clause")))
 
 (test "a source's clauses are checked when it is made"
   (for-each
@@ -48,11 +51,13 @@
           (lambda () (completion:source (candidates (vector "a")) (group 1)))
           (lambda () (completion:source (candidates (vector "a")) (group values 2)))
           (lambda () (completion:source (candidates (vector "a")) (narrow "b")))
-          (lambda () (completion:source (candidates (vector "a")) (narrow #\space))))
+          (lambda () (completion:source (candidates (vector "a")) (narrow #\space)))
+          (lambda () (completion:source (candidates (vector "a")) (own-matching))))
     '("neither a vector of candidates nor a procedure" "neither a vector of candidates nor a procedure"
       "not a vector of fixnums, one for each candidate" "not a procedure" "not a procedure" "not a worker"
       "not a list of styles" "not a procedure" "not a procedure" "neither a procedure nor #f"
-      "neither a character other than a space nor #f" "neither a character other than a space nor #f"))
+      "neither a character other than a space nor #f" "neither a character other than a space nor #f"
+      "own-matching needs a procedure, job or stream source"))
   (check (completion:source? (completion:source (candidates (vector "a")))))
   (check (not (completion:source? (vector "a")))))
 
@@ -67,7 +72,7 @@
 
 (test "a procedure source is called again when the prefix its split gives changes, and choosing replaces only the query"
   (let* ([calls '()]
-         [r (completion-test/sessions:start!
+         [r (minibuffer-test/reading:start!
               (lambda ()
                 (completion:read-or-input "Path: "
                   (list (completion:source
@@ -79,14 +84,14 @@
     (check-equal? '("" "a/" "a/b/") (reverse calls))
     (check-equal? '("f-a/b/") (completion-test/sessions:texts (completion-test/sessions:session)))
     (test-user:press! "TAB")
-    (check-equal? "a/b/f-a/b/" (completion-test/sessions:input))
+    (check-equal? "a/b/f-a/b/" (minibuffer-test/reading:input))
     (test-user:press! "RET")
-    (check-equal? "g" (completion-test/sessions:result r))
+    (check-equal? "g" (minibuffer-test/reading:result r))
     (check-equal? '("a/b/f-a/b/g") (h))))
 
 (test "RET chooses a procedure source's selected match without matching the text it puts in"
   (let* ([calls 0]
-         [r (completion-test/sessions:start!
+         [r (minibuffer-test/reading:start!
               (lambda ()
                 (completion:read "? "
                   (list (completion:source
@@ -94,7 +99,7 @@
                           (split after-slash)))
                   #f)))])
     (test-user:press! "C-n RET")
-    (check-equal? "b/" (completion-test/sessions:result r))
+    (check-equal? "b/" (minibuffer-test/reading:result r))
     (check-equal? 1 calls)))
 
 (jobs:define-worker (two-rounds input emit receive)
@@ -104,7 +109,7 @@
   (emit (vector "three")))
 
 (test "a job's clear drops what it emitted before, whose matches then name nothing"
-  (let* ([r (completion-test/sessions:start! (lambda () (completion:read "? " (list (completion:source (job two-rounds #f))) #f)))]
+  (let* ([r (minibuffer-test/reading:start! (lambda () (completion:read "? " (list (completion:source (job two-rounds #f))) #f)))]
          [s (completion-test/sessions:session)])
     (completion-test/sessions:wait-matches s)
     (check-equal? '("three") (completion-test/sessions:texts s))
@@ -118,7 +123,7 @@
 (test "a stream gets each new prefix and the end-of-file object when the session ends; it is busy from a prefix until done"
   (let* ([prefixes '()] [emit #f]
          [letters (lambda (e) (set! emit e) (lambda (prefix) (set! prefixes (cons prefix prefixes))))]
-         [r (completion-test/sessions:start!
+         [r (minibuffer-test/reading:start!
               (lambda () (completion:read "? " (list (completion:source (stream letters) (split string-length))) #f)))]
          [s (completion-test/sessions:session)])
     (check-equal? #t (completion:session-busy? s))
@@ -140,7 +145,7 @@
 
 (test "while a stream's pattern holds its new matches go at the end of the same matches; a new pattern or a clear gives new ones"
   (let* ([emit #f]
-         [r (completion-test/sessions:start!
+         [r (minibuffer-test/reading:start!
               (lambda () (completion:read "? " (list (completion:source (stream (lambda (e) (set! emit e) (lambda (prefix) (void)))) (styles (list completion:substring)))) #f)))]
          [s (completion-test/sessions:session)])
     (emit (vector "apple" "berry" "banana"))
@@ -171,6 +176,40 @@
       (check-equal? #f (completion:matches-index ms -1)))
     (quit! r)))
 
+(test "an own-matching stream gets the whole input and its candidates are the matches, in its order; choosing one replaces the whole input"
+  (saved:set! h '())
+  (let* ([asked '()]
+         [server (lambda (emit)
+                   (lambda (input)
+                     (unless (eof-object? input)
+                       (set! asked (cons input asked))
+                       (emit 'clear)
+                       (emit (vector "CartTotal" "cart_total"))
+                       (emit 'done))))]
+         [r (minibuffer-test/reading:start!
+              (lambda () (completion:read "? " (list (completion:source (stream server) (own-matching) (in-order))) h)))]
+         [s (completion-test/sessions:session)])
+    (test-user:type! "cart tot")
+    (test-runner:wait-until (lambda () (equal? (car asked) "cart tot")))
+    (completion-test/sessions:wait-matches s)
+    (check-equal? '("CartTotal" "cart_total") (completion-test/sessions:texts s))
+    (check-equal? '() (completion:spans s (car (completion-test/sessions:matches s))))
+    (test-user:press! "C-n RET")
+    (check-equal? "cart_total" (minibuffer-test/reading:result r))
+    (check-equal? '("cart_total") (h))))
+
+(test "an own-matching procedure source is asked with the whole input, and what it returns are the matches"
+  (let* ([asked '()]
+         [lookup (lambda (input) (set! asked (cons input asked)) (vector "CartTotal" "cart_total"))]
+         [r (minibuffer-test/reading:start!
+              (lambda () (completion:read "? " (list (completion:source (candidates lookup) (own-matching) (in-order))) #f)))]
+         [s (completion-test/sessions:session)])
+    (test-user:type! "cart tot")
+    (completion-test/sessions:wait-matches s)
+    (check-equal? (list "cart tot" '("CartTotal" "cart_total")) (list (car asked) (completion-test/sessions:texts s)))
+    (test-user:press! "RET")
+    (check-equal? "CartTotal" (minibuffer-test/reading:result r))))
+
 (test "a stream that emits prefer-input selects no new match while the input is its prefix, so RET takes the input"
   (let* ([listing (lambda (emit)
                     (lambda (prefix)
@@ -179,7 +218,7 @@
                         (unless (string=? prefix "") (emit 'prefer-input))
                         (emit (vector "ab" "abc"))
                         (emit 'done))))]
-         [r (completion-test/sessions:start!
+         [r (minibuffer-test/reading:start!
               (lambda () (completion:read-or-input "? " (list (completion:source (stream listing) (split after-slash))) #f)))]
          [s (completion-test/sessions:session)])
     (check-equal? "ab" (completion-test/sessions:selected-text s))
@@ -193,12 +232,12 @@
     (check-equal? "ab" (completion-test/sessions:selected-text s))
     (completion:select! s #f)
     (test-user:press! "RET")
-    (check-equal? "x/" (completion-test/sessions:result r))))
+    (check-equal? "x/" (minibuffer-test/reading:result r))))
 
 (test "a read's first match waits for its setups, so a stream's first prefix is the input an outer setup gives, once"
   (let* ([given '()]
          [recorder (lambda (emit) (lambda (prefix) (unless (eof-object? prefix) (set! given (cons prefix given)))))]
-         [r (completion-test/sessions:start!
+         [r (minibuffer-test/reading:start!
               (lambda ()
                 (minibuffer:call-with-setup (lambda (p) (minibuffer:set-input! p "ab/"))
                   (lambda () (completion:read "? " (list (completion:source (stream recorder) (split after-slash))) #f)))))])
@@ -211,12 +250,12 @@
                    (unless (eof-object? prefix)
                      (emit (list->vector (map (lambda (i) (cons (format "item ~a" i) i)) (iota 5000))))
                      (emit 'done))))]
-         [r (completion-test/sessions:start! (lambda () (completion:read "? " (list (completion:source (stream many))) #f)))])
+         [r (minibuffer-test/reading:start! (lambda () (completion:read "? " (list (completion:source (stream many))) #f)))])
     (test-user:type! "item 4321")
     (completion:select! (completion-test/sessions:session) #f)
     (test-user:press! "RET")
-    (test-runner:wait-until (lambda () (not (completion-test/sessions:waiting? r))))
-    (check-equal? 4321 (completion-test/sessions:result r))))
+    (test-runner:wait-until (lambda () (not (minibuffer-test/reading:waiting? r))))
+    (check-equal? 4321 (minibuffer-test/reading:result r))))
 
 (jobs:define-worker (slow-match input emit receive)
   (import (completion matcher))
@@ -227,7 +266,7 @@
     (completion:make-matcher (lambda (pattern texts ranks groups) (store-matches (make-store texts ranks groups) pattern))
                              pattern-spans slow-match))
   (let* ([emit #f]
-         [r (completion-test/sessions:start!
+         [r (minibuffer-test/reading:start!
               (lambda () (completion:read "? " (list (completion:source (stream (lambda (e) (set! emit e) (lambda (prefix) (void)))))) #f)))]
          [s (completion-test/sessions:session)])
     (emit (vector "ab" "abc"))
@@ -236,8 +275,8 @@
     (completion:select! s #f)
     (test-user:press! "RET")
     (emit 'done)
-    (test-runner:wait-until (lambda () (not (completion-test/sessions:waiting? r))))
-    (check-equal? "ab" (completion-test/sessions:result r)))
+    (test-runner:wait-until (lambda () (not (minibuffer-test/reading:waiting? r))))
+    (check-equal? "ab" (minibuffer-test/reading:result r)))
   (options:unset! completion:matcher))
 
 (jobs:define-worker (plain-worker input emit receive)
@@ -250,7 +289,7 @@
                              (lambda (pattern text) '())
                              plain-worker))
   (check (completion:matcher? (completion:matcher)))
-  (let ([r (completion-test/sessions:start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "a" "b" "c")))) #f)))])
+  (let ([r (minibuffer-test/reading:start! (lambda () (completion:read "? " (list (completion:source (candidates (vector "a" "b" "c")))) #f)))])
     (test-user:type! "zzz")
     (check-equal? '("c" "b" "a") (completion-test/sessions:texts (completion-test/sessions:session)))
     (check-equal? '() (completion:spans (completion-test/sessions:session) 0))
@@ -261,7 +300,7 @@
 (test "a stream that returns no receiver is reported at the read's first match, and the read waits"
   (let* ([r #f]
          [reported (test-runner:reports-during
-                     (lambda () (set! r (completion-test/sessions:start! (lambda () (completion:read "? " (list (completion:source (stream (lambda (emit) 5)))) #f))))))])
+                     (lambda () (set! r (minibuffer-test/reading:start! (lambda () (completion:read "? " (list (completion:source (stream (lambda (emit) 5)))) #f))))))])
     (check-equal? '("a stream returned what is not a receiver") (map condition-message reported))
     (check-equal? 0 (completion:matches-count (completion:session-matches (completion-test/sessions:session))))
     (quit! r)))
@@ -278,18 +317,18 @@
 (test "a candidate's details, its third element, reach its category's annotator with its value; one without gives #f"
   (tables:set! completion:annotators probe-category
     (lambda (session) (lambda (value details) (list (format "~s ~s" value details)))))
-  (let ([r (completion-test/sessions:start!
+  (let ([r (minibuffer-test/reading:start!
              (lambda ()
                (completion:read "Probe: "
                  (list (completion:source (candidates (vector (vector "alpha" 'a '(1 . 2)) "beta" (cons "gamma" 'g))) (category probe-category) (in-order)))
                  #f)))])
     (check-equal? '(("alpha" "a (1 . 2)") ("beta" "\"beta\" #f") ("gamma" "g #f")) (annotations (completion-test/sessions:session)))
     (quit! r))
-  (let ([r (completion-test/sessions:start! (lambda () (completion:read "Probe: " (list (completion:source (job details-stream 0) (category probe-category))) #f)))])
+  (let ([r (minibuffer-test/reading:start! (lambda () (completion:read "Probe: " (list (completion:source (job details-stream 0) (category probe-category))) #f)))])
     (completion-test/sessions:wait-matches (completion-test/sessions:session))
     (check-equal? '(("one" "1 first") ("two" "\"two\" #f")) (annotations (completion-test/sessions:session)))
     (quit! r))
-  (let ([r (completion-test/sessions:start! (lambda () (completion:read "Plain: " (list (completion:source (candidates (vector "x")))) #f)))])
+  (let ([r (minibuffer-test/reading:start! (lambda () (completion:read "Plain: " (list (completion:source (candidates (vector "x")))) #f)))])
     (check-equal? '(("x")) (annotations (completion-test/sessions:session)))
     (quit! r))
   (tables:remove! completion:annotators probe-category))
@@ -308,7 +347,7 @@
     (mkdir (string-append root "/sub"))
     (for-each (lambda (name) (call-with-output-file (string-append root "/" name) (lambda (p) (put-string p "x"))))
       '("a.txt" "sub/b.sls" ".hidden"))
-    (let* ([r (completion-test/sessions:start!
+    (let* ([r (minibuffer-test/reading:start!
                 (lambda () (completion:read "Find file in project: " (list (completion:source (job project-files root) (category completion:file-category))) #f)))]
            [s (completion-test/sessions:session)])
       (completion-test/sessions:wait-matches s)
@@ -325,7 +364,7 @@
          [reported '()]
          [keep (lambda (next c) (set! reported (cons (condition-message c) reported)))])
     (advice-add! report keep)
-    (let ([r (completion-test/sessions:start!
+    (let ([r (minibuffer-test/reading:start!
                (lambda ()
                  (completion:read "? "
                    (list (completion:source (candidates (vector "a" "b"))
@@ -340,9 +379,9 @@
       (quit! r))))
 
 (test "a source's lookup gives what the read answers, from the chosen candidate's value and spans"
-  (let ([r (completion-test/sessions:start!
+  (let ([r (minibuffer-test/reading:start!
              (lambda ()
                (completion:read "? " (list (completion:source (candidates (vector (cons "a" 1))) (lookup (lambda (value spans) (list value spans))))) #f)))])
     (test-user:type! "a")
     (test-user:press! "RET")
-    (check-equal? '(1 ((0 1 #f))) (completion-test/sessions:result r))))
+    (check-equal? '(1 ((0 1 #f))) (minibuffer-test/reading:result r))))

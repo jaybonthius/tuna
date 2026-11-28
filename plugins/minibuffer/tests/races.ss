@@ -1,5 +1,5 @@
 (import (minibuffer-test quiet) (tuna) (test) (test-user) (test-runner) (options) (faces) (buffers) (document) (layout) (timers) (editing) (echo-area) (ask)
-        (minibuffer) (minibuffer-test reading))
+        (minibuffer) (minibuffer-test reading) (minibuffer-test screen))
 
 (define (layout-datums) (document:datums (buffers:document layout:buffer)))
 
@@ -57,7 +57,7 @@
             (minibuffer:call-with-setup
               (lambda (p) (echo-area:message! "Setup ~a" i) (minibuffer:message! p "Own"))
               (lambda () (minibuffer:read "Storm: ")))))
-  (check-equal? (list #f #f #t) (list (minibuffer:current-prompt) (echo-area:hidden?) (minibuffer-test/reading:echo-drawn?)))
+  (check-equal? (list #f #f #t) (list (minibuffer:current-prompt) (echo-area:hidden?) (minibuffer-test/screen:echo-drawn?)))
   (echo-area:message! "Calm")
   (check-equal? "Calm" (echo-area:current-message)))
 
@@ -87,7 +87,7 @@
     (check-equal? #t (echo-area:hidden?))
     (check-equal? (list (string-append " [" (echo-area:current-message) "]")
                         (let ([face (echo-area:current-face)]) (and face (symbol->string face))))
-      (list (minibuffer-test/reading:bracket) (minibuffer-test/reading:bracket-face)))
+      (list (minibuffer-test/screen:bracket) (minibuffer-test/screen:bracket-face)))
     (let* ([reported #f]
            [report-late
             (lambda (p)
@@ -106,7 +106,7 @@
       (minibuffer-test/quiet:silence! #f)
       (check-equal? "" (minibuffer-test/reading:result r))
       (check-equal? (list #f #f #t "late" faces:error)
-        (list (minibuffer:current-prompt) (echo-area:hidden?) (minibuffer-test/reading:echo-drawn?) (echo-area:current-message)
+        (list (minibuffer:current-prompt) (echo-area:hidden?) (minibuffer-test/screen:echo-drawn?) (echo-area:current-message)
               (echo-area:current-face)))))
   (options:unset! echo-area:log-max))
 

@@ -237,3 +237,13 @@
 
 (test "the kind's stylesheet is in web's table of stylesheets"
   (check-equal? "layout-split/layout-split.css" (tables:ref web:stylesheets 'layout-split #f)))
+
+(test "a view that shows no buffer is split only to show a buffer given"
+  (let ([e (fresh "empty")])
+    (set-parts! (atom e))
+    (layout:select! e)
+    (for-each buffers:kill! (remp (lambda (b) (buffers:internal-name? (buffers:name b))) (buffers:all)))
+    (check-equal? #f (views:buffer e))
+    (check-raises (raised-with 'layout-split:split-view! "the view shows no buffer") (layout-split:split-view! e (layout-split:direction row)))
+    (let ([new (layout-split:split-view! e (layout-split:direction row) (named "shown"))])
+      (check-equal? (list #f "shown") (list (views:buffer e) (buffers:name (views:buffer new)))))))

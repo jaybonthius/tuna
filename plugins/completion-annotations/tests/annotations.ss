@@ -1,12 +1,12 @@
 (import (tuna) (test) (test-user) (commands) (keys) (buffers) (files) (faces) (completion) (completion-list)
-        (completion-annotations) (completion-test sessions) (completion-annotations-test gestures))
+        (completion-annotations) (completion-test sessions) (minibuffer-test reading) (completion-annotations-test gestures))
 
 (define (quit! r)
   (test-user:press! "C-g")
-  (check-raises cancelled? (completion-test/sessions:result r)))
+  (check-raises cancelled? (minibuffer-test/reading:result r)))
 
 (define (read-of category candidates)
-  (completion-test/sessions:start!
+  (minibuffer-test/reading:start!
     (lambda () (completion:read "? " (list (completion:source (candidates candidates) (category category) (in-order))) #f))))
 
 (define (annotations)

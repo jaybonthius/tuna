@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-runner) (test-user) (hooks) (options) (tables) (keys) (buffers) (document) (views) (layout)
-        (files) (xref) (jump-history) (minibuffer) (lsp) (lsp-test servers) (lsp-test chez-lsp))
+        (files) (xref) (jump-history) (minibuffer) (lsp) (lsp-test servers) (minibuffer-test reading) (minibuffer-test screen) (lsp-test chez-lsp))
 
 (options:set! lsp:send-changes-delay 0.05)
 
@@ -29,14 +29,14 @@
 (test "C-u lsp:start asks each server's command line, offering the one it has, and starts the buffer's servers with the answer"
   (check (not (lsp:managed? a)))
   (test-user:press! "C-u C-c s")
-  (check-equal? (list (format "Command for ~a: " alpha) "") (list (lsp-test/servers:question) (lsp-test/servers:input)))
+  (check-equal? (list (format "Command for ~a: " alpha) "") (list (minibuffer-test/screen:question) (minibuffer-test/reading:input)))
   (test-user:press! "M-n RET")
   (lsp-test/servers:wait-for "alpha" "textDocument/didOpen")
   (check-equal? (list #t (lsp-test/servers:fake-command "alpha")) (list (lsp:managed? a) (lsp:connection-command (car (lsp:connections))))))
 
 (test "asked again while they run, lsp:start first asks whether to shut them down"
   (test-user:press! "C-c s")
-  (check-equal? "Shut down the buffer's servers first? (yes or no) " (lsp-test/servers:question))
+  (check-equal? "Shut down the buffer's servers first? (yes or no) " (minibuffer-test/screen:question))
   (test-user:type! "no")
   (test-user:press! "RET")
   (check-equal? 1 (length (lsp:connections))))

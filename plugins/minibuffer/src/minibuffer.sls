@@ -409,16 +409,27 @@
     (when (and (fx<= 1 k (length entries)) (string=? (input-text p) (list-ref entries (fx- k 1))))
       (prompt-chosen-set! p (fx- k 1)))))
 
+(define (%add-entry! h text)
+  (unless (string=? text "")
+    (let loop ([entries (cons text (remove text (h)))] [n (history-length)] [acc '()])
+      (if (or (null? entries) (fx= n 0))
+          (saved:set! h (reverse acc))
+          (loop (cdr entries) (fx- n 1) (cons (car entries) acc))))))
+
+(define (add-to-history! h text)
+  (unless (saved:saved? h)
+    (assertion-violation 'minibuffer:add-to-history! "not saved data" h))
+  (unless (string? text)
+    (assertion-violation 'minibuffer:add-to-history! "not a string" text))
+  (%add-entry! h text))
+
 ;; As Emacs's read_minibuf, an empty input that takes the default adds
 ;; the default, so M-p recalls what was answered.
 (define (%add-to-history! p)
   (let* ([h (history-of p)] [typed (input-text p)] [default (default-of p)]
          [text (if (and default (string=? typed "")) default typed)])
-    (when (and h (not (prompt-chosen p)) (not (string=? text "")))
-      (let loop ([entries (cons text (remove text (h)))] [n (history-length)] [acc '()])
-        (if (or (null? entries) (fx= n 0))
-            (saved:set! h (reverse acc))
-            (loop (cdr entries) (fx- n 1) (cons (car entries) acc)))))))
+    (when (and h (not (prompt-chosen p)))
+      (%add-entry! h text))))
 
 (define (exit! p value)
   (check-live 'minibuffer:exit! p)
@@ -488,17 +499,38 @@
 
 (define (%ask-line question default) (read question history default))
 
+(define (%read-parsed question parse h default)
+  (let loop ([complaint #f])
+    (let-values ([(taken? value) (parse (call-with-setup
+                                          (lambda (p) (when complaint (message! p complaint)))
+                                          (lambda () (%read question h default))))])
+      (if taken? value (loop value)))))
+
+(define read-parsed
+  (case-lambda
+    [(question parse) (read-parsed question parse history #f)]
+    [(question parse h) (read-parsed question parse h #f)]
+    [(question parse h default)
+     (unless (string? question)
+       (assertion-violation 'minibuffer:read-parsed "not a string" question))
+     (unless (procedure? parse)
+       (assertion-violation 'minibuffer:read-parsed "not a procedure" parse))
+     (unless (or (not h) (saved:saved? h))
+       (assertion-violation 'minibuffer:read-parsed "neither saved data nor #f" h))
+     (unless (or (not default) (string? default))
+       (assertion-violation 'minibuffer:read-parsed "neither a string nor #f" default))
+     (%read-parsed question parse h default)]))
+
 (define (ask-yes-or-no question)
   (unless (string? question)
     (assertion-violation 'minibuffer:ask-yes-or-no "not a string" question))
-  (let loop ([complaint #f])
-    (let ([answer (call-with-setup
-                    (lambda (p) (when complaint (message! p complaint)))
-                    (lambda () (%read (string-append question "(yes or no) ") #f #f)))])
+  (%read-parsed (string-append question "(yes or no) ")
+    (lambda (answer)
       (cond
-        [(string=? answer "yes") #t]
-        [(string=? answer "no") #f]
-        [else (loop "Please answer yes or no")]))))
+        [(string=? answer "yes") (values #t #t)]
+        [(string=? answer "no") (values #t #f)]
+        [else (values #f "Please answer yes or no")]))
+    #f #f))
 
 (define read-number
   (case-lambda
@@ -511,12 +543,11 @@
        (assertion-violation 'minibuffer:read-number "neither saved data nor #f" h))
      (unless (or (not default) (real? default))
        (assertion-violation 'minibuffer:read-number "neither a real number nor #f" default))
-     (let loop ([complaint #f])
-       (let* ([answer (call-with-setup
-                        (lambda (p) (when complaint (message! p complaint)))
-                        (lambda () (%read question h (and default (number->string default)))))]
-              [n (string->number answer 10)])
-         (if (and n (real? n)) n (loop "Please enter a number"))))]))
+     (%read-parsed question
+       (lambda (answer)
+         (let ([n (string->number answer 10)])
+           (if (and n (real? n)) (values #t n) (values #f "Please enter a number"))))
+       h (and default (number->string default)))]))
 
 (tables:define-table y-or-n-keymap "Added to the prompt of each y-or-n question.")
 

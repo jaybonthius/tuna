@@ -1,6 +1,6 @@
 (import (tuna) (test) (test-user) (options) (keys) (commands) (modes) (buffers) (document) (views) (layout) (web) (editing)
         (minibuffer) (completion) (completion-list) (command-picker) (buffer-picker)
-        (completion-test sessions) (completion-test picking) (command-picker-test snake))
+        (minibuffer-test reading) (completion-test picking) (command-picker-test snake))
 
 (define (name-of command) (symbol->string (commands:command-name command)))
 
@@ -59,19 +59,19 @@
   (check-equal? '() (offered "M-x" "completion:exit-input"))
   (check-equal? '("completion:next" "completion:next-group") (offered "M-x" "completion:next"))
   (check-equal? '("minibuffer:select-prompt") (offered "M-x" "minibuffer:select-prompt"))
-  (let ([r (completion-test/sessions:start! (lambda () (minibuffer:read "Word: " #f)))])
+  (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:read "Word: " #f)))])
     (check-equal? '("minibuffer:exit") (offered "M-x" "minibuffer:exit"))
     (check-equal? '("completion:search-history") (offered "M-x" "completion:search-history"))
     (test-user:press! "C-g")
-    (check-raises cancelled? (completion-test/sessions:result r))))
+    (check-raises cancelled? (minibuffer-test/reading:result r))))
 
 (test "M-x offers the answers of a y-or-n question only while point is in one"
   (test-user:show! "|")
   (check-equal? '() (offered "M-x" "minibuffer:answer-"))
-  (let ([r (completion-test/sessions:start! (lambda () (minibuffer:ask-y-or-n "Save it? ")))])
+  (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:ask-y-or-n "Save it? ")))])
     (check-equal? '("minibuffer:answer-no" "minibuffer:answer-yes") (offered "M-x" "minibuffer:answer-"))
     (test-user:press! "y")
-    (check-equal? #t (completion-test/sessions:result r))))
+    (check-equal? #t (minibuffer-test/reading:result r))))
 
 (test "M-x reaches a session that completion:start runs over a field in any view"
   (test-user:show! "lis|")

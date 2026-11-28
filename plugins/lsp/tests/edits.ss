@@ -1,6 +1,6 @@
 (import (tuna) (test) (test-runner) (test-user) (hooks) (options) (tables) (keys) (buffers) (document) (views) (layout)
         (files) (minibuffer) (completion) (completion-list) (echo-area) (diagnostics) (docs-at-point) (docs-at-point-display)
-        (lsp) (lsp-test servers))
+        (lsp) (lsp-test servers) (minibuffer-test reading) (minibuffer-test screen))
 
 (options:set! lsp:send-changes-delay 0.05 docs-at-point:delay 0.05)
 
@@ -43,13 +43,13 @@
 (test "rename asks, quoting the identifier, with the server's text under M-n; an edit that changes an unopened file asks first, and no applies nothing"
   (views:set-point! (lsp-test/servers:view) 2)
   (lsp-test/servers:press-until-prompt! "C-c r")
-  (check-equal? '("Rename `total' to: " "") (list (lsp-test/servers:question) (lsp-test/servers:input)))
+  (check-equal? '("Rename `total' to: " "") (list (minibuffer-test/screen:question) (minibuffer-test/reading:input)))
   (test-user:press! "M-n")
-  (check-equal? "total" (lsp-test/servers:input))
+  (check-equal? "total" (minibuffer-test/reading:input))
   (test-user:press! "C-a C-k")
   (test-user:type! "sum")
   (lsp-test/servers:press-until-prompt! "RET")
-  (check-equal? (format "Apply changes to ~a, ~a? (yes or no) " (files:abbreviated-path a-path) (files:abbreviated-path b-path)) (lsp-test/servers:question))
+  (check-equal? (format "Apply changes to ~a, ~a? (yes or no) " (files:abbreviated-path a-path) (files:abbreviated-path b-path)) (minibuffer-test/screen:question))
   (test-user:type! "no")
   (check-equal? '((lsp "Changes not applied")) (lsp-test/servers:reports-during (lambda () (lsp-test/servers:press-until-ended! "RET" lsp:rename))))
   (check-equal? "total = 1\nprint(total)\n" (lsp-test/servers:text a)))

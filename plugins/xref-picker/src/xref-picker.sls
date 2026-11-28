@@ -1,5 +1,6 @@
 #!tuna
-(import (xref) (jump-history) (completion) (files) (projects) (buffers) (document) (views) (layout) (commands) (keys) (faces) (options) (tables) (timers))
+(import (xref) (jump-history) (completion) (files) (projects) (buffers) (document) (views) (layout) (commands) (keys) (faces) (options) (tables)
+        (timers) (saved))
 
 (define %self (current-owner))
 
@@ -12,6 +13,10 @@
       (substring path (string-length root) (string-length path))
       (files:abbreviated-path path)))
 
+(saved:define-saved xref-history '() (lambda (v) (and (list? v) (for-all string? v))))
+
+(saved:define-saved symbol-history '() (lambda (v) (and (list? v) (for-all string? v))))
+
 (options:define-option preview-delay 0 (lambda (v) (and (real? v) (>= v 0)))
   "Seconds an item must stay selected before xref-picker:choose-and-go shows its place.")
 
@@ -22,27 +27,30 @@
     (assertion-violation 'xref-picker:choose-and-go "not a list of items" items))
   (if (null? (cdr items))
       (xref:go-to-item (car items))
-      (let* ([root (%project-root)] [by-location (map (lambda (item) (cons (%location item) item)) items)])
-        (let-values ([(show end) (completion:location-preview (views:current) jump-history:after-jump)])
-          (let ([location
-                 (completion:read (string-append title ": ")
-                   (list (completion:source
-                           (candidates
-                             (list->vector
-                               (map (lambda (item)
-                                      (cons (format "~a:~a: ~a" (%path-text (xref:item-path item) root) (xref:item-line item)
-                                                    (xref:item-summary item))
-                                            (%location item)))
-                                    items)))
-                           (in-order)
-                           (group (lambda (text location) (%path-text (car location) root))
-                                  (lambda (text location)
-                                    (let ([n (string-length (%path-text (car location) root))])
-                                      (substring text (fx+ n 1) (string-length text)))))
-                           (category completion:location-category)
-                           (preview show end)
-                           (preview-delay (preview-delay)))))])
-            (xref:go-to-item (cdr (assoc location by-location))))))))
+      (let* ([root (%project-root)] [by-location (map (lambda (item) (cons (%location item) item)) items)]
+             [location
+              (layout:call-with-display-view
+                (lambda (display-view)
+                  (let-values ([(show end) (completion:location-preview display-view jump-history:after-jump)])
+                    (completion:read (string-append title ": ")
+                      (list (completion:source
+                              (candidates
+                                (list->vector
+                                  (map (lambda (item)
+                                         (cons (format "~a:~a: ~a" (%path-text (xref:item-path item) root) (xref:item-line item)
+                                                       (xref:item-summary item))
+                                               (%location item)))
+                                       items)))
+                              (in-order)
+                              (group (lambda (text location) (%path-text (car location) root))
+                                     (lambda (text location)
+                                       (let ([n (string-length (%path-text (car location) root))])
+                                         (substring text (fx+ n 1) (string-length text)))))
+                              (category completion:location-category)
+                              (preview show end)
+                              (preview-delay (preview-delay))))
+                      xref-history))))])
+        (xref:go-to-item (cdr (assoc location by-location))))))
 
 (completion:define-category symbol-category "Identifiers a backend's apropos found, valued by the item.")
 
@@ -51,8 +59,6 @@
     (append (list (cons faces:shadow (format "~a:~a" (files:abbreviated-path (xref:item-path item)) (xref:item-line item))))
             (if (xref:item-kind item) (list (cons faces:shadow (xref:item-kind item))) '()))))
 
-;; The backend decides what matches the input, so the whole input is the
-;; prefix the backend gets, and completion filters nothing.
 (define (%apropos-source apropos)
   (lambda (emit)
     (let ([asked #f] [timer #f] [task #f])
@@ -93,12 +99,13 @@
 
 (define (%read-apropos-item)
   (let ([view (views:current)])
-    (completion:read "Search for symbols: "
+    (completion:read-with-input-history "Search for symbols: "
       (list (completion:source
               (stream (%apropos-source (lambda (pattern) (xref:apropos view pattern))))
-              (split string-length)
+              (own-matching)
               (in-order)
-              (category symbol-category))))))
+              (category symbol-category)))
+      symbol-history)))
 
 (commands:define-command (find-apropos [item (%read-apropos-item)])
   "Goes to ITEM, read from the backend's apropos as the input is typed, and records the place point left in jump-history."

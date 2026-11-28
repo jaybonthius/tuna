@@ -1,5 +1,5 @@
 (import (minibuffer-test quiet) (tuna) (test) (test-user) (test-runner) (options) (tables) (keys) (commands) (faces) (buffers) (views) (layout) (layout-float)
-        (timers) (editing) (echo-area) (minibuffer) (minibuffer-test reading))
+        (timers) (editing) (echo-area) (minibuffer) (minibuffer-test reading) (minibuffer-test screen))
 
 (define (logged)
   (let* ([log (minibuffer-test/reading:buffer-text (buffers:find "*Messages*"))] [n (string-length log)])
@@ -8,7 +8,7 @@
           (substring log i (- n 1))
           (loop (- i 1))))))
 
-(define (state) (list (echo-area:hidden?) (minibuffer-test/reading:echo-drawn?) (minibuffer-test/reading:bracket)))
+(define (state) (list (echo-area:hidden?) (minibuffer-test/screen:echo-drawn?) (minibuffer-test/screen:bracket)))
 
 (test "while no prompt waits the echo area draws its message; a prompt clears it and takes its place"
   (echo-area:message! "Saved")
@@ -23,12 +23,12 @@
   (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:read "Name: ")))])
     (echo-area:message! "Wrote ~a" "notes.org")
     (test-user:settle)
-    (check-equal? " [Wrote notes.org]" (minibuffer-test/reading:bracket))
+    (check-equal? " [Wrote notes.org]" (minibuffer-test/screen:bracket))
     (parameterize ([echo-area:face faces:warning]) (echo-area:message! "Low on disk"))
     (test-user:settle)
-    (check-equal? (list " [Low on disk]" "warning" "Low on disk") (list (minibuffer-test/reading:bracket) (minibuffer-test/reading:bracket-face) (logged)))
+    (check-equal? (list " [Low on disk]" "warning" "Low on disk") (list (minibuffer-test/screen:bracket) (minibuffer-test/screen:bracket-face) (logged)))
     (test-user:type! "a")
-    (check-equal? (list #f #f "a") (list (echo-area:current-message) (minibuffer-test/reading:bracket) (minibuffer-test/reading:input)))
+    (check-equal? (list #f #f "a") (list (echo-area:current-message) (minibuffer-test/screen:bracket) (minibuffer-test/reading:input)))
     (parameterize ([echo-area:spans (list (list 0 5 faces:highlight))]) (echo-area:message! "total(items)"))
     (test-user:settle)
     (let ([spans (test-user:elements-with (car (test-user:elements (test-user:screen) "minibuffer-message")) "data-face")])
@@ -40,7 +40,7 @@
     (minibuffer-test/quiet:silence! #t)
     (test-user:press! "M-p")
     (minibuffer-test/quiet:silence! #f)
-    (check-equal? (list " [beginning of history]" "error") (list (minibuffer-test/reading:bracket) (minibuffer-test/reading:bracket-face)))
+    (check-equal? (list " [beginning of history]" "error") (list (minibuffer-test/screen:bracket) (minibuffer-test/screen:bracket-face)))
     (minibuffer-test/reading:quit! r)))
 
 (test "the prompt's own message clears the echo area's and shows until the next key; a message meanwhile is only logged"
@@ -48,12 +48,12 @@
     (echo-area:message! "Before")
     (minibuffer:message! (minibuffer-test/reading:prompt) "No match")
     (test-user:settle)
-    (check-equal? (list #f " [No match]") (list (echo-area:current-message) (minibuffer-test/reading:bracket)))
+    (check-equal? (list #f " [No match]") (list (echo-area:current-message) (minibuffer-test/screen:bracket)))
     (echo-area:message! "After")
     (test-user:settle)
-    (check-equal? (list " [No match]" "After") (list (minibuffer-test/reading:bracket) (logged)))
+    (check-equal? (list " [No match]" "After") (list (minibuffer-test/screen:bracket) (logged)))
     (test-user:press! "C-a")
-    (check-equal? (list #f #f) (list (echo-area:current-message) (minibuffer-test/reading:bracket)))
+    (check-equal? (list #f #f) (list (echo-area:current-message) (minibuffer-test/screen:bracket)))
     (minibuffer-test/reading:quit! r)))
 
 (test "a nested prompt clears the echo area and shows messages after its input; the outer one shows them again when it is back"
@@ -63,12 +63,12 @@
       (check-equal? (list #f #t) (list (echo-area:current-message) (echo-area:hidden?)))
       (echo-area:message! "Inner")
       (test-user:settle)
-      (check-equal? " [Inner]" (minibuffer-test/reading:bracket))
+      (check-equal? " [Inner]" (minibuffer-test/screen:bracket))
       (test-user:press! "RET")
       (check-equal? "" (minibuffer-test/reading:result inner)))
     (echo-area:message! "Back")
     (test-user:settle)
-    (check-equal? (list #t " [Back]") (list (echo-area:hidden?) (minibuffer-test/reading:bracket)))
+    (check-equal? (list #t " [Back]") (list (echo-area:hidden?) (minibuffer-test/screen:bracket)))
     (minibuffer-test/reading:quit! outer)))
 
 (test "a prompt left with C-x o keeps the echo area's place; when the last prompt ends the echo area draws again, empty"
@@ -80,7 +80,7 @@
     (check-equal? '(#t #f " [Elsewhere]") (state))
     (test-user:press! "C-x o RET")
     (check-equal? "" (minibuffer-test/reading:result r))
-    (check-equal? '(#f #t #f) (list (echo-area:hidden?) (minibuffer-test/reading:echo-drawn?) (echo-area:current-message)))))
+    (check-equal? '(#f #t #f) (list (echo-area:hidden?) (minibuffer-test/screen:echo-drawn?) (echo-area:current-message)))))
 
 (commands:define-command (greet [name (minibuffer:read "Name: ")])
   "Greets NAME."
@@ -103,7 +103,7 @@
     (check-equal? '(#f #t #f) (state))
     (minibuffer:message! (minibuffer-test/reading:prompt) "No match")
     (test-user:settle)
-    (check-equal? (list #f " [No match]") (list (echo-area:current-message) (minibuffer-test/reading:bracket)))
+    (check-equal? (list #f " [No match]") (list (echo-area:current-message) (minibuffer-test/screen:bracket)))
     (minibuffer-test/reading:quit! r))
   (tables:remove! layout:display-rules minibuffer:buffer?))
 

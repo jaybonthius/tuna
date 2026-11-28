@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (options) (saved) (tables) (keys) (commands) (buffers) (views) (layout) (editing) (undo) (echo-area) (ask)
-        (minibuffer) (minibuffer-test reading))
+        (minibuffer) (minibuffer-test reading) (minibuffer-test screen))
 
 (define (raised? who message)
   (lambda (c)
@@ -25,14 +25,33 @@
   (check-raises (raised? 'minibuffer:call-with-setup "not a procedure") (minibuffer:call-with-setup 1 void))
   (check-raises (raised? 'minibuffer:prompt-default "not a prompt") (minibuffer:prompt-default 'no))
   (check-raises (raised? 'minibuffer:prompt-selected-view "not a prompt") (minibuffer:prompt-selected-view 'no))
-  (check-raises (raised? 'minibuffer:read-number "neither a real number nor #f") (minibuffer:read-number "Count: " minibuffer:history "7")))
+  (check-raises (raised? 'minibuffer:read-number "neither a real number nor #f") (minibuffer:read-number "Count: " minibuffer:history "7"))
+  (check-raises (raised? 'minibuffer:read-parsed "not a procedure") (minibuffer:read-parsed "Size: " 'parse)))
+
+(define (parse-size text)
+  (cond
+    [(member text '("small" "large")) (values #t (string->symbol text))]
+    [(string=? text "") (values #f "Please give a size")]
+    [else (values #f (string-append "No size " text))]))
+
+(test "read-parsed gives the parser the input, answers what it takes, and asks again with its complaint, the input cleared, until it takes one"
+  (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:read-parsed "Size: " parse-size)))])
+    (test-user:type! "huge")
+    (test-user:press! "RET")
+    (check-equal? (list 'waiting "" " [No size huge]")
+                  (list (minibuffer-test/reading:result r) (minibuffer-test/reading:input) (minibuffer-test/screen:bracket)))
+    (test-user:press! "RET")
+    (check-equal? " [Please give a size]" (minibuffer-test/screen:bracket))
+    (test-user:type! "large")
+    (test-user:press! "RET")
+    (check-equal? 'large (minibuffer-test/reading:result r))))
 
 (test "a read shows its question with an empty input, selects the prompt's view with point in the input, and clears the echo area"
   (test-user:show! "one\n|two")
   (let ([before (layout:selected-view)])
     (echo-area:message! "Saved")
     (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:read "Name: ")))])
-      (check-equal? '("Name: ") (minibuffer-test/reading:questions))
+      (check-equal? '("Name: ") (minibuffer-test/screen:questions))
       (check-equal? "" (minibuffer-test/reading:input))
       (check (eq? (layout:selected-view) (prompt-view)))
       (check (eq? before (minibuffer:prompt-selected-view (minibuffer-test/reading:prompt))))
@@ -47,11 +66,11 @@
 (test "edits cannot cross the input's edges: C-d at its end and DEL or C-b at its start say so and change nothing"
   (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:read "Name: ")))])
     (test-user:type! "ab")
-    (check-equal? '("end of buffer") (minibuffer-test/reading:report-messages (lambda () (test-user:press! "C-d"))))
+    (check-equal? '("end of buffer") (minibuffer-test/screen:report-messages (lambda () (test-user:press! "C-d"))))
     (test-user:press! "C-a")
     (check-equal? 0 (point-in-input))
     (check-equal? '("beginning of buffer" "beginning of buffer")
-      (minibuffer-test/reading:report-messages (lambda () (test-user:press! "DEL") (test-user:press! "C-b"))))
+      (minibuffer-test/screen:report-messages (lambda () (test-user:press! "DEL") (test-user:press! "C-b"))))
     (check-equal? "ab" (minibuffer-test/reading:input))
     (check-equal? 0 (point-in-input))
     (test-user:press! "C-e M-<")
@@ -63,7 +82,7 @@
     (test-user:type! "ab")
     (test-user:press! "C-/")
     (check-equal? "" (minibuffer-test/reading:input))
-    (check-equal? '("no further undo information") (minibuffer-test/reading:report-messages (lambda () (test-user:press! "C-/"))))
+    (check-equal? '("no further undo information") (minibuffer-test/screen:report-messages (lambda () (test-user:press! "C-/"))))
     (check-equal? "" (minibuffer-test/reading:input))
     (minibuffer-test/reading:quit! r)))
 
@@ -91,10 +110,10 @@
     (test-user:press! "M-2 M-p")
     (check-equal? "b" (minibuffer-test/reading:input))
     (test-user:press! "M-p")
-    (check-equal? '("beginning of history") (minibuffer-test/reading:report-messages (lambda () (test-user:press! "M-p"))))
+    (check-equal? '("beginning of history") (minibuffer-test/screen:report-messages (lambda () (test-user:press! "M-p"))))
     (check-equal? "a" (minibuffer-test/reading:input))
     (test-user:press! "M-n M-n M-n")
-    (check-equal? '("end of history") (minibuffer-test/reading:report-messages (lambda () (test-user:press! "M-n"))))
+    (check-equal? '("end of history") (minibuffer-test/screen:report-messages (lambda () (test-user:press! "M-n"))))
     (check-equal? "typed" (minibuffer-test/reading:input))
     (minibuffer-test/reading:quit! r)))
 
@@ -109,10 +128,10 @@
     (test-user:type! "typed")
     (test-user:press! "M-n")
     (check-equal? "fallback" (minibuffer-test/reading:input))
-    (check-equal? '("end of defaults") (minibuffer-test/reading:report-messages (lambda () (test-user:press! "M-n"))))
+    (check-equal? '("end of defaults") (minibuffer-test/screen:report-messages (lambda () (test-user:press! "M-n"))))
     (test-user:press! "M-p")
     (check-equal? "typed" (minibuffer-test/reading:input))
-    (check-equal? '("beginning of history") (minibuffer-test/reading:report-messages (lambda () (test-user:press! "M-p"))))
+    (check-equal? '("beginning of history") (minibuffer-test/screen:report-messages (lambda () (test-user:press! "M-p"))))
     (minibuffer-test/reading:quit! r)))
 
 (test "read-entry's own entries come before the history under M-p and are never saved; one recalled as it was is given by position"

@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-runner) (test-user) (modes) (buffers) (views) (layout) (options) (echo-area) (minibuffer) (completion)
-        (command-picker) (syntax) (chez-scheme) (rainbow-delimiters) (chez-scheme-test scheme-buffers) (completion-test sessions))
+        (command-picker) (syntax) (chez-scheme) (rainbow-delimiters) (chez-scheme-test scheme-buffers) (minibuffer-test reading))
 
 (test "modes:toggle-minor-mode offers the mode; turned on with a local value, it colours the brackets by depth, and the echo area says so"
   (let ([notes (chez-scheme-test/scheme-buffers:scheme-buffer "notes.ss" "(a [b])\n")])
@@ -10,7 +10,7 @@
     (test-user:press! "RET")
     (test-user:type! "rainbow-delimiters:mode")
     (test-user:press! "RET")
-    (check-equal? #f (completion-test/sessions:prompt))
+    (check-equal? #f (minibuffer-test/reading:prompt))
     (check-equal? '(#t #t #f) (list (buffers:with-buffer notes (options:local? rainbow-delimiters:mode))
                                     (buffers:with-buffer notes (rainbow-delimiters:mode)) (rainbow-delimiters:mode)))
     (test-runner:wait-until

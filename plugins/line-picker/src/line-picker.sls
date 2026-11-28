@@ -1,6 +1,8 @@
 #!tuna
 (import (minibuffer) (completion) (buffers) (commands) (document) (editing) (faces) (jobs) (jump-history) (keys)
-        (views) (line-picker lines) (options) (tables) (saved))
+        (views) (search) (isearch) (web) (line-picker lines) (options) (tables) (saved))
+
+(saved:define-saved line-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
 (saved:define-saved goto-line-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
@@ -77,6 +79,8 @@
           (begin
             (completion:end-preview-place)
             (views:set-point! view point))))
+    (when (no-lines? doc atoms)
+      (error 'line-picker:line "No lines"))
     (completion:source
       (job %split-lines (list doc atoms point-line from-top?))
       (in-order)
@@ -87,11 +91,17 @@
       (preview preview (lambda (chosen) (preview #f))))))
 
 (define (%read-line)
-  (let ([from-top? (if (commands:prefix-argument) (not (start-from-top?)) (start-from-top?))])
-    (completion:read "Go to line: " (list (%line-source (views:current) from-top?)))))
+  (let* ([from-top? (if (commands:prefix-argument) (not (start-from-top?)) (start-from-top?))]
+         [source (%line-source (views:current) from-top?)]
+         [search (isearch:current (web:current-client))]
+         [initial (and search (search:query-text (isearch:search-query search)))])
+    (when search (isearch:end! search))
+    (minibuffer:call-with-setup
+      (lambda (p) (when initial (minibuffer:set-input! p initial)))
+      (lambda () (completion:read-with-input-history (if from-top? "Go to line from top: " "Go to line: ") (list source) line-history)))))
 
 (commands:define-command (line [place (%read-line)])
-  "Moves point to PLACE, a pair of a position and the buffer ranges of the matches there, as M-s l reads it from the current buffer: the first match's start on the line chosen, or the line's start. Records the place point left in jump-history, then calls jump-history:after-jump with the matches as the place's ranges."
+  "Moves point to PLACE, a pair of a position and the buffer ranges of the matches there, as M-s l reads it from the current buffer: the first match's start on the line chosen, or the line's start. Bound in isearch's keymap, it ends the search and starts the read with the search's text. Records the place point left in jump-history, then calls jump-history:after-jump with the matches as the place's ranges."
   (unless (and (pair? place) (fixnum? (car place)))
     (assertion-violation 'line-picker:line "not a position and its matches" place))
   (let* ([view (views:current)] [left (views:point view)])
@@ -100,22 +110,44 @@
     (parameterize ([jump-history:place-ranges (and (pair? (cdr place)) (cdr place))])
       (jump-history:after-jump view))))
 
-(define (%read-line-number)
-  (let* ([view (views:current)] [current (document:line (buffers:document (views:buffer view)) (views:point view))])
-    (minibuffer:read-number (string-append "Go to line (default " (number->string current) "): ")
-                            goto-line-history current)))
+(define (%digits text)
+  (and (not (string=? text "")) (for-all (lambda (c) (char<=? #\0 c #\9)) (string->list text)) (string->number text 10)))
+
+(define (%line-and-column text)
+  (let ([colon (let loop ([i 0])
+                 (cond
+                   [(fx= i (string-length text)) #f]
+                   [(char=? (string-ref text i) #\:) i]
+                   [else (loop (fx+ i 1))]))])
+    (let ([line-and-column
+           (if colon
+               (let ([line (%digits (substring text 0 colon))]
+                     [column (let ([after (substring text (fx+ colon 1) (string-length text))])
+                               (if (string=? after "") 0 (%digits after)))])
+                 (and line column (cons line column)))
+               (let ([n (string->number text 10)])
+                 (and n (real? n) (cons n 0))))])
+      (if line-and-column (values #t line-and-column) (values #f "Please enter a number")))))
+
+(define (%read-line-and-column)
+  (let* ([view (views:current)] [current (document:line (buffers:document (views:buffer view)) (views:point view))]
+         [line-and-column (minibuffer:read-parsed (string-append "Go to line (default " (number->string current) "): ")
+                                                  %line-and-column goto-line-history (number->string current))])
+    (values (car line-and-column) (cdr line-and-column))))
 
 ;; As in Emacs, C-u alone is not a line number, so the line is read.
-(define (%goto-line-argument)
+(define (%goto-line-arguments)
   (let ([p (commands:prefix-argument)])
-    (if (and p (not (pair? p))) (commands:prefix-number) (%read-line-number))))
+    (if (and p (not (pair? p))) (values (commands:prefix-number) 0) (%read-line-and-column))))
 
-(commands:define-command (goto-line [line (%goto-line-argument)])
-  "Moves point to the start of line LINE of the current view's buffer, counting from 1; a line past the last goes to the end. Records the place point left in jump-history when point moves, then calls jump-history:after-jump."
+(commands:define-command (goto-line [(line column) (%goto-line-arguments)])
+  "Moves point to column COLUMN of line LINE of the current view's buffer, counting lines from 1 and columns from 0; a line past the last goes to the end, and a column past the line's end to the end of the line. Records the place point left in jump-history when point moves, then calls jump-history:after-jump."
   (unless (and (integer? line) (exact? line))
     (assertion-violation 'line-picker:goto-line "not an exact integer" line))
+  (unless (and (integer? column) (exact? column) (>= column 0))
+    (assertion-violation 'line-picker:goto-line "not an exact non-negative integer" column))
   (let* ([view (views:current)] [left (views:point view)])
-    (views:set-point! view (editing:line-position (views:buffer view) line))
+    (views:set-point! view (editing:line-position (views:buffer view) line column))
     (unless (fx= (views:point view) left)
       (jump-history:push! (views:buffer view) left view))
     (jump-history:after-jump view)))
@@ -124,3 +156,4 @@
 (keys:bind! keys:global "M-s l" line)
 (keys:bind! keys:global "M-g g" goto-line)
 (keys:bind! keys:global "M-g M-g" goto-line)
+(keys:bind! isearch:keymap "M-s l" line)

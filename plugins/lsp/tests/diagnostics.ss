@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-runner) (test-user) (hooks) (options) (tables) (timers) (keys) (buffers) (document) (views)
-        (layout) (files) (minibuffer) (completion) (completion-list) (diagnostics) (docs-at-point) (lsp) (lsp-test servers))
+        (layout) (files) (minibuffer) (completion) (completion-list) (diagnostics) (docs-at-point) (lsp) (lsp-test servers) (minibuffer-test screen))
 
 (options:set! lsp:send-changes-delay 0.05)
 
@@ -111,7 +111,7 @@
 
 (test "C-u asks for the kind, offering five and taking any typed, which goes as the request's only"
   (test-user:press! "C-u C-c a")
-  (check-equal? "Action kind: " (lsp-test/servers:question))
+  (check-equal? "Action kind: " (minibuffer-test/screen:question))
   (check-equal? '("quickfix" "refactor.inline" "refactor.extract" "refactor.rewrite" "source.organizeImports") (choices))
   (test-user:type! "refactor.extract")
   (lsp-test/servers:press-until-prompt! "RET")

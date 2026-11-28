@@ -29,3 +29,17 @@
     (check-equal? (list #t '("tally unused" "average is slow")) (list (files:temporary? (buffers:find "defs.txt")) (listed)))
     (check-equal? '(cancelled) (completion-test/picking:quit!))
     (check-equal? (list #f '("tally unused" "average is slow")) (list (buffers:find "defs.txt") (listed)))))
+
+(define (shown-names) (remp buffers:internal-name? (map (lambda (v) (buffers:name (views:buffer v))) (layout:views))))
+
+(test "after C-x 4 4 the selected diagnostic is previewed in another view, made at that preview; a quit deletes it"
+  (layout:reset-layout)
+  (let ([uses (files:visit (path "uses.txt"))])
+    (layout:switch-to-buffer uses)
+    (diagnostics:report! source (path "defs.txt") (list (diagnostics:make-diagnostic '(3 . 4) #f (diagnostics:severity error) "tally unused")))
+    (test-user:press! "C-x 4 4 C-u M-g f")
+    (completion-test/picking:choices)
+    (test-runner:wait-until (lambda () (member "defs.txt" (shown-names))))
+    (check-equal? '("uses.txt" "defs.txt") (shown-names))
+    (check-equal? '(cancelled) (completion-test/picking:quit!))
+    (check-equal? '("uses.txt") (shown-names))))

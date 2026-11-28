@@ -1,5 +1,5 @@
 #!tuna
-(import (tuna) (test-runner) (minibuffer) (commands) (keys) (buffers) (document) (test-user))
+(import (tuna) (minibuffer) (commands) (keys) (buffers) (document) (test-user))
 
 (define-record-type (%reading %make-reading reading?)
   (sealed #t)
@@ -38,25 +38,6 @@
 (define (prompt) (minibuffer:current-prompt))
 
 (define (input) (minibuffer:input (prompt)))
-
-(define (first-element class)
-  (let ([found (test-user:elements (test-user:screen) class)])
-    (and (pair? found) (car found))))
-
-(define (bracket)
-  (let ([e (first-element "minibuffer-message")])
-    (and e (test-user:element-text e))))
-
-(define (bracket-face)
-  (let ([e (first-element "minibuffer-message")])
-    (and e (test-user:element-attribute e "data-face"))))
-
-(define (questions) (map test-user:element-text (test-user:elements (test-user:screen) "minibuffer-question")))
-
-(define (echo-drawn?) (and (first-element "echo-area-message") #t))
-
-(define (report-messages thunk)
-  (map (lambda (c) (if (message-condition? c) (condition-message c) c)) (test-runner:reports-during thunk)))
 
 (define (buffer-text b)
   (let ([doc (buffers:document b)])

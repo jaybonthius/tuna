@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (test-runner) (layout) (layout-split) (recent-views) (views) (buffers) (document)
-        (keys) (options) (timers))
+        (keys) (options) (timers) (editing))
 
 (options:set! recent-views:delay 1)
 (keys:bind! keys:global "s-o" recent-views:select-recent-view)
@@ -7,7 +7,7 @@
 (define (atom view)
   (views:view (list (cons 'view (views:id view)) (cons 'buffer (buffers:name (views:buffer view))))))
 
-(define (named name) (views:make (buffers:make (buffers:free-name name) "")))
+(define (named name) (views:make (buffers:make (buffers:free-name name) (string-append name "\n"))))
 
 (define (selected) (substring (buffers:name (views:buffer (layout:selected-view))) 0 1))
 
@@ -26,7 +26,8 @@
     (test-user:press! "C-x o")
     (pause!)
     (test-user:press! "C-x o")
-    (pause!)))
+    (pause!)
+    (list a b c)))
 
 (test "s-o goes back to the view selected before; after the delay ended the cycle, it goes back again, so it toggles two views"
   (start!)
@@ -69,6 +70,40 @@
   (check-equal? "c" (selected))
   (test-user:press! "s-o")
   (check-equal? "b" (selected)))
+
+(test "each view s-o passes is recorded in the buffer order"
+  (start!)
+  (let ([order (lambda () (map (lambda (b) (substring (buffers:name b) 0 1))
+                               (filter (lambda (b) (memv (string-ref (buffers:name b) 0) '(#\a #\b #\c))) (buffers:all))))])
+    (test-user:press! "s-o")
+    (check-equal? "b" (car (order)))
+    (test-user:press! "s-o")
+    (check-equal? '("a" "b") (list-head (order) 2))))
+
+(test "a view selected by code gets no tick until a command ends and the delay passes after it"
+  (let ([a (car (start!))])
+    (layout:select! a)
+    (pause!)
+    (test-user:press! "C-x o")
+    (test-user:press! "s-o")
+    (check-equal? "c" (selected))
+    (layout:select! a)
+    (test-user:press! "C-a")
+    (pause!)
+    (test-user:press! "C-x o")
+    (test-user:press! "s-o")
+    (check-equal? "a" (selected))))
+
+(test "a view selected by a click gets its tick once the delay passes, as one selected by a key"
+  (let ([c (caddr (start!))])
+    (test-user:press! "C-x o")
+    (pause!)
+    (test-user:click! c 0)
+    (check-equal? "c" (selected))
+    (pause!)
+    (test-user:press! "C-x o")
+    (test-user:press! "s-o")
+    (check-equal? "c" (selected))))
 
 (test "with no other view, s-o does nothing"
   (let ([a (named "a")])

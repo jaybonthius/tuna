@@ -239,6 +239,11 @@
     (files:write-file "~/said-2.txt" said-file)
     (check-equal? '("Wrote ~/said-2.txt") (files-test:take-said!))))
 
+(test "a visit of a missing file in a folder that does not exist says so, as Emacs's visit does"
+  (files-test:take-said!)
+  (files:visit "~/missing-folder/inner/new.txt")
+  (check-equal? '("(New file; folder ~/missing-folder/inner does not exist)") (files-test:take-said!)))
+
 (test "C-x x g runs buffers:revert-buffer; files:revert-from-file says Reverted buffer when it runs as a command, and nothing when code calls it"
   (check-equal? 'buffers:revert-buffer (commands:command-name (tables:ref keys:global "C-x x g")))
   (let ([b (files:visit "~/said-2.txt")])

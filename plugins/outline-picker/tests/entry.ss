@@ -1,6 +1,6 @@
 (import (tuna) (test) (test-runner) (test-user) (hooks) (options) (tables) (modes) (buffers) (document) (views) (layout)
         (layout-split) (editing) (jump-history) (completion) (completion-list) (minibuffer) (outline) (outline-picker)
-        (chez-scheme) (completion-test sessions) (completion-test picking) (outline-picker-test reading) (minibuffer-test reading))
+        (chez-scheme) (completion-test sessions) (completion-test picking) (outline-picker-test reading) (minibuffer-test screen))
 
 (define src-text
   (string-append "(define (alpha x) x)\n(define beta 2)\n(define-record-type point (fields x y))\n"
@@ -27,7 +27,7 @@
   (check-equal? '(("Functions" "alpha") ("Functions" "indented") ("Functions" "omega") ("Variables" "beta")
                   ("Structs" "point") ("Macros" "swap!"))
                 (rows))
-  (check-equal? '("Go to item: ") (minibuffer-test/reading:questions))
+  (check-equal? '("Go to item: ") (minibuffer-test/screen:questions))
   (quit!))
 
 (test "C-n previews the selected entry in the starting view, its line highlighted and point on its name; C-g puts point back and records nothing"

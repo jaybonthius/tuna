@@ -265,7 +265,7 @@
       (assertion-violation 'layout-split:split-view! "not a view in the layout" view))
     (when (layout:locked? atom)
       (assertion-violation 'layout-split:split-view! "a locked view" view))
-    (unless b
+    (unless (or shown b)
       (assertion-violation 'layout-split:split-view! "the view shows no buffer" view))
     (let* ([new (views:make (or shown b))]
            [new-datum (vector 'views:view (list (cons 'view (views:id new)) (cons 'buffer (buffers:name (or shown b)))))]

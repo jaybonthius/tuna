@@ -131,11 +131,11 @@
 
 (define-record-type (%source %make-source source?)
   (sealed #t)
-  (fields candidates stream category title split in-order? rank preview preview-end preview-delay exit styles group row
-          narrow faces prefix lookup))
+  (fields candidates stream category title split in-order? own-matching? rank preview preview-end preview-delay exit styles
+          group row narrow faces prefix lookup))
 
-(define (%check-source candidates stream category title split in-order? rank preview preview-end preview-delay exit styles
-                       group row narrow faces prefix lookup)
+(define (%check-source candidates stream category title split in-order? own-matching? rank preview preview-end preview-delay
+                       exit styles group row narrow faces prefix lookup)
   (define who 'completion:source)
   (unless (or (not category) (symbol? category))
     (assertion-violation who "not a category" category))
@@ -143,6 +143,8 @@
     (assertion-violation who "neither a string nor #f" title))
   (unless (or (not split) (procedure? split))
     (assertion-violation who "not a procedure" split))
+  (when (and own-matching? (vector? candidates))
+    (assertion-violation who "own-matching needs a procedure, job or stream source" candidates))
   (unless (or (not rank) (and (vector? rank) (for-all fixnum? (vector->list rank))
                               (vector? candidates) (fx= (vector-length rank) (vector-length candidates))))
     (assertion-violation who "not a vector of fixnums, one for each candidate" rank))
@@ -164,8 +166,8 @@
     (assertion-violation who "neither a character other than a space nor #f" narrow))
   (for-each (lambda (p) (unless (or (not p) (procedure? p)) (assertion-violation who "not a procedure" p)))
             (list faces prefix lookup))
-  (%make-source candidates stream category title split in-order? rank preview preview-end preview-delay exit styles
-                group row narrow faces prefix lookup))
+  (%make-source candidates stream category title split in-order? own-matching? rank preview preview-end preview-delay exit
+                styles group row narrow faces prefix lookup))
 
 (define (%candidates-clause candidates)
   (unless (or (procedure? candidates) (%candidates? candidates))
@@ -197,10 +199,12 @@
              (let ([candidates (assq 'candidates given)] [stream (or (assq 'stream given) (assq 'job given))])
                (unless (or candidates stream)
                  (syntax-violation 'completion:source "a candidates, job or stream clause is required" x))
+               (when (and (assq 'own-matching given) (or (assq 'split given) (assq 'styles given)))
+                 (syntax-violation 'completion:source "own-matching takes no split or styles clause" x))
                #`(%check-source #,(if candidates #`(%candidates-clause #,(cdr candidates)) #'#f)
                                 #,(if stream #`(%stream-clause #,(cdr stream)) #'#f)
                                 #,(given-or-false 'category) #,(given-or-false 'title) #,(given-or-false 'split)
-                                #,(given-or-false 'in-order) #,(given-or-false 'rank) #,(given-or-false 'preview)
+                                #,(given-or-false 'in-order) #,(given-or-false 'own-matching) #,(given-or-false 'rank) #,(given-or-false 'preview)
                                 #,(given-or-false 'preview-end) #,(given-or-false 'preview-delay)
                                 #,(given-or-false 'exit) #,(given-or-false 'styles) #,(given-or-false 'group) #,(given-or-false 'row)
                                 #,(given-or-false 'narrow) #,(given-or-false 'faces) #,(given-or-false 'prefix)
@@ -225,7 +229,7 @@
                             [(_ t r) (list (cons 'group #'t) (cons 'row #'r))]
                             [_ (invalid c)])]
                          [(job) (syntax-case c () [(_ w i) (list (cons name #'(%job-stream w i)))] [_ (invalid c)])]
-                         [(in-order) (syntax-case c () [(_) (list (cons name #'#t))] [_ (invalid c)])]
+                         [(in-order own-matching) (syntax-case c () [(_) (list (cons name #'#t))] [_ (invalid c)])]
                          [else (invalid c)])
                        given)))))])))
 
@@ -497,16 +501,20 @@
   (define (candidate-value c)
     (cond [(string? c) c] [(pair? c) (cdr c)] [else (vector-ref c 1)]))
 
+  (define (match-all query) '())
+
   (define (styles-for source)
-    (let* ([c (%source-category source)]
-           [chosen (append (or (%source-styles source) '()) (if c (tables:ref category-styles c '()) '()))]
-           [defaults (or (and c (equal? (styles) (options:default styles)) (tables:ref category-default-styles c #f))
-                         (styles))])
-      (let loop ([all (append chosen defaults)] [kept '()])
-        (cond
-          [(null? all) (reverse kept)]
-          [(memq (car all) kept) (loop (cdr all) kept)]
-          [else (loop (cdr all) (cons (car all) kept))]))))
+    (if (%source-own-matching? source)
+        (list match-all)
+        (let* ([c (%source-category source)]
+               [chosen (append (or (%source-styles source) '()) (if c (tables:ref category-styles c '()) '()))]
+               [defaults (or (and c (equal? (styles) (options:default styles)) (tables:ref category-default-styles c #f))
+                             (styles))])
+          (let loop ([all (append chosen defaults)] [kept '()])
+            (cond
+              [(null? all) (reverse kept)]
+              [(memq (car all) kept) (loop (cdr all) kept)]
+              [else (loop (cdr all) (cons (car all) kept))])))))
 
   (define (history-ranks h default)
     (let ([t (make-hashtable string-hash string=?)] [entries (if h (h) '())])
@@ -596,19 +604,26 @@
       (document:text (buffers:document (views:buffer (session-record-view s))) start end)))
 
   (define (prefix-length st input)
-    (let ([split (%source-split (state-source st))])
-      (if split
-          (let ([n (split input)])
-            (unless (and (fixnum? n) (fx<= 0 n (string-length input)))
-              (assertion-violation 'completion:source "a split returned what is not a length of the input" n))
-            n)
-          0)))
+    (let* ([source (state-source st)] [split (%source-split source)])
+      (cond
+        [(%source-own-matching? source) (string-length input)]
+        [split
+         (let ([n (split input)])
+           (unless (and (fixnum? n) (fx<= 0 n (string-length input)))
+             (assertion-violation 'completion:source "a split returned what is not a length of the input" n))
+           n)]
+        [else 0])))
 
   (define (state-prefix-length st) (string-length (or (state-prefix st) "")))
 
+  ;; An own-matching source gets the whole input as its prefix,
+  ;; yet its candidates follow none of it: each answers the whole input.
   (define (lead-length st)
     (let ([p (state-prefix-length st)] [b (state-base st)])
-      (if b (fxmin b p) p)))
+      (cond
+        [(%source-own-matching? (state-source st)) 0]
+        [b (fxmin b p)]
+        [else p])))
 
   (define (lead st) (string-part (or (state-prefix st) "") 0 (lead-length st)))
 
@@ -1486,19 +1501,20 @@
 
 ;; A visit pauses its task, and show runs inside the session's selection
 ;; update, so it must not pause.
-(define (location-preview view shown)
-  (unless (views:view? view)
-    (assertion-violation 'completion:location-preview "not a view" view))
+(define (location-preview view-of shown)
+  (unless (procedure? view-of)
+    (assertion-violation 'completion:location-preview "not a procedure" view-of))
   (unless (procedure? shown)
     (assertion-violation 'completion:location-preview "not a procedure" shown))
-  (let ([newest 0] [ended? #f] [chosen-path #f] [opened '()] [buffer (views:buffer view)] [point (views:point view)])
+  (let ([newest 0] [ended? #f] [chosen-path #f] [opened '()] [view #f] [buffer #f] [point #f])
     ;; Previewing the view's own buffer is no buffer preview, so its point
     ;; is put back by hand.
     (define (restore!)
       (end-preview-place)
-      (views:end-preview! view)
-      (when (and (eq? (views:buffer view) buffer) (buffers:live? buffer))
-        (views:set-point! view (fxmin point (document:length (buffers:document buffer))))))
+      (when view
+        (views:end-preview! view)
+        (when (and (eq? (views:buffer view) buffer) (buffers:live? buffer))
+          (views:set-point! view (fxmin point (document:length (buffers:document buffer)))))))
     ;; A buffer the user visited meanwhile is temporary no longer, and
     ;; stays.
     (define (kill-opened! keep)
@@ -1522,6 +1538,10 @@
                           (when (and (buffers:live? b) (files:temporary? b)) (buffers:kill! b))
                           (unless (memq b opened) (set! opened (cons b opened)))))
                     (when (and b (fx= n newest) (not ended?) (buffers:live? b))
+                      (unless view
+                        (set! view (view-of b))
+                        (set! buffer (views:buffer view))
+                        (set! point (views:point view)))
                       (views:preview-buffer! view b)
                       (preview-place view b (editing:line-position b (cadr location) (cddr location)) '())
                       (shown view)))))))))
@@ -1544,9 +1564,11 @@
     (assertion-violation 'completion:select! "not one of the matches" m))
   (select-match! s m))
 
+(define-enumeration %read-kind (choice any-input typed-input) %read-kinds)
+
 (define-record-type %read-state
   (sealed #t)
-  (fields session prompt task any?))
+  (fields session prompt task kind))
 
 (define %reads '())
 
@@ -1560,7 +1582,7 @@
       (lambda (named)
         (cond
           [named (choose-match! s named) (minibuffer:exit! prompt (match-answer s named))]
-          [(%read-state-any? r) (minibuffer:exit! prompt input)]
+          [(eq? (%read-state-kind r) (%read-kind any-input)) (minibuffer:exit! prompt input)]
           [else (minibuffer:message! prompt "No match")])))))
 
 (define (answer-input! p)
@@ -1603,7 +1625,7 @@
 
 (define (%read-default r) (session-record-default (%read-state-session r)))
 
-(define (%read who question sources h default any?)
+(define (%read who question sources h default kind)
   (unless (string? question)
     (assertion-violation who "not a string" question))
   (%check-sources who sources)
@@ -1611,29 +1633,42 @@
     (assertion-violation who "neither saved data nor #f" h))
   (unless (or (not default) (string? default))
     (assertion-violation who "neither a string nor #f" default))
-  (let ([task (current-task)])
+  (let ([task (current-task)] [read-prompt #f])
     (minibuffer:call-with-setup
       (lambda (prompt)
+        (set! read-prompt prompt)
         (minibuffer:add-keymap! prompt keymap)
         (let ([s (open-session! (minibuffer:prompt-view prompt) sources
                    (lambda () (values (minibuffer:input-start prompt) (minibuffer:input-end prompt)))
                    %answer! (read-preselect) h default prompt)])
           (when (pair? (narrow-chars s))
             (minibuffer:add-keymap! prompt narrowing-keymap))
-          (set! %reads (cons (make-%read-state s prompt task any?) %reads))))
-      (lambda () (minibuffer:read question h default)))))
+          (set! %reads (cons (make-%read-state s prompt task kind) %reads))))
+      (lambda ()
+        ;; The history holds what was searched for, which is worth
+        ;; recalling whether or not a candidate was chosen.
+        (guard (c [(and (cancelled? c) h read-prompt (eq? kind (%read-kind typed-input)))
+                   (minibuffer:add-to-history! h (minibuffer:input read-prompt))
+                   (raise c)])
+          (minibuffer:read question h default))))))
 
 (define read
   (case-lambda
     [(question sources) (read question sources minibuffer:history #f)]
     [(question sources h) (read question sources h #f)]
-    [(question sources h default) (%read 'completion:read question sources h default #f)]))
+    [(question sources h default) (%read 'completion:read question sources h default (%read-kind choice))]))
+
+(define read-with-input-history
+  (case-lambda
+    [(question sources) (read-with-input-history question sources minibuffer:history #f)]
+    [(question sources h) (read-with-input-history question sources h #f)]
+    [(question sources h default) (%read 'completion:read-with-input-history question sources h default (%read-kind typed-input))]))
 
 (define read-or-input
   (case-lambda
     [(question sources) (read-or-input question sources minibuffer:history #f)]
     [(question sources h) (read-or-input question sources h #f)]
-    [(question sources h default) (%read 'completion:read-or-input question sources h default #t)]))
+    [(question sources h default) (%read 'completion:read-or-input question sources h default (%read-kind any-input))]))
 
 ;; A read's session starts in its setup, the innermost, so its first
 ;; match waits for the input the outer setups give: the first change of
@@ -1905,10 +1940,11 @@
       (%replace! s from text))))
 
 (commands:define-command (exit)
-  "Makes the query the selected match's text and accepts the match; with none selected, accepts none."
+  "Makes the query the selected match's text and accepts the match; with none selected, accepts none. In a read of completion:read-with-input-history the input stays as typed, so the history keeps it."
   (let* ([s (%current 'completion:exit)] [m (session-record-selected s)]
-         [exit! (if (and m (%point-of s)) (%exit-of s m) %no-exit)])
-    (when m (%replace-unmatched! s (query-start s m) (match-text s m)))
+         [exit! (if (and m (%point-of s)) (%exit-of s m) %no-exit)] [r (%read-of s)])
+    (when (and m (not (and r (eq? (%read-state-kind r) (%read-kind typed-input)))))
+      (%replace-unmatched! s (query-start s m) (match-text s m)))
     (%forget-tabbed! s)
     (when m (choose-match! s m))
     ((session-record-accept s) s m)
@@ -2099,19 +2135,14 @@
                     (when (and found (eq? asking task))
                       (set! asking #f)
                       (emit 'clear)
-                      (emit '(base 0))
                       (emit (list->vector found))
                       (emit 'done))))))
             (set! asking task)))))))
 
-;; The procedure has already chosen and ordered its candidates by its
-;; own rule, as a server's symbol search does.
-(define (%match-all query) '())
-
 (define (%read-line-with-candidates question offered default)
   (read-or-input question
     (list (if (procedure? offered)
-              (source (stream (%asked-candidates offered)) (split string-length) (in-order) (styles (list %match-all)))
+              (source (stream (%asked-candidates offered)) (own-matching) (in-order))
               (source (candidates (list->vector offered)))))
     minibuffer:history default))
 

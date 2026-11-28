@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-runner) (test-user) (hooks) (options) (tables) (keys) (buffers) (document) (views) (layout)
-        (files) (xref) (jsonrpc) (minibuffer) (completion) (completion-list) (lsp) (lsp-test servers))
+        (files) (xref) (jsonrpc) (minibuffer) (completion) (completion-list) (lsp) (lsp-test servers) (minibuffer-test screen))
 
 (options:set! lsp:send-changes-delay 0.05)
 
@@ -86,7 +86,7 @@
   (lsp-test/servers:configure! "alpha" '(capabilities ("textDocumentSync" . 2) ("codeActionProvider" . #t))
     `(responses ("textDocument/codeAction" . #(,(action "Plain" "quickfix" (cons "edit" (edit "P"))) ,(action "Best" "quickfix" '("isPreferred" . #t) (cons "edit" (edit "B")))))))
   (lsp-test/servers:press-until-prompt! "C-c a")
-  (check-equal? "Code action: " (lsp-test/servers:question))
+  (check-equal? "Code action: " (minibuffer-test/screen:question))
   (let* ([s (views:call-with-view (lsp-test/servers:view) completion:current-session)] [ms (begin (test-runner:wait-until (lambda () (not (completion:session-busy? s)))) (completion:session-matches s))])
     (check-equal? '("Best" "Plain") (map (lambda (k) (completion:text s (completion:matches-ref ms k))) (iota (completion:matches-count ms)))))
   (lsp-test/servers:press-until-ended! "RET" lsp:code-actions)

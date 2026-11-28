@@ -1,5 +1,7 @@
 #!tuna
 (import (buffers) (document) (views) (keys) (commands) (modes) (web) (haml) (ask) (hooks) (options) (tables) (saved) (plain-data))
+;; This plugin's raise is a command, so Chez's goes by another name.
+(import (rename (only (chezscheme) raise) (raise raise-object)))
 
 (define-enumeration direction (left right up down) directions)
 
@@ -1888,6 +1890,61 @@
     (assertion-violation 'layout:call-with-overriding-action "not a procedure" thunk))
   (parameterize ([%overriding (box action)])
     (thunk)))
+
+;; The action picks a view other than the selected one, and while a read
+;; waits its prompt is selected, so the user's view is selected for it,
+;; else it could take that view. It may also change what a view shows, as
+;; use-other-view does, which would enter that view's history, so each
+;; view is held in a preview while it runs; a view already in a preview is
+;; an outer read's, and is left as it is.
+(define (%display-view-for b selected overriding)
+  (let* ([before (%views-and-buffers)]
+         [held (filter (lambda (shown) (and (cdr shown) (not (views:previewing? (car shown))))) before)]
+         [now (selected-view)])
+    (for-each (lambda (shown) (views:preview-buffer! (car shown) (cdr shown))) held)
+    (unless (eq? now selected) (select! selected))
+    (let ([v (parameterize ([%overriding overriding]) (display-buffer b))])
+      (unless (eq? now selected) (select! now))
+      (for-each (lambda (shown) (unless (eq? (car shown) v) (views:end-preview! (car shown)))) held)
+      (values v (not (assq v before)) (and (assq v held) #t)))))
+
+;; The read starts from the view the user worked in, which at a prompt is
+;; not the selected view. Its buffer, not the one asked about, is shown in
+;; a view made for the read, so no buffer passed while previewing enters
+;; that view's history.
+;; A preview asks from a task of its own, outside the extent the overriding
+;; action was given in, so the action is the one this call saw.
+(define (call-with-display-view proc)
+  (unless (procedure? proc)
+    (assertion-violation 'layout:call-with-display-view "not a procedure" proc))
+  (check-main-thread 'layout:call-with-display-view)
+  (let ([overriding (%overriding)] [selected (view-of (reference-atom (current-index)))] [found #f] [made #f] [held? #f])
+    (define (view b)
+      (unless (buffers:buffer? b)
+        (assertion-violation 'layout:call-with-display-view "not a buffer" b))
+      (unless found
+        (if (and overriding (unbox overriding))
+            (let-values ([(v new? held) (%display-view-for (or (views:buffer selected) b) selected overriding)])
+              (set! found v)
+              (set! held? held)
+              (when new? (set! made v))
+              (set-box! overriding (lambda (b) (unless (eq? (views:buffer v) b) (views:set-buffer! v b)) v)))
+            (set! found selected)))
+      found)
+    (define (release!)
+      (when (and held? (views:previewing? found))
+        (views:end-preview! found)))
+    (call-with-values
+      (lambda ()
+        (guard (c [#t (release!)
+                      (when (and made (atom-of (views:id made)))
+                        (let ([ix (index-of-id (views:id made))])
+                          (remove-part! ix (index-atom ix (views:id made)))))
+                      (raise-object c)])
+          (proc view)))
+      (lambda results
+        (release!)
+        (apply values results)))))
 
 (define (display-in-other-view b)
   (unless (buffers:buffer? b)

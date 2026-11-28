@@ -1,13 +1,9 @@
 (import (tuna) (test) (test-user) (hooks) (options) (saved) (buffers) (document) (views) (layout) (layout-split) (minibuffer)
-        (completion) (jump-history) (search) (occur) (isearch-test) (occur-test))
+        (completion) (jump-history) (search) (occur) (isearch-test) (occur-test) (minibuffer-test screen))
 
 (define listed occur-test:listed)
 (define rx occur-test:rx)
 (define occur! occur-test:occur!)
-
-(define (question)
-  (let ([shown (test-user:elements (test-user:screen) "minibuffer-question")])
-    (and (pair? shown) (test-user:element-text (car shown)))))
 
 (define (faced-occur) (isearch-test:faced (test-user:client) (occur-test:occur-view)))
 
@@ -20,7 +16,7 @@
   (occur-test:src! "one foo\ntwo\nfoo three foo\nfour\nFoo five\n")
   (views:set-point! (occur-test:view) 5)
   (test-user:press! "M-s o")
-  (check-equal? "List lines matching regexp: " (question))
+  (check-equal? "List lines matching regexp: " (minibuffer-test/screen:question))
   (occur-test:listing! (lambda () (test-user:type! "foo") (test-user:press! "RET")))
   (check-equal? '((("src" 5 #t) ("*Occur*" 2 #f)) "Searched 1 buffer; 4 matches for \"foo\"" ())
                 (list (occur-test:wins) (occur-test:last-message) (jump-history:places)))
@@ -40,7 +36,7 @@
 
 (test "the default is the last regexp read; an empty answer and M-n take it"
   (test-user:press! "M-s o")
-  (check-equal? "List lines matching regexp (default foo): " (question))
+  (check-equal? "List lines matching regexp (default foo): " (minibuffer-test/screen:question))
   (test-user:press! "M-n")
   (check-equal? "foo" (minibuffer:input (minibuffer:current-prompt)))
   (occur-test:listing! (lambda () (test-user:press! "RET")))
@@ -51,11 +47,11 @@
   (saved:set! search:regexp-history '())
   (saved:set! search:history '("a.b"))
   (test-user:press! "M-s o")
-  (check-equal? "List lines matching regexp (default a\\.b): " (question))
+  (check-equal? "List lines matching regexp (default a\\.b): " (minibuffer-test/screen:question))
   (check (isearch-test:cancelling! "C-g"))
   (saved:set! search:regexp-history '("x+"))
   (test-user:press! "M-s o")
-  (check-equal? "List lines matching regexp (default x+): " (question))
+  (check-equal? "List lines matching regexp (default x+): " (minibuffer-test/screen:question))
   (check (isearch-test:cancelling! "C-g")))
 
 (test "no match: *Occur* is killed and its view shows its previous buffer; the echo area says so"
@@ -131,13 +127,13 @@
 (test "C-u collects: with no group \\& is collected unasked; with groups the template is asked, its history starting \\1"
   (occur-test:src! "one foo\ntwo\nfoo three foo\nfour\n")
   (test-user:press! "C-u M-s o")
-  (check-equal? "Collect strings matching regexp (default X): " (question))
+  (check-equal? "Collect strings matching regexp (default X): " (minibuffer-test/screen:question))
   (occur-test:listing! (lambda () (test-user:type! "f.o") (test-user:press! "RET")))
   (check-equal? "3 matches in 2 lines for \"f.o\" in buffer: src\nfoo\nfoo\nfoo\n" (listed))
   (test-user:press! "C-u M-s o")
   (test-user:type! "(f)(o)o")
   (test-user:press! "RET")
-  (check-equal? "Regexp to collect (default \\1): " (question))
+  (check-equal? "Regexp to collect (default \\1): " (minibuffer-test/screen:question))
   (occur-test:listing! (lambda () (test-user:type! "\\2\\1") (test-user:press! "RET")))
   (check-equal? '("3 matches in 2 lines for \"(f)(o)o\" in buffer: src\nof\nof\nof\n" ("\\2\\1" "\\1"))
                 (list (listed) (occur:collect-history))))

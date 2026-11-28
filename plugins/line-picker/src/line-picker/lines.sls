@@ -1,5 +1,5 @@
 (library (line-picker lines)
-  (export last-line line-candidates non-blank atoms-from)
+  (export last-line line-candidates non-blank no-lines? atoms-from)
   (import (chezscheme) (document))
 
   ;; The empty run after a final newline is no line to go to, though
@@ -33,6 +33,15 @@
 
   (define (non-blank lines)
     (list->vector (filter (lambda (c) (not (blank? (car c)))) (vector->list lines))))
+
+  ;; The main thread asks before the job starts, so it stops at the first
+  ;; line that is not white space.
+  (define (no-lines? doc atoms)
+    (let ([last (last-line doc)])
+      (let loop ([k 1] [atoms atoms])
+        (or (fx> k last)
+            (let-values ([(lines atoms) (line-candidates doc atoms k k)])
+              (and (fx= (vector-length (non-blank lines)) 0) (loop (fx+ k 1) atoms)))))))
 
   (define (atoms-from atoms p)
     (let loop ([atoms atoms])

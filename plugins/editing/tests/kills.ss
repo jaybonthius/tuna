@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (test-runner) (buffers) (views) (kill-ring) (editing) (minibuffer) (completion)
-        (editing-test scene) (editing-test md) (completion-test sessions))
+        (editing-test scene) (editing-test md) (completion-test sessions) (minibuffer-test reading))
 
 (editing-test/scene:take-said!)
 
@@ -135,7 +135,7 @@
   (check-equal? '("Yank from kill-ring: " ("newer" "older")) (list (question) (offered 2)))
   (test-user:type! "old")
   (test-user:press! "RET")
-  (check-equal? '("aolder|b" #f ("older")) (list (test-user:text) (completion-test/sessions:prompt) (kill-ring:current)))
+  (check-equal? '("aolder|b" #f ("older")) (list (test-user:text) (minibuffer-test/reading:prompt) (kill-ring:current)))
   (test-user:press! "M-y")
   (check-equal? (string-append "a" (kill-ring:text (list-ref (kill-ring:entries) 2)) "|b") (test-user:text)))
 
@@ -170,7 +170,7 @@
   (check-equal? '("a1b2" ((3 #f) (5 #f))) (editing-test/scene:state))
   (test-user:press! "C-g M-y")
   (check-equal? '(#t) (map cancelled? (test-runner:reports-during (lambda () (test-user:press! "C-g")))))
-  (check-equal? '("a1b2" ((3 #f) (5 #f)) #f) (append (editing-test/scene:state) (list (completion-test/sessions:prompt)))))
+  (check-equal? '("a1b2" ((3 #f) (5 #f)) #f) (append (editing-test/scene:state) (list (minibuffer-test/reading:prompt)))))
 
 (test "C-u 2 M-y goes two kills further, and C-y after M-y yanks the kill M-y left current"
   (kill-ring:push! (list "one"))

@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (commands) (editing) (files) (jump-history) (keys) (processes) (projects) (views) (options) (timers))
+(import (completion) (commands) (editing) (files) (jump-history) (keys) (layout) (processes) (projects) (options) (timers))
 
 (define %self (current-owner))
 
@@ -225,16 +225,18 @@
 
 (define (%read-location)
   (let ([folder (%search-folder)])
-    (let-values ([(show end) (completion:location-preview (views:current) jump-history:after-jump)])
-      (completion:read "Grep: "
-        (list (completion:source
-                (stream (%search-source folder))
-                (split %split)
-                (in-order)
-                (group (%file-title folder) (%line-row folder))
-                (category completion:location-category)
-                (preview show end)
-                (preview-delay (preview-delay))))))))
+    (layout:call-with-display-view
+      (lambda (display-view)
+        (let-values ([(show end) (completion:location-preview display-view jump-history:after-jump)])
+          (completion:read "Grep: "
+            (list (completion:source
+                    (stream (%search-source folder))
+                    (split %split)
+                    (in-order)
+                    (group (%file-title folder) (%line-row folder))
+                    (category completion:location-category)
+                    (preview show end)
+                    (preview-delay (preview-delay))))))))))
 
 (commands:define-command (grep [location (%read-location)])
   "Visits LOCATION, a line found by rg in the files of the current buffer's project, else under its directory, at its match, in a view already showing its file if there is one, as jump-history:jump-to goes."

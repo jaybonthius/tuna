@@ -1,6 +1,6 @@
 (import (tuna) (test) (test-user) (test-runner) (options) (kill-ring) (processes) (buffers) (document) (views) (layout) (files)
         (minibuffer) (completion) (completion-list) (actions) (grep)
-        (completion-test sessions) (completion-test picking) (file-picker-test tree) (grep-test programs) (projects-test trees))
+        (completion-test sessions) (minibuffer-test reading) (completion-test picking) (file-picker-test tree) (grep-test programs) (projects-test trees))
 
 (define (view) (layout:selected-view))
 
@@ -38,7 +38,7 @@
   (check-equal? '("text.txt" 3) (here)))
 
 (define (clear-input!)
-  (unless (string=? "" (completion-test/sessions:input))
+  (unless (string=? "" (minibuffer-test/reading:input))
     (test-user:press! "C-a C-k")))
 
 (define (search typed)
@@ -199,12 +199,12 @@
 
 (test "while a prompt waits, its locked view is selected, so the file shows in another view, where point moves"
   (visit! "src/text.txt")
-  (let ([r (completion-test/sessions:start! (lambda () (minibuffer:read "Name: ")))])
+  (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:read "Name: ")))])
     (check (minibuffer:buffer? (views:buffer (view))))
     (grep-in-view (cons* (file-picker-test/tree:path "src/text.txt") 3 0))
     (check-equal? '("text.txt" 3) (here))
     (test-user:press! "C-g")
-    (check-raises cancelled? (completion-test/sessions:result r))))
+    (check-raises cancelled? (minibuffer-test/reading:result r))))
 
 (test "a location carries rg's column counted in characters, and grep goes to it; a context line's column is 0, one past the line's end goes to its end"
   (file-picker-test/tree:make-folder! "columns")
@@ -275,3 +275,22 @@
     (test-runner:wait-until (lambda () (equal? (place) '("b.sls" 1))))
     (quit!))
   (options:unset! grep:preview-delay))
+
+(define (shown-names) (remp buffers:internal-name? (map (lambda (v) (buffers:name (views:buffer v))) (layout:views))))
+
+(test "after C-x 4 4 the selected line is previewed in another view, where the choice then shows; a quit deletes that view"
+  (layout:reset-layout)
+  (visit! "notes/a.txt")
+  (test-user:press! "C-x 4 4 M-s r")
+  (search "define-record --sort=path")
+  (test-user:press! "C-n")
+  (test-runner:wait-until (lambda () (member "b.sls" (shown-names))))
+  (check-equal? '("a.txt" "b.sls") (shown-names))
+  (quit!)
+  (check-equal? '("a.txt") (shown-names))
+  (test-user:press! "C-x 4 4 M-s r")
+  (search "define-record --sort=path")
+  (test-user:press! "C-n")
+  (completion-test/picking:press-until-ended! "RET" grep:grep)
+  (check-equal? (list '("a.txt" "b.sls") '("b.sls" 1)) (list (shown-names) (here)))
+  (layout:reset-layout))

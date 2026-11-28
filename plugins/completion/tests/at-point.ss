@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (test-runner) (hooks) (buffers) (views) (layout) (echo-area) (minibuffer)
-        (completion) (completion-list) (completion-popup) (editing) (completion-test sessions))
+        (completion) (completion-list) (completion-popup) (editing) (completion-test sessions) (minibuffer-test reading))
 
 (define (raised? who message)
   (lambda (c)
@@ -27,7 +27,7 @@
 
 (define (texts) (completion-test/sessions:texts (session)))
 
-(define (start-at-point minimum) (completion-test/sessions:result (completion-test/sessions:start! (lambda () (completion:start-at-point minimum)))))
+(define (start-at-point minimum) (minibuffer-test/reading:result (minibuffer-test/reading:start! (lambda () (completion:start-at-point minimum)))))
 
 (define (with-region entry thunk)
   (hooks:add! completion:find-region entry)
@@ -171,7 +171,7 @@
     (exit (exit-noting 'tabbed))))
 
 (define (tabbed-region)
-  (let* ([v (views:current)] [point (views:point v)] [text (completion-test/sessions:buffer-text (views:buffer v))]
+  (let* ([v (views:current)] [point (views:point v)] [text (minibuffer-test/reading:buffer-text (views:buffer v))]
          [start (let loop ([i point]) (if (or (= i 1) (char=? (string-ref text (- i 2)) #\space)) i (loop (- i 1))))])
     (and (< start point) (completion:region start point (list tabbed)))))
 
@@ -225,9 +225,9 @@
 
 (test "a read calls no exit"
   (set! exits '())
-  (let ([r (completion-test/sessions:start! (lambda () (completion:read "Fruit: " (list (completion:source (candidates (vector "apple")) (exit (exit-noting 'read)))) #f)))])
+  (let ([r (minibuffer-test/reading:start! (lambda () (completion:read "Fruit: " (list (completion:source (candidates (vector "apple")) (exit (exit-noting 'read)))) #f)))])
     (test-user:press! "RET")
-    (check-equal? "apple" (completion-test/sessions:result r))
+    (check-equal? "apple" (minibuffer-test/reading:result r))
     (check-equal? '() exits)))
 
 (define (zeds)
@@ -295,18 +295,18 @@
 (test "start-from-entry uses one entry, ignoring the hook, and calls its procedure when a fallback region finds nothing"
   (hooks:add! completion:find-region zeds)
   (test-user:show! "al|")
-  (check-equal? #t (completion-test/sessions:result (completion-test/sessions:start! (lambda () (completion:start-from-entry zeds)))))
+  (check-equal? #t (minibuffer-test/reading:result (minibuffer-test/reading:start! (lambda () (completion:start-from-entry zeds)))))
   (check-equal? '() (texts))
   (test-user:press! "C-g")
-  (check-equal? #t (completion-test/sessions:result (completion-test/sessions:start! (lambda () (completion:start-from-entry greek-fallback)))))
+  (check-equal? #t (minibuffer-test/reading:result (minibuffer-test/reading:start! (lambda () (completion:start-from-entry greek-fallback)))))
   (check-equal? '("alpha" "almond") (texts))
   (test-user:press! "C-g")
   (test-user:show! "q|")
   (let ([said 0])
-    (check-equal? #t (completion-test/sessions:result (completion-test/sessions:start! (lambda () (completion:start-from-entry greek-fallback (lambda () (set! said (+ said 1))))))))
+    (check-equal? #t (minibuffer-test/reading:result (minibuffer-test/reading:start! (lambda () (completion:start-from-entry greek-fallback (lambda () (set! said (+ said 1))))))))
     (check-equal? (list #f 1) (list (session) said)))
   (test-user:show! "q |")
-  (check-equal? #f (completion-test/sessions:result (completion-test/sessions:start! (lambda () (completion:start-from-entry greek-fallback)))))
+  (check-equal? #f (minibuffer-test/reading:result (minibuffer-test/reading:start! (lambda () (completion:start-from-entry greek-fallback)))))
   (hooks:remove! completion:find-region zeds))
 
 (test "the procedures that start sessions at point check their arguments"
@@ -339,16 +339,16 @@
                                  (list (completion:source (candidates (vector "alpha" "almond"))))))))])
     (with-region prompt-words
       (lambda ()
-        (let ([r (completion-test/sessions:start! (lambda () (minibuffer:read "Eval: " #f)))])
+        (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:read "Eval: " #f)))])
           (test-user:type! "al")
           (test-user:press! "C-M-i")
           (check-equal? '("alpha" "almond") (texts))
           (check-equal? #f (completion:session-prompt (session)))
           (test-user:press! "M-n RET")
-          (check-equal? "alpha" (completion-test/sessions:input))
+          (check-equal? "alpha" (minibuffer-test/reading:input))
           (check-equal? #f (session))
           (test-user:press! "RET")
-          (check-equal? "alpha" (completion-test/sessions:result r)))))))
+          (check-equal? "alpha" (minibuffer-test/reading:result r)))))))
 
 (define (prefix-region)
   (let* ([v (views:current)] [p (views:point v)] [s (editing:forward-word-position (views:buffer v) p -1)])

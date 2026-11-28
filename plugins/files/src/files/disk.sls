@@ -4,6 +4,7 @@
           failure-already-exists?
           rename-path copy-path delete-path trash-path make-new-folder
           contents-document contents-length contents-hash contents-bom? contents-crlf? contents-missing?
+          contents-folder-missing?
           changed-on-disk?)
   (import (chezscheme) (document) (files attributes) (files system) (files paths))
 
@@ -127,13 +128,15 @@
     (document:replace (document:from-datum '(buffers:text ())) 1 1 (document:from-utf8 bytes)))
 
   ;; A file's contents as read, a vector since a job sends plain data only.
-  (define (make-contents doc length hash bom crlf missing) (vector doc length hash bom crlf missing))
+  (define (make-contents doc length hash bom crlf missing folder-missing)
+    (vector doc length hash bom crlf missing folder-missing))
   (define (contents-document c) (vector-ref c 0))
   (define (contents-length c) (vector-ref c 1))
   (define (contents-hash c) (vector-ref c 2))
   (define (contents-bom? c) (vector-ref c 3))
   (define (contents-crlf? c) (vector-ref c 4))
   (define (contents-missing? c) (vector-ref c 5))
+  (define (contents-folder-missing? c) (vector-ref c 6))
 
   (define (decode bytes)
     (let* ([bom (bom? bytes)]
@@ -144,13 +147,14 @@
                      (fnv bytes 0 (bytevector-length bytes) fnv-basis)
                      bom
                      crlf
+                     #f
                      #f)))
 
   (define (read-file path)
     (check-not-folder path)
     (if (file-exists? path)
         (decode (read-bytes path))
-        (make-contents (text-document (make-bytevector 0)) 0 fnv-basis #f #f #t)))
+        (make-contents (text-document (make-bytevector 0)) 0 fnv-basis #f #f #t (not (file-directory? (path-parent path))))))
 
   (define (char-token doc i)
     (let loop ([p (document:position doc i (document:unit characters))])

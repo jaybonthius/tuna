@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (test-runner) (tables) (keys) (commands) (layout) (views) (minibuffer) (completion) (completion-list) (editing)
-        (completion-test sessions))
+        (completion-test sessions) (minibuffer-test reading))
 
 (define (raised? who message)
   (lambda (c)
@@ -8,9 +8,9 @@
 
 (define (quit! r)
   (test-user:press! "C-g")
-  (check-raises cancelled? (completion-test/sessions:result r)))
+  (check-raises cancelled? (minibuffer-test/reading:result r)))
 
-(define (reading sources) (completion-test/sessions:start! (lambda () (completion:read "? " sources #f))))
+(define (reading sources) (minibuffer-test/reading:start! (lambda () (completion:read "? " sources #f))))
 
 (define (titles s) (map (lambda (m) (completion:title s m)) (completion-test/sessions:matches s)))
 
@@ -57,7 +57,7 @@
 
 (test "a read whose group title procedure returns what is not a string raises"
   (let ([r (reading (list (completion:source (candidates (vector "a")) (group (lambda (t v) 'x)))))])
-    (check-raises (raised? 'completion:source "a group's title procedure returned what is not a string") (completion-test/sessions:result r))))
+    (check-raises (raised? 'completion:source "a group's title procedure returned what is not a string") (minibuffer-test/reading:result r))))
 
 (test "M-} and M-{ select the first match of the next and the previous group, stopping at the ends; a source without groups is one"
   (let ([r (reading (list fruit (completion:source (candidates (vector "fig" "grape")) (title "More"))))])
@@ -108,20 +108,20 @@
 
 (define files-like (completion:source (candidates (vector "notes.txt" "init.ss")) (title "Files") (narrow #\f)))
 
-(define (narrowable) (completion-test/sessions:start! (lambda () (completion:read-or-input "? " (list buffers-like files-like) #f))))
+(define (narrowable) (minibuffer-test/reading:start! (lambda () (completion:read-or-input "? " (list buffers-like files-like) #f))))
 
 (test "a narrow character then SPC shows only its sources and clears the input; the read answers with their candidates"
   (let* ([r (narrowable)] [s (completion-test/sessions:session)])
     (check-equal? '("todo" "notes" "init.ss" "notes.txt") (completion-test/sessions:texts s))
     (check-equal? #f (completion:narrowed s))
     (test-user:type! "f ")
-    (check-equal? "" (completion-test/sessions:input))
+    (check-equal? "" (minibuffer-test/reading:input))
     (check-equal? '("init.ss" "notes.txt") (completion-test/sessions:texts s))
     (check-equal? "Files" (completion:narrowed s))
     (test-user:type! "no")
     (check-equal? '("notes.txt") (completion-test/sessions:texts s))
     (test-user:press! "RET")
-    (check-equal? "notes.txt" (completion-test/sessions:result r))))
+    (check-equal? "notes.txt" (minibuffer-test/reading:result r))))
 
 (test "a narrowed read lists only its sources' candidates, and DEL on its empty input widens"
   (let* ([r (narrowable)] [s (completion-test/sessions:session)])
@@ -130,7 +130,7 @@
     (test-user:type! "init.ss")
     (check-equal? '() (completion-test/sessions:texts s))
     (test-user:press! "DEL DEL DEL DEL DEL DEL DEL")
-    (check-equal? "" (completion-test/sessions:input))
+    (check-equal? "" (minibuffer-test/reading:input))
     (check-equal? "Buffers" (completion:narrowed s))
     (test-user:press! "DEL")
     (check-equal? #f (completion:narrowed s))
@@ -140,10 +140,10 @@
 (test "SPC after a character that is no narrow character, or after more than one, types a space"
   (let* ([r (narrowable)] [s (completion-test/sessions:session)])
     (test-user:type! "x ")
-    (check-equal? "x " (completion-test/sessions:input))
+    (check-equal? "x " (minibuffer-test/reading:input))
     (test-user:press! "C-a C-k")
     (test-user:type! "bb ")
-    (check-equal? "bb " (completion-test/sessions:input))
+    (check-equal? "bb " (minibuffer-test/reading:input))
     (check-equal? #f (completion:narrowed s))
     (quit! r)))
 
@@ -158,7 +158,7 @@
 (test "a read of one source cannot be narrowed: its narrow character then SPC types a space"
   (let ([r (reading (list buffers-like))])
     (test-user:type! "b sc")
-    (check-equal? "b sc" (completion-test/sessions:input))
+    (check-equal? "b sc" (minibuffer-test/reading:input))
     (check-equal? #f (completion:narrowed (completion-test/sessions:session)))
     (check-equal? '() (completion:narrow-characters (completion-test/sessions:session)))
     (quit! r)))
@@ -167,7 +167,7 @@
   (check-equal? '() (tables:entries completion:narrowing-keymap))
   (let ([r (narrowable)])
     (test-user:type! "<f")
-    (check-equal? "<f" (completion-test/sessions:input))
+    (check-equal? "<f" (minibuffer-test/reading:input))
     (check-equal? #f (completion:narrowed (completion-test/sessions:session)))
     (quit! r)))
 
@@ -176,13 +176,13 @@
   (let* ([r (narrowable)] [s (completion-test/sessions:session)])
     (test-user:type! "not")
     (test-user:press! "< f")
-    (check-equal? (list "not" "Files" '("notes.txt")) (list (completion-test/sessions:input) (completion:narrowed s) (completion-test/sessions:texts s)))
+    (check-equal? (list "not" "Files" '("notes.txt")) (list (minibuffer-test/reading:input) (completion:narrowed s) (completion-test/sessions:texts s)))
     (test-user:press! "< <")
-    (check-equal? (list "not" #f) (list (completion-test/sessions:input) (completion:narrowed s)))
+    (check-equal? (list "not" #f) (list (minibuffer-test/reading:input) (completion:narrowed s)))
     (test-user:press! "< b")
     (test-user:type! " ini")
     (test-user:press! "< x")
-    (check-equal? (list "not ini" #f) (list (completion-test/sessions:input) (completion:narrowed s)))
+    (check-equal? (list "not ini" #f) (list (minibuffer-test/reading:input) (completion:narrowed s)))
     (test-user:press! "< f")
     (check-equal? '((#\b . "Buffers") (#\f . "Files")) (completion:narrow-characters s))
     (check-equal? '("not a character" "no character was typed")
@@ -195,7 +195,7 @@
     (quit! r))
   (let ([r (reading (list fruit))])
     (test-user:type! "<a")
-    (check-equal? "<a" (completion-test/sessions:input))
+    (check-equal? "<a" (minibuffer-test/reading:input))
     (quit! r))
   (keys:unbind! completion:narrowing-keymap "<"))
 
@@ -203,7 +203,7 @@
   (let ([r (narrowable)])
     (check-equal? '(#f #f) (completion:session-categories (completion-test/sessions:session)))
     (quit! r))
-  (let* ([r (completion-test/sessions:start!
+  (let* ([r (minibuffer-test/reading:start!
               (lambda ()
                 (completion:read-or-input "? "
                   (list (completion:source (candidates (vector "notes" "todo")) (title "Buffers") (narrow #\b) (category completion:location-category))

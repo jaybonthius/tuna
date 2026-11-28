@@ -1,6 +1,7 @@
 (import (tuna) (test) (test-runner) (test-user) (modes) (prog) (buffers) (document) (views) (layout) (layout-split) (keys) (commands) (hooks)
         (options) (tables) (undo) (editing) (echo-area) (minibuffer) (completion) (command-picker) (help) (buffers-test)
-        (completion-test sessions) (status-line) (status-line-test) (modes-test text) (modes-test fill) (modes-test code) (modes-test view) (modes-test probe))
+        (completion-test sessions) (minibuffer-test reading) (status-line) (status-line-test) (modes-test text) (modes-test fill) (modes-test code) (modes-test view) (modes-test probe)
+        (minibuffer-test screen))
 
 (define (local option b) (buffers:with-buffer b (option)))
 
@@ -15,10 +16,6 @@
 (define (offered) (map car (rows)))
 
 (define (ours rows) (filter (lambda (row) (let ([t (car row)]) (and (> (string-length t) 11) (string=? "modes-test/" (substring t 0 11))))) rows))
-
-(define (question)
-  (let ([shown (test-user:elements (test-user:screen) "minibuffer-question")])
-    (and (pair? shown) (test-user:element-text (car (reverse shown))))))
 
 (define (raised-saying? who text)
   (lambda (c)
@@ -39,7 +36,7 @@
   (apply ask-minor! prefix)
   (test-user:type! name)
   (test-user:press! "RET")
-  (check-equal? #f (completion-test/sessions:prompt)))
+  (check-equal? #f (minibuffer-test/reading:prompt)))
 
 (modes:define-minor-mode for-text "Whether for-text is on." (majors modes-test/text:mode))
 
@@ -61,7 +58,7 @@
 (test "the command asks Toggle minor mode: and offers the option modes for the buffer's major mode by name, in order, annotated with their state in the selected view"
   (reset!)
   (ask-minor!)
-  (check-equal? "Toggle minor mode: " (question))
+  (check-equal? "Toggle minor mode: " (minibuffer-test/screen:question))
   (check-equal? '(("modes-test/fill:mode" . "off") ("modes-test/probe:counted-mode" . "off") ("modes-test/probe:talking-mode" . "off"))
                 (ours (rows)))
   (check-equal? (list-sort string<? (offered)) (offered))
@@ -158,8 +155,8 @@
   (ask-minor!)
   (test-user:type! "zz")
   (test-user:press! "RET")
-  (check (completion-test/sessions:prompt))
-  (check-equal? " [No match]" (completion-test/sessions:prompt-message))
+  (check (minibuffer-test/reading:prompt))
+  (check-equal? " [No match]" (minibuffer-test/screen:bracket))
   (quit!)
   (check-equal? (list "Quit" #f) (list (echo-area:current-message) (buffers:with-buffer b (options:local? modes-test/fill:mode)))))
 

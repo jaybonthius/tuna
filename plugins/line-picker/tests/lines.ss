@@ -1,6 +1,6 @@
-(import (tuna) (test) (test-user) (test-runner) (options) (hooks) (tables) (faces) (buffers) (document) (views) (layout) (web)
-        (jump-history) (completion) (completion-list) (line-picker)
-        (completion-test sessions) (completion-test picking) (buffers-test cards) (line-picker-test para))
+(import (tuna) (test) (test-user) (test-runner) (options) (hooks) (tables) (saved) (faces) (buffers) (document) (views) (layout) (web)
+        (minibuffer) (isearch) (jump-history) (completion) (completion-list) (line-picker)
+        (completion-test sessions) (minibuffer-test reading) (completion-test picking) (minibuffer-test screen) (buffers-test cards) (line-picker-test para))
 
 (define (lines-text from to) (apply string-append (map (lambda (i) (format "line ~a\n" (+ from i))) (iota (- to from)))))
 
@@ -80,6 +80,60 @@
     (check-equal? "line 0 gamma" (first-line "M-s l"))
     (check-equal? "line 8 gamma" (first-line "C-u M-s l"))
     (options:unset! line-picker:start-from-top?)))
+
+(test "the prompt says Go to line from top: exactly when the lines come from the first"
+  (show! (string-append "|" gamma-lines))
+  (views:set-point! src (+ (line-start 9) 2))
+  (let ([asked (lambda (keys) (test-user:press! keys) (choices) (let ([q (minibuffer-test/screen:questions)]) (quit!) q))])
+    (check-equal? '(("Go to line: ") ("Go to line from top: ")) (map asked '("M-s l" "C-u M-s l")))
+    (options:set! line-picker:start-from-top? #t)
+    (check-equal? '(("Go to line from top: ") ("Go to line: ")) (map asked '("M-s l" "C-u M-s l")))
+    (options:unset! line-picker:start-from-top?)))
+
+(test "in a buffer with no line but white space, M-s l says No lines and asks nothing"
+  (for-each
+    (lambda (text)
+      (show! text)
+      (check-equal? '("No lines") (minibuffer-test/screen:report-messages (lambda () (test-user:press! "M-s l"))))
+      (check-equal? #f (minibuffer:current-prompt)))
+    '("|" "|  \n\n\t\n")))
+
+(test "M-s l during a search ends the search and starts the read with its text, from the line of its match"
+  (show! "|one\ntwo\nthree\nfour\n")
+  (test-user:press! "C-s")
+  (test-user:type! "thr")
+  (test-user:press! "M-s l")
+  (check-equal? (list '("Go to line: ") "thr" '("three") "three" #f)
+                (list (minibuffer-test/screen:questions) (minibuffer-test/reading:input) (choices) (completion-test/picking:selected)
+                      (isearch:current (test-user:client))))
+  (quit!))
+
+(test "M-s l keeps a history of its own: M-p recalls the input typed before, not the line chosen, and no entry of another read"
+  (saved:set! minibuffer:history '("elsewhere"))
+  (saved:set! line-picker:line-history '())
+  (show! "|one\ntwo\nthree\n")
+  (test-user:press! "M-s l")
+  (test-user:type! "tw")
+  (choices)
+  (test-user:press! "RET")
+  (test-user:press! "M-s l M-p")
+  (check-equal? "tw" (minibuffer-test/reading:input))
+  (check-equal? '("beginning of history") (minibuffer-test/screen:report-messages (lambda () (test-user:press! "M-p"))))
+  (quit!)
+  (check-equal? (list '("tw") '("elsewhere")) (list (line-picker:line-history) (minibuffer:history))))
+
+(test "RET on input that matches no line says No match and keeps the prompt"
+  (show! "|one\ntwo\n")
+  (test-user:press! "M-s l")
+  (test-user:type! "zzz")
+  (check-equal? '() (choices))
+  (test-user:press! "RET")
+  (check-equal? (list "zzz" " [No match]") (list (minibuffer-test/reading:input) (minibuffer-test/screen:bracket)))
+  (quit!))
+
+(test "line-picker:line raises on what is not a position and its matches"
+  (show! "|one\n")
+  (check-raises assertion-violation? (views:call-with-view src (lambda () (line-picker:line 'one)))))
 
 (buffers:define-layer colours)
 
