@@ -339,7 +339,7 @@
 
 (define-record-type %conn
   (sealed #t)
-  (fields rpc name root command (mutable title) (mutable caps) (mutable ready?) (mutable docs)
+  (fields rpc name root folder command (mutable title) (mutable caps) (mutable ready?) (mutable docs)
           (mutable encoding) source (mutable started-at) (mutable shutting-down?) (mutable progress)
           (mutable error) (mutable timer) description))
 
@@ -436,10 +436,9 @@
   (let* ([folder (%folder-of path)] [root (%server-root description)])
     (or (cond
           [(procedure? root) (root folder)]
-          [(pair? root) (projects:find-marked folder root)]
+          [(pair? root) (exists (lambda (name) (projects:find-marked folder (list name))) root)]
           [else #f])
-        (let ([project (projects:find folder)]) (and project (projects:root project)))
-        folder)))
+        (let ([project (projects:find folder)]) (and project (projects:root project))))))
 
 (define (%folder-of path)
   (let loop ([i (fx- (string-length path) 1)])
@@ -501,7 +500,7 @@
          ("showMessage" ("messageActionItem" ("additionalPropertiesSupport" . #f)))))
       (if (procedure? extra) '() extra))))
 
-(define (%start! name description root)
+(define (%start! name description root folder)
   (let* ([command (%command-of description root)]
          [source (call-as-owner %self (lambda () (diagnostics:make-source)))]
          [rpc (call-as-owner %self
@@ -512,8 +511,8 @@
                       [notification %on-notification]
                       [cancel (lambda (rpc id) (jsonrpc:notify rpc "$/cancelRequest" (list (cons "id" id))))]
                       [exit %on-exit])
-                    (processes:options [directory root]))))]
-         [conn (make-%conn rpc name root command (%program-name command) '() #f '() "utf-16" source (real-time) #f #f #f #f
+                    (processes:options [directory folder]))))]
+         [conn (make-%conn rpc name root folder command (%program-name command) '() #f '() "utf-16" source (real-time) #f #f #f #f
                            description)])
     (eq-hashtable-set! %by-rpc rpc conn)
     (set! %connections (append %connections (list conn)))
@@ -535,9 +534,9 @@
       (let ([result (jsonrpc:request (%conn-rpc conn) "initialize"
                       `(("processId" . ,(if (send-process-id?) (%getpid) 'null))
                         ("clientInfo" ("name" . "Tuna"))
-                        ("rootPath" . ,root)
-                        ("rootUri" . ,(path->uri root))
-                        ("workspaceFolders" . #((("uri" . ,(path->uri root)) ("name" . ,root))))
+                        ("rootPath" . ,(or root 'null))
+                        ("rootUri" . ,(if root (path->uri root) 'null))
+                        ("workspaceFolders" . ,(%workspace-folders root))
                         ("capabilities" . ,(%client-capabilities description))
                         ("initializationOptions" . ,options))
                       (connect-timeout))])
@@ -549,6 +548,9 @@
         (%conn-ready?-set! conn #t)
         (for-each (lambda (d) (when (buffers:live? (%doc-buffer d)) (%open! conn d))) (%conn-docs conn))
         (connected (%conn-rpc conn))))))
+
+(define (%workspace-folders root)
+  (if root (vector (list (cons "uri" (path->uri root)) (cons "name" root))) 'null))
 
 (define (%condition-text c)
   (if (message-condition? c) (condition-message c) (%fmt "~a" c)))
@@ -653,12 +655,38 @@
 
 (define %xref-reached (make-hashtable string-hash string=?))
 
-(define (ensure)
+(define (%ensurable)
   (let ([b (buffers:current)])
-    (when (and b (files:path b) (not (files:temporary? b)))
-      (%ensure! b))))
+    (and b (files:path b) (not (files:temporary? b)) b)))
+
+(define %undrawn (make-weak-eq-hashtable))
+
+(define (%drawn? b) (exists (lambda (v) (pair? (views:drawn-ranges v))) (views:showing b)))
+
+;; Restoring a session visits many files no one looks at, and each would
+;; start or join a server, so a buffer waits until a view draws it.
+(define (ensure)
+  (let ([b (%ensurable)])
+    (when b
+      (if (%drawn? b)
+          (%ensure! b)
+          (eq-hashtable-set! %undrawn b (modes:major-mode b))))))
+
+(define (ensure-now)
+  (let ([b (%ensurable)])
+    (when b (%ensure! b))))
+
+;; The hook also tells of a view that stopped drawing the buffer, and the
+;; buffer may have changed mode since it was asked for.
+(define (%ensure-when-drawn view b)
+  (let ([mode (eq-hashtable-ref %undrawn b #f)])
+    (when (and mode (memq view (views:showing b)) (pair? (views:drawn-ranges view)))
+      (if (eq? mode (modes:major-mode b))
+          (%ensure! b)
+          (eq-hashtable-delete! %undrawn b)))))
 
 (define (%ensure! b)
+  (eq-hashtable-delete! %undrawn b)
   (let* ([path (files:path b)] [mode (modes:major-mode b)] [language (modes:language mode)]
          [spec (and language (tables:ref language-servers language #f))])
     (cond
@@ -682,11 +710,11 @@
            (lambda (name)
              (let* ([description (tables:ref servers name #f)]
                     [reached (and (extend-to-xref?) (hashtable-ref %xref-reached path #f))]
-                    [root (%with-slash (%root-of description path))]
+                    [root (let ([r (%root-of description path)]) (and r (%with-slash r)))]
                     [conn (or (and reached (%conn-name reached) (eq? (%conn-name reached) name)
                                    (memq reached %connections) reached)
                               (%find-conn name root)
-                              (%start! name description root))])
+                              (%start! name description root (or root (%folder-of path))))])
                (unless (%doc-of conn b) (%manage! conn b path))))
            wanted))])))
 
@@ -925,8 +953,11 @@
                    settings)))
            (%list (%ref params "items"))))))
 
+(define (%titled-message rpc params)
+  (%fmt "~a: ~a" (%conn-title (eq-hashtable-ref %by-rpc rpc #f)) (or (%ref params "message") "")))
+
 (define (%show-message-request rpc params)
-  (let ([actions (%list (%ref params "actions"))] [message (or (%ref params "message") "")])
+  (let ([actions (%list (%ref params "actions"))] [message (%titled-message rpc params)])
     (if (null? actions)
         (begin (ask:message message) 'null)
         (ask:choice (string-append message " ")
@@ -975,7 +1006,7 @@
             (cond
               [(or (eq? again #t) (and (real? again) (>= ran again)))
                (ask:message "Reconnecting after unexpected server exit.")
-               (let ([new (%start! (%conn-name conn) (tables:ref servers (%conn-name conn) (%conn-description conn)) (%conn-root conn))])
+               (let ([new (%start! (%conn-name conn) (tables:ref servers (%conn-name conn) (%conn-description conn)) (%conn-root conn) (%conn-folder conn))])
                  (for-each (lambda (d) (let ([b (%doc-buffer d)]) (when (buffers:live? b) (%manage! new b (%doc-path d))))) docs))
                (ask:message "Reconnected!")]
               [again (ask:message "Not auto-reconnecting, last one didn't last long.")])))))))
@@ -1016,7 +1047,7 @@
   "Shuts down connection C and starts its server again for the same root and buffers, with its description now."
   (let* ([conn (%conn-of 'lsp:reconnect c)] [docs (%conn-docs conn)])
     (%shutdown! conn)
-    (let ([new (%start! (%conn-name conn) (tables:ref servers (%conn-name conn) (%conn-description conn)) (%conn-root conn))])
+    (let ([new (%start! (%conn-name conn) (tables:ref servers (%conn-name conn) (%conn-description conn)) (%conn-root conn) (%conn-folder conn))])
       (for-each (lambda (d) (let ([b (%doc-buffer d)]) (when (buffers:live? b) (%manage! new b (%doc-path d))))) docs)
       (ask:message "Reconnected!"))))
 
@@ -2076,15 +2107,23 @@
 (define-server cmake-language-server '("cmake-language-server"))
 (define-server vim-language-server '("vim-language-server" "--stdio"))
 (define-server rass-python '("rass" "python"))
-(define-server pylsp '("pylsp"))
+;; A Python project often has no repository, and these servers find its
+;; settings and environment from the root. Each list is nvim-lspconfig's,
+;; in its priority order; it leaves out .git, which projects:find gives
+;; with its rules for submodules.
+(define-server pylsp '("pylsp") (root '("pyproject.toml" "setup.py" "setup.cfg" "requirements.txt" "Pipfile")))
 (define-server pyls '("pyls"))
-(define-server basedpyright '("basedpyright-langserver" "--stdio"))
-(define-server pyright '("pyright-langserver" "--stdio"))
-(define-server pyrefly '("pyrefly" "lsp"))
-(define-server ty '("ty" "server"))
-(define-server jedi-language-server '("jedi-language-server"))
-(define-server ruff '("ruff" "server"))
-(define-server ruff-lsp '("ruff-lsp"))
+(define-server basedpyright '("basedpyright-langserver" "--stdio")
+  (root '("pyrightconfig.json" "pyproject.toml" "setup.py" "setup.cfg" "requirements.txt" "Pipfile")))
+(define-server pyright '("pyright-langserver" "--stdio")
+  (root '("pyrightconfig.json" "pyproject.toml" "setup.py" "setup.cfg" "requirements.txt" "Pipfile")))
+(define-server pyrefly '("pyrefly" "lsp")
+  (root '("pyrefly.toml" "pyproject.toml" "setup.py" "setup.cfg" "requirements.txt" "Pipfile")))
+(define-server ty '("ty" "server") (root '("ty.toml" "pyproject.toml" "setup.py" "setup.cfg" "requirements.txt")))
+(define-server jedi-language-server '("jedi-language-server")
+  (root '("pyproject.toml" "setup.py" "setup.cfg" "requirements.txt" "Pipfile")))
+(define-server ruff '("ruff" "server") (root '("pyproject.toml" "ruff.toml" ".ruff.toml")))
+(define-server ruff-lsp '("ruff-lsp") (root '("pyproject.toml" "ruff.toml")))
 (define-server vscode-json-language-server '("vscode-json-language-server" "--stdio"))
 (define-server vscode-json-languageserver '("vscode-json-languageserver" "--stdio"))
 (define-server json-languageserver '("json-languageserver" "--stdio"))
@@ -2149,7 +2188,7 @@
 (define-server dot-language-server '("dot-language-server" "--stdio"))
 (define-server terraform-ls '("terraform-ls" "serve"))
 (define-server uiua '("uiua" "lsp"))
-(define-server millet (lambda (root) (list "millet-ls" root)))
+(define-server millet (lambda (root) (if root (list "millet-ls" root) (list "millet-ls"))))
 (define-server blueprint-compiler '("blueprint-compiler" "lsp"))
 (define-server ols '("ols"))
 
@@ -2228,9 +2267,7 @@
 (tables:set! request-handlers "workspace/configuration" %configuration-request)
 (tables:set! request-handlers "workspace/applyEdit" %apply-edit-request)
 (tables:set! request-handlers "workspace/workspaceFolders"
-  (lambda (rpc params)
-    (let ([root (%conn-root (eq-hashtable-ref %by-rpc rpc #f))])
-      (vector (list (cons "uri" (path->uri root)) (cons "name" root))))))
+  (lambda (rpc params) (%workspace-folders (%conn-root (eq-hashtable-ref %by-rpc rpc #f)))))
 (tables:set! request-handlers "window/showMessageRequest" %show-message-request)
 (tables:set! request-handlers "window/showDocument" %show-document)
 (tables:set! request-handlers "window/workDoneProgress/create" %nothing)
@@ -2243,7 +2280,7 @@
 (tables:set! notification-handlers "textDocument/publishDiagnostics"
   (lambda (rpc params) (%on-publish (eq-hashtable-ref %by-rpc rpc #f) params)))
 (tables:set! notification-handlers "window/showMessage"
-  (lambda (rpc params) (ask:message (or (%ref params "message") ""))))
+  (lambda (rpc params) (ask:message (%titled-message rpc params))))
 (tables:set! notification-handlers "window/logMessage" (lambda (rpc params) (void)))
 (tables:set! notification-handlers "$/progress" %progress)
 
@@ -2252,6 +2289,7 @@
 (tables:set! status-line:segments status (status-line:right 30))
 (hooks:add! buffers:killed %killed)
 (hooks:add! modes:major-mode-changed %mode-changed)
+(hooks:add! views:drawn-ranges-changed %ensure-when-drawn)
 (hooks:add! outline:sources outline-source -10)
 (hooks:add! managed outline:forget!)
 (hooks:add! connected %forget-outlines)

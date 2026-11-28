@@ -34,6 +34,10 @@
 (options:define-option echo-keystrokes 1 (lambda (v) (and (real? v) (finite? v) (not (negative? v))))
   "Seconds of pause after which the echo area shows a client's unfinished keys; 0 shows none.")
 
+(options:define-option max-height 0.25
+  (lambda (v) (or (and (flonum? v) (fl> v 0.0) (fl<= v 1.0)) (and (fixnum? v) (fx> v 0))))
+  "How tall the echo area grows before its message scrolls: an inexact fraction of the page in (0, 1], or an exact count of lines.")
+
 (tables:define-table keymap "The echo area's keymap, for clicks on it.")
 
 ;; The plugin writes both buffers with splice!, which asks no kind, so
@@ -47,8 +51,13 @@
   (if (hidden?)
       '()
       (let ([f (document:node-attribute node 'face #f)])
-        (haml (:div.echo-area-message ([role "status"] [data-face (and (symbol? f) (symbol->string f))])
+        (haml (:div.echo-area-message ([role "status"] [data-face (and (symbol? f) (symbol->string f))] [style (%max-height-style)])
                 (views:draw-children view node))))))
+
+(define (%max-height-style)
+  (let ([v (max-height)])
+    (string-append "--echo-area-max-height:"
+      (if (fixnum? v) (string-append (number->string v) "lh") (string-append "calc(" (number->string v) " * 100dvh)")))))
 
 (buffers:define-kind area (consent %refuse-edits) (keymap keymap) (draw %draw-area))
 
@@ -515,7 +524,7 @@
   (let ([text (and view (eq? (views:buffer view) echo-buffer) (not (hidden?)) (shown-echo client))])
     (if text
         (let ([prompt (echo-text-prompt text)] [keys (keys-text client)])
-          (list (haml (:div.echo-area-message ([role "status"] [data-keymap (views:keymap-mark keymap)])
+          (list (haml (:div.echo-area-message ([role "status"] [data-keymap (views:keymap-mark keymap)] [style (%max-height-style)])
                         (:div.echo-area-echo
                           (when prompt (%prompt-html prompt))
                           (when keys keys))))))

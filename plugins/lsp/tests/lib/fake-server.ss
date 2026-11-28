@@ -68,6 +68,7 @@
           (send! (make-json-rpc-response id
                    (list (cons "capabilities" (setting 'capabilities '()))
                          (cons "serverInfo" (list (cons "name" (setting 'name "fake")))))))]
+         [(string=? method "fake/directory") (send! (make-json-rpc-response id (current-directory)))]
          [else (answer! id method)])
        (send-after! method))]
     [(json-rpc-notification? m)

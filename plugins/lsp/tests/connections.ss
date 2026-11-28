@@ -66,12 +66,12 @@
   (let ([item (lsp:location->item c `(("uri" . ,(lsp:path->uri a-path)) ("range" ("start" ("line" . 1) ("character" . 1)) ("end" ("line" . 1) ("character" . 2)))))])
     (check-equal? (list "two" a-path 2 1) (list (xref:item-summary item) (xref:item-path item) (xref:item-line item) (xref:item-column item)))))
 
-(test "a server's showMessage goes to the echo area through ask:message"
+(test "a server's showMessage goes to the echo area through ask:message, after the server's name"
   (lsp-test/servers:said!)
   (lsp-test/servers:send! c '(("jsonrpc" . "2.0") ("method" . "window/showMessage") ("params" ("type" . 3) ("message" . "Indexed."))))
   (let ([got '()])
-    (test-runner:wait-until (lambda () (set! got (append got (lsp-test/servers:said!))) (member "Indexed." got)))
-    (check-equal? '("Indexed.") got)))
+    (test-runner:wait-until (lambda () (set! got (append got (lsp-test/servers:said!))) (member "fake: Indexed." got)))
+    (check-equal? '("fake: Indexed.") got)))
 
 (test "a server's request a table entry names is answered by it"
   (tables:set! lsp:request-handlers "fake/ask" (lambda (connection params) (list (cons "echo" params))))

@@ -139,14 +139,23 @@
     (options:unset! lsp:code-action-hint?)
     (check-equal? asked (length (lsp-test/servers:of-method "types" "textDocument/codeAction")))))
 
-(test "a server's showMessageRequest asks with ask:choice and answers the action chosen"
+(test "a server's showMessageRequest asks with ask:choice, after the server's name, and answers the action chosen"
   (lsp-test/servers:send! c '(("jsonrpc" . "2.0") ("id" . "m1") ("method" . "window/showMessageRequest")
                      ("params" ("type" . 3) ("message" . "Install stubs?") ("actions" . #((("title" . "Yes")) (("title" . "No")))))))
   (test-runner:wait-until (lambda () (minibuffer:current-prompt)))
   (test-user:settle)
+  (check-equal? "types: Install stubs? " (minibuffer-test/screen:question))
   (test-user:press! "C-n RET")
   (test-runner:wait-until (lambda () (lsp-test/servers:answered "types" "m1")))
   (check-equal? '(("title" . "No")) (lsp-test/servers:ref (lsp-test/servers:answered "types" "m1") "result")))
+
+(test "a server's showMessageRequest with no actions shows its message after the server's name and answers null"
+  (lsp-test/servers:said!)
+  (lsp-test/servers:send! c '(("jsonrpc" . "2.0") ("id" . "m2") ("method" . "window/showMessageRequest")
+                     ("params" ("type" . 3) ("message" . "Stubs installed."))))
+  (test-runner:wait-until (lambda () (lsp-test/servers:answered "types" "m2")))
+  (check-equal? '(null ("types: Stubs installed."))
+                (list (lsp-test/servers:ref (lsp-test/servers:answered "types" "m2") "result") (lsp-test/servers:said!))))
 
 (lsp-test/servers:configure! "types" '(capabilities ("textDocumentSync" . 2) ("renameProvider" ("prepareProvider" . #t)))
   '(responses ("textDocument/prepareRename" . null))

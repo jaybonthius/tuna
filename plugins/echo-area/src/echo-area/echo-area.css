@@ -11,7 +11,7 @@
     /* Safe, so a message taller than the area scrolls from its first line. */
     justify-content: safe center;
     min-block-size: var(--tuna-bar-size);
-    max-block-size: 25dvh;
+    max-block-size: var(--echo-area-max-height, 25dvh);
     overflow-y: auto;
     padding-inline: calc(var(--tuna-space-4) + var(--tuna-border-width));
     /* A client's echo is drawn in place of the area's view, outside it,

@@ -79,9 +79,12 @@
 
 (define (text b) (document:text (buffers:document b)))
 
+;; A buffer's servers start once a view draws it, which a user who visits
+;; a file sees before doing anything else.
 (define (visit! path)
   (let ([b (files:visit path)])
     (layout:switch-to-buffer b)
+    (test-user:settle)
     b))
 
 (define (view) (layout:selected-view))

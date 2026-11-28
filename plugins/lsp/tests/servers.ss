@@ -109,6 +109,17 @@
     (lsp-test/servers:wait-for "rooted" "textDocument/didOpen")
     (check-equal? "/project/one/../" (short (lsp:connection-root (car (lsp:buffer-connections m3)))))))
 
+(lsp:define-server ordered (lsp-test/servers:fake-command "ordered") (root '("pyproject.toml" "setup.py")))
+
+(test "a root clause's names are in priority order: every folder up is searched for the first before the second, so a setup.py below a pyproject.toml does not split the project"
+  (lsp-test/servers:configure! "ordered" '(capabilities ("textDocumentSync" . 2)))
+  (tables:set! lsp:language-servers "otherlang" (list ordered))
+  (lsp-test/servers:write-file! (string-append lsp-test/servers:project "/p/pyproject.toml") "")
+  (lsp-test/servers:write-file! (string-append lsp-test/servers:project "/p/app/setup.py") "")
+  (let ([v (lsp-test/servers:visit! (string-append lsp-test/servers:project "/p/app/views.ot"))])
+    (lsp-test/servers:wait-for "ordered" "textDocument/didOpen")
+    (check-equal? "/project/p/" (short (lsp:connection-root (car (lsp:buffer-connections v)))))))
+
 (define folders '())
 
 (lsp:define-server types (lsp-test/servers:fake-command "types") (initialization-options '(("who" . "types")))
