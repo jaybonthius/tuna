@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (modes) (buffers) (document) (views) (jobs) (options) (tables) (syntax-highlighting)
+(import (tuna) (test) (test-runner) (languages) (modes) (hooks) (buffers) (document) (views) (jobs) (options) (tables) (syntax-highlighting)
         (buffers-test) (test-user) (syntax-highlighting-test) (syntax-highlighting-test marks))
 
 (define marked syntax-highlighting-test:marked)
@@ -119,9 +119,29 @@
                     (lambda ()
                       (set! u (marked "u" "#u" syntax-highlighting-test/marks:unnamed))
                       (set! n (marked "n" "#n" syntax-highlighting-test/marks:unknown)))))
-    (check-equal? "nothing" (modes:language syntax-highlighting-test/marks:unknown))
+    (check-equal? "nothing" (languages:of syntax-highlighting-test/marks:unknown))
     (check-equal? '(() ()) (list (syntax-highlighting-test/marks:faces u) (syntax-highlighting-test/marks:faces n)))
     (check-equal? '() (job-events))))
+
+(tables:define-table chosen-keymap "Keys.")
+(hooks:define-hook chosen-hook "Setup.")
+(modes:define-major-mode chosen (keymap chosen-keymap) (hook chosen-hook))
+(languages:define-language "chosen" (mode chosen))
+
+(test "a mode with no entry whose language has none takes the first highlighter a chooser returns, called with the mode and the language"
+  (let* ([seen '()]
+         [chooser (lambda (mode language)
+                    (set! seen (cons (list mode language) seen))
+                    (and (equal? language "chosen") (tables:ref syntax-highlighting:highlighters "marks" #f)))]
+         [n #f])
+    (hooks:add! syntax-highlighting:choosers chooser)
+    (set! n (marked "n2" "#n" chosen))
+    (faces-become n '(("#n" comment)))
+    (check (member (list chosen "chosen") seen))
+    (check-equal? '((start %marks)) (job-events))
+    (hooks:remove! syntax-highlighting:choosers chooser)
+    (buffers:kill! n)
+    (check-equal? '((stop %marks)) (job-events))))
 
 (test "a buffer whose mode changes to one without a highlighter loses its job and its spans"
   (modes:set-major-mode modes:fundamental d)

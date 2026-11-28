@@ -1,5 +1,5 @@
 #!tuna
-(import (web) (keys) (test-user) (test-runner) (json) (cdp) (cdp page))
+(import (web) (keys) (processes) (test-user) (test-runner) (json) (cdp) (cdp page))
 
 (define %browser #f)
 
@@ -13,18 +13,7 @@
   (test-runner:join (fork-task (lambda (restore) (thunk)))))
 
 (define (%chromium)
-  (let loop ([folders (%path-folders (or (getenv "PATH") ""))])
-    (cond
-      [(null? folders) (errorf 'test-browser:open "no chromium on PATH")]
-      [(file-regular? (string-append (car folders) "/chromium")) (string-append (car folders) "/chromium")]
-      [else (loop (cdr folders))])))
-
-(define (%path-folders path)
-  (let loop ([i 0] [start 0] [folders '()])
-    (cond
-      [(fx= i (string-length path)) (reverse (cons (substring path start i) folders))]
-      [(char=? (string-ref path i) #\:) (loop (fx+ i 1) (fx+ i 1) (cons (substring path start i) folders))]
-      [else (loop (fx+ i 1) start folders)])))
+  (or (processes:program-path "chromium") (errorf 'test-browser:open "no chromium on PATH")))
 
 (define (%browser!)
   (unless %browser

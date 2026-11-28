@@ -66,21 +66,56 @@
   (views:with-view (editing-test/scene:view) (commands:run editing:newline 1))
   (check-equal? "(a\n  |" (test-user:text)))
 
-(test "in a mode with no indenter, RET only breaks the line, and TAB gives a line the indentation of the nearest line above with more than blanks"
-  (test-user:show! "    foo bar|")
+(test "in a mode with no indenter, RET deletes the blanks that end the line it ends, and gives the new line the indentation of the nearest line above that holds more than blanks"
+  (test-user:show! "    foo bar |")
   (test-user:press! "RET")
-  (check-equal? "    foo bar\n|" (test-user:text))
+  (check-equal? "    foo bar\n    |" (test-user:text))
+  (test-user:show! "  a\n\n|")
+  (test-user:press! "RET")
+  (check-equal? "  a\n\n\n  |" (test-user:text)))
+
+(test "in a mode with no indenter, TAB inserts blanks at the cursor up to the next indent point of the nearest line above that is not empty, as Emacs's indent-relative, and takes none away"
+  (test-user:show! "    foo bar\n|")
   (test-user:press! "TAB")
   (check-equal? "    foo bar\n    |" (test-user:text))
-  (test-user:show! "  a\n\n    \nb|")
   (test-user:press! "TAB")
-  (check-equal? "  a\n\n    \n  b|" (test-user:text))
+  (check-equal? "    foo bar\n        |" (test-user:text))
+  (test-user:show! "a:\n  b:\n    c: 1|")
+  (test-user:press! "C-a TAB")
+  (check-equal? "a:\n  b:\n  |    c: 1" (test-user:text)))
+
+(test "the line TAB reads is the nearest above that is not empty, as Emacs's indent-relative reads it, even one of blanks alone"
+  (test-user:show! "  ab\n   \n|")
+  (test-user:press! "TAB")
+  (check-equal? "  ab\n   \n        |" (test-user:text)))
+
+(test "with no indent point beyond the cursor's column, TAB goes to the next tab stop, the blanks before the cursor replaced"
   (test-user:show! "  one\ntw|o")
   (test-user:press! "TAB TAB")
-  (check-equal? "  one\n  tw|o" (test-user:text))
+  (check-equal? "  one\ntw              |o" (test-user:text))
   (test-user:show! "   a|")
   (test-user:press! "TAB")
-  (check-equal? "a|" (test-user:text)))
+  (check-equal? "   a    |" (test-user:text))
+  (test-user:show! "x\nab  |")
+  (test-user:press! "TAB")
+  (check-equal? "x\nab      |" (test-user:text)))
+
+(test "TAB and the indentation it writes count a tab as the buffer's tab width, and write tabs where use-tabs? is true"
+  (test-user:show! "x\nab|")
+  (buffers:with-buffer (views:buffer (editing-test/scene:view))
+    (options:set-local! views:tab-width 4)
+    (options:set-local! indentation:use-tabs? #t))
+  (test-user:press! "TAB")
+  (check-equal? "x\nab\t|" (test-user:text))
+  (test-user:show! "\tfoo bar\n|")
+  (buffers:with-buffer (views:buffer (editing-test/scene:view))
+    (options:set-local! views:tab-width 4)
+    (options:set-local! indentation:use-tabs? #t))
+  (test-user:press! "TAB TAB")
+  (check-equal? "\tfoo bar\n\t\t|" (test-user:text))
+  (buffers:with-buffer (views:buffer (editing-test/scene:view))
+    (options:unset-local! views:tab-width)
+    (options:unset-local! indentation:use-tabs?)))
 
 (test "TAB indents each cursor's line: a cursor in the indentation ends after it, one in the text keeps its place"
   (editing-test/scene:show! "(a\nb\n   (c d)" 4 10)

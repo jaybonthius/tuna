@@ -8,16 +8,21 @@
 (options:define-option empty-lines #f boolean?
   "Whether commenting lines also comments the empty ones among them.")
 
-(define (%start who)
-  (or (comment-syntax:start) (error who "no comment syntax")))
+(define (%start who b)
+  (let-values ([(start end) (comment-syntax:delimiters b)])
+    (or start (error who "no comment syntax"))))
+
+(define (%end b)
+  (let-values ([(start end) (comment-syntax:delimiters b)]) end))
 
 (define (%repeat text n) (apply string-append (map (lambda (i) text) (iota n))))
 
-(define (%line-start-text who)
-  (string-append (%repeat (%start who) (fx+ 1 (if (fx= (string-length (%start who)) 1) (comment-syntax:add) 0))) (padding)))
+(define (%line-start-text who b)
+  (let ([start (%start who b)])
+    (string-append (%repeat start (fx+ 1 (if (fx= (string-length start) 1) (comment-syntax:add) 0))) (padding))))
 
-(define (%end-text)
-  (if (string=? (comment-syntax:end) "") "" (string-append (padding) (comment-syntax:end))))
+(define (%end-text b)
+  (if (string=? (%end b) "") "" (string-append (padding) (%end b))))
 
 ;; A buffer's first line starts at the opening of the node its text is
 ;; in, which is no text.
@@ -42,7 +47,7 @@
 
 (define (%commented-line? who b line)
   (let* ([doc (buffers:document b)] [p (%text-start b line)])
-    (and (%starts-with? doc p (%start who))
+    (and (%starts-with? doc p (%start who b))
          (or (not (%lexer? b))
              (let ([l (syntax:lexeme-starting-at b p)]) (and l (%class? l (syntax:class comment))))))))
 
@@ -64,19 +69,19 @@
 (define (%comment-lines! who b lines)
   (let* ([doc (buffers:document b)]
          [texts (filter (lambda (line) (%has-text? b line)) lines)]
-         [column (if (null? texts) 0 (apply min (map (lambda (line) (document:column doc (%text-start b line))) texts)))]
-         [start (%line-start-text who)] [end (%end-text)])
+         [column (if (null? texts) 0 (apply min (map (lambda (line) (indentation:column b (%text-start b line))) texts)))]
+         [start (%line-start-text who b)] [end (%end-text b)])
     (for-each
       (lambda (line)
         (let ([doc (buffers:document b)])
           (cond
             [(%has-text? b line)
              (unless (string=? end "") (buffers:replace! b (%line-end b line) (%line-end b line) end))
-             (let ([at (let back ([q (%text-start b line)]) (if (fx> (document:column doc q) column) (back (fx- q 1)) q))])
+             (let ([at (let back ([q (%text-start b line)]) (if (fx> (indentation:column b q) column) (back (fx- q 1)) q))])
                (buffers:replace! b at at start))]
             [(empty-lines)
              (let ([at (%line-start b line)])
-               (buffers:replace! b at (%line-end b line) (string-append (%repeat " " column) (%string-trim-right start))))])))
+               (buffers:replace! b at (%line-end b line) (string-append (indentation:blanks b 0 column) (%string-trim-right start))))])))
       (reverse lines))))
 
 (define (%string-trim-right text)
@@ -84,7 +89,7 @@
     (if (and (fx> n 0) (indentation:blank? (string-ref text (fx- n 1)))) (loop (fx- n 1)) (substring text 0 n))))
 
 (define (%uncomment-lines! who b lines)
-  (let ([comment-start (%start who)] [end (comment-syntax:end)])
+  (let ([comment-start (%start who b)] [end (%end b)])
     (for-each
       (lambda (line)
         (when (%commented-line? who b line)
@@ -115,7 +120,7 @@
             [(and (%class? (car ls) (syntax:class comment)) (fx>= (syntax:lexeme-start (car ls)) start))
              (values (syntax:lexeme-start (car ls)) (fxmin end (syntax:lexeme-end (car ls))) code?)]
             [else (loop (cdr ls) (or code? (fx>= (syntax:lexeme-end (car ls)) start)))]))
-        (let ([comment-start (comment-syntax:start)])
+        (let-values ([(comment-start comment-end) (comment-syntax:delimiters b)])
           (let loop ([q start])
             (cond
               [(fx>= q end) (values #f #f (%has-text? b line))]
@@ -123,10 +128,10 @@
               [else (loop (fx+ q 1))]))))))
 
 (define (%comment-column b line code-end)
-  (let* ([doc (buffers:document b)] [code-column (document:column doc code-end)]
+  (let* ([doc (buffers:document b)] [code-column (indentation:column b code-end)]
          [above (and (fx> line 1)
                      (let-values ([(s e code?) (%line-comment b (fx- line 1))])
-                       (and s code? (document:column doc s))))])
+                       (and s code? (indentation:column b s))))])
     (fxmax (fx+ code-column 1)
            (if (and above (fx> above code-column)) above (comment-syntax:column)))))
 
@@ -139,7 +144,7 @@
     (cond
       [(and m (not (fx= m p))) (%toggle-lines! who b (%lines b p m))]
       [(not (%has-text? b line))
-       (let ([start (%line-start b line)] [text (%line-start-text who)] [end (%end-text)])
+       (let ([start (%line-start b line)] [text (%line-start-text who b)] [end (%end-text b)])
          (buffers:replace! b start (%line-end b line) (string-append text end))
          (indentation:line! b start)
          (let ([doc (buffers:document b)])
@@ -150,23 +155,23 @@
            [(and s (not code?))
             (indentation:line! b (%line-start b line))
             (let* ([doc (buffers:document b)] [s (%text-start b line)])
-              (editing:place-cursor! view c (%after-start doc s (%start who)) #f))]
+              (editing:place-cursor! view c (%after-start doc s (%start who b)) #f))]
            [s
             (let* ([code-end (indentation:blanks-start doc 0 s)] [column (%comment-column b line code-end)]
-                   [spaces (fx- column (document:column doc code-end))])
-              (buffers:replace! b code-end s (%repeat " " spaces))
+                   [blanks (indentation:blanks b (indentation:column b code-end) column)])
+              (buffers:replace! b code-end s blanks)
               (let ([doc (buffers:document b)])
-                (editing:place-cursor! view c (%after-start doc (fx+ code-end spaces) (%start who)) #f)))]
+                (editing:place-cursor! view c (%after-start doc (fx+ code-end (string-length blanks)) (%start who b)) #f)))]
            [else
             (let* ([code-end (indentation:blanks-start doc 0 (%line-end b line))] [column (%comment-column b line code-end)]
-                   [text (string-append (%repeat " " (fx- column (document:column doc code-end))) (%start who))])
-              (buffers:replace! b code-end (%line-end b line) (string-append text (%end-text)))
+                   [text (string-append (indentation:blanks b (indentation:column b code-end) column) (%start who b))])
+              (buffers:replace! b code-end (%line-end b line) (string-append text (%end-text b)))
               (editing:place-cursor! view c (fx+ code-end (string-length text)) #f))]))])))
 
 (commands:define-command (dwim [prefix (commands:prefix-argument)])
   "Comments or uncomments each cursor's region; on a line of blanks starts a comment; on a line with code moves its comment, or starts one, at the comment column; with a prefix argument kills the line's comment, or those of as many lines as a numeric prefix says."
   (let* ([view (views:command-view 'comment:dwim)] [c (car (views:cursors view))])
-    (%start 'comment:dwim)
+    (%start 'comment:dwim (views:buffer view))
     (if (and prefix (not (and (views:cursor-mark c) (not (fx= (views:cursor-mark c) (views:cursor-point c))))))
         (kill (if (integer? prefix) prefix 1))
         (editing:for-each-cursor view (lambda (c p m) (%dwim-at! 'comment:dwim view c p m))))))
@@ -180,7 +185,7 @@
   (unless (and (integer? n) (exact? n))
     (assertion-violation 'comment:line "not an exact integer" n))
   (let* ([view (views:command-view 'comment:line)] [b (views:buffer view)])
-    (%start 'comment:line)
+    (%start 'comment:line b)
     (editing:for-each-cursor view
       (lambda (c p m)
         (let* ([doc (buffers:document b)] [line (document:line doc p)]
@@ -195,7 +200,7 @@
 
 (define (%region-command who act)
   (let* ([view (views:command-view who)] [b (views:buffer view)])
-    (%start who)
+    (%start who b)
     (editing:check-regions who view)
     (editing:for-each-cursor view
       (lambda (c p m)
@@ -223,7 +228,7 @@
   (unless (and (integer? n) (exact? n))
     (assertion-violation 'comment:kill "not an exact integer" n))
   (let* ([view (views:command-view 'comment:kill)] [b (views:buffer view)])
-    (%start 'comment:kill)
+    (%start 'comment:kill b)
     (let loop ([k n])
       (when (> k 0)
         (let ([alone (filter values
@@ -245,16 +250,17 @@
 
 (commands:define-command (set-column)
   "Sets comment-syntax:column in the current buffer to the primary cursor's column."
-  (let* ([view (views:command-view 'comment:set-column)] [doc (buffers:document (views:buffer view))])
-    (options:set-local! comment-syntax:column (document:column doc (views:point view)))))
+  (let ([view (views:command-view 'comment:set-column)])
+    (options:set-local! comment-syntax:column (indentation:column (views:buffer view) (views:point view)))))
 
 (commands:define-command (indent-new-line)
   "Breaks the line at each cursor; inside a comment that the end of its line ends, starts the new line with the comment's start, at its column, so the comment goes on; elsewhere indents the new line."
-  (let* ([view (views:command-view 'comment:indent-new-line)] [b (views:buffer view)] [comment-start (comment-syntax:start)])
+  (let*-values ([(view) (views:command-view 'comment:indent-new-line)] [(b) (views:buffer view)]
+                [(comment-start comment-end) (comment-syntax:delimiters b)])
     (editing:for-each-cursor view
       (lambda (c p m)
         (let* ([doc (buffers:document b)]
-               [in (and comment-start (%lexer? b) (string=? (comment-syntax:end) "")
+               [in (and comment-start (%lexer? b) (string=? comment-end "")
                         (let ([l (syntax:lexeme-at b p)])
                           (and l (%class? l (syntax:class comment)) (fx< (syntax:lexeme-start l) p)
                                (%starts-with? doc (syntax:lexeme-start l) comment-start)
@@ -263,7 +269,7 @@
           (if in
               (let* ([s (syntax:lexeme-start in)]
                      [run (buffers:text-between doc s (let loop ([q s]) (if (%starts-with? doc q comment-start) (loop (fx+ q (string-length comment-start))) q)))]
-                     [text (string-append "\n" (%repeat " " (document:column doc s)) run (padding))])
+                     [text (string-append "\n" (indentation:blanks b 0 (indentation:column b s)) run (padding))])
                 (buffers:replace! b from p text)
                 (editing:place-cursor! view c (fx+ from (string-length text)) #f))
               (begin

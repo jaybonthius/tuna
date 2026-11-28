@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (test-user) (buffers) (document) (views) (layout) (files) (minibuffer) (completion)
+(import (tuna) (test) (test-runner) (test-user) (buffers) (document) (views) (layout) (files) (auto-mode) (minibuffer) (completion)
         (completion-annotations) (chez-scheme) (help) (help-test) (chez-scheme-test scheme-buffers))
 
 (chez-scheme-test/scheme-buffers:write-lib-modules!)

@@ -86,8 +86,8 @@
   (let-values ([(columns rows) (views:body-size v client)]
                [(column line) (views:hscroll v client)])
     (if (and columns (not (views:with-view v (views:wrap-lines))))
-        (let ([doc (buffers:document (views:buffer v))])
-          (lambda (start) (fx<= column (document:column doc start) (fx+ column columns -1))))
+        (let* ([doc (buffers:document (views:buffer v))] [width (views:with-view v (views:tab-width))])
+          (lambda (start) (fx<= column (document:column doc start width) (fx+ column columns -1))))
         (lambda (start) #t))))
 
 (define (%filter v client)

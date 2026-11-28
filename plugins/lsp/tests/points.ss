@@ -72,10 +72,12 @@
   (ret! 4)
   (check-equal? '("(define (h z)\n  " "(list z 1))\n") (around (lsp-test/servers:view))))
 
-(test "RET before a space: the server rewrites the new line's leading space as its indentation, and point, in that whitespace, ends at the end of the new indentation"
+(test "RET before a space, where RET only breaks the line: the server rewrites the new line's leading space as its indentation, and point, in that whitespace, ends at the end of the new indentation"
   (answer! (edit 2 0 1 "     "))
   (fresh! "(define (f x)\n  (+ x 1))\n" "(define (f x)\n  (+ x")
+  (buffers:with-buffer c (options:set-local! editing:electric-indent #f))
   (ret! 5)
+  (buffers:with-buffer c (options:unset-local! editing:electric-indent))
   (check-equal? '("(define (f x)\n  (+ x\n     " "1))\n") (around (lsp-test/servers:view))))
 
 (test "every view's cursors are carried: a point where the server inserted ends after the insertion, a mark there stays before it, and a mark elsewhere keeps its place"

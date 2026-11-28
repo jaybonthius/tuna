@@ -7,7 +7,7 @@
 
 (define (at-line)
   (let* ([v (git-status-test:view)] [doc (buffers:document (views:buffer v))] [p (views:point v)])
-    (list (git-status-test:shown-buffer) (document:line doc p) (document:column doc p))))
+    (list (git-status-test:shown-buffer) (document:line doc p) (document:column doc p 8))))
 
 (define (back!) (layout:select! status-view) (layout:switch-to-buffer (git-status-test:status-buffer)))
 

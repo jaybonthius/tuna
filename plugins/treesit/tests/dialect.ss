@@ -1,8 +1,8 @@
-(import (tuna) (test) (tables) (treesit) (treesit-test grammar) (treesit-test session))
+(import (tuna) (test) (tables) (languages) (treesit) (python) (treesit-test grammar) (treesit-test session))
 
-(define python (tables:ref treesit:grammars "python" #f))
+(define python python:python)
 (define grammar (treesit:grammar-file python))
-(treesit-test/grammar:build-python! (treesit:grammar-commit python) grammar)
+(treesit-test/grammar:build-python! (languages:grammar-commit python) grammar)
 
 (define (queried text query)
   (treesit-test/session:runs (treesit-test/session:highlighted grammar text (list (treesit-test/session:query! query)) '())))

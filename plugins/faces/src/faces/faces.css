@@ -461,6 +461,19 @@
     text-decoration: var(--faces-tag-builtin-text-decoration, var(--faces-builtin-text-decoration, revert-layer));
   }
 
+  /* nvim-treesitter's queries mark heredoc delimiters and YAML's anchors
+     and aliases as labels, names that mark a place, which no family
+     covers. */
+  [data-face="label"], :where([data-face^="label."]) {
+    color: var(--faces-label-color, var(--faces-keyword-color, var(--tuna-violet-11)));
+    background-color: var(--faces-label-background, var(--faces-keyword-background, revert-layer));
+    font-weight: var(--faces-label-font-weight, var(--faces-keyword-font-weight, revert-layer));
+    font-style: var(--faces-label-font-style, var(--faces-keyword-font-style, revert-layer));
+    font-family: var(--faces-label-font-family, var(--faces-keyword-font-family, revert-layer));
+    font-size: var(--faces-label-font-size, var(--faces-keyword-font-size, revert-layer));
+    text-decoration: var(--faces-label-text-decoration, var(--faces-keyword-text-decoration, revert-layer));
+  }
+
   [data-face="markup.heading"], :where([data-face^="markup.heading."]) {
     color: var(--faces-markup-heading-color, var(--tuna-blue-11));
     background-color: var(--faces-markup-heading-background, revert-layer);

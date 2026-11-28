@@ -74,7 +74,7 @@
 (test "p at the first section and ^ at a top-level one stop at the buffer's first line, with the errors"
   (check-equal? '(("No previous section") #f) (n-reporting! "M-< p"))
   (check-equal? #f (n! "M-< n n ^"))
-  (let ([doc (buffers:document b)] [p (views:point v)]) (check-equal? '(1 0) (list (document:line doc p) (document:column doc p))))
+  (let ([doc (buffers:document b)] [p (views:point v)]) (check-equal? '(1 0) (list (document:line doc p) (document:column doc p 8))))
   (check-equal? '(("No previous section") #f) (n-reporting! "p"))
   (check-equal? '(("No parent section") #f) (n-reporting! "M-< ^")))
 

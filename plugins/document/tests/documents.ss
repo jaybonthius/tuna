@@ -204,22 +204,27 @@
     (check-equal? '(0 4 8 9) (map (lambda (line) (document:line-start lines line)) '(1 2 3 4)))
     (check-raises (raised? 'document:line-start "the document has fewer lines" '(5)) (document:line-start lines 5))))
 
-(test "a column counts characters from the line's start, a tab to the next multiple of 8"
+(test "a column counts characters from the line's start, a tab to the next multiple of the tab width it is given"
   (let ([lines (document:from-datum "one\ntwo\n\nfour")])
-    (check-equal? '(0 3 0 2 0 0 4) (map (lambda (p) (document:column lines p)) '(0 3 4 6 8 9 13)))
-    (check-raises (raised? 'document:column "not a position in the document" '(14)) (document:column lines 14)))
-  (check-equal? 2 (document:column (document:from-datum "(let ([x 1])\n  x)\n") 15))
-  (check-equal? 9 (document:column (document:from-datum "\tx") 2))
+    (check-equal? '(0 3 0 2 0 0 4) (map (lambda (p) (document:column lines p 8)) '(0 3 4 6 8 9 13)))
+    (check-raises (raised? 'document:column "not a position in the document" '(14)) (document:column lines 14 8)))
+  (check-equal? 2 (document:column (document:from-datum "(let ([x 1])\n  x)\n") 15 8))
+  (check-equal? '(9 5) (map (lambda (width) (document:column (document:from-datum "\tx") 2 width)) '(8 4)))
   (check-equal? '(8 9 16 17 19 24 25)
-    (map (lambda (p) (document:column (document:from-datum "\ta\tb  \tc") p)) '(1 2 3 4 6 7 8))))
+    (map (lambda (p) (document:column (document:from-datum "\ta\tb  \tc") p 8)) '(1 2 3 4 6 7 8)))
+  (check-equal? '(4 5 8 9 11 12 13)
+    (map (lambda (p) (document:column (document:from-datum "\ta\tb  \tc") p 4)) '(1 2 3 4 6 7 8)))
+  (check-raises (raised? 'document:column "not a tab width" '(0)) (document:column (document:from-datum "\tx") 2 0)))
 
 (test "a column's position is at the column, before the character that spans it, or at the line's end"
   (let ([tabbed (document:from-datum "ab\n\tx\ny")])
-    (check-equal? '(3 3 4 5 5) (map (lambda (column) (document:column-position tabbed 2 column)) '(0 3 8 9 20)))
-    (check-equal? '(1 2) (map (lambda (column) (document:column-position tabbed 1 column)) '(1 5)))
-    (check-equal? 7 (document:column-position tabbed 3 4))
-    (check-raises (raised? 'document:column-position "not a column" '(-1)) (document:column-position tabbed 2 -1)))
-  (check-equal? '(0 2) (map (lambda (column) (document:column-position (document:from-datum "\tx\nabc") 1 column)) '(4 20))))
+    (check-equal? '(3 3 4 5 5) (map (lambda (column) (document:column-position tabbed 2 column 8)) '(0 3 8 9 20)))
+    (check-equal? '(3 4 5) (map (lambda (column) (document:column-position tabbed 2 column 4)) '(3 4 5)))
+    (check-equal? '(1 2) (map (lambda (column) (document:column-position tabbed 1 column 8)) '(1 5)))
+    (check-equal? 7 (document:column-position tabbed 3 4 8))
+    (check-raises (raised? 'document:column-position "not a column" '(-1)) (document:column-position tabbed 2 -1 8))
+    (check-raises (raised? 'document:column-position "not a tab width" '(-4)) (document:column-position tabbed 2 1 -4)))
+  (check-equal? '(0 2) (map (lambda (column) (document:column-position (document:from-datum "\tx\nabc") 1 column 8)) '(4 20))))
 
 (test "text-position maps an offset in a range's text, atoms' texts laid in, back to a position"
   (let* ([doc (document:from-datum '(p () "ab" #(pic ()) "é" #(gap ()) "c\n"))]

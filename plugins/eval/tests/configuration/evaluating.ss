@@ -1,4 +1,4 @@
-(import (tuna) (test) (eval-test caught-reports) (test-user) (plugins) (files) (modes) (buffers) (echo-area) (chez-scheme) (eval) (eval-test))
+(import (tuna) (test) (eval-test caught-reports) (test-user) (plugins) (files) (auto-mode) (modes) (buffers) (echo-area) (chez-scheme) (eval) (eval-test))
 
 (define (message) (echo-area:current-message))
 

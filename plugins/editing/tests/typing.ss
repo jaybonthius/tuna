@@ -32,10 +32,10 @@
                                  (string=? "not a character" (condition-message c))))
     (views:with-view (editing-test/scene:view) (editing:self-insert 1 "x"))))
 
-(test "RET breaks the line with no indentation where the mode has no indenter, and C-o leaves point before the break"
+(test "RET gives the new line the indentation of the line above where the mode has no indenter, and C-o leaves point before the break"
   (test-user:show! "  one|")
   (test-user:press! "RET")
-  (check-equal? "  one\n|" (test-user:text))
+  (check-equal? "  one\n  |" (test-user:text))
   (test-user:show! "ab|c")
   (test-user:press! "C-o")
   (check-equal? "ab|\nc" (test-user:text)))

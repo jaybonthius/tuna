@@ -586,7 +586,7 @@
                      [column (if hunk-section
                                  (let* ([doc (buffers:document b)] [p (views:point view)]
                                         [width (bytevector-length (diff:line-prefix (vector-ref (diff:hunk-lines (diff-sections:hunk hunk-section)) index)))])
-                                   (fxmax 0 (fx- (document:column doc p) width)))
+                                   (fxmax 0 (fx- (document:column doc p (buffers:with-buffer b (views:tab-width))) width)))
                                  0)])
                 (values path line column))))))))
 
@@ -605,7 +605,8 @@
           (let* ([v (layout:selected-view)] [doc (buffers:document b)])
             (when (eq? (views:buffer v) b)
               (let ([last (document:line doc (document:length doc))])
-                (views:set-point! v (document:column-position doc (fxmax 1 (fxmin line last)) column))))))))))
+                (views:set-point! v (document:column-position doc (fxmax 1 (fxmin line last)) column
+                                      (buffers:with-buffer b (views:tab-width))))))))))))
 
 (commands:define-command (visit-file [other-view (commands:prefix-argument)])
   "Visits the working tree's file of the section at point, at the line of point's diff line; with C-u, in another view."

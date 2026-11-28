@@ -13,7 +13,7 @@
 (define (go! line column) (views:set-point! (view) (editing:line-position cart line column)))
 
 (define (place)
-  (let* ([doc (buffers:document cart)] [p (views:point (view))]) (list (document:line doc p) (document:column doc p))))
+  (let* ([doc (buffers:document cart)] [p (views:point (view))]) (list (document:line doc p) (document:column doc p 8))))
 
 (define (crumbs) (status-line-test:segment-text (view) breadcrumb:path))
 

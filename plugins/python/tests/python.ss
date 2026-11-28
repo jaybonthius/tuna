@@ -1,11 +1,11 @@
-(import (tuna) (test) (test-user) (python) (prog) (modes) (auto-mode) (syntax) (buffers) (layout) (keys) (tables) (editing))
+(import (tuna) (test) (test-user) (python) (prog) (languages) (modes) (auto-mode) (syntax) (buffers) (layout) (keys) (tables) (editing))
 
-(test "python:mode derives from prog:mode, with its keymap, hook, lighter Python and language python"
+(test "python:mode derives from prog:mode, with its keymap, hook and lighter Python, and edits the language python"
   (check-equal? (list python:mode prog:mode) (modes:ancestry python:mode))
   (check (eq? python:keymap (tables:ref modes:keymaps python:mode #f)))
   (check (eq? python:mode-hook (tables:ref modes:hooks python:mode #f)))
   (check-equal? "Python" (modes:lighter python:mode))
-  (check-equal? "python" (modes:language python:mode)))
+  (check-equal? "python" (languages:of python:mode)))
 
 (test "python:keymap is empty"
   (check-equal? '() (keys:bindings python:keymap)))

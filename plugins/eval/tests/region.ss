@@ -1,5 +1,5 @@
 (import (tuna) (test) (eval-test caught-reports) (test-user) (keys) (document) (buffers) (views) (layout) (layout-split) (editing) (echo-area)
-        (undo) (modes) (minibuffer) (completion) (files) (actions) (chez-scheme) (chez-scheme-completion) (eval)
+        (undo) (modes) (minibuffer) (completion) (files) (auto-mode) (actions) (chez-scheme) (chez-scheme-completion) (eval)
         (eval-test))
 
 (define (message) (echo-area:current-message))

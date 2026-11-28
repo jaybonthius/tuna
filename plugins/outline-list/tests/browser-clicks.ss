@@ -15,7 +15,7 @@
 (define (list-view) (find (lambda (v) (eq? (views:buffer v) (buffers:find "*Outline cart.toy*"))) (layout:views)))
 
 (define (place v)
-  (let* ([doc (buffers:document (views:buffer v))] [p (views:point v)]) (list (document:line doc p) (document:column doc p))))
+  (let* ([doc (buffers:document (views:buffer v))] [p (views:point v)]) (list (document:line doc p) (document:column doc p 8))))
 
 (define (selected-row)
   (let ([s (ui:section-at (list-view))]) (and s (ui:section-value s))))

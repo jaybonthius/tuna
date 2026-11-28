@@ -6,8 +6,8 @@
 (test "a Scheme buffer writes comments with ;, doubled alone on a line, at column 40 after code"
   (let ([b (scheme-buffer "c.ss" "(a)")])
     (buffers:with-buffer b
-      (check-equal? '(";" "" 1 40)
-                    (list (comment-syntax:start) (comment-syntax:end) (comment-syntax:add) (comment-syntax:column))))))
+      (check-equal? '(1 40) (list (comment-syntax:add) (comment-syntax:column))))
+    (check-equal? '(";" "") (call-with-values (lambda () (comment-syntax:delimiters b)) list))))
 
 (test "Scheme's brackets are () and []; { is part of a symbol"
   (check-equal? '((#\( . #\)) (#\[ . #\])) (syntax:mode-bracket-pairs chez-scheme:mode)))

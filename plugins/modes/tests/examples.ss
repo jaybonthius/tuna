@@ -28,10 +28,9 @@
   (check-equal? python:mode (modes:major-mode build))
   (check-equal? #t (local modes-test/fill:mode build)))
 
-(test "the examples of ancestry, derived? and the language"
+(test "the examples of ancestry and derived?"
   (check-equal? (list python:mode prog:mode) (modes:ancestry python:mode))
-  (check-equal? #t (buffers:with-buffer build (modes:derived? (modes:major-mode (buffers:current)) prog:mode)))
-  (check-equal? "python" (modes:language (modes:major-mode build))))
+  (check-equal? #t (buffers:with-buffer build (modes:derived? (modes:major-mode (buffers:current)) prog:mode))))
 
 (test "the examples of the minor modes on in a view and their lighters"
   (views:with-view notes (options:set-local! modes-test/fill:mode #t))

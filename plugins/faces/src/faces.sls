@@ -44,6 +44,7 @@
 (define attribute.builtin 'attribute.builtin)
 (define tag 'tag)
 (define tag.builtin 'tag.builtin)
+(define label 'label)
 (define markup.heading 'markup.heading)
 (define markup.heading.1 'markup.heading.1)
 (define markup.heading.2 'markup.heading.2)

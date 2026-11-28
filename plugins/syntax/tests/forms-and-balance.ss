@@ -43,15 +43,13 @@
   (let ([b (scheme-buffer "empty.ss" "(a")])
     (check-equal? #t (syntax:balanced? b 2 2 ""))))
 
-(test "a mode's bracket pairs are its entry's, else its nearest ancestor's, else none"
+(test "a mode's bracket pairs are its entry's, else its nearest ancestor's, else its language's brackets, else none"
   (check-equal? '((#\( . #\)) (#\[ . #\])) (syntax:mode-bracket-pairs chez-scheme:mode))
   (check-equal? '() (syntax:mode-bracket-pairs modes:fundamental))
-  (let ([own (tables:ref syntax:bracket-pairs chez-scheme:mode #f)])
-    (tables:set! syntax:bracket-pairs prog:mode '((#\{ . #\})))
-    (tables:remove! syntax:bracket-pairs chez-scheme:mode)
-    (check-equal? '((#\{ . #\})) (syntax:mode-bracket-pairs chez-scheme:mode))
-    (tables:set! syntax:bracket-pairs chez-scheme:mode own)
-    (tables:remove! syntax:bracket-pairs prog:mode)))
+  (tables:set! syntax:bracket-pairs prog:mode '((#\{ . #\})))
+  (check-equal? '((#\{ . #\})) (syntax:mode-bracket-pairs chez-scheme:mode))
+  (tables:remove! syntax:bracket-pairs prog:mode)
+  (check-equal? '((#\( . #\)) (#\[ . #\])) (syntax:mode-bracket-pairs chez-scheme:mode)))
 
 (test "mode-bracket-pairs raises for an entry that is not a list of pairs of characters"
   (tables:set! syntax:bracket-pairs modes:fundamental "()")

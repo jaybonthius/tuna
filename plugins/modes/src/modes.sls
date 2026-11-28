@@ -13,9 +13,6 @@
 (tables:define-table lighters
   "Maps a mode to its lighter, the short name a status line shows for it.")
 
-(tables:define-table languages
-  "Maps a major mode to its language, the identifier the Language Server Protocol gives it, such as \"python\".")
-
 (tables:define-table minor-modes
   "Maps each minor mode, a procedure of no arguments that returns true where the mode is on, to its depth, a real number.")
 
@@ -79,7 +76,7 @@
                 (put-char p #\:)
                 (display id p)))))))
 
-  (define (define-major-mode! id parent lighter keymap hook language plugin-only?)
+  (define (define-major-mode! id parent lighter keymap hook plugin-only?)
     (define who 'modes:define-major-mode)
     (unless (or (not parent) (symbol? parent))
       (assertion-violation who "not a mode" parent))
@@ -89,8 +86,6 @@
       (assertion-violation who "not a keymap" keymap))
     (unless (hooks:hook? hook)
       (assertion-violation who "not a hook" hook))
-    (unless (or (not language) (string? language))
-      (assertion-violation who "not a string" language))
     (unless (boolean? plugin-only?)
       (assertion-violation who "not a boolean" plugin-only?))
     (let ([mode (exported-symbol id)])
@@ -98,7 +93,6 @@
       (tables:set! keymaps mode keymap)
       (if parent (tables:set! parents mode parent) (tables:remove! parents mode))
       (if lighter (tables:set! lighters mode lighter) (tables:remove! lighters mode))
-      (if language (tables:set! languages mode language) (tables:remove! languages mode))
       (if plugin-only? (tables:set! plugin-only mode #t) (tables:remove! plugin-only mode))
       mode))
 
@@ -237,14 +231,13 @@
     (syntax-case x ()
       [(_ id clause ...)
        (identifier? #'id)
-       (let* ([clause (%mode-clauses who x #'(clause ...) '(parent lighter keymap hook language plugin-only))]
+       (let* ([clause (%mode-clauses who x #'(clause ...) '(parent lighter keymap hook plugin-only))]
               [expression (lambda (name default) (%clause-expression who x (clause name) default))])
          (unless (clause 'keymap) (syntax-violation who "a keymap clause is required" x))
          (unless (clause 'hook) (syntax-violation who "a hook clause is required" x))
          #`(define-public id
              (define-major-mode! 'id #,(expression 'parent #'#f) #,(expression 'lighter #'#f)
-               #,(expression 'keymap #f) #,(expression 'hook #f) #,(expression 'language #'#f)
-               #,(expression 'plugin-only #'#f))))]
+               #,(expression 'keymap #f) #,(expression 'hook #f) #,(expression 'plugin-only #'#f))))]
       [_ (syntax-violation who "expected (modes:define-major-mode id clause ...)" x)])))
 
 (define-syntax define-minor-mode
@@ -407,11 +400,6 @@
     (if view
         (view-keymaps view)
         '())))
-
-(define (language mode)
-  (unless (symbol? mode)
-    (assertion-violation 'modes:language "not a mode" mode))
-  (exists (lambda (m) (tables:ref languages m #f)) (ancestry-of mode)))
 
 (define (lighter mode)
   (or (tables:ref lighters mode #f)

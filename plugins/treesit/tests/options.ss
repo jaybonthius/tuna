@@ -1,8 +1,8 @@
 (import (tuna) (test) (test-runner) (tables) (options) (hooks) (ask) (buffers) (modes) (auto-mode)
-        (syntax-highlighting) (treesit) (python) (treesit-test) (treesit-test grammar))
+        (syntax-highlighting) (languages) (treesit) (python) (treesit-test) (treesit-test grammar))
 
-(define python (tables:ref treesit:grammars "python" #f))
-(treesit-test/grammar:build-python! (treesit:grammar-commit python) (treesit:grammar-file python))
+(define python python:python)
+(treesit-test/grammar:build-python! (languages:grammar-commit python) (treesit:grammar-file python))
 
 (define told '())
 
@@ -10,7 +10,8 @@
 
 (tables:define-table pyish-keymap "Keys.")
 (hooks:define-hook pyish-hook "Setup.")
-(modes:define-major-mode pyish (keymap pyish-keymap) (hook pyish-hook) (language "python"))
+(modes:define-major-mode pyish (keymap pyish-keymap) (hook pyish-hook))
+(languages:define-language "pyish" (mode pyish) (grammar python:python))
 
 (define text "print(len(x))\n")
 
@@ -33,7 +34,7 @@
   (treesit-test:runs-become p builtins)
   (treesit-test:runs-become q builtins))
 
-(test "a local setting in Python's mode hook changes Python buffers only, not another mode's buffers of the language"
+(test "a local setting in Python's mode hook changes Python buffers only, not those of another language with Python's grammar"
   (hooks:add! python:mode-hook (lambda () (options:set-local! treesit:excluded-captures '(variable))))
   (set! r (treesit-test:buffer "r.py" text python:mode))
   (set! s (treesit-test:buffer "s" text pyish))

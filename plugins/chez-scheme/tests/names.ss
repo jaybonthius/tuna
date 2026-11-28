@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (buffers) (document) (files) (syntax-highlighting) (chez-scheme) (chez-scheme-test scheme-buffers))
+(import (tuna) (test) (test-runner) (buffers) (document) (files) (auto-mode) (syntax-highlighting) (chez-scheme) (chez-scheme-test scheme-buffers))
 
 ;; Loaded, not imported, so the tests' unloads of them stay unloads.
 (chez-scheme-test/scheme-buffers:write-lib-modules!)

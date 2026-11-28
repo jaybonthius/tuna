@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (layout) (files) (modes) (tables) (hooks) (options) (commands) (auto-mode) (ask) (minibuffer) (json)
+(import (buffers) (document) (views) (layout) (files) (languages) (modes) (tables) (hooks) (options) (commands) (auto-mode) (ask) (minibuffer) (json)
         (test-runner) (test-user) (lsp))
 
 (define home (getenv "HOME"))
@@ -99,7 +99,9 @@
 
 (hooks:define-hook fake-mode-hook)
 
-(modes:define-major-mode fake-mode (keymap fake-keymap) (hook fake-mode-hook) (language "fakelang"))
+(modes:define-major-mode fake-mode (keymap fake-keymap) (hook fake-mode-hook))
+
+(languages:define-language "fakelang" (mode fake-mode))
 
 (define (reports-during thunk)
   (map (lambda (c) (if (cancelled? c) 'cancelled (list (condition-who c) (condition-message c)))) (test-runner:reports-during thunk)))

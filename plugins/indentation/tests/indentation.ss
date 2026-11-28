@@ -1,4 +1,4 @@
-(import (tuna) (test) (hooks) (tables) (modes) (prog) (buffers) (document) (views) (indentation) (indentation-test nesting))
+(import (tuna) (test) (hooks) (options) (tables) (modes) (prog) (buffers) (document) (views) (indentation) (indentation-test nesting))
 
 (define (raised? who message)
   (lambda (c)
@@ -106,3 +106,41 @@
     (let ([first (buffers:make "first" "   a")])
       (indentation:line! first 1)
       (check-equal? "a" (text first)))))
+
+(define (fixed column)
+  (let ([b (buffers:make (buffers:free-name "fixed") "(a\n   b")])
+    (modes:set-major-mode derived b)
+    (tables:set! indentation:indenters derived (lambda (buffer position) column))
+    b))
+
+(test "with use-tabs? on in a buffer, its indentation is tabs as far as they reach at its tab width, then spaces; off, spaces"
+  (let ([b (fixed 9)])
+    (buffers:with-buffer b
+      (options:set-local! views:tab-width 4)
+      (options:set-local! indentation:use-tabs? #t))
+    (indentation:line! b 5)
+    (check-equal? "(a\n\t\t b" (text b))
+    (buffers:with-buffer b (options:set-local! indentation:use-tabs? #f))
+    (tables:set! indentation:indenters derived (lambda (buffer position) 10))
+    (indentation:line! b 5)
+    (check-equal? "(a\n          b" (text b)))
+  (tables:remove! indentation:indenters derived))
+
+(test "a buffer's columns count a tab to the next multiple of its tab width"
+  (let ([b (buffers:make (buffers:free-name "tabs") "\tx\n\t\ty")])
+    (check-equal? '(9 16) (list (indentation:column b 3) (indentation:column b 6)))
+    (buffers:with-buffer b (options:set-local! views:tab-width 4))
+    (check-equal? '(5 8) (list (indentation:column b 3) (indentation:column b 6)))
+    (check-equal? '(5 6) (list (indentation:column-position b 2 6) (indentation:column-position b 2 8)))
+    (check-raises (raised? 'indentation:column "not a buffer") (indentation:column "tabs" 1))))
+
+(test "blanks gives the text from one column to another, tabs first where use-tabs? is true, as Emacs's indent-to"
+  (let ([b (buffers:make (buffers:free-name "blanks") "")])
+    (check-equal? '("      " "") (list (indentation:blanks b 2 8) (indentation:blanks b 5 3)))
+    (buffers:with-buffer b (options:set-local! indentation:use-tabs? #t))
+    (check-equal? '("\t\t " "  " "\t") (list (indentation:blanks b 0 17) (indentation:blanks b 1 3) (indentation:blanks b 2 8)))))
+
+(test "relative-column gives the next indent point after a position's column on the nearest line above that is not empty, or #f"
+  (let ([b (buffers:make (buffers:free-name "relative") "  ab cd\n\n  xxxxx\n")])
+    (check-equal? '(2 5 5 #f) (map (lambda (p) (indentation:relative-column b p)) '(10 12 13 16)))
+    (check-equal? #f (indentation:relative-column b 1))))

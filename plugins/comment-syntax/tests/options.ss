@@ -3,8 +3,9 @@
 (test "with no mode setting them, a buffer has no comment syntax and the comment column is 32"
   (let ([b (buffers:make (buffers:free-name "plain") "text")])
     (buffers:with-buffer b
-      (check-equal? '(#f "" 0 32)
-                    (list (comment-syntax:start) (comment-syntax:end) (comment-syntax:add) (comment-syntax:column))))))
+      (check-equal? '(#f #f 0 32)
+                    (list (comment-syntax:start) (comment-syntax:end) (comment-syntax:add) (comment-syntax:column))))
+    (check-equal? '(#f "") (call-with-values (lambda () (comment-syntax:delimiters b)) list))))
 
 (test "the options refuse values of the wrong kind"
   (let ([refused? (lambda (c) (assertion-violation? c))])

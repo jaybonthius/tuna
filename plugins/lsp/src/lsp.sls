@@ -1,5 +1,5 @@
 #!tuna
-(import (jsonrpc) (projects) (files) (buffers) (document) (views) (layout) (modes) (commands) (keys) (ask) (faces)
+(import (jsonrpc) (projects) (files) (buffers) (document) (views) (layout) (languages) (modes) (commands) (keys) (ask) (faces)
         (completion) (xref) (diagnostics) (docs-at-point) (status-line) (syntax) (outline) (jobs) (processes) (haml)
         (json-rpc) (rename (only (chezscheme) format) (format %fmt)) (hooks) (options) (tables) (timers))
 
@@ -71,7 +71,7 @@
   "Maps a server's name to its description, made with lsp:server.")
 
 (tables:define-table language-servers
-  "Maps a language, as modes:language names it, to the servers its buffers get: a list whose elements are each a server's name or a list of names, of which the first whose program is found serves.")
+  "Maps a language, as languages:of gives a mode's, to the servers its buffers get: a list whose elements are each a server's name or a list of names, of which the first whose program is found serves.")
 
 (define (%exported-name id)
   (let ([owner (owner-name (current-owner))])
@@ -212,14 +212,6 @@
          (loop (fx+ i 3) (cons (string->number (substring s (fx+ i 1) (fx+ i 3)) 16) bytes))]
         [else (loop (fx+ i 1) (append (reverse (bytevector->u8-list (string->utf8 (string (string-ref s i))))) bytes))]))))
 
-(define (%program-found? program)
-  (if (memv #\/ (string->list program))
-      (file-exists? program)
-      (let ([path (or (getenv "PATH") "")])
-        (let loop ([dirs (%split-on path #\:)])
-          (and (pair? dirs)
-               (or (and (fx> (string-length (car dirs)) 0) (file-exists? (string-append (car dirs) "/" program)))
-                   (loop (cdr dirs))))))))
 
 (define (%split-on s c)
   (let loop ([i 0] [start 0] [acc '()])
@@ -377,7 +369,7 @@
             (remp (lambda (c) (memq (%conn-name c) names)) conns))))
 
 (define (%wanted-order b)
-  (let* ([mode (modes:major-mode b)] [language (modes:language mode)]
+  (let* ([mode (modes:major-mode b)] [language (languages:of mode)]
          [spec (and language (tables:ref language-servers language #f))])
     (if (list? spec) (apply append (map (lambda (e) (if (list? e) e (list e))) spec)) '())))
 
@@ -563,7 +555,7 @@
     (list (cons "settings" (or (%configuration-of (tables:ref servers (%conn-name conn) (%conn-description conn)) (%conn-root conn)) '())))))
 
 
-(define (%language-id b) (modes:language (modes:major-mode b)))
+(define (%language-id b) (languages:of (modes:major-mode b)))
 
 (define (%text b) (let ([doc (buffers:document b)]) (buffers:text-between doc 0 (document:length doc))))
 
@@ -649,7 +641,7 @@
            [(not description)
             (%report-once! b (cons 'no-server name) (%fmt "lsp: no server is defined as ~a" name))
             (loop (cdr names))]
-           [(let ([command (%server-command description)]) (or (procedure? command) (%program-found? (car command))))
+           [(let ([command (%server-command description)]) (or (procedure? command) (processes:program-path (car command))))
             name]
            [else (loop (cdr names))]))])))
 
@@ -687,7 +679,7 @@
 
 (define (%ensure! b)
   (eq-hashtable-delete! %undrawn b)
-  (let* ([path (files:path b)] [mode (modes:major-mode b)] [language (modes:language mode)]
+  (let* ([path (files:path b)] [mode (modes:major-mode b)] [language (languages:of mode)]
          [spec (and language (tables:ref language-servers language #f))])
     (cond
       [(not language)

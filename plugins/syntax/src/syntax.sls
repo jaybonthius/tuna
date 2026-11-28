@@ -1,17 +1,22 @@
 #!tuna
-(import (buffers) (document) (modes) (syntax characters) (hooks) (tables))
+(import (buffers) (document) (languages) (modes) (syntax characters) (hooks) (tables))
 
 (tables:define-table lexers
   "Maps a major mode to its lexer, a procedure of a document that returns the document's lexemes.")
 
+(tables:define-table resumers
+  "Maps a lexer to the procedure that lexes a document from a line start, given the lexer's state there: called with the document, the line start, the state, #f at the start of the text, and a position, it returns the lexemes up to the first line start at or after the position that no lexeme spans, or the end of the text, the position it stopped at, and a vector of its state at each line start it passed. The plugin keeps a buffer's states and lexes from the last line it holds.")
+
+(define %self (current-owner))
+
 (tables:define-table word-characters
-  "Maps a major mode to the characters besides letters and digits that are part of its words, as a string.")
+  "Maps a major mode to the characters besides letters and digits that are part of its words, as a string, ahead of its language's.")
 
 (tables:define-table symbol-characters
-  "Maps a major mode to the characters besides letters, digits and its word characters that are part of its symbols, as a string.")
+  "Maps a major mode to the characters besides letters, digits and its word characters that are part of its symbols, as a string, ahead of its language's.")
 
 (tables:define-table bracket-pairs
-  "Maps a major mode to the opening and closing characters of its brackets, as a list of pairs of characters.")
+  "Maps a major mode to the opening and closing characters of its brackets, as a list of pairs of characters, ahead of its language's.")
 
 (tables:define-table escapes
   "Maps a major mode to the character that escapes the next character, in its code and inside its strings.")
@@ -55,7 +60,198 @@
         [(tables:ref table (car modes) #f)]
         [else (loop (cdr modes))])))
 
-  (define (lexer-of mode) (entry-of lexers mode #f))
+  ;; The text is read a chunk of lines at a time from a line start whose
+  ;; state is given, so the plugin can lex from the last line it holds
+  ;; the state of rather than from the start of the text.
+  (define-record-type line-state
+    (sealed #t)
+    (fields open open-start shapes depth))
+
+  (define start-state (make-line-state #f #f '() 0))
+
+  (define-record-type opener
+    (sealed #t)
+    (fields text kind delimiter))
+
+  (define-record-type facts
+    (sealed #t)
+    (fields openers firsts brackets word?))
+
+  (define (scan-text facts text state start-of end-of last? emit! line-started!)
+    (let ([n (string-length text)] [openers (facts-openers facts)] [firsts (facts-firsts facts)]
+          [brackets (facts-brackets facts)] [word? (facts-word? facts)])
+      (define (text-at? i t)
+        (let ([m (string-length t)])
+          (and (fx<= (fx+ i m) n)
+               (let loop ([j 0]) (or (fx= j m) (and (char=? (string-ref text (fx+ i j)) (string-ref t j)) (loop (fx+ j 1))))))))
+      (define (opener-at i)
+        (and (memv (string-ref text i) firsts)
+             (find (lambda (o)
+                     (and (text-at? i (opener-text o))
+                          (or (not (languages:delimiter-word-start? (opener-delimiter o)))
+                              (fx= i 0)
+                              (not (word? (string-ref text (fx- i 1)))))))
+                   openers)))
+      (define (closer? c) (exists (lambda (p) (char=? (cdr p) c)) brackets))
+      (define (line-end i)
+        (let loop ([j i]) (if (or (fx= j n) (char=? (string-ref text j) #\newline)) j (loop (fx+ j 1)))))
+      (define (body-end o open-start j shapes depth)
+        (let* ([d (opener-delimiter o)] [close (languages:delimiter-end d)]
+               [escape (and (eq? (opener-kind o) 'string) (languages:delimiter-escape d))]
+               [line-bound? (languages:delimiter-line-bound? d)])
+          (let loop ([k j])
+            (cond
+              [(fx= k n) (values n #t)]
+              [(and escape (char=? (string-ref text k) escape) (fx< (fx+ k 1) n))
+               (when (char=? (string-ref text (fx+ k 1)) #\newline)
+                 (line-started! (make-line-state o open-start shapes depth)))
+               (loop (fx+ k 2))]
+              [(text-at? k close) (values (fx+ k (string-length close)) #f)]
+              [(char=? (string-ref text k) #\newline)
+               (if line-bound?
+                   (values k #t)
+                   (begin (line-started! (make-line-state o open-start shapes depth)) (loop (fx+ k 1))))]
+              [else (loop (fx+ k 1))]))))
+      (define (delimited o open-start j shapes depth)
+        (let-values ([(end open?) (body-end o open-start j shapes depth)])
+          (if (and open? (fx= end n) (not last?))
+              (make-line-state o open-start shapes depth)
+              (begin
+                (emit! (if (eq? (opener-kind o) 'string) 'string 'comment) open-start (end-of end) depth open? #f)
+                (scan end shapes depth)))))
+      (define (scan i shapes depth)
+        (if (fx= i n)
+            (make-line-state #f #f shapes depth)
+            (let ([c (string-ref text i)])
+              (cond
+                [(char=? c #\newline)
+                 (line-started! (make-line-state #f #f shapes depth))
+                 (scan (fx+ i 1) shapes depth)]
+                [(char-whitespace? c) (scan (fx+ i 1) shapes depth)]
+                [(opener-at i)
+                 => (lambda (o)
+                      (if (eq? (opener-kind o) 'line)
+                          (let ([end (line-end i)])
+                            (emit! 'comment (start-of i) (end-of end) depth #t #f)
+                            (scan end shapes depth))
+                          (delimited o (start-of i) (fx+ i (string-length (opener-text o))) shapes depth)))]
+                [(assv c brackets)
+                 => (lambda (p)
+                      (emit! 'open (start-of i) (end-of (fx+ i 1)) (fx+ depth 1) #f #f)
+                      (scan (fx+ i 1) (cons (cdr p) shapes) (fx+ depth 1)))]
+                [(closer? c)
+                 (if (null? shapes)
+                     (begin (emit! 'close (start-of i) (end-of (fx+ i 1)) 0 #f #f) (scan (fx+ i 1) shapes 0))
+                     (begin
+                       (emit! 'close (start-of i) (end-of (fx+ i 1)) depth #f (not (char=? c (car shapes))))
+                       (scan (fx+ i 1) (cdr shapes) (fx- depth 1))))]
+                [else
+                 (let ([end (let loop ([k (fx+ i 1)])
+                              (if (or (fx= k n)
+                                      (let ([c (string-ref text k)])
+                                        (or (char-whitespace? c) (assv c brackets) (closer? c) (opener-at k))))
+                                  k
+                                  (loop (fx+ k 1))))])
+                   (emit! 'atom (start-of i) (end-of end) depth #f #f)
+                   (scan end shapes depth))]))))
+      (let ([open (line-state-open state)])
+        (if open
+            (delimited open (line-state-open-start state) 0 (line-state-shapes state) (line-state-depth state))
+            (scan 0 (line-state-shapes state) (line-state-depth state))))))
+
+  ;; A text that holds nodes besides characters has positions its
+  ;; characters do not count. A file's text sits inside its root node,
+  ;; whose opening and closing are the only such tokens at the edges of
+  ;; its first and last lines, so they are told apart without a lookup
+  ;; per lexeme.
+  (define (chunk-mapping doc from to text)
+    (let* ([lead (if (and (fx< from to) (document:node? (document:token doc from))) 1 0)]
+           [trail (if (and (fx< (fx+ from lead) to) (eq? (document:token doc (fx- to 1)) 'close)) 1 0)])
+      (if (fx= (string-length text) (fx- (fx- to from) (fx+ lead trail)))
+          (let ([shift (fx+ from lead)])
+            (values (lambda (i) (fx+ shift i)) (lambda (i) (fx+ shift i))))
+          (let ([unit (document:unit characters)] [base (document:offset doc from (document:unit characters))])
+            (values (lambda (i) (fx- (document:position doc (fx+ base i 1) unit) 1))
+                    (lambda (i) (if (fx= i 0) from (document:position doc (fx+ base i) unit))))))))
+
+  (define (lex-from facts doc from state end)
+    (let* ([size (document:length doc)] [last-line (document:line doc size)])
+      (if (and (fx>= from end) (not (line-state-open state)) (fx< from size))
+          (values '#() from '#())
+          (let loop ([from from] [state state] [lines (fxmax 1 (fx+ 1 (fx- (document:line doc (fxmin end size)) (document:line doc from))))]
+                     [lexemes '()] [states '()])
+            (let* ([last-of (fx+ (document:line doc from) lines)]
+                   [to (if (fx> last-of last-line) size (document:line-start doc last-of))]
+                   [text (document:text doc from to)]
+                   [last? (fx= to size)])
+              (let-values ([(start-of end-of) (chunk-mapping doc from to text)])
+                (let* ([acc lexemes] [started states]
+                       [state (scan-text facts text state start-of end-of last?
+                                (lambda (class start end depth open-ended? mismatched?)
+                                  (set! acc (cons (make-lexeme-record class start end depth open-ended? mismatched?) acc)))
+                                (lambda (s) (set! started (cons s started))))])
+                  (if (or last? (and (fx>= to end) (not (line-state-open state))))
+                      (values (list->vector (reverse acc)) to (list->vector (reverse started)))
+                      (loop to state (fx* lines 2) acc started)))))))))
+
+  ;; The plugin's own entry, so it goes when the plugin unloads, whatever
+  ;; asked the question that made the lexer.
+  (define (make-generic-lexer facts)
+    (let ([lexer (lambda (doc)
+                   (unless (document? doc)
+                     (assertion-violation 'syntax:lexer "not a document" doc))
+                   (let-values ([(lexemes stop states) (lex-from facts doc 0 start-state (document:length doc))])
+                     lexemes))])
+      (call-as-owner %self
+        (lambda ()
+          (tables:set! resumers lexer
+            (lambda (doc start state end) (lex-from facts doc start (or state start-state) end)))))
+      lexer))
+
+  (define (language-facts lines blocks strings brackets words symbols)
+    (let ([openers (list-sort
+                     (lambda (a b) (fx> (string-length (opener-text a)) (string-length (opener-text b))))
+                     (append (map (lambda (d) (make-opener (languages:delimiter-start d) 'line d)) lines)
+                             (map (lambda (d) (make-opener (languages:delimiter-start d) 'block d)) blocks)
+                             (map (lambda (d) (make-opener (languages:delimiter-start d) 'string d)) strings)))])
+      (make-facts openers (map (lambda (o) (string-ref (opener-text o) 0)) openers) brackets
+        (word-char-predicate (string-append words symbols)))))
+
+  ;; One lexer per language while its facts are the same values, since
+  ;; the questions tell whose lexer lexed a text by eq?. A word-start
+  ;; delimiter reads the language's own word and symbol characters, not a
+  ;; mode's, since the lexer is the language's.
+  (define generic-lexers (make-hashtable string-hash string=?))
+
+  (define (generic-lexer-of language)
+    (let ([seen (vector (languages:line-comments-of language)
+                        (languages:block-comments-of language)
+                        (languages:strings-of language)
+                        (languages:brackets-of language)
+                        (or (languages:word-characters-of language) "")
+                        (or (languages:symbol-characters-of language) ""))]
+          [known (hashtable-ref generic-lexers language #f)])
+      (cond
+        [(and known (let ([old (car known)])
+                      (let loop ([i 0])
+                        (or (fx= i (vector-length seen))
+                            (and (eq? (vector-ref seen i) (vector-ref old i)) (loop (fx+ i 1)))))))
+         (cdr known)]
+        [else
+         (when known
+           (hashtable-delete! generic-lexers language)
+           (call-as-owner %self (lambda () (tables:remove! resumers (cdr known)))))
+         (and (exists pair? (list (vector-ref seen 0) (vector-ref seen 1) (vector-ref seen 2) (vector-ref seen 3)))
+              (let ([lexer (make-generic-lexer (apply language-facts (vector->list seen)))])
+                (hashtable-set! generic-lexers language (cons seen lexer))
+                lexer))])))
+
+  (define (lexer-of mode)
+    (or (entry-of lexers mode #f)
+        (let ([language (languages:of mode)])
+          (and language (generic-lexer-of language)))))
+
+  (define (resumer-of lexer) (tables:ref resumers lexer #f))
 
   ;; A list with no match ends with the last lexeme, so the end of that
   ;; one is kept beside the matches.
@@ -66,18 +262,30 @@
   (define (open? l) (eq? (lexeme-record-class l) 'open))
   (define (close? l) (eq? (lexeme-record-class l) 'close))
 
+  ;; The opening waiting at each depth is kept in a vector by depth, since
+  ;; a text of hundreds of thousands of brackets is matched after each
+  ;; edit.
   (define (matches-of v)
-    (let ([n (vector-length v)] [waiting (make-eqv-hashtable)])
+    (let ([n (vector-length v)])
       (let ([matches (make-fxvector n -1)])
-        (do ([i 0 (fx+ i 1)]) ((fx= i n) matches)
-          (let ([l (vector-ref v i)])
-            (cond
-              [(open? l) (hashtable-set! waiting (lexeme-record-depth l) i)]
-              [(close? l)
-               (let ([o (hashtable-ref waiting (lexeme-record-depth l) #f)])
-                 (when o
-                   (fxvector-set! matches o i)
-                   (hashtable-delete! waiting (lexeme-record-depth l))))]))))))
+        (let loop ([i 0] [waiting (make-fxvector 16 -1)])
+          (if (fx= i n)
+              matches
+              (let* ([l (vector-ref v i)] [d (lexeme-record-depth l)])
+                (cond
+                  [(open? l)
+                   (let ([waiting (if (fx< d (fxvector-length waiting))
+                                      waiting
+                                      (let ([w (make-fxvector (fx* 2 (fx+ d 1)) -1)])
+                                        (do ([k 0 (fx+ k 1)]) ((fx= k (fxvector-length waiting)) w)
+                                          (fxvector-set! w k (fxvector-ref waiting k)))))])
+                     (fxvector-set! waiting d i)
+                     (loop (fx+ i 1) waiting))]
+                  [(and (close? l) (fx< d (fxvector-length waiting)) (fx>= (fxvector-ref waiting d) 0))
+                   (fxvector-set! matches (fxvector-ref waiting d) i)
+                   (fxvector-set! waiting d -1)
+                   (loop (fx+ i 1) waiting)]
+                  [else (loop (fx+ i 1) waiting)])))))))
 
   (define (condition-text c)
     (call-with-string-output-port (lambda (p) (display-condition c p))))
@@ -181,7 +389,13 @@
   ;; documents an undo history holds keep no lexemes alive.
   (define-record-type known
     (sealed #t)
-    (fields (mutable document) (mutable version) (mutable lexes) (mutable walks)))
+    (fields (mutable document) (mutable version) (mutable lexes) (mutable walks) (mutable lines)))
+
+  ;; An edit keeps the lexemes and states above the line it touches, as
+  ;; Emacs's syntax-ppss keeps its states above an edit.
+  (define-record-type lines
+    (sealed #t)
+    (fields lexer (mutable lexemes) (mutable end) (mutable line) (mutable states) (mutable lexed)))
 
   (define-record-type lex
     (sealed #t)
@@ -197,7 +411,7 @@
     (let ([k (eq-hashtable-ref known-by-buffer buffer #f)])
       (if (and k (eq? (known-document k) doc))
           k
-          (let ([k (make-known doc (buffers:version buffer) '() '())])
+          (let ([k (make-known doc (buffers:version buffer) '() '() #f)])
             (eq-hashtable-set! known-by-buffer buffer k)
             k))))
 
@@ -327,20 +541,41 @@
            (not (blank-token? (document:token doc (fx- e 1))))
            (not (blank-token? (document:token doc e))))))
 
+  ;; The lexemes that end before the start of the edited line stay, with
+  ;; the states through that line, whose text before them is unchanged. A
+  ;; lexeme that ends at a line start ends there only because the text
+  ;; did, so it goes: the text may now go on.
+  (define (lines-above! ls doc position)
+    (let ([line (fxmin (lines-line ls) (document:line doc position))])
+      (unless (and (fx= line (lines-line ls)) (fx= (lines-end ls) (document:line-start doc line)))
+        (let* ([end (document:line-start doc line)] [v (lines-lexemes ls)]
+               [kept (let loop ([low 0] [high (vector-length v)])
+                       (if (fx= low high)
+                           low
+                           (let ([mid (fxsrl (fx+ low high) 1)])
+                             (if (fx< (lexeme-record-end (vector-ref v mid)) end) (loop (fx+ mid 1) high) (loop low mid)))))])
+          (lines-lexemes-set! ls (if (fx= kept (vector-length v)) v (vector-copy v 0 kept)))
+          (lines-end-set! ls end)
+          (lines-line-set! ls line)
+          (lines-lexed-set! ls #f)))))
+
   (define (follow-edit! buffer edit)
     (let ([k (eq-hashtable-ref known-by-buffer buffer #f)] [doc (buffers:document buffer)])
       (when k
         (cond
           [(eq? (known-document k) doc) (known-version-set! k (buffers:version buffer))]
-          [(and (fx= (fx+ (known-version k) 1) (buffers:edit-version edit))
-                (whitespace? (buffers:edit-removed edit))
-                (whitespace? (buffers:edit-inserted edit))
-                (not (joins? edit doc)))
-           (known-document-set! k doc)
-           (known-version-set! k (buffers:edit-version edit))
-           (known-walks-set! k '())
-           (known-lexes-set! k (filter values (map (lambda (l) (followed l edit doc)) (known-lexes k))))]
-          [else (eq-hashtable-delete! known-by-buffer buffer)]))))
+          [(not (fx= (fx+ (known-version k) 1) (buffers:edit-version edit))) (eq-hashtable-delete! known-by-buffer buffer)]
+          [else
+           (let ([ls (known-lines k)])
+             (when ls (lines-above! ls doc (buffers:edit-start edit)))
+             (known-document-set! k doc)
+             (known-version-set! k (buffers:edit-version edit))
+             (known-walks-set! k '())
+             (known-lexes-set! k
+               (if (and (whitespace? (buffers:edit-removed edit)) (whitespace? (buffers:edit-inserted edit))
+                        (not (joins? edit doc)))
+                   (filter values (map (lambda (l) (followed l edit doc)) (known-lexes k)))
+                   '())))]))))
 
   (define (check-question who buffer position mode)
     (check-main-thread who)
@@ -363,20 +598,76 @@
 
   (define (own-lexer? buffer lexer) (eq? lexer (lexer-of (modes:major-mode buffer))))
 
+  (define (run-resumed who mode lexer doc ls need)
+    (let-values ([(v stop states)
+                  (guard (c [(not (cancelled? c))
+                             (assertion-violation who
+                               (format "the lexer of ~s raised: ~a" mode (if (condition? c) (condition-text c) c))
+                               lexer)])
+                    ((resumer-of lexer) doc (lines-end ls) (vector-ref (lines-states ls) (lines-line ls)) need))])
+      (let ([size (document:length doc)] [old (lines-lexemes ls)])
+        (unless (and (vector? v) (vector? states) (fixnum? stop) (fx<= (lines-end ls) stop size)
+                     (let loop ([i 0] [after (let ([n (vector-length old)])
+                                               (if (fx= n 0) 0 (lexeme-record-end (vector-ref old (fx- n 1)))))])
+                       (or (fx= i (vector-length v))
+                           (let ([l (vector-ref v i)])
+                             (and (lexeme-record? l)
+                                  (fx>= (lexeme-record-start l) after)
+                                  (fx<= (lexeme-record-end l) size)
+                                  (loop (fx+ i 1) (lexeme-record-end l)))))))
+          (assertion-violation who "the lexer did not return lexemes in order within the document" mode lexer))
+        (values v stop states))))
+
+  ;; The questions about one text read one lex of it, kept from the start
+  ;; of the text up to as far as any question needed, so typing on a line
+  ;; costs the lines between it and the farthest position asked about.
+  (define (lexed-from-lines who buffer doc mode lexer need)
+    (let* ([k (known-of buffer doc)]
+           [ls (let ([ls (known-lines k)])
+                 (if (and ls (eq? (lines-lexer ls) lexer))
+                     ls
+                     (let ([ls (make-lines lexer '#() 0 1 (make-vector 2 #f) #f)])
+                       (known-lines-set! k ls)
+                       ls)))])
+      (unless (fx= (lines-end ls) (document:length doc))
+        (let-values ([(v stop states) (run-resumed who mode lexer doc ls need)])
+          (unless (and (fx= (vector-length v) 0) (fx= (vector-length states) 0))
+            (let* ([line (fx+ (lines-line ls) (vector-length states))] [old (lines-states ls)]
+                   [grown (if (fx< line (vector-length old))
+                              old
+                              (let ([new (make-vector (fxmax (fx+ line 1) (fx* 2 (vector-length old))) #f)])
+                                (do ([i 0 (fx+ i 1)]) ((fx= i (vector-length old)) new) (vector-set! new i (vector-ref old i)))))])
+              (do ([i 0 (fx+ i 1)]) ((fx= i (vector-length states)))
+                (vector-set! grown (fx+ (lines-line ls) i 1) (vector-ref states i)))
+              (lines-states-set! ls grown)
+              (lines-lexemes-set! ls (vector-append (lines-lexemes ls) v))
+              (lines-end-set! ls stop)
+              (lines-line-set! ls line)
+              (lines-lexed-set! ls #f)))))
+      (or (lines-lexed ls)
+          (let ([lexed (make-lexed doc (lines-lexemes ls))])
+            (lines-lexed-set! ls lexed)
+            lexed))))
+
   ;; Another mode's lexer reads only from the last line at or above the
   ;; position's that starts with an opening bracket, or with none from the
   ;; position's own line, so prose above, such as a lone " in Markdown,
   ;; does not turn the code below into a string.
   (define (lexed-of who buffer position mode)
     (let-values ([(doc lexer) (check-question who buffer position mode)])
-      (let* ([k (known-of buffer doc)]
-             [start (if (own-lexer? buffer lexer)
-                        0
-                        (let ([line (document:line doc position)])
-                          (document:line-start doc
-                            (or (walked k lexer line (lambda () (start-line who mode lexer doc position))) line))))])
-        (known-lex k 'whole lexer (lambda (s e) (fx= s start))
-          (lambda () (values start #f (lex-range who mode lexer doc start (document:length doc)) #t))))))
+      (if (and (own-lexer? buffer lexer) (resumer-of lexer))
+          (lexed-from-lines who buffer doc mode lexer (document:length doc))
+          (lexed-of-start who buffer doc lexer position mode))))
+
+  (define (lexed-of-start who buffer doc lexer position mode)
+    (let* ([k (known-of buffer doc)]
+           [start (if (own-lexer? buffer lexer)
+                      0
+                      (let ([line (document:line doc position)])
+                        (document:line-start doc
+                          (or (walked k lexer line (lambda () (start-line who mode lexer doc position))) line))))])
+      (known-lex k 'whole lexer (lambda (s e) (fx= s start))
+        (lambda () (values start #f (lex-range who mode lexer doc start (document:length doc)) #t)))))
 
   ;; Indenting a form's lines one by one can turn each line that started
   ;; a form into one inside the form above, so the lex of that form grows
@@ -428,29 +719,31 @@
     (let-values ([(doc lexer) (check-question who buffer low mode)])
       (unless (fx<= high (document:length doc))
         (assertion-violation who "not a position in the buffer" high))
-      (if (own-lexer? buffer lexer)
-          (let* ([k (known-of buffer doc)]
-                 [before (fxmax 0 (fx- low 1))]
-                 [line-start (document:line-start doc (document:line doc before))])
-            (known-lex k 'local lexer
-              (lambda (s e) (and (fx<= high e) (or (fx<= s line-start) (and (fx< low high) (fx= s low)))))
-              (lambda ()
-                (let ([start (top-start who mode lexer doc before)] [end (top-end who mode lexer doc before)])
-                  (cond
-                    [(fx<= high end)
-                     (values start end (or (extended who mode lexer doc k start end) (lex-range who mode lexer doc start end)) #t)]
-                    ;; A range from the start of a line that starts a form
-                    ;; reads from there, as the lexemes after it are the
-                    ;; same from either start.
-                    [(and (fx< low high) (fx= low end)
-                          (let ([end (top-end who mode lexer doc low)]) (and (fx<= high end) end)))
-                     => (lambda (end) (values low end (lex-range who mode lexer doc low end) #t))]
-                    ;; Text past `end` holds the start of another form, which
-                    ;; questions about the lines there must read from.
-                    [else
-                     (let ([end (top-end who mode lexer doc (fx- high 1))])
-                       (values start end (lex-range who mode lexer doc start end) #f))])))))
-          (lexed-of who buffer low mode))))
+      (cond
+        [(not (own-lexer? buffer lexer)) (lexed-of-start who buffer doc lexer low mode)]
+        [(resumer-of lexer) (lexed-from-lines who buffer doc mode lexer high)]
+        [else
+         (let* ([k (known-of buffer doc)]
+                [before (fxmax 0 (fx- low 1))]
+                [line-start (document:line-start doc (document:line doc before))])
+           (known-lex k 'local lexer
+             (lambda (s e) (and (fx<= high e) (or (fx<= s line-start) (and (fx< low high) (fx= s low)))))
+             (lambda ()
+               (let ([start (top-start who mode lexer doc before)] [end (top-end who mode lexer doc before)])
+                 (cond
+                   [(fx<= high end)
+                    (values start end (or (extended who mode lexer doc k start end) (lex-range who mode lexer doc start end)) #t)]
+                   ;; A range from the start of a line that starts a form
+                   ;; reads from there, as the lexemes after it are the
+                   ;; same from either start.
+                   [(and (fx< low high) (fx= low end)
+                         (let ([end (top-end who mode lexer doc low)]) (and (fx<= high end) end)))
+                    => (lambda (end) (values low end (lex-range who mode lexer doc low end) #t))]
+                   ;; Text past `end` holds the start of another form, which
+                   ;; questions about the lines there must read from.
+                   [else
+                    (let ([end (top-end who mode lexer doc (fx- high 1))])
+                      (values start end (lex-range who mode lexer doc start end) #f))])))))])))
 
   (define (last-before v position)
     (let loop ([low 0] [high (vector-length v)])
@@ -939,27 +1232,32 @@
       (assertion-violation 'syntax:mode-escape "the mode's entry is not a character" mode escape))
     escape))
 
+(define (%language-entry read mode)
+  (let ([language (languages:of mode)])
+    (and language (read language))))
+
 (define (mode-bracket-pairs mode)
   (unless (symbol? mode)
     (assertion-violation 'syntax:mode-bracket-pairs "not a mode" mode))
-  (let ([pairs (entry-of bracket-pairs mode '())])
+  (let ([pairs (entry-of bracket-pairs mode (or (%language-entry languages:brackets-of mode) '()))])
     (unless (and (list? pairs) (for-all (lambda (p) (and (pair? p) (char? (car p)) (char? (cdr p)))) pairs))
       (assertion-violation 'syntax:mode-bracket-pairs "the mode's entry is not a list of pairs of characters" mode pairs))
     pairs))
 
-(define (%characters-of who table mode)
+(define (%characters-of who table read mode)
   (unless (symbol? mode)
     (assertion-violation who "not a mode" mode))
-  (let ([characters (entry-of table mode (tables:ref table modes:fundamental ""))])
+  (let ([characters (entry-of table mode
+                      (or (%language-entry read mode) (tables:ref table modes:fundamental "")))])
     (unless (string? characters)
       (assertion-violation who "the mode's entry is not a string" mode characters))
     characters))
 
 (define (mode-word-characters mode)
-  (%characters-of 'syntax:mode-word-characters word-characters mode))
+  (%characters-of 'syntax:mode-word-characters word-characters languages:word-characters-of mode))
 
 (define (mode-symbol-characters mode)
-  (%characters-of 'syntax:mode-symbol-characters symbol-characters mode))
+  (%characters-of 'syntax:mode-symbol-characters symbol-characters languages:symbol-characters-of mode))
 
 (define (buffer-word-characters buffer)
   (unless (buffers:buffer? buffer)

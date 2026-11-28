@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (test-user) (hooks) (options) (tables) (keys) (modes) (auto-mode) (buffers) (document)
+(import (tuna) (test) (test-runner) (test-user) (hooks) (options) (tables) (keys) (languages) (modes) (auto-mode) (buffers) (document)
         (views) (layout) (files) (projects) (lsp) (lsp-test servers))
 
 (options:set! lsp:send-changes-delay 0.05)
@@ -49,7 +49,9 @@
 
 (hooks:define-hook other-hook)
 
-(modes:define-major-mode other-mode (keymap other-keymap) (hook other-hook) (language "otherlang"))
+(modes:define-major-mode other-mode (keymap other-keymap) (hook other-hook))
+
+(languages:define-language "otherlang" (mode other-mode))
 
 (tables:set! auto-mode:file-names "ot" other-mode)
 

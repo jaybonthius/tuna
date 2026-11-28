@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (test-user) (hooks) (commands) (keys) (buffers) (document) (views) (modes) (layout) (editing)
+(import (tuna) (test) (test-runner) (test-user) (hooks) (commands) (keys) (buffers) (document) (views) (modes) (layout) (editing) (auto-mode)
         (files) (prog) (minibuffer) (completion) (layout-float) (completion-popup) (completion-annotations)
         (chez-scheme) (chez-scheme-completion) (chez-scheme-test scheme-buffers))
 

@@ -79,6 +79,29 @@
 
 (define (lines-of b range) (list (line-of b (car range)) (line-of b (- (cdr range) 1))))
 
+(define (%index-of text needle from)
+  (let ([n (string-length needle)])
+    (let loop ([i from])
+      (cond
+        [(> (+ i n) (string-length text)) #f]
+        [(string=? (substring text i (+ i n)) needle) i]
+        [else (loop (+ i 1))]))))
+
+;; A grammar's commit is the one nvim-treesitter's queries were written
+;; for, which its parsers.lua names with the repository.
+(define (nvim-treesitter-pin grammar-name)
+  (let* ([parsers (%read (string-append (%install) "/plugins/treesit/src/treesit/nvim-treesitter/lua/nvim-treesitter/parsers.lua"))]
+         [at (%index-of parsers (string-append "\n  " grammar-name " = {") 0)]
+         [end (and at (%index-of parsers "\n  },\n" at))]
+         [entry (lambda (key)
+                  (let ([k (%index-of parsers (string-append key " = '") at)])
+                    (and k (< k end)
+                         (let ([from (+ k (string-length key) 4)])
+                           (substring parsers from (%index-of parsers "'" from))))))])
+    (unless at
+      (errorf 'treesit-test:nvim-treesitter-pin "nvim-treesitter has no parser ~a" grammar-name))
+    (values (entry "url") (entry "revision"))))
+
 (define %events '())
 
 ;; No public name tells a job's worker, so treesit's jobs are told by the

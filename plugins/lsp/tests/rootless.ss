@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (test-user) (hooks) (options) (tables) (modes) (buffers) (views) (layout) (files)
+(import (tuna) (test) (test-runner) (test-user) (hooks) (options) (tables) (languages) (modes) (buffers) (views) (layout) (files)
         (lsp) (lsp-test servers))
 
 (options:set! lsp:send-changes-delay 0.05)
@@ -90,7 +90,9 @@
 
 (hooks:define-hook sml-hook)
 
-(modes:define-major-mode sml-mode (keymap sml-keymap) (hook sml-hook) (language "sml"))
+(modes:define-major-mode sml-mode (keymap sml-keymap) (hook sml-hook))
+
+(languages:define-language "sml" (mode sml-mode))
 
 (define bin (string-append home "/bin"))
 

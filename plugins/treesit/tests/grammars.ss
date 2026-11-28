@@ -1,8 +1,9 @@
-(import (tuna) (test) (test-runner) (test-user) (tables) (options) (ask) (buffers) (syntax-highlighting) (treesit) (python)
-        (buffers-test) (syntax-highlighting-test) (treesit-test) (treesit-test grammar))
+(import (tuna) (test) (test-runner) (test-user) (tables) (options) (ask) (buffers) (syntax-highlighting) (languages) (treesit) (python)
+        (buffers-test) (syntax-highlighting-test) (treesit-test) (treesit-test grammar) (treesit-test grammars missing)
+        (treesit-test grammars elsewhere) (treesit-test grammars nowhere) (treesit-test grammars damaged))
 
-(define python (tables:ref treesit:grammars "python" #f))
-(treesit-test/grammar:build-python! (treesit:grammar-commit python) (treesit:grammar-file python))
+(define python python:python)
+(treesit-test/grammar:build-python! (languages:grammar-commit python) (treesit:grammar-file python))
 
 (define told '())
 
@@ -17,35 +18,11 @@
 
 (define coloured '(("def" keyword.function) ("f" function) ("x" variable.parameter) ("return" keyword.return)))
 
-(define (prebuilt-at name) (treesit:make-prebuilt-grammar "python" (treesit-test:home-file name)))
-
-(test "Python's grammar is tree-sitter-python at a pinned commit, built into Tuna's data folder, and Python's highlighter is the plugin's"
-  (check-equal? '("python" "https://github.com/tree-sitter/tree-sitter-python" "293fdc02038ee2bf0e2e206711b69c90ac0d413f")
-                (map (lambda (get) (get python)) (list treesit:grammar-name treesit:grammar-source treesit:grammar-commit)))
+(test "a grammar built from source has its file in Tuna's data folder, named by its name and its commit; one built elsewhere is its file"
   (check-equal? (treesit-test:home-file ".local/share/tuna/grammars/libtree-sitter-python-293fdc02038e.so")
                 (treesit:grammar-file python))
-  (check (treesit:grammar? python))
-  (check-equal? #f (treesit:grammar? "python"))
-  (check (eq? treesit:highlighter (tables:ref syntax-highlighting:highlighters "python" #f))))
-
-(test "a grammar's name is letters, digits and _, its source a string and its commit a full one"
-  (let ([commit (treesit:grammar-commit python)])
-    (check-raises (buffers-test:raised-with? 'treesit:make-grammar "not a grammar's name: letters, digits and _" '("py-thon"))
-                  (treesit:make-grammar "py-thon" "https://example.org/x" commit))
-    (check-raises (buffers-test:raised-with? 'treesit:make-grammar "not a URL or folder" '(url))
-                  (treesit:make-grammar "python" 'url commit))
-    (check-raises (buffers-test:raised-with? 'treesit:make-grammar "not a full commit: 40 hexadecimal digits" '("293fdc0"))
-                  (treesit:make-grammar "python" "https://example.org/x" "293fdc0"))))
-
-(test "a prebuilt grammar is named by its file, with no source or commit"
-  (check-raises (buffers-test:raised-with? 'treesit:make-prebuilt-grammar "not a grammar's name: letters, digits and _" '(""))
-                (treesit:make-prebuilt-grammar "" "/x.so"))
-  (check-raises (buffers-test:raised-with? 'treesit:make-prebuilt-grammar "not a file name" '(#f))
-                (treesit:make-prebuilt-grammar "djot" #f))
-  (let ([prebuilt (treesit:make-prebuilt-grammar "python" "/opt/grammars/python.so")])
-    (check-equal? '(#t "python" #f #f "/opt/grammars/python.so")
-                  (list (treesit:grammar? prebuilt) (treesit:grammar-name prebuilt) (treesit:grammar-source prebuilt)
-                        (treesit:grammar-commit prebuilt) (treesit:grammar-file prebuilt)))))
+  (check-equal? (treesit-test:home-file "elsewhere/python.so") (treesit:grammar-file treesit-test/grammars/elsewhere:python))
+  (check-raises (buffers-test:raised-with? 'treesit:grammar-file "not a grammar" '("python")) (treesit:grammar-file "python")))
 
 (define b (python-buffer "b.py" "def f(x):\n    return x\n"))
 
@@ -55,8 +32,7 @@
 (define c #f)
 
 (test "a grammar from source whose file is missing draws its buffers plain and tells nothing"
-  (tables:set! treesit:grammars "python"
-    (treesit:make-grammar "python" "https://github.com/tree-sitter/tree-sitter-python" "0000000000000000000000000000000000000000"))
+  (tables:set! languages:grammar "python" treesit-test/grammars/missing:python)
   (syntax-highlighting:update!)
   (treesit-test:runs-become b '())
   (set! c (python-buffer "c.py" "def f(x):\n    return x\n"))
@@ -66,14 +42,14 @@
 
 (test "a grammar built elsewhere is loaded as it is"
   (treesit-test:copy-file! (treesit:grammar-file python) (treesit-test:home-file "elsewhere/python.so"))
-  (tables:set! treesit:grammars "python" (prebuilt-at "elsewhere/python.so"))
+  (tables:set! languages:grammar "python" treesit-test/grammars/elsewhere:python)
   (syntax-highlighting:update!)
   (treesit-test:runs-become b coloured)
   (treesit-test:runs-become c coloured)
   (check-equal? '() (take-told!)))
 
-(test "a prebuilt grammar's missing file is told once a session, and its buffers are plain"
-  (tables:set! treesit:grammars "python" (prebuilt-at "nowhere/python.so"))
+(test "a grammar built elsewhere whose file is missing is told once a session, and its buffers are plain"
+  (tables:set! languages:grammar "python" treesit-test/grammars/nowhere:python)
   (syntax-highlighting:update!)
   (treesit-test:runs-become b '())
   (treesit-test:runs-become c '())
@@ -88,7 +64,7 @@
 
 (test "a grammar file that does not load is told once a session, and its buffers are plain"
   (treesit-test:write-file! (treesit-test:home-file "damaged/python.so") "not a shared object\n")
-  (tables:set! treesit:grammars "python" (prebuilt-at "damaged/python.so"))
+  (tables:set! languages:grammar "python" treesit-test/grammars/damaged:python)
   (syntax-highlighting:update!)
   (test-runner:wait-until (lambda () (pair? told)))
   (let ([damaged (treesit-test:home-file "damaged/python.so")])
@@ -106,8 +82,8 @@
   ;; A running job's later data reads its input again, which would raise
   ;; too.
   (for-each buffers:kill! (list b c))
-  (tables:set! treesit:grammars "python" "python")
+  (tables:set! languages:grammar "python" "python")
   (let ([f #f])
-    (check-equal? '((treesit:grammars "not a grammar"))
+    (check-equal? '((languages:grammar-of "the entry is not a grammar"))
                   (syntax-highlighting-test:reports-until 1 (lambda () (set! f (python-buffer "f.py" "x = 1\n")))))
     (check-equal? '() (treesit-test:runs f))))

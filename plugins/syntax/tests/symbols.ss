@@ -1,4 +1,4 @@
-(import (tuna) (test) (modes) (prog) (buffers) (document) (hooks) (tables) (syntax) (chez-scheme) (buffers-test) (syntax-test)
+(import (tuna) (test) (languages) (modes) (prog) (buffers) (document) (hooks) (tables) (syntax) (chez-scheme) (buffers-test) (syntax-test)
         (chez-scheme-test scheme-buffers))
 
 (define after syntax-test:after)
@@ -13,13 +13,18 @@
   (let ([r (apply bounds b position mode)])
     (and (car r) (syntax-test:between b (car r) (cadr r)))))
 
-(test "a mode's characters are the first in its ancestry with an entry, else modes:fundamental's, Emacs's standard syntax table's"
+(test "a mode's characters are the first in its ancestry with an entry, else its language's, else modes:fundamental's, Emacs's standard syntax table's"
   (check-equal? '("$%" "_-+*/&|<>=") (list (syntax:mode-word-characters modes:fundamental) (syntax:mode-symbol-characters modes:fundamental)))
   (check-equal? "_-+*/&|<>=" (syntax:mode-symbol-characters prog:mode))
   (check-equal? '("$%" "!$%&*/:<=>?^_~+-.@") (list (syntax:mode-word-characters derived) (syntax:mode-symbol-characters derived)))
-  (tables:set! syntax:symbol-characters derived "-")
-  (check-equal? "-" (syntax:mode-symbol-characters derived))
-  (tables:remove! syntax:symbol-characters derived))
+  (let ([configuration (make-owner '(configuration))])
+    (call-as-owner configuration (lambda () (tables:set! languages:symbol-characters "scheme" "!")))
+    (check-equal? "!" (syntax:mode-symbol-characters derived))
+    (tables:set! syntax:symbol-characters derived "-")
+    (check-equal? "-" (syntax:mode-symbol-characters derived))
+    (tables:remove! syntax:symbol-characters derived)
+    (unload-owner! configuration))
+  (check-equal? "!$%&*/:<=>?^_~+-.@" (syntax:mode-symbol-characters derived)))
 
 (define s (chez-scheme-test/scheme-buffers:scheme-buffer "s.ss" "(buffers:insert! b \"x\") ; list->vector\n"))
 

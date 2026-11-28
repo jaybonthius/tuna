@@ -1,5 +1,5 @@
 #!tuna
-(import (modes) (prog) (auto-mode) (syntax) (hooks) (tables))
+(import (languages) (modes) (prog) (hooks) (tables))
 
 (tables:define-table keymap "Keys in Python buffers.")
 
@@ -9,11 +9,21 @@
   (parent prog:mode)
   (lighter "Python")
   (keymap keymap)
-  (hook mode-hook)
-  (language "python"))
+  (hook mode-hook))
 
-(for-each (lambda (name) (tables:set! auto-mode:file-names name mode))
-          '("py" "pyi" "pyw" "SConstruct" "SConscript"))
-(tables:set! auto-mode:interpreters "python" mode)
-(tables:set! syntax:word-characters mode "")
-(tables:set! syntax:symbol-characters mode "_")
+(languages:define-grammar python
+  (git "https://github.com/tree-sitter/tree-sitter-python" "293fdc02038ee2bf0e2e206711b69c90ac0d413f"))
+
+(languages:define-language "python"
+  (mode mode)
+  (file-names "py" "pyi" "pyw" "SConstruct" "SConscript")
+  (interpreters "python")
+  (grammar python)
+  (line-comments ("#"))
+  (strings ("\"\"\"" "\"\"\"" (escape #\\))
+           ("'''" "'''" (escape #\\))
+           ("\"" "\"" (escape #\\) line-bound)
+           ("'" "'" (escape #\\) line-bound))
+  (brackets ("(" ")") ("[" "]") ("{" "}"))
+  (word-characters "")
+  (symbol-characters "_"))

@@ -1162,23 +1162,28 @@
                       [(leaf? t) (fx+ pos (run-after-newline (tree-child t i) s i k))]
                       [else (down (tree-child t i) k pos)]))))))))
 
-  ;; The page draws a tab to the next multiple of 8 columns.
-  (define (column-after c column)
-    (if (char=? c #\tab) (fx* 8 (fx+ (fxquotient column 8) 1)) (fx+ column 1)))
+  (define (column-after c column tab-width)
+    (if (char=? c #\tab) (fx* tab-width (fx+ (fxquotient column tab-width) 1)) (fx+ column 1)))
 
-  (define (document:column doc p)
+  (define (check-tab-width who tab-width)
+    (unless (and (fixnum? tab-width) (fx> tab-width 0))
+      (assertion-violation who "not a tab width" tab-width)))
+
+  (define (document:column doc p tab-width)
     (check-document 'document:column doc)
     (check-position 'document:column doc p)
+    (check-tab-width 'document:column tab-width)
     (let ([text (document:text doc (document:line-start doc (document:line doc p)) p)])
       (let loop ([i 0] [column 0])
         (if (fx= i (string-length text))
             column
-            (loop (fx+ i 1) (column-after (string-ref text i) column))))))
+            (loop (fx+ i 1) (column-after (string-ref text i) column tab-width))))))
 
-  (define (document:column-position doc line column)
+  (define (document:column-position doc line column tab-width)
     (check-document 'document:column-position doc)
     (unless (and (fixnum? column) (fx>= column 0))
       (assertion-violation 'document:column-position "not a column" column))
+    (check-tab-width 'document:column-position tab-width)
     (let* ([start (document:line-start doc line)]
            [end (if (fx< line (document:line doc (tree-tokens (document-tree doc))))
                     (fx- (document:line-start doc (fx+ line 1)) 1)
@@ -1187,9 +1192,9 @@
       (let loop ([i 0] [at 0])
         (cond
           [(fx= i (string-length text)) end]
-          [(fx> (column-after (string-ref text i) at) column)
+          [(fx> (column-after (string-ref text i) at tab-width) column)
            (document:position doc (fx+ (measure-before (document-tree doc) start 'characters) i) 'characters)]
-          [else (loop (fx+ i 1) (column-after (string-ref text i) at))]))))
+          [else (loop (fx+ i 1) (column-after (string-ref text i) at tab-width))]))))
 
   (define (run-after-newline run s i k)
     (let ([n (bytevector-length run)] [newlines (newlines-ref s i)] [chars (chars-ref s i)])

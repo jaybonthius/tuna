@@ -1,8 +1,11 @@
 #!tuna
-(import (buffers) (document) (modes) (views) (tables))
+(import (buffers) (document) (modes) (views) (options) (tables))
 
 (tables:define-table indenters
   "Maps a major mode to its indenter, a procedure of a buffer and the start of a line's text that returns the column for that text, or #f to leave the line as it is.")
+
+(options:define-option use-tabs? #f boolean?
+  "Whether indentation is written with tabs as far as they reach, then spaces; read in the buffer's scope.")
 
 (define-condition-type &indenter-error &assertion %make-indenter-error indenter-error?)
 
@@ -24,9 +27,20 @@
   (let loop ([p end])
     (if (and (fx> p start) (blank? (document:token doc (fx- p 1)))) (loop (fx- p 1)) p)))
 
+(define (%tab-width buffer) (buffers:with-buffer buffer (views:tab-width)))
+
+;; As Emacs's indent-to: from one column to another, tabs as far as they
+;; reach when use-tabs? is true, then spaces.
+(define (%blanks buffer from to)
+  (let ([width (%tab-width buffer)])
+    (if (and (buffers:with-buffer buffer (use-tabs?)) (fx> (fxquotient to width) (fxquotient from width)))
+        (string-append (make-string (fx- (fxquotient to width) (fxquotient from width)) #\tab)
+                       (make-string (fxremainder to width) #\space))
+        (make-string (fxmax 0 (fx- to from)) #\space))))
+
 (module %internals
   (check-main-thread check-buffer check-position indenter-of text-start indentation-end line-end? fallback-column
-   indent-line!)
+   indent-line! non-empty-line-above)
 
   (define main-thread (get-thread-id))
 
@@ -66,14 +80,22 @@
         (let ([t (document:token doc p)])
           (or (eqv? t #\newline) (eq? t 'close)))))
 
-  (define (fallback-column doc line)
+  (define (fallback-column buffer line)
+    (let ([doc (buffers:document buffer)])
+      (let loop ([line (fx- line 1)])
+        (if (fx< line 1)
+            0
+            (let ([e (indentation-end doc (text-start doc line))])
+              (if (line-end? doc e)
+                  (loop (fx- line 1))
+                  (document:column doc e (%tab-width buffer))))))))
+
+  (define (non-empty-line-above doc line)
     (let loop ([line (fx- line 1)])
-      (if (fx< line 1)
-          0
-          (let ([e (indentation-end doc (text-start doc line))])
-            (if (line-end? doc e)
-                (loop (fx- line 1))
-                (document:column doc e))))))
+      (cond
+        [(fx< line 1) #f]
+        [(line-end? doc (text-start doc line)) (loop (fx- line 1))]
+        [else line])))
 
   (define (indent-line! buffer start column place)
     (let* ([doc (buffers:document buffer)]
@@ -88,9 +110,11 @@
                      '() (views:showing buffer))])
       ;; As Emacs, a line whose text already starts at the column keeps
       ;; its blanks, tabs included.
-      (let ([text (if (fx= (document:column doc end) column)
+      (let ([text (if (fx= (document:column doc end (%tab-width buffer)) column)
                       end
-                      (begin (buffers:replace! buffer start end (make-string column #\space)) (fx+ start column)))])
+                      (let ([blanks (%blanks buffer 0 column)])
+                        (buffers:replace! buffer start end blanks)
+                        (fx+ start (string-length blanks))))])
         (for-each
           (lambda (entry)
             (let-values ([(view c p) (apply values entry)])
@@ -123,7 +147,7 @@
           (unless (or (not column) (and (fixnum? column) (fx>= column 0)))
             (%raise-indenter-error "the indenter returned neither a column nor #f" (list found column)))
           column)
-        (fallback-column (buffers:document buffer) (document:line (buffers:document buffer) start)))))
+        (fallback-column buffer (document:line (buffers:document buffer) start)))))
 
 (define (%indent! buffer position place)
   (let* ([doc (buffers:document buffer)]
@@ -159,3 +183,32 @@
          (let ([s (text-start (buffers:document buffer) line)])
            (unless (line-end? (buffers:document buffer) s)
              (%indent! buffer s fxmin)))))]))
+
+(define (column buffer position)
+  (check-buffer 'indentation:column buffer)
+  (document:column (buffers:document buffer) position (%tab-width buffer)))
+
+(define (column-position buffer line column)
+  (check-buffer 'indentation:column-position buffer)
+  (document:column-position (buffers:document buffer) line column (%tab-width buffer)))
+
+(define (blanks buffer from to)
+  (check-buffer 'indentation:blanks buffer)
+  (unless (and (fixnum? from) (fixnum? to) (fx<= 0 from))
+    (assertion-violation 'indentation:blanks "not columns" from to))
+  (%blanks buffer from to))
+
+(define (relative-column buffer position)
+  (check-buffer 'indentation:relative-column buffer)
+  (check-position 'indentation:relative-column buffer position)
+  (let* ([doc (buffers:document buffer)] [width (%tab-width buffer)] [goal (document:column doc position width)]
+         [above (non-empty-line-above doc (document:line doc position))])
+    (and above
+         (let* ([at (document:column-position doc above goal width)]
+                [at (if (and (fx> at (text-start doc above)) (fx> (document:column doc at width) goal)) (fx- at 1) at)]
+                [word-end (if (blank? (document:token doc at))
+                              at
+                              (let loop ([p at]) (if (or (line-end? doc p) (blank? (document:token doc p))) p (loop (fx+ p 1)))))]
+                [point (blanks-end doc word-end (document:length doc))])
+           (and (not (line-end? doc point))
+                (document:column doc point width))))))

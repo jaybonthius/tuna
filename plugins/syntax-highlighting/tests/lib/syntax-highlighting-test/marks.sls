@@ -1,12 +1,13 @@
 #!tuna
-(import (test-runner) (document) (modes) (auto-mode) (buffers) (views) (jobs) (syntax-highlighting) (syntax-highlighting-test highlight) (hooks) (options) (tables))
+(import (test-runner) (document) (languages) (modes) (auto-mode) (buffers) (views) (jobs) (syntax-highlighting) (syntax-highlighting-test highlight) (hooks) (options) (tables))
 
 (options:define-option mark "#" string? "The character that starts a marked word.")
 (options:define-option input-raises? #f boolean? "Whether the input procedure raises.")
 
 (tables:define-table keymap "Keys.")
 (hooks:define-hook mode-hook "Setup.")
-(modes:define-major-mode mode (keymap keymap) (hook mode-hook) (language "marks"))
+(modes:define-major-mode mode (keymap keymap) (hook mode-hook))
+(languages:define-language "marks" (mode mode))
 
 (tables:define-table derived-keymap "Keys.")
 (hooks:define-hook derived-hook "Setup.")
@@ -14,7 +15,7 @@
 
 (tables:define-table own-keymap "Keys.")
 (hooks:define-hook own-hook "Setup.")
-(modes:define-major-mode own (keymap own-keymap) (hook own-hook) (language "marks"))
+(modes:define-major-mode own (parent mode) (keymap own-keymap) (hook own-hook))
 
 (tables:define-table raising-keymap "Keys.")
 (hooks:define-hook raising-hook "Setup.")
@@ -42,7 +43,8 @@
 
 (tables:define-table unknown-keymap "Keys.")
 (hooks:define-hook unknown-hook "Setup.")
-(modes:define-major-mode unknown (keymap unknown-keymap) (hook unknown-hook) (language "nothing"))
+(modes:define-major-mode unknown (keymap unknown-keymap) (hook unknown-hook))
+(languages:define-language "nothing" (mode unknown))
 
 (tables:define-table counting-keymap "Keys.")
 (hooks:define-hook counting-hook "Setup.")

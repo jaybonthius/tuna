@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (options) (views) (editing) (chez-scheme) (editing-test scene) (sexp-test scene))
+(import (tuna) (test) (test-user) (options) (views) (indentation) (editing) (chez-scheme) (editing-test scene) (sexp-test scene))
 
 (define after sexp-test/scene:after)
 
@@ -32,13 +32,27 @@
   (editing-test/scene:run editing:newline-and-indent)
   (check-equal? "(a\n |b)" (sexp-test/scene:shown)))
 
-(test "TAB that changes nothing calls editing:tab-fallback"
-  (let ([called 0])
-    (editing-test/scene:with-setting editing:tab-fallback (lambda () (set! called (+ called 1)))
+(test "TAB that changes nothing calls editing:tab-fallback with its prefix number, as Emacs passes TAB's argument to insert-tab"
+  (let ([called '()])
+    (editing-test/scene:with-setting editing:tab-fallback (lambda (n) (set! called (cons n called)))
       (lambda ()
         (sexp-test/scene:show! "(a\n |b)")
         (test-user:press! "TAB")
-        (check-equal? 1 called)))))
+        (test-user:press! "M-3 TAB")
+        (check-equal? '(1 3) (reverse called))))))
 
 (test "C-u TAB moves the other lines of the sexp after the line's text by the line's change"
   (check-equal? "(define (f)\n  |(g a\n       b))" (after "(define (f)\n|     (g a\n          b))" "C-u TAB")))
+
+(test "insert-tab inserts a tab at each cursor where use-tabs? is true, else blanks to the next tab stop; a count inserts that many"
+  (sexp-test/scene:show! "ab|")
+  (editing-test/scene:run editing:insert-tab)
+  (check-equal? "ab      |" (sexp-test/scene:shown))
+  (sexp-test/scene:show! "ab|")
+  (editing-test/scene:run editing:insert-tab 2)
+  (check-equal? "ab              |" (sexp-test/scene:shown))
+  (editing-test/scene:with-setting indentation:use-tabs? #t
+    (lambda ()
+      (sexp-test/scene:show! "ab|")
+      (editing-test/scene:run editing:insert-tab)
+      (check-equal? "ab\t|" (sexp-test/scene:shown)))))

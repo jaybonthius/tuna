@@ -1,8 +1,8 @@
 (import (tuna) (test) (test-runner) (test-user) (tables) (options) (buffers) (document) (views) (layout) (modes)
-        (treesit) (python) (treesit-test) (treesit-test grammar) (treesit-test session))
+        (languages) (treesit) (python) (treesit-test) (treesit-test grammar) (treesit-test session))
 
-(define python (tables:ref treesit:grammars "python" #f))
-(treesit-test/grammar:build-python! (treesit:grammar-commit python) (treesit:grammar-file python))
+(define python python:python)
+(treesit-test/grammar:build-python! (languages:grammar-commit python) (treesit:grammar-file python))
 
 (options:set! views:scroll-margin 2 views:wrap-lines #f)
 

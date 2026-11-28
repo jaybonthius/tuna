@@ -1,7 +1,7 @@
-(import (tuna) (test) (test-runner) (tables) (modes) (treesit) (python) (treesit-test) (treesit-test grammar))
+(import (tuna) (test) (test-runner) (tables) (modes) (languages) (treesit) (python) (treesit-test) (treesit-test grammar))
 
-(define python (tables:ref treesit:grammars "python" #f))
-(treesit-test/grammar:build-python! (treesit:grammar-commit python) (treesit:grammar-file python))
+(define python python:python)
+(treesit-test/grammar:build-python! (languages:grammar-commit python) (treesit:grammar-file python))
 
 (define coloured '(("def" keyword.function) ("f" function) ("x" variable.parameter) ("return" keyword.return)))
 

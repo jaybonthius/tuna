@@ -94,3 +94,22 @@
     (check-equal? '("foo fob for" "bar foo" "{a}fox" "{d}Foo" "") (flash-test:lines))
     (check (flash-test:quitting! "C-g"))
     (flash-test:show-all! v)))
+
+(define (twenty-columns body-size view client) (values 20 5))
+
+(test "where lines do not wrap, a match past the columns shown is no target, its column counted with the buffer's tab width"
+  (flash-test:show! "|\t\tfox\nfox\n")
+  (let ([v (flash-test:view)])
+    (views:with-view v (options:set-local! views:wrap-lines #f))
+    (advice-add! views:body-size twenty-columns)
+    (set! given "fox")
+    (flash-test:press! "C-c m")
+    (check-equal? '("\t\t{a}fox" "{s}fox" "") (flash-test:lines v))
+    (check (flash-test:quitting! "C-g"))
+    (buffers:with-buffer (views:buffer v) (options:set-local! views:tab-width 16))
+    (flash-test:press! "C-c m")
+    (check-equal? '("\t\tfox" "{a}fox" "") (flash-test:lines v))
+    (check (flash-test:quitting! "C-g"))
+    (advice-remove! views:body-size twenty-columns)
+    (buffers:with-buffer (views:buffer v) (options:unset-local! views:tab-width))
+    (views:with-view v (options:unset-local! views:wrap-lines))))

@@ -8,8 +8,7 @@
   (parent prog:mode)
   (lighter "Code")
   (keymap keymap)
-  (hook mode-hook)
-  (language "code"))
+  (hook mode-hook))
 
 (define (setup)
   (options:set-local! modes-test/fill:column 79))

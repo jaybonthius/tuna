@@ -1,4 +1,4 @@
-(import (tuna) (test) (options) (hooks) (tables) (keys) (modes) (auto-mode) (prog) (buffers) (document) (files) (editing)
+(import (tuna) (test) (options) (hooks) (tables) (keys) (languages) (modes) (auto-mode) (prog) (buffers) (document) (files) (editing)
         (syntax) (syntax-highlighting) (ask) (chez-scheme) (chez-scheme-test scheme-buffers))
 
 ;; ask's own writer reports each message, such as the (New file) of
@@ -8,7 +8,7 @@
 
 (test "the mode has the parent prog:mode, its keymap and hook, the lighter Scheme and the language scheme; its hook runs after prog's"
   (check-equal? (list prog:mode "Scheme" "scheme")
-                (list (tables:ref modes:parents chez-scheme:mode #f) (modes:lighter chez-scheme:mode) (modes:language chez-scheme:mode)))
+                (list (tables:ref modes:parents chez-scheme:mode #f) (modes:lighter chez-scheme:mode) (languages:of chez-scheme:mode)))
   (check (eq? chez-scheme:keymap (tables:ref modes:keymaps chez-scheme:mode #f)))
   (check (eq? chez-scheme:mode-hook (tables:ref modes:hooks chez-scheme:mode #f)))
   (let ([order '()])

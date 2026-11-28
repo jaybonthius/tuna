@@ -408,6 +408,24 @@
   (running:signal! process name)
   (void))
 
+(define (%path-folders path)
+  (let loop ([i 0] [start 0] [folders '()])
+    (cond
+      [(fx= i (string-length path)) (reverse (cons (substring path start i) folders))]
+      [(char=? (string-ref path i) #\:) (loop (fx+ i 1) (fx+ i 1) (cons (substring path start i) folders))]
+      [else (loop (fx+ i 1) start folders)])))
+
+(define (program-path program)
+  (unless (and (string? program) (fx> (string-length program) 0))
+    (assertion-violation 'processes:program-path "not a program's name" program))
+  (if (memv #\/ (string->list program))
+      (and (file-regular? program) program)
+      (exists (lambda (folder)
+                (and (fx> (string-length folder) 0)
+                     (let ([path (string-append folder "/" program)])
+                       (and (file-regular? path) path))))
+              (%path-folders (or (getenv "PATH") "")))))
+
 (define (all) (running:all-processes))
 
 (define (find id)

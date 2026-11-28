@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (test-runner) (hooks) (tables) (keys) (commands) (buffers) (document) (views)
-        (layout) (files) (modes) (prog) (syntax) (kill-ring) (editing) (ask) (minibuffer) (completion)
+        (layout) (files) (auto-mode) (modes) (prog) (syntax) (kill-ring) (editing) (ask) (minibuffer) (completion)
         (completion-list) (completion-popup) (layout-float) (help) (file-picker) (browse-url) (chez-scheme)
         (chez-scheme-completion) (dired) (shell-commands) (actions) (actions-test acting))
 

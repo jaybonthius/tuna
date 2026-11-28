@@ -21,6 +21,8 @@
   "Whether views:scroll-up and views:scroll-down move point to the end or the start, when the view can scroll no further, before they raise.")
 (options:define-option wrap-lines #t boolean?
   "Whether a line longer than the view wraps onto several screen lines.")
+(options:define-option tab-width 8 (lambda (v) (and (fixnum? v) (fx> v 0)))
+  "The distance between tab stops, in columns: the width a tab is drawn and counted, read in the buffer, or in a view with a value of its own.")
 (options:define-option cursor-visible #t boolean?
   "Whether a view draws its cursors.")
 (options:define-option hand-scroll-moves-point #t boolean?
@@ -2230,7 +2232,9 @@
             (when (fx> ws lo) (spacer-html "above" doc lo ws))
             ;; The root has no element of its own, so the lines' element
             ;; carries its state.
-            (:div.view-lines ([data-click (let ([root (context-root ctx)]) (and root (node-click ctx root)))]) root-html)
+            (:div.view-lines ([data-click (let ([root (context-root ctx)]) (and root (node-click ctx root)))]
+                              [style (format "tab-size: ~a" (tab-width))])
+              root-html)
             (when (fx< we hi) (spacer-html "below" doc we hi)))))))
 
   ;; The page sets the thumbs and whether the bars show, which the morph

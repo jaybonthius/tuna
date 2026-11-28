@@ -1,5 +1,5 @@
 #!tuna
-(import (prog) (modes) (auto-mode) (buffers) (document) (files) (jobs) (faces) (syntax)
+(import (prog) (modes) (languages) (buffers) (document) (files) (jobs) (faces) (syntax)
         (syntax-highlighting) (indentation) (outline) (comment-syntax) (chez-scheme highlight) (hooks) (options) (tables))
 
 (define %self (current-owner))
@@ -14,8 +14,15 @@
   (parent prog:mode)
   (lighter "Scheme")
   (keymap keymap)
-  (hook mode-hook)
-  (language "scheme"))
+  (hook mode-hook))
+
+(languages:define-language "scheme"
+  (mode mode)
+  (file-names "sls" "ss" "sps" "scm" "sch" "sld")
+  (interpreters "tuna" "scheme" "petite" "scheme-script" "r6rs" "chezscheme")
+  (line-comments (";"))
+  (brackets ("(" ")") ("[" "]"))
+  (symbol-characters "!$%&*/:<=>?^_~+-.@"))
 
 (tables:define-table indent-rules
   "Maps a symbol to how a form with that head indents: the number of arguments it takes before its body; (indent-method defun), which puts the next line 2 columns past the opening bracket while the last argument before it is on the bracket's line; or a procedure of the buffer and the position of the form's opening bracket that returns that number.")
@@ -484,12 +491,12 @@
   (let* ([line (document:line doc p)] [start (document:line-start doc line)])
     (let loop ([ls (syntax:lexemes buffer start (fx+ p 1))])
       (cond
-        [(null? ls) (document:column doc p)]
+        [(null? ls) (indentation:column buffer p)]
         [(or (fx< (syntax:lexeme-start (car ls)) start)
              (%class? (car ls) (syntax:class comment))
              (%class? (car ls) (syntax:class close)))
          (loop (cdr ls))]
-        [else (document:column doc (syntax:lexeme-start (car ls)))]))))
+        [else (indentation:column buffer (syntax:lexeme-start (car ls)))]))))
 
 (define (%def-name? name)
   (and (fx> (string-length name) 3) (string=? (substring name 0 3) "def")))
@@ -531,19 +538,19 @@
          [normal (cond
                    [later-line? (%first-sexp-column buffer doc last-start)]
                    [(or (null? (cdr children)) (indentation:blank? (document:token doc (syntax:lexeme-end open))))
-                    (document:column doc (%sexp-start head))]
-                   [else (document:column doc (%sexp-start (cadr children)))])])
+                    (indentation:column buffer (%sexp-start head))]
+                   [else (indentation:column buffer (%sexp-start (cadr children)))])])
     (if (%class? (%sexp-first head) (syntax:class atom))
         (let* ([l (%sexp-first head)]
                [rule (%rule buffer (document:text doc (syntax:lexeme-start l) (syntax:lexeme-end l)) bracket)])
           (cond
             [(eq? rule (indent-method defun))
              (if (fx= (document:line doc last-start) (document:line doc bracket))
-                 (fx+ (document:column doc bracket) 2)
+                 (fx+ (indentation:column buffer bracket) 2)
                  normal)]
-            [rule (%special-column rule (document:column doc bracket) (fx- (length children) 1) normal)]
+            [rule (%special-column rule (indentation:column buffer bracket) (fx- (length children) 1) normal)]
             [else normal]))
-        (if later-line? normal (document:column doc (%sexp-start head))))))
+        (if later-line? normal (indentation:column buffer (%sexp-start head))))))
 
 (define (%semicolons doc comment)
   (let ([end (syntax:lexeme-end comment)])
@@ -572,7 +579,7 @@
                      (let* ([open (car (last-pair openings))]
                             [children (%children buffer (syntax:lexeme-end open) position)])
                        (if (null? children)
-                           (document:column doc (syntax:lexeme-end open))
+                           (indentation:column buffer (syntax:lexeme-end open))
                            (%list-column buffer doc open children)))))]))))))
 
 ;; Emacs's scheme-let-indent: a name right after let on its line makes
@@ -583,20 +590,13 @@
     (if (and (pair? ls) (pair? (cdr ls)) (%class? (cadr ls) (syntax:class atom))) 2 1)))
 
 (tables:set! syntax:lexers mode lexer)
-(tables:set! syntax:bracket-pairs mode (list (cons #\( #\)) (cons #\[ #\])))
 (tables:set! syntax:escapes mode #\\)
 ;; Emacs's Scheme mode puts a comment after code, and a line holding
 ;; only a one-semicolon comment, at column 40.
 (hooks:add! mode-hook
   (lambda ()
-    (options:set-local! comment-syntax:start ";")
     (options:set-local! comment-syntax:add 1)
     (options:set-local! comment-syntax:column 40)))
-(tables:set! syntax:symbol-characters mode "!$%&*/:<=>?^_~+-.@")
-(for-each (lambda (name) (tables:set! auto-mode:file-names name mode))
-          '("sls" "ss" "sps" "scm" "sch" "sld"))
-(for-each (lambda (name) (tables:set! auto-mode:interpreters name mode))
-          '("tuna" "scheme" "petite" "scheme-script" "r6rs" "chezscheme"))
 (tables:set! syntax-highlighting:highlighters mode
   (syntax-highlighting:make-highlighter %highlighter (list syntax-highlighting:faces syntax:brackets)
     %highlight-input))

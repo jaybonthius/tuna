@@ -20,7 +20,8 @@
 (test "a face is a name, defined by the plugin as a value, so code names it by identifier"
   (check-equal? '(keyword keyword.return diagnostic.error function.builtin) (list faces:keyword faces:keyword.return faces:diagnostic.error faces:function.builtin))
   (check-equal? '(diagnostic.unnecessary diagnostic.deprecated) (list faces:diagnostic.unnecessary faces:diagnostic.deprecated))
-  (check-equal? '(variable.definition string.documentation constructor) (list faces:variable.definition faces:string.documentation faces:constructor)))
+  (check-equal? '(variable.definition string.documentation constructor label)
+                (list faces:variable.definition faces:string.documentation faces:constructor faces:label)))
 
 (test "a highlighter's spans name faces, and views draws each as data-face"
   (buffers:set-spans! (buffers:layer buffer highlights) 0 22

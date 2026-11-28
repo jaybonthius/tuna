@@ -52,7 +52,7 @@
 (lsp-test/servers:wait-for "symbols" "textDocument/didOpen")
 
 (define (place b p)
-  (let ([doc (buffers:document b)]) (list (- (document:line doc p) 1) (document:column doc p))))
+  (let ([doc (buffers:document b)]) (list (- (document:line doc p) 1) (document:column doc p 8))))
 
 (define (entries o)
   (let ([found '()])

@@ -1,10 +1,13 @@
 #!tuna
-(import (buffers) (document) (jobs) (modes) (hooks) (tables))
+(import (buffers) (document) (jobs) (languages) (modes) (hooks) (tables))
 
 (define %self (current-owner))
 
 (tables:define-table highlighters
-  "Maps a major mode, or a language as modes:language names it, to a highlighter. A buffer's highlighter is the entry of the first mode in its mode's ancestry that has one, else the entry of its mode's language.")
+  "Maps a major mode, or a language as languages:of gives a mode's, to a highlighter. A buffer's highlighter is the entry of the first mode in its mode's ancestry that has one, else the entry of its mode's language, else the first a chooser returns.")
+
+(hooks:define-hook choosers
+  "Called with a major mode and its language or #f; each entry returns a highlighter or #f, and a buffer with no entry in syntax-highlighting:highlighters takes the first highlighter returned.")
 
 (buffers:define-layer faces (priority -10) (sticky after) (evaporate))
 
@@ -66,8 +69,9 @@
   (define (highlighter-of buffer)
     (let ([mode (modes:major-mode buffer)])
       (or (exists (lambda (m) (tables:ref highlighters m #f)) (modes:ancestry mode))
-          (let ([language (modes:language mode)])
-            (and language (tables:ref highlighters language #f))))))
+          (let ([language (languages:of mode)])
+            (or (and language (tables:ref highlighters language #f))
+                (exists (lambda (entry) (entry mode language)) (hooks:entries choosers)))))))
 
   (define (faces-on? buffer)
     (and (buffers:with-buffer buffer (mode)) #t))

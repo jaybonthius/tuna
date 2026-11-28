@@ -1,4 +1,4 @@
-(import (tuna) (test) (eval-test caught-reports) (test-user) (files) (document) (buffers) (views) (layout) (layout-split)
+(import (tuna) (test) (eval-test caught-reports) (test-user) (files) (auto-mode) (document) (buffers) (views) (layout) (layout-split)
         (editing) (echo-area) (undo) (modes) (minibuffer) (completion) (chez-scheme) (chez-scheme-completion) (eval)
         (eval-test))
 

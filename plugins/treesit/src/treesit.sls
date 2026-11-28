@@ -1,14 +1,8 @@
 #!tuna
-(import (syntax-highlighting) (buffers) (document) (jobs) (modes) (views) (ask) (treesit highlight) (hooks) (options) (tables))
+(import (syntax-highlighting) (buffers) (document) (jobs) (languages) (modes) (views) (ask) (treesit highlight) (hooks) (options)
+        (tables))
 
 (define %self (current-owner))
-
-(define-record-type (grammar %make-grammar grammar?)
-  (sealed #t)
-  (fields name source commit file))
-
-(tables:define-table grammars
-  "Maps a language, as modes:language names it, to its grammar.")
 
 (options:define-option excluded-captures
   '(variable variable.member function.call function.method.call constructor module operator
@@ -19,18 +13,11 @@
 
 (options:define-option query-folders '("~/.config/tuna/queries/")
   (lambda (v) (and (list? v) (for-all string? v)))
-  "Folders searched first for a language's query files, before those of the plugins that declare the language and nvim-treesitter's."
+  "Folders searched first for a grammar's query files, before those of the loaded plugins and nvim-treesitter's."
   (lambda (v) (syntax-highlighting:update!)))
 
 (module %internals
-  (check-name grammars-folder nvim-treesitter-queries language-query-folders stamped expanded tell-once!
-   tell-once-for! problem-text)
-
-  (define (check-name who name)
-    (unless (and (string? name) (fx> (string-length name) 0)
-                 (for-all (lambda (c) (or (char<=? #\a c #\z) (char<=? #\A c #\Z) (char<=? #\0 c #\9) (char=? c #\_)))
-                          (string->list name)))
-      (assertion-violation who "not a grammar's name: letters, digits and _" name)))
+  (grammars-folder nvim-treesitter-queries plugin-query-folders stamped expanded tell-once! tell-once-for! problem-text)
 
   (define (grammars-folder)
     (string-append (or (getenv "HOME") "") "/.local/share/tuna/grammars"))
@@ -45,18 +32,22 @@
   (define nvim-treesitter-queries
     (string-append (plugin-folder '(treesit)) "/nvim-treesitter/runtime/queries"))
 
-  ;; The plugin that declares a language owns its mode's entry in
-  ;; modes:languages, so a language plugin ships its query files without
-  ;; importing treesit. The configuration and the REPL can own entries
-  ;; too; they are not modules and have no folder.
-  (define (language-query-folders language)
-    (fold-left
-      (lambda (folders entry)
-        (let* ([owner (and (equal? (cdr entry) language) (tables:owner modes:languages (car entry)))]
-               [folder (and owner (eq? (module-owner (owner-name owner)) owner) (plugin-folder (owner-name owner)))]
-               [queries (and folder (string-append folder "/queries"))])
-          (if (and queries (not (member queries folders))) (append folders (list queries)) folders)))
-      '() (tables:entries modes:languages)))
+  ;; As Neovim searches every runtime-path entry's queries/, every loaded
+  ;; module's folder is searched, in load order, so a language plugin
+  ;; ships query files without importing treesit, a language that borrows
+  ;; a grammar gets its lender's, and a configuration that changes a fact
+  ;; leaves them in use. A module's folder does not move, so it is looked
+  ;; up once; whether it holds queries is asked each time.
+  (define module-queries (make-hashtable equal-hash equal?))
+
+  (define (plugin-query-folders)
+    (filter (lambda (queries) (and queries (file-directory? queries)))
+            (map (lambda (module)
+                   (unless (hashtable-contains? module-queries module)
+                     (hashtable-set! module-queries module
+                       (let ([folder (plugin-folder module)]) (and folder (string-append folder "/queries")))))
+                   (hashtable-ref module-queries module #f))
+                 (loaded-modules))))
 
   ;; A job compiles its query files again only when what it is sent
   ;; changes, so a file edited in place must change the input. A file gone
@@ -105,33 +96,30 @@
         s
         (string-append (string (char-upcase (string-ref s 0))) (substring s 1 (string-length s)))))
 
-  (define (problem-text language problem)
+  (define (problem-text grammar-name problem)
     (case (car problem)
       [(grammar-error)
-       (format "Loading the tree-sitter grammar for ~a failed: ~a" language (caddr problem))]
+       (format "Loading the tree-sitter grammar for ~a failed: ~a" grammar-name (caddr problem))]
       [(query-error)
        (let-values ([(file row column message) (apply values (cdr problem))])
-         (format "~a highlights query: ~a at row ~a, column ~a (~a)" (capitalized language) message row column
+         (format "~a highlights query: ~a at row ~a, column ~a (~a)" (capitalized grammar-name) message row column
            (shown file)))])))
 
 (import %internals)
 
-(define (make-grammar name source commit)
-  (check-name 'treesit:make-grammar name)
-  (unless (string? source)
-    (assertion-violation 'treesit:make-grammar "not a URL or folder" source))
-  (unless (and (string? commit) (fx= (string-length commit) 40)
-               (for-all (lambda (c) (or (char<=? #\0 c #\9) (char<=? #\a c #\f) (char<=? #\A c #\F)))
-                        (string->list commit)))
-    (assertion-violation 'treesit:make-grammar "not a full commit: 40 hexadecimal digits" commit))
-  (%make-grammar name source commit
-    (format "~a/libtree-sitter-~a-~a.so" (grammars-folder) name (substring commit 0 12))))
+(define (grammar-file grammar)
+  (unless (languages:grammar? grammar)
+    (assertion-violation 'treesit:grammar-file "not a grammar" grammar))
+  (or (languages:grammar-prebuilt grammar)
+      (format "~a/libtree-sitter-~a-~a.so" (grammars-folder) (languages:grammar-name grammar)
+        (substring (languages:grammar-commit grammar) 0 12))))
 
-(define (make-prebuilt-grammar name file)
-  (check-name 'treesit:make-prebuilt-grammar name)
-  (unless (string? file)
-    (assertion-violation 'treesit:make-prebuilt-grammar "not a file name" file))
-  (%make-grammar name #f #f file))
+(define (%grammar-of language) (and language (languages:grammar-of language)))
+
+;; Whether a language has a grammar entry at all: an entry of the wrong
+;; shape still chooses this highlighter, whose input reports it once, so
+;; a scroll or a choice does not report it again.
+(define (%grammar-entry? language) (and language (tables:ref languages:grammar language #f) #t))
 
 (jobs:define-worker (%highlighter input emit receive)
   (import (syntax-highlighting job) (treesit highlight))
@@ -148,24 +136,23 @@
     (document:offset doc (document:length doc) (document:unit bytes))))
 
 (define (%highlight-input buffer problems)
-  (let* ([language (modes:language (modes:major-mode buffer))]
-         [grammar (and language (tables:ref grammars language #f))])
-    (when (and grammar (not (grammar? grammar)))
-      (assertion-violation 'treesit:grammars "not a grammar" grammar))
+  (let* ([language (languages:of (modes:major-mode buffer))]
+         [grammar (%grammar-of language)])
     ;; A job's problems outlive its buffer's language, as when the mode's
-    ;; plugin unloads, until the job stops at the end of the batch.
-    (when (and language problems)
+    ;; plugin unloads, until the job stops at the end of the batch. They
+    ;; are the grammar's and its queries', which languages may share.
+    (when (and grammar problems)
       (for-each
         (lambda (problem)
           (tell-once! (if (eq? (car problem) 'grammar-error) (list 'grammar (cadr problem)) problem)
-                      (problem-text language problem)))
+                      (problem-text (languages:grammar-name grammar) problem)))
         problems))
     (cond
       [(not grammar) #f]
       [(not (file-exists? (grammar-file grammar)))
-       (unless (grammar-source grammar)
+       (when (languages:grammar-prebuilt grammar)
          (tell-once! (list 'missing (grammar-file grammar))
-                     (format "No tree-sitter grammar for ~a at ~a" language (grammar-file grammar))))
+                     (format "No tree-sitter grammar for ~a at ~a" (languages:grammar-name grammar) (grammar-file grammar))))
        #f]
       ;; tree-sitter counts bytes in 32 bits.
       [(> (%text-bytes buffer) #xFFFFFFFF)
@@ -173,11 +160,11 @@
          (format "Tree-sitter cannot parse ~a: its text is more than 4 GiB" (buffers:name buffer)))
        #f]
       [else
-       (list (grammar-file grammar) (grammar-name grammar)
+       (list (grammar-file grammar) (languages:grammar-name grammar)
              (map stamped
-                  (query-files (append (map expanded (query-folders)) (language-query-folders language)
+                  (query-files (append (map expanded (query-folders)) (plugin-query-folders)
                                        (list nvim-treesitter-queries))
-                               (grammar-name grammar) "highlights"))
+                               (languages:grammar-name grammar) "highlights"))
              (excluded-captures)
              (%drawn-ranges buffer))])))
 
@@ -185,9 +172,12 @@
   (syntax-highlighting:make-highlighter %highlighter (list syntax-highlighting:faces) %highlight-input))
 
 (define (%input-changed! buffer)
-  (let ([language (modes:language (modes:major-mode buffer))])
-    (when (and language (tables:ref grammars language #f))
+  (let ([language (languages:of (modes:major-mode buffer))])
+    (when (%grammar-entry? language)
       (syntax-highlighting:input-changed! buffer))))
+
+(define (%choose-highlighter mode language)
+  (and (%grammar-entry? language) highlighter))
 
 ;; A scroll needs only the input read again; update! would also start
 ;; again a buffer whose highlighter raised, and report it at every scroll.
@@ -199,9 +189,6 @@
   (loaded name)
   (for-each %input-changed! (buffers:all)))
 
-(tables:set! grammars "python"
-  (make-grammar "python" "https://github.com/tree-sitter/tree-sitter-python"
-                "293fdc02038ee2bf0e2e206711b69c90ac0d413f"))
-(tables:set! syntax-highlighting:highlighters "python" highlighter)
+(hooks:add! syntax-highlighting:choosers %choose-highlighter)
 (hooks:add! views:drawn-ranges-changed %drawn-ranges-changed)
 (advice-add! module-loaded %module-loaded)

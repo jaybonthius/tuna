@@ -1,8 +1,8 @@
-(import (tuna) (test) (tables) (options) (treesit) (treesit-test) (treesit-test grammar) (treesit-test session))
+(import (tuna) (test) (tables) (options) (languages) (treesit) (python) (treesit-test) (treesit-test grammar) (treesit-test session))
 
-(define python (tables:ref treesit:grammars "python" #f))
+(define python python:python)
 (define grammar (treesit:grammar-file python))
-(treesit-test/grammar:build-python! (treesit:grammar-commit python) grammar)
+(treesit-test/grammar:build-python! (languages:grammar-commit python) grammar)
 
 (define (string-prefix? prefix s)
   (let ([n (string-length prefix)]) (and (<= n (string-length s)) (string=? prefix (substring s 0 n)))))

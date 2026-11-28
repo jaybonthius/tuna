@@ -1,6 +1,6 @@
 (import (tuna) (test) (test-browser) (test-runner) (cdp page) (design-tokens) (faces) (buffers) (document) (views) (layout)
-        (layout-split) (editing) (echo-area) (status-line) (minibuffer) (files) (file-picker) (options) (modes) (prog)
-        (syntax) (chez-scheme) (python) (treesit) (tables) (treesit-test grammar) (faces-test))
+        (layout-split) (editing) (echo-area) (status-line) (minibuffer) (files) (auto-mode) (file-picker) (options) (modes) (prog)
+        (syntax) (chez-scheme) (python) (languages) (treesit) (tables) (treesit-test grammar) (faces-test))
 
 (define install (path-parent (car (command-line))))
 
@@ -12,8 +12,8 @@
   (let ([bytes (call-with-port (open-file-input-port from) get-bytevector-all)])
     (call-with-port (open-file-output-port to (file-options no-fail)) (lambda (p) (put-bytevector p bytes)))))
 
-(let ([python (tables:ref treesit:grammars "python" #f)])
-  (treesit-test/grammar:build-python! (treesit:grammar-commit python) (treesit:grammar-file python)))
+(let ([python python:python])
+  (treesit-test/grammar:build-python! (languages:grammar-commit python) (treesit:grammar-file python)))
 
 (for-each (lambda (name) (copy-file! (string-append look-folder "/" name) (string-append home "/" name))) '("look.py" "look.sls"))
 

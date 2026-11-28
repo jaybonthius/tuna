@@ -36,7 +36,7 @@
                                   property)))
 
 (test "every face the plugin defines has a rule of its own in its stylesheet, which styles no other name"
-  (check-equal? 77 (length defined-faces))
+  (check-equal? 78 (length defined-faces))
   (check-equal? '() (filter (lambda (f) (not (member f styled-faces))) defined-faces))
   (check-equal? '() (filter (lambda (f) (not (member f defined-faces))) styled-faces)))
 
@@ -62,7 +62,7 @@
       (string-append "--" (hyphens face) "-" suffix)))
 
 (test "each face rule declares the seven properties, each reading the face's own token first and ending in a default or revert-layer"
-  (check-equal? 141
+  (check-equal? 142
     (length (filter (lambda (r) (string=? "defaults.faces" (design-tokens-test/css:rule-layer r)))
                     (apply append (map design-tokens-test/css:file-rules face-stylesheets)))))
   (check-equal? '()
@@ -104,10 +104,11 @@
                   ("--faces-function-method-call-font-style" "--faces-function-call-font-style" "--faces-function-font-style" "revert-layer")
                   ("--faces-type-builtin-font-style" "--faces-type-font-style" "revert-layer")
                   ("--faces-constructor-font-style" "--faces-type-font-style" "revert-layer")
-                  ("--faces-function-builtin-font-style" "--faces-builtin-font-style" "revert-layer"))
+                  ("--faces-function-builtin-font-style" "--faces-builtin-font-style" "revert-layer")
+                  ("--faces-label-font-style" "--faces-keyword-font-style" "revert-layer"))
     (map (lambda (f) (rule-chain "faces/faces.css" f "font-style"))
          '("boolean" "character" "string.special.symbol" "string.documentation" "variable.parameter" "function.method.call" "type.builtin"
-           "constructor" "function.builtin"))))
+           "constructor" "function.builtin" "label"))))
 
 (test "a face's own default stops its family's"
   (check-equal? '(("--faces-function-method-call-color" "--faces-function-call-color" "--tuna-blue-11")

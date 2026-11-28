@@ -1,8 +1,8 @@
-(import (tuna) (test) (test-user) (tables) (options) (ask) (buffers) (document) (commands) (modes) (files) (undo) (kill-ring)
-        (treesit) (python) (treesit-test) (treesit-test grammar) (treesit-test session))
+(import (tuna) (test) (test-user) (tables) (options) (ask) (buffers) (document) (commands) (modes) (files) (auto-mode) (undo) (kill-ring)
+        (languages) (treesit) (python) (treesit-test) (treesit-test grammar) (treesit-test session))
 
-(define python (tables:ref treesit:grammars "python" #f))
-(treesit-test/grammar:build-python! (treesit:grammar-commit python) (treesit:grammar-file python))
+(define python python:python)
+(treesit-test/grammar:build-python! (languages:grammar-commit python) (treesit:grammar-file python))
 
 (define (fresh-runs b)
   (treesit-test/session:runs

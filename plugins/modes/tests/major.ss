@@ -149,15 +149,6 @@
 
 (modes:define-major-mode child (parent modes-test/code:mode) (keymap child-keymap) (hook child-hook))
 
-(test "a mode's language comes from its language clause, read along its ancestry, so a derived mode has its parent's"
-  (check-equal? '("code" "code" #f #f) (map modes:language (list modes-test/code:mode child modes-test/text:mode prog:mode)))
-  (check-raises (buffers-test:raised? 'modes:language "not a mode") (modes:language "code")))
-
-(test "a configuration's language entry wins over the defining module's"
-  (tables:set! modes:languages modes-test/code:mode "ours")
-  (check-equal? '("ours" "ours") (map modes:language (list modes-test/code:mode child)))
-  (tables:remove! modes:languages modes-test/code:mode))
-
 (test "the clauses of modes:define-major-mode come in any order and are matched as symbols, so (keymap keymap) works"
   (check-equal? (list modes-test/code:mode prog:mode) (modes:ancestry modes-test/code:mode))
   (check (eq? modes-test/text:keymap (tables:ref modes:keymaps modes-test/text:mode #f)))
@@ -178,19 +169,19 @@
     (lambda (module message)
       (check-raises (buffers-test:raised? 'modes:define-major-mode message) (load-module! (list 'modes-test 'bad module)))
       (check-equal? #f (tables:ref modes:hooks (string->symbol (format "modes-test/bad/~a:bad" module)) #f)))
-    '(major-keymap major-lighter major-hook major-parent major-language major-plugin-only)
-    '("not a keymap" "not a string" "not a hook" "not a mode" "not a string" "not a boolean")))
+    '(major-keymap major-lighter major-hook major-parent major-plugin-only)
+    '("not a keymap" "not a string" "not a hook" "not a mode" "not a boolean")))
 
 (test "a major mode defined again without a clause drops what that clause gave; unloading the module takes its entries back"
   (modes-test:write-module! "mine"
     (string-append "#!tuna\n(import (modes) (prog) (hooks) (tables))\n(tables:define-table keymap)\n(hooks:define-hook hook)\n"
-                   "(modes:define-major-mode mode (hook hook) (keymap keymap) (parent prog:mode) (lighter \"Mine\") (language \"mine\"))\n"))
+                   "(modes:define-major-mode mode (hook hook) (keymap keymap) (parent prog:mode) (lighter \"Mine\"))\n"))
   (load-module! '(mine))
-  (check-equal? '((mine:mode prog:mode) "Mine" "mine") (list (modes:ancestry 'mine:mode) (modes:lighter 'mine:mode) (modes:language 'mine:mode)))
+  (check-equal? '((mine:mode prog:mode) "Mine") (list (modes:ancestry 'mine:mode) (modes:lighter 'mine:mode)))
   (modes-test:write-module! "mine"
     "#!tuna\n(import (modes) (hooks) (tables))\n(tables:define-table keymap)\n(hooks:define-hook hook)\n(modes:define-major-mode mode (keymap keymap) (hook hook))\n")
   (reload-modules! '((mine)))
-  (check-equal? '((mine:mode) "mine" #f) (list (modes:ancestry 'mine:mode) (modes:lighter 'mine:mode) (modes:language 'mine:mode)))
+  (check-equal? '((mine:mode) "mine") (list (modes:ancestry 'mine:mode) (modes:lighter 'mine:mode)))
   (let ([b (buffers:make "mine" "x")])
     (modes:set-major-mode 'mine:mode b)
     (unload-owner! (module-owner '(mine)))

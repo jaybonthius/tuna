@@ -810,16 +810,18 @@
 
 ;; As Emacs's electric indentation, an indenter that raises leaves the
 ;; line break and gives up at that cursor without a word, since the user
-;; asked only for the break; TAB reports the error.
+;; asked only for the break; TAB reports the error. Without an indenter
+;; the line ended is not reindented, as electric-indent-can-reindent-p
+;; refuses indent-relative, though its trailing blanks still go.
 (define (%indent-around-breaks! view)
-  (let ([b (views:buffer view)])
-    (when (and (indentation:indenter (modes:major-mode b)) (electric-indent))
+  (let* ([b (views:buffer view)] [indenter? (indentation:indenter (modes:major-mode b))])
+    (when (electric-indent)
       (each-cursor view
         (lambda (c point mark)
           (guard (e [(indentation:indenter-error? e) (void)])
             (let ([line (document:line (buffers:document b) point)])
               (when (fx> line 1)
-                (%end-line! b (fx- line 1) (electric-reindent)))
+                (%end-line! b (fx- line 1) (and indenter? (electric-reindent))))
               (indentation:line! b (document:line-start (buffers:document b) line)))))))))
 
 (commands:define-command (newline [n (commands:prefix-number)])
@@ -991,14 +993,14 @@
   (let ([continues? (line-motion-continues?)])
     (lambda (c doc lo hi)
       (let* ([p (views:cursor-point c)]
-             [goal (or (and continues? (views:cursor-goal c)) (document:column doc p))]
+             [goal (or (and continues? (views:cursor-goal c)) (indentation:column (views:buffer view) p))]
              [first (document:line doc lo)] [last (document:line doc hi)]
              [target (%rows-from view doc (document:line doc p) n first last)])
         (cond
           [(< target first) (values lo goal)]
           [(> target last) (values hi goal)]
           [else
-           (values (fxmax lo (fxmin (document:column-position doc target goal) (end-of-line doc target hi))) goal)])))))
+           (values (fxmax lo (fxmin (indentation:column-position (views:buffer view) target goal) (end-of-line doc target hi))) goal)])))))
 
 (define (%move-chars who n)
   (let ([view (views:command-view who)])
@@ -1454,11 +1456,11 @@
 ;; leaves that line alone.
 (define (%indent-region-lines! b point mark)
   (let* ([doc (buffers:document b)] [low (fxmin point mark)] [high (fxmax point mark)]
-         [last (if (fx= (document:column doc high) 0) (fxmax low (fx- high 1)) high)])
+         [last (if (fx= (indentation:column b high) 0) (fxmax low (fx- high 1)) high)])
     (indentation:lines! b low last)))
 
 (options:define-option tab-fallback #f (lambda (v) (or (not v) (procedure? v)))
-  "A procedure of no arguments that indent-for-tab-command calls when it changed no line and moved no cursor, or #f.")
+  "A procedure of TAB's prefix number that indent-for-tab-command calls when it changed no line and moved no cursor, or #f.")
 
 ;; A line of blanks is left, as Emacs's indent-rigidly leaves it.
 (define (%shift-lines! b first last delta)
@@ -1469,8 +1471,8 @@
           (let-values ([(s e) (%line-text-range b doc line hi)])
             (let ([text (indentation:blanks-end doc s e)])
               (when (fx< text e)
-                (let ([column (fxmax 0 (fx+ (document:column doc text) delta))])
-                  (buffers:replace! b s text (make-string column #\space))))))))
+                (let ([column (fxmax 0 (fx+ (indentation:column b text) delta))])
+                  (buffers:replace! b s text (indentation:blanks b 0 column))))))))
       (loop (fx- line 1)))))
 
 (define (%indent-with-sexp! b point)
@@ -1481,27 +1483,64 @@
                            (let-values ([(s e) (%line-text-range b doc line hi)])
                              (indentation:blanks-end doc s e))))]
          [text (text-of-line)]
-         [before (document:column (buffers:document b) text)]
+         [before (indentation:column b text)]
          [end (and (syntax:lexer (modes:major-mode b)) (syntax:sexp-after b text))]
          [end-anchor (and end (buffers:anchor b end))])
     (indentation:line! b point)
-    (let* ([doc (buffers:document b)] [delta (fx- (document:column doc (text-of-line)) before)])
+    (let* ([doc (buffers:document b)] [delta (fx- (indentation:column b (text-of-line)) before)])
       (when (and end-anchor (not (fx= delta 0)))
         (%shift-lines! b (fx+ line 1) (document:line doc (buffers:anchor-position end-anchor)) delta)))))
 
+;; As Emacs's tab-to-tab-stop, the blanks before the cursor go and the
+;; cursor's text starts at the tab stop after the column it had.
+(define (%to-tab-stop! view c point)
+  (let* ([b (views:buffer view)] [column (indentation:column b point)]
+         [width (buffers:with-buffer b (views:tab-width))] [stop (fx* width (fx+ (fxquotient column width) 1))]
+         [from (indentation:blanks-start (buffers:document b) 0 point)]
+         [blanks (indentation:blanks b (indentation:column b from) stop)])
+    (buffers:replace! b from point blanks)
+    (move-kept! view c (fx+ from (string-length blanks)))))
+
+;; Emacs's indent-relative, the indentation of a mode with no indenter:
+;; blanks from the cursor to the next indent point of the line above, or
+;; to the next tab stop when it has none, so nothing is taken from a line
+;; indented deeper than the one above it.
+(define (%indent-relative! view c point)
+  (let* ([b (views:buffer view)] [goal (indentation:relative-column b point)])
+    (if goal
+        (let ([blanks (indentation:blanks b (indentation:column b point) goal)])
+          (buffers:replace! b point point blanks)
+          (move-kept! view c (fx+ point (string-length blanks))))
+        (%to-tab-stop! view c point))))
+
 (commands:define-command (indent-for-tab-command [prefix (commands:prefix-argument)])
-  "Indents the line of each cursor of the current view, or, at a cursor with a region, each line the region holds; with C-u, also moves the lines of the sexp after the line's text by as much. Calls editing:tab-fallback when nothing changed."
+  "Indents the line of each cursor of the current view, or, at a cursor with a region, each line the region holds; with C-u, also moves the lines of the sexp after the line's text by as much. In a mode with no indenter, inserts blanks at each cursor up to the next indent point of the line above, or the next tab stop. Calls editing:tab-fallback with the prefix number when nothing changed."
   (let* ([view (views:command-view 'editing:indent-for-tab-command)] [b (views:buffer view)]
+         [indenter? (indentation:indenter (modes:major-mode b))]
          [version (buffers:version b)] [points (map views:cursor-point (views:cursors view))])
     (each-cursor view
       (lambda (c point mark)
         (cond
           [(nonempty-region? point mark) (%indent-region-lines! b point mark)]
           [prefix (%indent-with-sexp! b point)]
-          [else (indentation:line! b point)])))
+          [indenter? (indentation:line! b point)]
+          [else (%indent-relative! view c point)])))
     (when (and (tab-fallback) (fx= version (buffers:version b))
                (equal? points (map views:cursor-point (views:cursors view))))
-      ((tab-fallback)))))
+      ((tab-fallback) (commands:prefix-number)))))
+
+(commands:define-command (insert-tab [n (commands:prefix-number)])
+  "Inserts N tabs at each cursor where indentation:use-tabs? is true, else blanks up to the Nth tab stop after the cursor's column, as Emacs's insert-tab. For editing:tab-fallback."
+  (check-nonnegative-count 'editing:insert-tab n)
+  (let* ([view (views:command-view 'editing:insert-tab)] [b (views:buffer view)])
+    (each-cursor view
+      (lambda (c point mark)
+        (let ([text (if (buffers:with-buffer b (indentation:use-tabs?))
+                        (make-string n #\tab)
+                        (let* ([column (indentation:column b point)] [width (buffers:with-buffer b (views:tab-width))])
+                          (indentation:blanks b column (fx* width (fx+ n (fxquotient column width))))))])
+          (buffers:replace! b point point text)
+          (move-kept! view c (fx+ point (string-length text))))))))
 
 (commands:define-command (indent-region)
   "Indents each cursor's lines."

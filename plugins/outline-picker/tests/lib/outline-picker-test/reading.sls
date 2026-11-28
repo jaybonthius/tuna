@@ -6,7 +6,7 @@
 
 (define (place-of v)
   (let* ([b (views:buffer v)] [doc (buffers:document b)] [p (views:point v)])
-    (list (buffers:name b) (document:line doc p) (document:column doc p))))
+    (list (buffers:name b) (document:line doc p) (document:column doc p 8))))
 
 (define (here) (place-of (view)))
 
