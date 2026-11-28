@@ -4,8 +4,9 @@
 (define-enumeration direction (row column) directions)
 
 (module %internals
-  (parts weight flex-text column? split-node? with-weight without node-datum replace-node!
-   holding-split balanced transposed check-size check-attributes place! axis-of)
+  (parts weight least-weight flex-text column? split-node? with-weight without node-datum replace-node!
+   holding-split balanced evened transposed check-size check-attributes place! axis-of
+   datum-attributes with-attribute fraction? counted? position-of positive-weight)
 
   (define (parts node)
     (let ([acc '()])
@@ -19,18 +20,32 @@
 
   (define (column? node) (eq? (document:node-attribute node 'direction 'row) 'column))
 
+  (define (fraction? s) (and (real? s) (exact? s) (< 0 s) (<= s 1)))
+
+  (define (counted? s unit)
+    (and (list? s) (fx= (length s) 2) (eq? (car s) unit) (fixnum? (cadr s)) (fx> (cadr s) 0)))
+
   ;; A size along the other axis, such as columns in a column split,
   ;; means nothing here, so the child shares by weight.
-  (define (flex-text node child)
+  (define (weighted? node child)
+    (let ([s (document:node-attribute child 'size #f)])
+      (not (or (fraction? s) (eq? s 'content) (counted? s (if (column? node) 'lines 'columns))))))
+
+  ;; Flexbox gives growing items only that share of the free space when
+  ;; their factors add up to less than 1, so a weight is drawn over the
+  ;; least of its split's weights, each then at least 1.
+  (define (least-weight node)
+    (fold-left (lambda (least c) (if (weighted? node c) (min least (weight c)) least)) +inf.0 (parts node)))
+
+  (define (flex-text node child least)
     (let ([s (document:node-attribute child 'size #f)])
       (cond
-        [(and (real? s) (exact? s) (< 0 s) (<= s 1))
+        [(fraction? s)
          (string-append "0 0 " (number->string (inexact (* 100 s))) "%")]
         [(eq? s 'content) "none"]
-        [(and (list? s) (fx= (length s) 2) (fixnum? (cadr s)) (fx> (cadr s) 0)
-              (eq? (car s) (if (column? node) 'lines 'columns)))
+        [(counted? s (if (column? node) 'lines 'columns))
          (string-append "0 0 " (number->string (cadr s)) (if (column? node) "lh" "ch"))]
-        [else (string-append (number->string (inexact (weight child))) " 1 0")])))
+        [else (string-append (number->string (inexact (/ (weight child) least))) " 1 0")])))
 
   (define (split-node? node kind)
     (and node (not (document:atom? node)) (eq? (document:node-kind node) kind)))
@@ -57,9 +72,11 @@
   (define (without d keys)
     (with-attributes d (remp (lambda (a) (memq (car a) keys)) (datum-attributes d))))
 
-  (define (with-weight d w)
-    (with-attributes d (append (remp (lambda (a) (eq? (car a) 'weight)) (datum-attributes d))
-                               (list (cons 'weight w)))))
+  (define (with-attribute d key v)
+    (with-attributes d (append (remp (lambda (a) (eq? (car a) key)) (datum-attributes d))
+                               (list (cons key v)))))
+
+  (define (with-weight d w) (with-attribute d 'weight w))
 
   (define (node-datum node)
     (car (document:datums (document:slice (buffers:document layout:buffer)
@@ -79,19 +96,17 @@
             [(and (split-node? p kind) (eq? (if (column? p) 'column 'row) direction)) (values p n)]
             [else (loop p)])))))
 
+  (define (evened c)
+    (let ([w (assq 'weight (datum-attributes c))])
+      (if (and w (not (eqv? (cdr w) 1)) (not (locked-datum? c)) (not (assq 'size (datum-attributes c))))
+          (with-weight c 1)
+          c)))
+
   (define (balanced d kind level)
     (if (kept-whole? d level)
         d
         (let ([children (map (lambda (c) (balanced c kind level)) (cddr d))])
-          (cons* (car d) (cadr d)
-                 (if (eq? (car d) kind)
-                     (map (lambda (c)
-                            (let ([w (assq 'weight (datum-attributes c))])
-                              (if (and w (not (eqv? (cdr w) 1)) (not (locked-datum? c)) (not (assq 'size (datum-attributes c))))
-                                  (with-weight c 1)
-                                  c)))
-                          children)
-                     children)))))
+          (cons* (car d) (cadr d) (if (eq? (car d) kind) (map evened children) children)))))
 
   (define (turned attributes)
     (let ([p (assq 'direction attributes)])
@@ -114,9 +129,7 @@
                (map (lambda (c) (transposed c kind level)) (cddr d)))))
 
   (define (check-size who v)
-    (unless (or (and (real? v) (exact? v) (< 0 v) (<= v 1))
-                (eq? v 'content)
-                (and (list? v) (fx= (length v) 2) (memq (car v) '(columns lines)) (fixnum? (cadr v)) (fx> (cadr v) 0)))
+    (unless (or (fraction? v) (eq? v 'content) (counted? v 'columns) (counted? v 'lines))
       (assertion-violation who "not a fraction, (columns n), (lines n) or content" v)))
 
   (define (check-attributes who a)
@@ -223,10 +236,29 @@
 (define (%level-kind) (buffers:kind-name (buffers:constructor-kind layout:level)))
 
 (define (%draw-split node children focused draw-child client)
-  (let ([direction (if (column? node) "column" "row")] [part (layout:part-class node)])
+  (let ([direction (if (column? node) "column" "row")] [part (layout:part-class node)]
+        [movable (views:keymap-mark divider-keymap)] [fixed (views:keymap-mark fixed-divider-keymap)]
+        [least (least-weight node)])
     (haml (:div.split ([class (if part (string-append direction " " part) direction)])
-            (map (lambda (c) (haml (:div.split-child ([style "--layout-split-flex:" (flex-text node c)]) (draw-child c))))
-                 children)))))
+            (let loop ([cs children] [before '()])
+              (if (null? cs)
+                  '()
+                  (let ([c (car cs)])
+                    (cons (haml (:div.split-child ([style "--layout-split-flex:" (flex-text node c least)])
+                                  (draw-child c)
+                                  (when (pair? (cdr cs))
+                                    (%draw-divider node (cadr cs) (if (%movable? node (cons c before) (cdr cs)) movable fixed)))))
+                          (loop (cdr cs) (cons c before))))))))))
+
+;; A divider carries the marks of the part after it, as a tab carries its
+;; child's, so a press on it names that part.
+(define (%draw-divider node next mark)
+  (haml (:div.split-divider ([role "separator"] [aria-orientation (if (column? node) "horizontal" "vertical")]
+                             [data-at (document:node-start next)] [data-to (document:node-end next)]
+                             [data-keymap mark]))))
+
+(define (%movable? split before after)
+  (and (not (layout:locked? split)) (pair? (drag-chain split before)) (pair? (drag-chain split after))))
 
 (define (%split-neighbour node child direction)
   (let-values ([(before after) (if (column? node) (values 'up 'down) (values 'left 'right))])
@@ -478,6 +510,118 @@
          (assertion-violation 'layout-split:display-at-side "not a buffer" b))
        (or (layout:find-view b) (place! b side depth size attributes)))]))
 
+(define (minimum part axis)
+  (unless (document:node? part)
+    (assertion-violation 'layout-split:minimum "not a part" part))
+  (unless (enum-set-member? axis (enum-set-universe (directions)))
+    (assertion-violation 'layout-split:minimum "not a split direction" axis))
+  (let cells ([part part])
+    (if (split-node? part (%kind))
+        (let ([ms (map cells (parts part))])
+          (if (eq? (%axis part) axis) (fold-left + 0 ms) (fold-left max 0 ms)))
+        (if (eq? axis 'row) (layout:min-width) (layout:min-height)))))
+
+(define (drag-chain split parts)
+  (unless (and (document:node? split) (list? parts) (pair? parts))
+    (assertion-violation 'layout-split:drag-chain "not a split and the parts on one side of a divider" split parts))
+  (let ([nearest (car parts)])
+    (if (or (layout:locked? nearest) (eq? (document:node-attribute nearest 'size #f) 'content))
+        '()
+        (list nearest))))
+
+;; Stored values are rounded, or each drag would lengthen the exact
+;; ratio's denominator in every later layout and window-history step; a
+;; part changed by a pixel in tens of thousands still gets a new value.
+(define (%rounded x) (rationalize x (/ x 100000)))
+
+(define (scale-size size ratio)
+  (unless (and (rational? ratio) (exact? ratio) (positive? ratio))
+    (assertion-violation 'layout-split:scale-size "not a positive exact number" ratio))
+  (cond
+    [(fraction? size) (min 1 (%rounded (* size ratio)))]
+    [(or (counted? size 'columns) (counted? size 'lines)) (list (car size) (max 1 (round (* (cadr size) ratio))))]
+    [else (assertion-violation 'layout-split:scale-size "not a fraction, (columns n) or (lines n)" size)]))
+
+(define (%axis split) (if (column? split) 'column 'row))
+
+(define (%unit axis) (if (eq? axis 'column) 'lines 'columns))
+
+(define (%size-of d)
+  (let ([p (assq 'size (datum-attributes d))]) (and p (cdr p))))
+
+(define (%pressed-divider event)
+  (let-values ([(split next) (layout:pressed-part event container)])
+    (let ([k (and split (position-of next (parts split)))])
+      (if (and k (fx> k 0)) (values split k) (values #f #f)))))
+
+(define (%chain-entries split side chain cs)
+  (map (lambda (p)
+         (unless (memp (lambda (c) (fx= (document:node-start c) (document:node-start p))) side)
+           (assertion-violation 'layout-split:drag-chain "not a part on the divider's side" p))
+         (when (eq? (document:node-attribute p 'size #f) 'content)
+           (assertion-violation 'layout-split:drag-chain "a part that fits its content" p))
+         (list (cons "index" (position-of p cs)) (cons "minimum" (minimum p (%axis split)))
+               (cons "counted" (counted? (document:node-attribute p 'size #f) (%unit (%axis split))))))
+       chain))
+
+;; A part's weight, fraction or count is proportional to its length
+;; along the split, so scaling each changed part by its length's ratio
+;; leaves every other part as long as it was. A part that was 0 long has
+;; no ratio, so it keeps its value: the space it grew into is what
+;; scaling its neighbour freed.
+(define (%stored d changes axis)
+  (cons* (car d) (cadr d)
+         (let loop ([cs (cddr d)] [k 0])
+           (if (null? cs)
+               '()
+               (cons (let ([change (find (lambda (c) (fx= (layout:drag-change-index c) k)) changes)])
+                       (if (and change (> (layout:drag-change-old change) 0))
+                           (%scaled (car cs) (/ (layout:drag-change-new change) (layout:drag-change-old change)) axis)
+                           (car cs)))
+                     (loop (cdr cs) (fx+ k 1)))))))
+
+(define (%scaled d ratio axis)
+  (let ([size (%size-of d)])
+    (if (or (fraction? size) (counted? size (%unit axis)))
+        (with-attribute d 'size (scale-size size ratio))
+        (with-weight d (%rounded (* (let ([p (assq 'weight (datum-attributes d))]) (if p (positive-weight (cdr p)) 1)) ratio))))))
+
+(define (%drag! who split k clicks client)
+  (when (layout:locked? split)
+    (error who "a locked part"))
+  (let* ([cs (parts split)] [axis (%axis split)]
+         [before-side (reverse (list-head cs k))] [after-side (list-tail cs k)]
+         [before (drag-chain split before-side)] [after (drag-chain split after-side)])
+    (when (and (pair? before) (pair? after))
+      (let ([question (list (cons "at" (document:node-start (list-ref cs k))) (cons "clicks" clicks) (cons "index" k)
+                            (cons "axis" (symbol->string axis))
+                            (cons "before" (list->vector (%chain-entries split before-side before cs)))
+                            (cons "after" (list->vector (%chain-entries split after-side after cs))))]
+            [indexes (map (lambda (p) (position-of p cs)) (append before after))])
+        (layout:ask-drag who client split "layout-split-drag" question indexes
+          (lambda (now changes) (replace-node! now (%stored (node-datum now) changes axis))))))))
+
+(commands:define-command (mouse-drag-divider [event (keys:command-event)])
+  "Moves the divider pressed as the mouse drags it, and gives the parts on its two sides the lengths reached when the button comes up."
+  (let-values ([(split k) (%pressed-divider event)])
+    (let ([client (web:current-client)])
+      (when (and split client)
+        (%drag! 'layout-split:mouse-drag-divider split k (keys:event-clicks event) client)))))
+
+(commands:define-command (mouse-balance [event (keys:command-event)])
+  "Sets the weight of every child of the split whose divider was clicked to 1, but sized and locked children."
+  (let-values ([(split k) (%pressed-divider event)])
+    (when split
+      (when (layout:locked? split)
+        (error 'layout-split:mouse-balance "a locked part"))
+      (let* ([d (node-datum split)] [even (cons* (car d) (cadr d) (map evened (cddr d)))])
+        (unless (equal? d even)
+          (replace-node! split even))))))
+
+(tables:define-table divider-keymap "The keymap of a divider the mouse can drag.")
+
+(tables:define-table fixed-divider-keymap "The keymap of a divider that cannot move, beside a locked part or one that fits its content.")
+
 (tables:define-table resize-keymap "Keys that go on resizing after C-x {, C-x } or C-x ^.")
 
 (keys:bind! keys:global "C-x 2" split-below)
@@ -496,4 +640,13 @@
 (keys:bind! resize-keymap "v" shrink-vertically)
 (tables:set! keys:repeat-keymaps resize-keymap)
 (options:set! layout:display-action display-pop-up)
+(keys:bind! divider-keymap "<down-mouse-1>" mouse-drag-divider)
+(keys:bind! divider-keymap "<mouse-1>" keys:ignore)
+(keys:bind! divider-keymap "<drag-mouse-1>" keys:ignore)
+(keys:bind! divider-keymap "<double-down-mouse-1>" keys:ignore)
+(keys:bind! divider-keymap "<double-mouse-1>" mouse-balance)
+(keys:bind! fixed-divider-keymap "<down-mouse-1>" keys:ignore)
+(keys:bind! fixed-divider-keymap "<mouse-1>" keys:ignore)
+(keys:bind! fixed-divider-keymap "<drag-mouse-1>" keys:ignore)
 (tables:set! web:stylesheets 'layout-split "layout-split/layout-split.css")
+(tables:set! web:scripts 'layout-split "layout-split/layout-split.js")

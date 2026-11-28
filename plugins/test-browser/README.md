@@ -1,3 +1,3 @@
 # test-browser
 
-A pretend user at a real browser page: opens pages of the Chromium on the `PATH` at Tuna's `web`, each a client, presses keys, types and clicks in them, and waits until a page has applied what Tuna sent it, so a test reads the page's DOM and computed styles through chez-cdp. Tests import it; no plugin does.
+A pretend user at a real browser page: opens pages of the Chromium on the `PATH` at Tuna's `web`, each a client, presses keys, types, clicks and drags in them, and waits until a page has applied what Tuna sent it, so a test reads the page's DOM and computed styles through chez-cdp. Tests import it; no plugin does.

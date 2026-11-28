@@ -57,7 +57,7 @@
 
   (define-record-type head-file
     (sealed #t)
-    (fields slot path time bytes version))
+    (fields slot name path time bytes version))
 
   (define configuration-folder (string-append (getenv "HOME") "/.config/tuna"))
 
@@ -722,15 +722,19 @@
 
   ;; A file that cannot be read stays, without bytes, so that it comes back
   ;; once it can be read.
-  (define (read-head-file who slot path old)
+  (define (read-head-file who slot name path old)
     (let* ([time (modification-time path)] [bytes (and time (file-bytes path))])
       (when (and (not bytes) (or (not old) (head-file-bytes old)))
         (cannot-read who path))
-      (make-head-file slot path time bytes
+      (make-head-file slot name path time bytes
         (cond
           [(not old) 1]
           [(equal? bytes (head-file-bytes old)) (head-file-version old)]
           [else (fx+ (head-file-version old) 1)]))))
+
+  ;; A module imports another of web:scripts by its name in the import
+  ;; map, where these name the page's own.
+  (define page-module-names '(datastar tuna))
 
   (define (read-head-files who kind entries old-entries old-files)
     (let loop ([entries entries] [files '()])
@@ -743,11 +747,17 @@
                                 (let ([folder (owner-folder (caddr entry))])
                                   (and folder (string-append folder "/" value)))))])
             (cond
+              [(and (eq? kind 'script) (memq (car entry) page-module-names))
+               (unless (member entry old-entries)
+                 (report (condition (make-warning) (make-who-condition who)
+                           (make-message-condition "the name of a module of the page's own")
+                           (make-irritants-condition (list (car entry))))))
+               (loop (cdr entries) files)]
               [path
                (let* ([slot (slot-of kind (car entry))]
                       [old (find (lambda (f) (fx= (head-file-slot f) slot)) old-files)])
                  (loop (cdr entries)
-                       (cons (read-head-file who slot path (and old (string=? (head-file-path old) path) old))
+                       (cons (read-head-file who slot (car entry) path (and old (string=? (head-file-path old) path) old))
                              files)))]
               [else
                (unless (member entry old-entries)
@@ -774,7 +784,7 @@
       (lambda (f)
         (if (equal? (modification-time (head-file-path f)) (head-file-time f))
             f
-            (read-head-file who (head-file-slot f) (head-file-path f) f))))
+            (read-head-file who (head-file-slot f) (head-file-name f) (head-file-path f) f))))
     (let ([styles (map (check 'web:stylesheets) stylesheet-files)]
           [modules (map (check 'web:scripts) script-files)]
           [earlies (map (check 'web:early-scripts) early-files)])
@@ -785,7 +795,7 @@
   ;; changed reloads.
   (define (update-head! styles modules earlies)
     (let ([new-links (map (lambda (f) (cons (head-file-slot f) (href f))) (filter head-file-bytes styles))]
-          [new-hrefs (map href (filter head-file-bytes modules))]
+          [new-hrefs (map (lambda (f) (cons (head-file-name f) (href f))) (filter head-file-bytes modules))]
           [new-early (map href (filter head-file-bytes earlies))])
       (with-lock
         (set! stylesheet-files styles)
@@ -920,6 +930,13 @@
   (define screen-action
     (get "/screen" (fetch-options [retry (fetch-retry always)] [retry-max-count 1000000000])))
 
+  (define (import-map modules)
+    (parameterize ([json-escape-html? #t])
+      (json->string
+        (list (cons "imports"
+                    (cons* '("datastar" . "/web/datastar.js") '("tuna" . "/web/tuna.js")
+                           (map (lambda (module) (cons (symbol->string (car module)) (cdr module))) modules)))))))
+
   ;; The first screen comes inside the page, so the browser paints no
   ;; empty frame before it, and the early scripts can place it before the
   ;; first paint: a module would run after it.
@@ -931,11 +948,11 @@
           (:meta ([name "viewport"] [content "width=device-width, initial-scale=1"]))
           (:meta ([name "color-scheme"] [content "light dark"]))
           (title-element title-text)
-          (:script ([type "importmap"]) "{\"imports\":{\"datastar\":\"/web/datastar.js\",\"tuna\":\"/web/tuna.js\"}}")
+          (:script ([type "importmap"]) (import-map modules))
           (:script ([type "module"] [src "/web/datastar.js"]))
           (:script ([type "module"] [src "/web/tuna.js"]))
           (map link-element styles)
-          (map (lambda (src) (haml (:script ([type "module"] [src src])))) modules)
+          (map (lambda (module) (haml (:script ([type "module"] [src (cdr module)])))) modules)
           (map (lambda (src) (haml (:script ([src src])))) early))
         (:body ([data-signals:client "'" id "'"] [data-init screen-action])
           (:main ([id "screen"]) (when first (raw-html first)))

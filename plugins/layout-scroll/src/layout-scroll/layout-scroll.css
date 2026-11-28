@@ -126,6 +126,8 @@
      same fractions out exactly at its own size. In the views' font, so
      that a size in columns or lines matches theirs. */
   .strip-item {
+    --layout-cell-width: 1ch;
+    --layout-cell-height: 1lh;
     display: flex;
     flex: none;
     position: relative;
@@ -151,7 +153,7 @@
     border-block-start: var(--tuna-border-width) solid var(--tuna-border);
   }
 
-  .strip-item > :not(.strip-end) {
+  .strip-item > :not(.strip-end, .strip-handle) {
     flex: 1 1 0;
     min-inline-size: 0;
     min-block-size: 0;
@@ -178,6 +180,42 @@
     scroll-snap-align: none;
   }
 
+  /* Out of the flow, centred on the rule after the column and over the
+     next column's edge; the last column's lies inside it, so the strip
+     scrolls no further. Its press starts a drag, so the plugin draws its
+     pointer and hover rather than views. */
+  .strip-handle {
+    position: absolute;
+    z-index: 1;
+    background-image: none;
+  }
+
+  .layout-strip.row > .strip-item > .strip-handle {
+    inset-block: 0;
+    inset-inline-end: calc(-1 * (var(--layout-scroll-handle-size, var(--tuna-space-2)) + var(--tuna-border-width)) / 2);
+    inline-size: var(--layout-scroll-handle-size, var(--tuna-space-2));
+    cursor: col-resize;
+  }
+
+  .layout-strip.column > .strip-item > .strip-handle {
+    inset-inline: 0;
+    inset-block-end: calc(-1 * (var(--layout-scroll-handle-size, var(--tuna-space-2)) + var(--tuna-border-width)) / 2);
+    block-size: var(--layout-scroll-handle-size, var(--tuna-space-2));
+    cursor: row-resize;
+  }
+
+  .layout-strip.row > .strip-item:last-child > .strip-handle {
+    inset-inline-end: 0;
+  }
+
+  .layout-strip.column > .strip-item:last-child > .strip-handle {
+    inset-block-end: 0;
+  }
+
+  .strip-handle:is(:hover, :active) {
+    background-color: var(--layout-scroll-handle-hover, var(--tuna-border-strong));
+  }
+
   .strip-placeholder {
     display: grid;
     place-items: center;
@@ -187,5 +225,20 @@
     font-size: var(--tuna-font-size-ui);
     color: var(--layout-scroll-placeholder-text, var(--tuna-text-muted));
     background-color: var(--layout-scroll-placeholder-background, var(--tuna-surface-subtle));
+  }
+}
+
+@layer preferences {
+  /* Views' hover outline under forced colours is in this layer, so the
+     handle's own must be too. */
+  @media (forced-colors: active) {
+    .strip-handle {
+      outline: none;
+    }
+
+    .strip-handle:is(:hover, :active) {
+      outline: var(--tuna-border-width-2) solid Highlight;
+      outline-offset: calc(-1 * var(--tuna-border-width-2));
+    }
   }
 }

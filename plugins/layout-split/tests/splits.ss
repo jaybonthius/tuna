@@ -339,3 +339,8 @@
       (check-equal? '((layout-split:split-below "the view shows no buffer")) (refusals-on "C-x 2"))
       (check-equal? '((layout-split:split-right "the view shows no buffer")) (refusals-on "C-x 3"))
       (check-equal? before (layout-split-test/parts:tree)))))
+
+(test "weights are drawn over the least of the split's weights, so weights that add up to less than 1 still fill the split"
+  (let ([a (fresh "a")] [b (fresh "b")] [c (fresh "c")])
+    (set-parts! (layout-split:container '((direction . row)) (atom a '(size columns 30)) (atom b '(weight . 1/4)) (atom c '(weight . 1/2))))
+    (check-equal? '("--layout-split-flex:0 0 30ch" "--layout-split-flex:1.0 1 0" "--layout-split-flex:2.0 1 0") (flexes))))

@@ -1813,6 +1813,91 @@
           (with-attributes d new)))
       (void))))
 
+(define (pressed-part event container)
+  (unless (keys:event? event)
+    (assertion-violation 'layout:pressed-part "not an event" event))
+  (let* ([kind (and (procedure? container) (buffers:constructor-kind container))]
+         [name (and kind (buffers:kind-name kind))])
+    (unless (and name (container-entry name))
+      (assertion-violation 'layout:pressed-part "not a container kind" container))
+    (let* ([posn (keys:event-start event)] [v (views:posn-view posn)] [child (views:posn-node posn)]
+           [parent (and v child (eq? (views:buffer v) buffer)
+                        (document:enclosing (buffers:document buffer) (document:node-start child)))])
+      (if (and parent (eq? (document:node-kind parent) name))
+          (values parent child)
+          (values #f #f)))))
+
+(define (%positive-count? v) (and (fixnum? v) (fx> v 0)))
+
+(options:define-option min-width 10 %positive-count?
+  "The fewest columns a mouse drag leaves a part along a row, such as a part of a row split or a column of a row strip.")
+
+(options:define-option min-height 4 %positive-count?
+  "The fewest lines a mouse drag leaves a part along a column, such as a part of a column split or a column of a column strip.")
+
+(define-record-type (drag-change %make-drag-change drag-change?)
+  (sealed #t)
+  (fields index old new))
+
+(define (%not-a-drag-answer who answer)
+  (error who "not a drag answer" answer))
+
+(define (%drag-change who entry)
+  (let ([field (lambda (name) (let ([p (and (list? entry) (for-all pair? entry) (assoc name entry))]) (and p (cdr p))))])
+    (let ([index (field "index")] [old (field "old")] [new (field "new")])
+      (unless (and (fixnum? index) (real? old) (finite? old) (>= old 0) (real? new) (finite? new) (> new 0))
+        (%not-a-drag-answer who entry))
+      (%make-drag-change index (exact old) (exact new)))))
+
+;; A page answers null when it has no drag to give, as one without the
+;; page's script does, and web gives #f for a client gone.
+(define (%drag-changes who answer indexes)
+  (cond
+    [(or (not answer) (eq? answer 'null)) '()]
+    [(vector? answer)
+     (let ([changes (map (lambda (e) (%drag-change who e)) (vector->list answer))])
+       (let loop ([seen '()] [cs changes])
+         (unless (null? cs)
+           (let ([k (drag-change-index (car cs))])
+             (when (or (memv k seen) (not (memv k indexes)))
+               (%not-a-drag-answer who answer))
+             (loop (cons k seen) (cdr cs)))))
+       changes)]
+    [else (%not-a-drag-answer who answer)]))
+
+;; The page leaves the lengths it reached until a screen brings the
+;; stored ones, so a drag that ends any other way has it put them back. A
+;; stop passes every handler, so a wind sees the task leave; its after
+;; thunk also runs at each pause, which is no leaving.
+(define (ask-drag who client part name question indexes store!)
+  (unless (symbol? who)
+    (assertion-violation 'layout:ask-drag "not a symbol" who))
+  (unless (web:client? client)
+    (assertion-violation 'layout:ask-drag "not a client" client))
+  (let-values ([(ix n) (part-of 'layout:ask-drag part)])
+    (unless (eq? ix (current-index))
+      (assertion-violation 'layout:ask-drag "not a part of the layout" part)))
+  (unless (and (list? indexes) (for-all fixnum? indexes))
+    (assertion-violation 'layout:ask-drag "not a list of part indexes" indexes))
+  (unless (procedure? store!)
+    (assertion-violation 'layout:ask-drag "not a procedure" store!))
+  (let ([t (current-task)] [start (document:node-start part)] [version (buffers:version buffer)]
+        [was (node-datum (current-index) part)] [ended #f])
+    (dynamic-wind
+      void
+      (lambda ()
+        (let ([changes (%drag-changes who (web:ask-page client name question) indexes)])
+          (when (pair? changes)
+            (let* ([p (buffers:map-position-after buffer start version)]
+                   [now (and p (document:token (buffers:document buffer) p))])
+              (unless (and (document:node? now) (equal? (node-datum (current-index) now) was))
+                (error who "the layout changed during the drag"))
+              (store! now changes))))
+        (set! ended #t))
+      (lambda ()
+        (unless (or ended (and t (memq (task-state t) '(paused woken))))
+          (web:call-page! client "layout-drag-restore" #f))))))
+
 (define (draw-view-atom node view client)
   (list (views:draw view client)))
 
@@ -2560,6 +2645,7 @@
 (hooks:add! buffers:kill-queries %keep-layout)
 (tables:set! web:input-handlers "key" %handle-key)
 (tables:set! web:stylesheets 'layout "layout/layout.css")
+(tables:set! web:scripts 'layout "layout/layout.js")
 (advice-add! batch-ended %end-batch)
 (on-unload save-now!)
 (on-unload (lambda () (views:drop! screen-view)))

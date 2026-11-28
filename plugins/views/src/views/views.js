@@ -1785,7 +1785,7 @@ new MutationObserver((records) => {
   attributeFilter: ["data-placement", "data-reported", "data-wheel"],
 });
 
-const dragThreshold = 3;
+export const dragThreshold = 3;
 let press = null;
 
 function modifierNames(event) {

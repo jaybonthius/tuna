@@ -1,5 +1,19 @@
 @layer defaults, themes, preferences;
 
+/* Registered, so the page script reads a cell of a part's font in
+   pixels: the unit a size in columns or lines counts. */
+@property --layout-cell-width {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --layout-cell-height {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
 @layer defaults {
   /* The layout is the whole page: a body margin or a viewport unit that
      counts the area under a phone's toolbar would let the page itself

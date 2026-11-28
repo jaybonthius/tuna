@@ -50,14 +50,15 @@ window.tuna = {
     if (procedure) procedure(value);
   },
   // The asking command holds its client's keys until an answer comes,
-  // so a procedure that throws still answers.
+  // so a procedure that throws, or whose promise rejects, still answers.
   ask(id, name, value) {
     const procedure = procedures.get(name);
     let result = null;
     try {
       if (procedure) result = procedure(value);
     } finally {
-      answer(id, result);
+      if (result instanceof Promise) result.then((settled) => answer(id, settled), () => answer(id, null));
+      else answer(id, result);
     }
   },
 };

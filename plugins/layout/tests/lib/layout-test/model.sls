@@ -455,7 +455,9 @@
 
 ;; A page names a part only through an element of the layout's screen
 ;; marked with the part's tokens, such as a view's or a tab's; a view
-;; drawn inside it marks its own buffer's.
+;; drawn inside it marks its own buffer's. A split's divider is marked
+;; with the part after it, and a strip's handle with its column, and a
+;; click on either selects nothing.
 (define (%marked-elements client)
   (let ([screen (car (test-user:elements (test-user:screen client) "layout-screen"))])
     (let walk ([node screen])
@@ -476,7 +478,10 @@
         (%refused? (lambda () (test-user:click-element! client e "<mouse-1>")))
         (let* ([atoms (filter (lambda (a) (memv (%node-id a) (%node-ids n))) (%atoms (car before)))]
                [m (%mru atoms (caddr before))])
-          (%check! 'click (if (and m (not (%locked? m))) (%node-id m) (car (caddr before))) (%selected-id)))))))
+          (%check! 'click (if (and m (not (%locked? m)) (not (member (test-user:element-attribute e "class") '("split-divider" "strip-handle"))))
+                              (%node-id m)
+                              (car (caddr before)))
+                   (%selected-id)))))))
 
 (define (%op-mouse-3! client)
   (let ([v (%pick-one (layout:views))])

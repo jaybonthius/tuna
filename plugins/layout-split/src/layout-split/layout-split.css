@@ -2,6 +2,7 @@
 
 @layer defaults {
   .split {
+    --layout-split-rule: var(--tuna-border-width);
     display: flex;
     flex: 1 1 0;
     min-inline-size: 0;
@@ -19,6 +20,9 @@
   /* In the views' font, so that a size in columns or lines matches
      theirs. */
   .split-child {
+    --layout-cell-width: 1ch;
+    --layout-cell-height: 1lh;
+    position: relative;
     display: flex;
     flex: var(--layout-split-flex, 1 1 0);
     min-inline-size: 0;
@@ -26,6 +30,40 @@
     font-family: var(--tuna-font-code);
     font-size: var(--tuna-font-size-code);
     line-height: var(--tuna-line-height-code);
+  }
+
+  /* Out of the flow, so it changes no part's length, and centred on the
+     rule or the gap, with more room for a press than the rule has; it
+     lies over the next part's edge. Its press starts a drag, so the
+     plugin draws its pointer and hover rather than views. */
+  .split-divider {
+    position: absolute;
+    z-index: 1;
+    background-image: none;
+  }
+
+  .split.row > .split-child > .split-divider {
+    inset-block: 0;
+    inset-inline-end: calc(-1 * (var(--layout-split-divider-size, var(--tuna-space-2)) + var(--layout-split-rule)) / 2);
+    inline-size: var(--layout-split-divider-size, var(--tuna-space-2));
+  }
+
+  .split.column > .split-child > .split-divider {
+    inset-inline: 0;
+    inset-block-end: calc(-1 * (var(--layout-split-divider-size, var(--tuna-space-2)) + var(--layout-split-rule)) / 2);
+    block-size: var(--layout-split-divider-size, var(--tuna-space-2));
+  }
+
+  .split.row > .split-child > .split-divider[data-keymap~="clickable"] {
+    cursor: col-resize;
+  }
+
+  .split.column > .split-child > .split-divider[data-keymap~="clickable"] {
+    cursor: row-resize;
+  }
+
+  .split-divider[data-keymap~="clickable"]:is(:hover, :active) {
+    background-color: var(--layout-split-divider-hover, var(--tuna-border-strong));
   }
 
   /* Only the frames outside every level but the screen's are drawn: a
@@ -42,6 +80,7 @@
   }
 
   .split.frame:not(.layout-level .layout-level *) {
+    --layout-split-rule: var(--layout-split-frame-gap, var(--tuna-space-2));
     gap: var(--layout-split-frame-gap, var(--tuna-space-2));
     background: var(--tuna-chrome);
   }
@@ -55,5 +94,20 @@
     border: var(--tuna-border-width) solid var(--tuna-border);
     border-radius: var(--tuna-panel-radius);
     overflow: clip;
+  }
+}
+
+@layer preferences {
+  /* Views' hover outline under forced colours is in this layer, so the
+     divider's own must be too. */
+  @media (forced-colors: active) {
+    .split-divider {
+      outline: none;
+    }
+
+    .split-divider[data-keymap~="clickable"]:is(:hover, :active) {
+      outline: var(--tuna-border-width-2) solid Highlight;
+      outline-offset: calc(-1 * var(--tuna-border-width-2));
+    }
   }
 }

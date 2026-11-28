@@ -191,17 +191,9 @@
         (error 'layout-tabs:recent-tab "no more recent tabs"))
       (layout:select! (layout:part-view (list-ref stops (- n 1)))))))
 
-(define (%clicked-tab who event)
-  (unless (keys:event? event)
-    (assertion-violation who "not an event" event))
-  (let* ([posn (keys:event-start event)] [v (views:posn-view posn)] [child (views:posn-node posn)])
-    (and v child (eq? (views:buffer v) layout:buffer)
-         (let-values ([(tabs tab) (holding-tabs (document:node-start child) (%kind))])
-           (and tab (same-part? tab child) tab)))))
-
 (commands:define-command (mouse-select-tab [event (keys:command-event)])
   "Selects the view the focused children lead to in the tab clicked, unless it is locked."
-  (let ([tab (%clicked-tab 'layout-tabs:mouse-select-tab event)])
+  (let-values ([(tabs tab) (layout:pressed-part event container)])
     (when tab
       (let ([target (layout:part-view tab)])
         (unless (layout:locked? (layout:view-node target))
@@ -210,7 +202,7 @@
 ;; A lock binds the user's commands, so a tab holding a locked part stays.
 (commands:define-command (mouse-close-tab [event (keys:command-event)])
   "Deletes the tab clicked, with every part in it, unless it holds a locked part."
-  (let ([tab (%clicked-tab 'layout-tabs:mouse-close-tab event)])
+  (let-values ([(tabs tab) (layout:pressed-part event container)])
     (when (and tab (not (holds-locked? tab)))
       (layout:delete-part! tab))))
 

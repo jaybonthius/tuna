@@ -180,17 +180,20 @@
           (%strip-edge "start" (and (fx> first-whole 0) (list-ref children (fx- first-whole 1))) first-whole)
           (views:draw-scroller scroller client (if (row? node) (views:axis row) (views:axis column))
             (string-append "layout-strip " direction (if center? " center" ""))
-            (map (lambda (c)
-                   (let ([id (item-id c)])
-                     (haml (:div.strip-item ([data-item id] [style "--layout-scroll-size:" (size-length node c)])
-                             (if (memv id drawn)
-                                 (draw-child c)
-                                 (haml (:button.strip-placeholder ([type "button"] [tabindex "-1"]
-                                                                   [data-at (document:node-start c)] [data-to (document:node-end c)]
-                                                                   [data-keymap (views:keymap-mark layout:keymap)])
-                                         (layout:part-title c))))
-                             (:span.strip-end)))))
-                 children))
+            (let ([handle-mark (views:keymap-mark handle-keymap)])
+              (map (lambda (c)
+                     (let ([id (item-id c)])
+                       (haml (:div.strip-item ([data-item id] [style "--layout-scroll-size:" (size-length node c)])
+                               (if (memv id drawn)
+                                   (draw-child c)
+                                   (haml (:button.strip-placeholder ([type "button"] [tabindex "-1"]
+                                                                     [data-at (document:node-start c)] [data-to (document:node-end c)]
+                                                                     [data-keymap (views:keymap-mark layout:keymap)])
+                                           (layout:part-title c))))
+                               (:span.strip-end)
+                               (when (and (memv id drawn) (%resizable? node c))
+                                 (%draw-handle node c handle-mark))))))
+                   children)))
           (%strip-edge "end" (and (fx> after 0) (list-ref children (fx+ last-whole 1))) after))))))
 
 ;; Cards at the edge show whether there is more that way, and about how
@@ -204,6 +207,16 @@
                                    [data-keymap (views:keymap-mark layout:keymap)])
                 (make-list (fxmin count 3) (haml (:span.strip-edge-card))))))
       (haml (:div.strip-edge ([class side])))))
+
+;; A handle carries its column's marks, as a tab carries its child's, so
+;; a press on it names the column.
+(define (%draw-handle node column mark)
+  (haml (:div.strip-handle ([role "separator"] [aria-orientation (if (row? node) "vertical" "horizontal")]
+                            [data-at (document:node-start column)] [data-to (document:node-end column)]
+                            [data-keymap mark]))))
+
+(define (%resizable? node column)
+  (not (or (layout:locked? column) (eq? (size-of node column) 'content))))
 
 (define (%strip-neighbour node child direction)
   (let-values ([(before after) (if (row? node) (values 'left 'right) (values 'up 'down))])
@@ -415,6 +428,37 @@
   "Moves the selected view into the column after its own when it is alone there, else the part of its column holding it out into a new column after it."
   (%consume-or-expel! 'layout-scroll:consume-or-expel-right #t))
 
+(define (%drag-edge! who strip column clicks client)
+  (%check-unlocked who column)
+  (let ([size (size-of strip column)] [axis (if (row? strip) 'row 'column)] [k (position-of column (parts strip))])
+    (unless (eq? size 'content)
+      (layout:ask-drag who client column "layout-scroll-drag"
+        (list (cons "at" (document:node-start column)) (cons "clicks" clicks) (cons "index" k) (cons "axis" (symbol->string axis))
+              (cons "minimum" (layout-split:minimum column axis)) (cons "counted" (pair? size)))
+        (list k)
+        (lambda (now changes)
+          (let ([old (layout:drag-change-old (car changes))] [new (layout:drag-change-new (car changes))])
+            (when (> old 0)
+              (replace-node! now (with-size (datum-of now) (layout-split:scale-size size (/ new old)))))))))))
+
+(commands:define-command (mouse-drag-edge [event (keys:command-event)])
+  "Moves the far edge of the column whose handle was pressed as the mouse drags it, and gives the column the length reached when the button comes up."
+  (let-values ([(strip column) (layout:pressed-part event container)])
+    (let ([client (web:current-client)])
+      (when (and strip client)
+        (%drag-edge! 'layout-scroll:mouse-drag-edge strip column (keys:event-clicks event) client)))))
+
+(commands:define-command (mouse-reset-size [event (keys:command-event)])
+  "Gives the column whose handle was double-clicked layout-scroll:default-size."
+  (let-values ([(strip column) (layout:pressed-part event container)])
+    (when strip
+      (%check-unlocked 'layout-scroll:mouse-reset-size column)
+      (let* ([d (datum-of column)] [reset (with-size d (default-size))])
+        (unless (equal? d reset)
+          (replace-node! column reset))))))
+
+(tables:define-table handle-keymap "The keymap of a column's handle, which the mouse drags to resize the column.")
+
 (commands:define-command (wrap-in-strip)
   "Wraps the selected part in a strip."
   (layout:wrap! (lambda (parts) (apply container '() parts))))
@@ -430,5 +474,11 @@
 (keys:bind! keymap "C-s-f" full-size)
 (keys:bind! keymap "s-<home>" first)
 (keys:bind! keymap "s-<end>" last)
+(keys:bind! handle-keymap "<down-mouse-1>" mouse-drag-edge)
+(keys:bind! handle-keymap "<mouse-1>" keys:ignore)
+(keys:bind! handle-keymap "<drag-mouse-1>" keys:ignore)
+(keys:bind! handle-keymap "<double-down-mouse-1>" keys:ignore)
+(keys:bind! handle-keymap "<double-mouse-1>" mouse-reset-size)
 (tables:set! web:stylesheets 'layout-scroll "layout-scroll/layout-scroll.css")
+(tables:set! web:scripts 'layout-scroll "layout-scroll/layout-scroll.js")
 (on-unload forget-strips!)
