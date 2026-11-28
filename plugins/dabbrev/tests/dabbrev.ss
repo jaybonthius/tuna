@@ -84,6 +84,40 @@
     (check-equal? "apricot apple ap application" (text here))
     (check-equal? '("apple") (expansions 1))))
 
+(test "each M-/ that puts a word from another buffer names that buffer, though the last named it too"
+  (show! (buffers:make "naming" "qx"))
+  (buffers:make "named" "qxone qxtwo")
+  (take-said!)
+  (check-equal? '("qxone") (expansions 1))
+  (check-equal? '("Expansion found in ‘named’") (take-said!))
+  (check-equal? '("qxtwo") (expansions 1))
+  (check-equal? '("Expansion found in ‘named’") (take-said!))
+  (test-user:press! "C-g"))
+
+(test "only the buffers friend-buffer-predicate accepts are friends, searched before the others"
+  (let ([near (buffers:make "near" "jknear")] [far (buffers:make "far" "jkfar")])
+    (show! (buffers:make "befriending" "jk"))
+    (with-setting dabbrev:friend-buffer-predicate (lambda (b) (eq? b far))
+      (lambda ()
+        (with-setting dabbrev:check-all-buffers #f
+          (lambda ()
+            (check-equal? '("jkfar") (expansions 1))
+            (check-equal? '((dabbrev:expand "No further dynamic expansion for ‘jk’ found")) (expand-reports))))))
+    (buffers:kill! near)
+    (buffers:kill! far))
+  (take-said!))
+
+(test "a buffer ignored-buffer-predicate accepts is never searched"
+  (let ([kept (buffers:make "kept" "vwkept")] [ignored (buffers:make "ignored" "vwignored")])
+    (show! (buffers:make "ignoring" "vw"))
+    (with-setting dabbrev:ignored-buffer-predicate (lambda (b) (eq? b ignored))
+      (lambda ()
+        (check-equal? '("vwkept") (expansions 1))
+        (check-equal? '((dabbrev:expand "No further dynamic expansion for ‘vw’ found")) (expand-reports))))
+    (buffers:kill! kept)
+    (buffers:kill! ignored))
+  (take-said!))
+
 (test "after another command, M-/ starts afresh from the text before point"
   (let ([here (show! (buffers:make "afresh" "apricot apple ap"))])
     (expand!)

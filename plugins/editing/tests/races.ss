@@ -5,7 +5,7 @@
 (define request-quit! (test-runner:running-task-canceller))
 
 (define refusals
-  '("end of buffer" "beginning of buffer" "the previous command was not a yank" "no two characters to transpose"
+  '("end of buffer" "beginning of buffer" "no reader is loaded" "no two characters to transpose"
     "the mark is not set, so there is no region"))
 
 ;; A user's C-g reaches Tuna on the server's thread while keys run, so a
@@ -51,7 +51,7 @@
   (check-equal? '((" gamma" ((1 #f))) (" beta")) (list (editing-test/scene:state) (editing-test/scene:kills 1)))
   (test-user:press! "C-y")
   (reload-modules! '((editing)))
-  (check-equal? '((editing:yank-pop "the previous command was not a yank")) (editing-test/scene:press-reports! "M-y"))
+  (check-equal? '((ask:choice-reader "no reader is loaded")) (editing-test/scene:press-reports! "M-y"))
   (test-user:press! "M-f x")
   (check-equal? '(" beta gammax" ((13 #f))) (editing-test/scene:state)))
 

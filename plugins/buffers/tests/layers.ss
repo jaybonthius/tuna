@@ -131,11 +131,11 @@
     (check-raises (buffers-test:raised? 'buffers:piece-length "not a piece") (buffers:piece-length "x"))
     (check-raises (buffers-test:raised? 'buffers:piece-text "not a piece") (buffers:piece-text "x"))))
 
-(test "a read-only span refuses an edit that touches it or inserts where it would take the text; splice! asks no layer"
+(test "a read-only span refuses an edit that touches it or inserts where it would take the text, saying the buffer's text is read-only; splice! asks no layer"
   (let* ([t (buffers-test:fresh "Hlo! world.\n")] [g (buffers:layer t locked)]
          [try (lambda (thunk) (guard (c [(buffers:refused? c) (list (condition-message c) (condition-irritants c))]) (thunk)))])
     (buffers:add-span! g 4 6 'locked)
-    (check-equal? (make-list 3 (list "a read-only span refuses the edit" (list locked)))
+    (check-equal? (make-list 3 (list (string-append "the text of " (buffers:name t) " is read-only") '()))
       (list (try (lambda () (buffers:replace! t 5 5 "x"))) (try (lambda () (buffers:replace! t 4 4 "x")))
             (try (lambda () (buffers:replace! t 3 5 "")))))
     (check-equal? '(#t #t #f) (list (buffers:refuses-text? t 5 5) (buffers:refuses-text? t 3 5) (buffers:refuses-text? t 7 7)))

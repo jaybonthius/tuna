@@ -1204,7 +1204,7 @@
                                       (spans-overlapping store s e)))
                          (and inserting?
                               (pair? (spans-taking store s (fx- e s) (sticks-front? t) (sticks-rear? t) (travelling? l))))))
-            (refuse who "a read-only span refuses the edit" (buffer-layer-type l)))))
+            (refuse who (format "the text of ~a is read-only" (buffer-name b))))))
       (buffer-layers b)))
 
   (define (replace-content! who b start end content carried)

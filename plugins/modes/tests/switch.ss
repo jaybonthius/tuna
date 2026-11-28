@@ -186,7 +186,7 @@
     (switch! "python:mode")
     (check-equal? python:mode (modes:major-mode k))
     (check-equal? '((2 4)) (map (lambda (s) (list (car s) (cadr s))) (buffers:spans (buffers:layer k locked) 0 20)))
-    (check-raises (buffers-test:raised? 'buffers:replace! "a read-only span refuses the edit") (buffers:replace! k 3 3 "x"))
+    (check-raises (buffers-test:raised? 'buffers:replace! "the text of kinds is read-only") (buffers:replace! k 3 3 "x"))
     (check-raises (buffers-test:raised? 'buffers:replace! "the node refuses the edit") (buffers:replace! k 20 20 "x"))
     (let ([keymaps (views:call-with-view v (lambda () (keys:active-keymaps (test-user:client))))])
       (check-equal? (list keyed-keymap python:keymap prog:keymap)

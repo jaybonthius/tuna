@@ -16,7 +16,7 @@
 
 (module %internals
   (check-main-thread check-entry check-kills check-item kill-record? to-kill entry-text
-   current-entry ring-entries push-entry! add-to-newest! rotate-ring! join-kills insert-item! restore! inserted-since kill-of)
+   current-entry ring-entries push-entry! add-to-newest! rotate-ring! point-at! join-kills insert-item! restore! inserted-since kill-of)
 
   (define main-thread (get-thread-id))
 
@@ -207,6 +207,17 @@
         (set! state (make-ring (ring-slots s) (ring-count s) pointer))
         (slot-entry (list-ref (ring-slots s) pointer)))))
 
+  ;; An entry chosen from the ring may have been dropped since, by a kill
+  ;; made while the user chose, so it goes back as the newest, as Emacs's
+  ;; yank-from-kill-ring pushes a string the ring no longer holds.
+  (define (point-at! entry)
+    (let ([s state])
+      (let loop ([slots (ring-slots s)] [i 0])
+        (cond
+          [(null? slots) (push-entry! (map to-kill entry))]
+          [(eq? (slot-entry (car slots)) entry) (set! state (make-ring (ring-slots s) (ring-count s) i))]
+          [else (loop (cdr slots) (fx+ i 1))]))))
+
   ;; Only a piece that starts with a node's opening, or an atom, holding
   ;; the rest of it has a top node: one that starts inside a node holds
   ;; part of that node's content, not the node.
@@ -341,6 +352,11 @@
   (unless (and (integer? n) (exact? n))
     (assertion-violation 'kill-ring:rotate! "not an exact integer" n))
   (rotate-ring! 'kill-ring:rotate! n))
+
+(define (make-current! entry)
+  (check-main-thread 'kill-ring:make-current!)
+  (check-entry 'kill-ring:make-current! entry)
+  (point-at! entry))
 
 (define (entries) (ring-entries))
 

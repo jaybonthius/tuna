@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (options) (hooks) (commands) (buffers) (views) (undo) (undo-test edits))
+(import (tuna) (test) (test-user) (test-runner) (options) (hooks) (commands) (buffers) (views) (undo) (undo-test edits))
 
 (test "an edit after an undo starts a branch; redo follows the child undo last left, else the newest; go-to! moves across branches"
   (let ([r (buffers:make "tree" "\n")])
@@ -54,7 +54,7 @@
     (hooks:remove! buffers:after-edit sneak-in))
   (undo-test/edits:take-said!))
 
-(test "undo puts the view's cursors where they were before the group; redo puts them at the end of the group's last edit"
+(test "undo puts the view's cursors where they were before the group; redo puts them where they were after it"
   (let* ([w (buffers:make "cursors" "one two\n")] [v (views:make w)])
     (views:set-point! v 4)
     (views:add-cursor! v 8)
@@ -68,6 +68,33 @@
     (check-equal? '(">one\n" (5)) (list (undo-test/edits:text w) (map views:cursor-point (views:cursors v))))
     (views:drop! v))
   (undo-test/edits:take-said!))
+
+(test "a group made with no view showing its buffer puts the cursors at its first edit's start on undo and at its last edit's end on redo"
+  (let ([w (buffers:make "unseen" "one two three\n")])
+    (undo:with-edit-group w (buffers:replace! w 5 8 "2") (buffers:replace! w 1 1 ">"))
+    (let ([v (views:make w)])
+      (views:set-point! v 12)
+      (views:add-cursor! v 3)
+      (views:with-view v (commands:run undo:undo 1))
+      (check-equal? '("one two three\n" (5)) (list (undo-test/edits:text w) (map views:cursor-point (views:cursors v))))
+      (views:set-point! v 12)
+      (views:add-cursor! v 3)
+      (views:with-view v (commands:run undo:redo 1))
+      (check-equal? '(">one 2 three\n" (2)) (list (undo-test/edits:text w) (map views:cursor-point (views:cursors v))))
+      (views:drop! v)))
+  (undo-test/edits:take-said!))
+
+(test "edits the buffer no longer keeps when a history is installed start a new history, with a warning naming the buffer"
+  (let ([f (buffers:make "trimmed" "\n")])
+    (check-equal? #t (undo:attach! f))
+    (do ([i 0 (+ i 1)]) ((= i 1100)) (buffers:replace! f 1 1 "x"))
+    ;; A buffer drops its oldest edits once the user has been idle a
+    ;; second, and only a key starts an idle period.
+    (test-user:press! "C-g")
+    (test-runner:wait-until (lambda () (not (buffers:edits-since f 0))))
+    (check-equal? '((undo "edits were made that undo could not record, so the history of trimmed starts again"))
+      (undo-test/edits:reports-during (lambda () (check-equal? #f (undo:install! f #f 0)))))
+    (check-equal? '(0 #f (0 #f)) (undo-test/edits:tree f))))
 
 (test "a history is trimmed to the limit, the oldest groups first, a branch off the root before the path to the current state"
   (let ([s (buffers:make "small" "\n")])
@@ -90,7 +117,7 @@
   (let ([s (buffers:make "large" "\n")])
     (buffers:with-buffer s (options:set-local! undo:limit 100))
     (undo-test/edits:run-in s undo-test/edits:insert 1 "a")
-    (check-equal? '((undo:limit "an edit group is larger than the limit, so the buffer's history starts again"))
+    (check-equal? '((undo:limit "an edit group is larger than the limit, so the history of large starts again"))
       (undo-test/edits:reports-during
         (lambda ()
           (undo-test/edits:run-in s undo-test/edits:insert 1 (make-string 80 #\x))
@@ -127,7 +154,7 @@
     (check-equal? '() (undo-test/edits:take-said!))))
 
 (test "forget! drops the history, so the present text is the root of a new one"
-  (let ([b (buffers:make "forgotten" "\n")])
+  (let ([b (buffers:make "unkept" "\n")])
     (undo-test/edits:run-in b undo-test/edits:insert 1 "a")
     (undo:forget! b)
     (check-equal? '((undo:undo "no further undo information")) (undo-test/edits:reports-during (lambda () (undo-test/edits:run-in b undo:undo 1))))

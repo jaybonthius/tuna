@@ -199,7 +199,7 @@
         [two-places (kill-ring:make-kill (list "x")
                       (lambda (buffer position) (buffers:insert! buffer position "x") (buffers:insert! buffer 7 "x")))])
     (buffers:add-span! (buffers:layer g guarded) 5 8 'locked)
-    (check-raises (raised? 'buffers:insert! "a read-only span refuses the edit") (kill-ring:insert! g 2 two-places))
+    (check-raises (raised? 'buffers:insert! "the text of guarded is read-only") (kill-ring:insert! g 2 two-places))
     (check-equal? "aaa\nbbb\nccc\n" (contents g))
     (buffers:kill! g)))
 

@@ -53,7 +53,7 @@
 (test "the buffer is read-only: in showcase-mode, derived from special, printing keys and g are undefined, and edits are refused"
   (check-equal? '("x is undefined" "g is undefined")
     (ui-test:report-messages (lambda () (test-user:press! "x") (test-user:press! "g"))))
-  (check-raises (ui-test:raised? 'buffers:replace! "a read-only span refuses the edit") (buffers:replace! (showcase) 1 1 "x"))
+  (check-raises (ui-test:raised? 'buffers:replace! "the text of *Showcase* is read-only") (buffers:replace! (showcase) 1 1 "x"))
   (check-equal? (list ui:showcase-mode #t) (list (modes:major-mode (showcase)) (modes:derived? ui:showcase-mode modes:special))))
 
 (test "a click on the live button, or RET in it, counts in its label; the link counts the same way; the disabled ones count nothing"

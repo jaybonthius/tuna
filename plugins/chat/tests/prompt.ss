@@ -77,7 +77,7 @@
   (test-user:settle)
   (chat-test:at! b "Hello")
   (let ([before (chat-test:shown e)])
-    (check-equal? '("a read-only span refuses the edit") (chat-test:press! "x"))
+    (check-equal? (list (string-append "the text of " (buffers:name b) " is read-only")) (chat-test:press! "x"))
     (check-equal? before (chat-test:shown e))))
 
 (test "the source's queue shows under the conversation, tagged; M-<up> takes it back into the prompt and C-c C-k cancels with it"

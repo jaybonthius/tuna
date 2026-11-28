@@ -39,10 +39,14 @@
     (and (who-condition? c) (eq? who (condition-who c))
          (message-condition? c) (string=? message (condition-message c)))))
 
+(define (condition-text c)
+  (cond
+    [(not (message-condition? c)) c]
+    [(format-condition? c) (apply format (condition-message c) (condition-irritants c))]
+    [else (condition-message c)]))
+
 (define (reports-during thunk)
-  (map (lambda (c)
-         (list (and (who-condition? c) (condition-who c))
-               (if (message-condition? c) (condition-message c) c)))
+  (map (lambda (c) (list (and (who-condition? c) (condition-who c)) (condition-text c)))
        (test-runner:reports-during thunk)))
 
 ;; ask's own writer reports each message as a warning, which would fail

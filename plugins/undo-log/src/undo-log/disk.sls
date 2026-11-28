@@ -17,8 +17,8 @@
 
   (define (record-datum r)
     (case (car r)
-      [(group) (append (list-head r 5) (map edit-datum (list-tail r 5)))]
-      [(more) (cons* 'more (cadr r) (map edit-datum (cddr r)))]
+      [(group) (append (list-head r 6) (map edit-datum (list-tail r 6)))]
+      [(more) (cons* 'more (cadr r) (caddr r) (map edit-datum (cdddr r)))]
       [else r]))
 
   ;; A record must read back as the datum written, whatever the printer
@@ -56,16 +56,18 @@
 
   (define (count-list? v) (and (list? v) (for-all count? v)))
 
+  ;; A header of any version reads, so a log of another version is told
+  ;; from one cut short, and set aside whole rather than written over.
   (define (datum-record d)
     (and (pair? d) (list? d)
          (case (car d)
            [(undo-history)
-            (and (fx= (length d) 5) (eqv? (cadr d) 1) (count? (caddr d)) (count? (cadddr d))
+            (and (fx= (length d) 5) (count? (cadr d)) (count? (caddr d)) (count? (cadddr d))
                  (fixnum? (list-ref d 4)))]
            [(group)
-            (and (fx>= (length d) 6) (count? (cadr d)) (count? (caddr d)) (fixnum? (cadddr d))
-                 (count-list? (list-ref d 4)) (edits! (list-tail d 5)))]
-           [(more) (and (fx>= (length d) 3) (count? (cadr d)) (edits! (cddr d)))]
+            (and (fx>= (length d) 7) (count? (cadr d)) (count? (caddr d)) (fixnum? (cadddr d))
+                 (count-list? (list-ref d 4)) (count-list? (list-ref d 5)) (edits! (list-tail d 6)))]
+           [(more) (and (fx>= (length d) 3) (count? (cadr d)) (count-list? (caddr d)) (edits! (cdddr d)))]
            [(at root prune) (and (fx= (length d) 2) (count? (cadr d)))]
            [(saved) (and (fx= (length d) 4) (count-list? (cdr d)))]
            [else #f])))
@@ -145,12 +147,17 @@
       (rename-file temporary file)
       (sync-folder! folder)))
 
+  ;; An earlier log set aside holds edits its warning said were kept.
   (define (set-log-aside! file)
-    (let ([aside (string-append file ".stale")])
-      (when (file-exists? file)
-        (rename-file file aside)
-        (sync-folder! (path-parent file)))
-      aside))
+    (and (file-exists? file)
+         (let ([aside (let loop ([n 1])
+                        (let ([name (if (fx= n 1)
+                                        (string-append file ".stale")
+                                        (string-append file "." (number->string n) ".stale"))])
+                          (if (file-exists? name) (loop (fx+ n 1)) name)))])
+           (rename-file file aside)
+           (sync-folder! (path-parent file))
+           aside)))
 
   (define (delete-log! file)
     (delete-file file #f))

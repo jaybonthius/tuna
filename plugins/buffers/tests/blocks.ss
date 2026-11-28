@@ -166,7 +166,7 @@
     (check-equal? '(1 7) seen))
   (let ([locked-next (buffers-test:fresh '(buffers-test/md:doc () (buffers-test/md:para () "ab\n") (buffers-test/md:para () "cd\n")))])
     (buffers:add-span! (buffers:layer locked-next fence) 6 10 'fence)
-    (check-equal? '(((4 . 7)) (refused "a read-only span refuses the edit"))
+    (check-equal? (list '((4 . 7)) (list 'refused (string-append "the text of " (buffers:name locked-next) " is read-only")))
       (list (fit locked-next 4 5) (buffers-test:refusal (lambda () (buffers:replace! locked-next 4 5 "")))))))
 
 ;; Chez finds a module stale when its source is newer than its object, and

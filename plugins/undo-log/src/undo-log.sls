@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (files) (undo) (undo-log disk) (hooks) (options) (scopes) (saved))
+(import (buffers) (files) (undo) (undo-log disk) (ask) (hooks) (options) (scopes) (saved))
 
 (define %self (current-owner))
 
@@ -20,9 +20,9 @@
   (read-with-log note-visit! note-saved! note-killed! note-silent-edit! note-rename! flush-logs! logged?
    attach-open-buffers start-writer! stop! ensure-log-folder!)
 
-  (define (warn who message irritants)
-    (report (condition (make-warning) (make-who-condition who) (make-message-condition message)
-                       (make-irritants-condition irritants))))
+  (define (warn who message . irritants)
+    (report (condition (make-warning) (make-who-condition who) (make-format-condition)
+                       (make-message-condition message) (make-irritants-condition irritants))))
 
   (define (without-cancels thunk)
     (let ([result #f])
@@ -188,11 +188,22 @@
           (and current (or (null? saves) (not (eqv? (caar saves) current))))
           (loop (cdr rs) (if (memq (caar rs) '(group at)) (cadar rs) current)))))
 
-  (define (set-aside! file records saves)
-    (when (unsaved-edits? records saves)
-      (send! (list (vector 'aside file)))
-      (warn 'undo-log "the file changed outside Tuna, so the log of its unsaved edits is set aside as"
-            (list (files:abbreviated-path (string-append file ".stale"))))))
+  (define (other-version? records)
+    (and (pair? records) (eq? (caar records) 'undo-history) (not (eqv? (cadar records) undo:records-version))))
+
+  ;; The writer names the log set aside once it is renamed, since it is
+  ;; never renamed over an earlier one. A log of another version is kept
+  ;; whatever it holds: this version cannot read its unsaved edits.
+  (define (set-aside! path file records saves)
+    (define (aside! message) (send! (list (vector 'aside file message path))))
+    (cond
+      [(other-version? records)
+       (aside! "the log of edits to ~a is from another version of Tuna, so it is set aside as ~a")]
+      [(unsaved-edits? records saves)
+       (aside! "~a changed outside Tuna, so the log of its unsaved edits is set aside as ~a")]))
+
+  (define (say-restored! b)
+    (ask:message (format "restored unsaved edits to ~a" (buffers:name b))))
 
   (define-record-type prepared
     (sealed #t)
@@ -218,7 +229,7 @@
                     (let loop ([ids (if h (matching saves length hash) '())])
                       (cond
                         [(null? ids)
-                         (set-aside! file kept saves)
+                         (set-aside! path file kept saves)
                          (eq-hashtable-set! prepared-visits (current-task) (make-prepared path #f #f #f '() #f))
                          (values doc length hash)]
                         [(undo:current-document h (car ids) doc)
@@ -291,9 +302,11 @@
         (cond
           [(not records) (unreadable-log! b (entry-path entry))]
           [else
-           (let-values ([(kept saves) (split-records records)])
-             (entry-saves-set! entry saves))
-           (when (and (null? records) (equal? (files:path b) (entry-path entry)))
+           (if (other-version? records)
+               (set-aside! (entry-path entry) (entry-file entry) records '())
+               (let-values ([(kept saves) (split-records records)])
+                 (entry-saves-set! entry saves)))
+           (when (and (or (null? records) (other-version? records)) (equal? (files:path b) (entry-path entry)))
              (entry-written?-set! entry #f)
              (entry-whole?-set! entry #f)
              (if (and begun (eqv? (car begun) (cadr (undo:history b))))
@@ -328,12 +341,15 @@
                          [(ids) (if h (matching saves (snapshot-length snapshot) (snapshot-hash snapshot)) '())]
                          [(saved) (if (snapshot-modified? snapshot)
                                       (and (pair? ids) (car ids))
-                                      (find (lambda (id) (undo:current-document h id (snapshot-document snapshot))) ids))])
-             (unless (start! b path version
+                                      (find (lambda (id) (undo:current-document h id (snapshot-document snapshot))) ids))]
+                         [(unedited?) (fx= (buffers:version b) version)])
+             (cond
+               [(not (start! b path version
                        (if (and h (or saved (snapshot-modified? snapshot)))
                            (make-prepared path #f h saved saves (or torn? (not fits?)))
-                           (make-prepared path #f #f #f '() #f)))
-               (set-aside! file kept saves)))]))))
+                           (make-prepared path #f #f #f '() #f))))
+                (set-aside! path file kept saves)]
+               [(and unedited? (not (snapshot-modified? snapshot)) (buffers:modified? b)) (say-restored! b)]))]))))
 
   (define (note-visit! b)
     (let ([p (eq-hashtable-ref prepared-visits (current-task) #f)])
@@ -342,7 +358,9 @@
         (cond
           [(not path) (void)]
           [(and p (prepared-unreadable? p)) (unreadable-log! b path)]
-          [(and p (equal? (prepared-path p) path)) (start! b path 0 p)]
+          [(and p (equal? (prepared-path p) path))
+           (start! b path 0 p)
+           (when (buffers:modified? b) (say-restored! b))]
           [else
            (let ([finish (begin-attach! b)])
              (when finish (finish)))]))))
@@ -522,7 +540,15 @@
                   (case kind
                     [(replace) (attempt (lambda () (replace-records! file (vector-ref item 2))))]
                     [(read) (answer-read! file (vector-ref item 2))]
-                    [(aside) (attempt (lambda () (set-log-aside! file) (hashtable-delete! sizes file)))]
+                    [(aside)
+                     (attempt
+                       (lambda ()
+                         (let ([aside (set-log-aside! file)] [message (vector-ref item 2)] [path (vector-ref item 3)])
+                           (hashtable-delete! sizes file)
+                           (when aside
+                             (spawn-task
+                               (lambda (restore)
+                                 (warn 'undo-log message (files:abbreviated-path path) (files:abbreviated-path aside))))))))]
                     [(delete) (attempt (lambda () (delete-log! file) (hashtable-delete! sizes file)))]
                     [(move)
                      (for-each (lambda (entry) (flush-appends! (car entry))) appends)
@@ -563,9 +589,8 @@
                        (set! writer-queue '())
                        (answer-reads! dropped)
                        #f)])))
-        (warn 'undo-log (format "the log writer did not finish within ~a seconds; the edits it had not written are not in the logs"
-                            writer-wait)
-              '()))))
+        (warn 'undo-log "the log writer did not finish within ~a seconds; the edits it had not written are not in the logs"
+              writer-wait))))
 
   (define (stop!)
     (stop-attaching!)

@@ -45,6 +45,20 @@
   (check-equal? '("d") (kill-ring:current))
   (empty-ring!))
 
+(test "make-current! points the yank pointer at an entry of the ring; one the ring dropped is pushed again, calling after-push"
+  (for-each (lambda (s) (kill-ring:push! (list s))) '("a" "b" "c"))
+  (let ([a (list-ref (kill-ring:entries) 2)])
+    (check-equal? '() (pushed-during (lambda () (kill-ring:make-current! a))))
+    (check-equal? '(("a") (("c") ("b") ("a"))) (list (kill-ring:current) (kill-ring:entries)))
+    (check-equal? '("c") (kill-ring:rotate! 1))
+    (options:with ([kill-ring:max 3]) (kill-ring:push! (list "d")))
+    (check-equal? '("a") (pushed-during (lambda () (kill-ring:make-current! a))))
+    (check-equal? '(("a") (("a") ("d") ("c") ("b"))) (list (kill-ring:current) (kill-ring:entries))))
+  (check-raises (raised? 'kill-ring:make-current! "not a non-empty list of strings, pieces and kills") (kill-ring:make-current! '()))
+  (check-equal? '(kill-ring:make-current! "not on the main thread")
+    (let ([c (on-thread (lambda () (kill-ring:make-current! (list "x"))))]) (list (condition-who c) (condition-message c))))
+  (empty-ring!))
+
 (test "an entry is a non-empty list of strings, pieces and kills"
   (for-each
     (lambda (v)

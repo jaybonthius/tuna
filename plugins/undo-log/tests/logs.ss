@@ -29,7 +29,7 @@
   (in-a undo-log-test/edits:insert 1 "2 ")
   (check-equal? '(undo-history group saved at group) (undo-log-test/logs:logged-kinds a-path 5))
   (check-equal? '((#(1 () ("1 "))) (saved 0 6 3816658035) (at 1) (#(1 () ("2 "))))
-    (map (lambda (r) (if (eq? (car r) 'group) (list-tail r 5) r)) (cdr (undo-log-test/logs:records a-path))))
+    (map (lambda (r) (if (eq? (car r) 'group) (list-tail r 6) r)) (cdr (undo-log-test/logs:records a-path))))
   (check-equal? "600" (undo-log-test/logs:file-mode (undo-log-test/logs:log-of a-path))))
 
 (test "undo and redo are logged as moves, and reaching the saved state leaves the buffer unmodified"
@@ -51,10 +51,12 @@
   (in-a undo:redo 1)
   (check (not (buffers:modified? a))))
 
-(test "a visit reads the log and makes the buffer with the unsaved edits applied, marked modified"
+(test "a visit reads the log and makes the buffer with the unsaved edits applied, marked modified, and says so"
   (in-a undo-log-test/edits:insert 1 "3 ")
+  (undo-log-test/edits:take-said!)
   (set! a (visit-again! a-path))
   (check-equal? '("3 1 alpha\n" #t (3 1 (0 #f) (1 0) (2 1) (3 1))) (list (text a) (buffers:modified? a) (undo-log-test/edits:tree a)))
+  (check-equal? '("restored unsaved edits to a.txt") (undo-log-test/edits:take-said!))
   (in-a undo:undo 1)
   (check-equal? '("1 alpha\n" #f) (text-and-modified a))
   (in-a undo:undo 1)
@@ -62,21 +64,25 @@
   (in-a undo:redo 2)
   (check-equal? '("3 1 alpha\n" #t) (text-and-modified a)))
 
-(test "killing a file buffer moves its log to the saved state: the next visit opens at the file's text, the edits a redo away"
+(test "killing a file buffer moves its log to the saved state: the next visit opens at the file's text, the edits a redo away, saying nothing"
   (buffers:kill! a)
+  (undo-log-test/edits:take-said!)
   (set! a (files:visit a-path))
   (check-equal? '("1 alpha\n" #f 1) (list (text a) (buffers:modified? a) (car (undo-log-test/edits:tree a))))
+  (check-equal? '() (undo-log-test/edits:take-said!))
   (in-a undo:redo 1)
   (check-equal? '("3 1 alpha\n" #t) (text-and-modified a)))
 
 (test "when the file changed outside Tuna a new history starts, and a log that held unsaved edits is set aside with a warning"
   (set! a (visit-again! a-path))
   (undo-log-test/logs:write-text! a-path "changed\n")
-  (let ([reports (test-runner:reports-during (lambda () (set! a (visit-again! a-path))))])
+  (let ([reports (test-runner:reports-during (lambda () (set! a (visit-again! a-path))) 1)])
     (check-equal? 1 (length reports))
     (check (warning? (car reports)))
-    (check-equal? (list (files:abbreviated-path (string-append (undo-log-test/logs:log-of a-path) ".stale")))
-                  (condition-irritants (car reports))))
+    (check-equal? (format "~a changed outside Tuna, so the log of its unsaved edits is set aside as ~a"
+                          (files:abbreviated-path a-path)
+                          (files:abbreviated-path (string-append (undo-log-test/logs:log-of a-path) ".stale")))
+                  (apply format (condition-message (car reports)) (condition-irritants (car reports)))))
   (check-equal? '("changed\n" #f (0 0 (0 #f))) (list (text a) (buffers:modified? a) (undo-log-test/edits:tree a)))
   (check (file-exists? (string-append (undo-log-test/logs:log-of a-path) ".stale")))
   (in-a undo-log-test/edits:insert 1 "new ")
@@ -100,7 +106,7 @@
   (check-equal? '("again\n" #f) (text-and-modified a))
   (in-a undo:redo 1))
 
-(test "loading undo-log attaches an unmodified file buffer its log holds unsaved edits for, with them back"
+(test "loading undo-log attaches an unmodified file buffer its log holds unsaved edits for, with them back, and says so"
   (unload-owner! (module-owner '(undo)))
   (files:revert-from-file a)
   (check-equal? '("again\n" #f) (text-and-modified a))
@@ -108,7 +114,8 @@
   (load-module! '(undo-log))
   (load-module! '(undo-log-test edits))
   (test-runner:wait-until (lambda () (buffers:modified? a)))
-  (check-equal? '("x again\n" #t (1 0 (0 #f) (1 0) (2 1))) (list (text a) (buffers:modified? a) (undo-log-test/edits:tree a))))
+  (check-equal? '("x again\n" #t (1 0 (0 #f) (1 0) (2 1))) (list (text a) (buffers:modified? a) (undo-log-test/edits:tree a)))
+  (check-equal? '("restored unsaved edits to a.txt") (undo-log-test/edits:take-said!)))
 
 (test "a revert is one group"
   (undo-log-test/logs:write-text! a-path "reverted\n")
@@ -204,3 +211,51 @@
         (check-equal? 'undo-history (car (undo-log-test/logs:kinds g-path)))
         (set! g (visit-again! g-path))
         (check-equal? (list shown tree) (list (text g) (undo-log-test/edits:tree g)))))))
+
+(test "a log another version of Tuna wrote is set aside whole, beside an earlier one set aside, with a warning naming the file, and the file opens as it is"
+  (let* ([d-path (undo-log-test/logs:home-path "d.txt")] [file (undo-log-test/logs:log-of d-path)]
+         [earlier (string-append file ".stale")] [aside (string-append file ".2.stale")]
+         [old "(undo-history 1 0 7 0)\n(group 1 0 0 () #(1 () (\"x\")))\n(at 1)\n"])
+    (undo-log-test/logs:write-text! d-path "delta\n")
+    (undo-log-test/logs:write-text! file old)
+    (undo-log-test/logs:write-text! earlier "earlier\n")
+    (let* ([d #f] [reports (test-runner:reports-during (lambda () (set! d (files:visit d-path))) 1)])
+      (check-equal? (list (format "the log of edits to ~a is from another version of Tuna, so it is set aside as ~a"
+                                  (files:abbreviated-path d-path) (files:abbreviated-path aside)))
+                    (map (lambda (c) (apply format (condition-message c) (condition-irritants c))) (filter warning? reports)))
+      (check-equal? '("delta\n" #f) (text-and-modified d)))
+    (check-equal? (list old "earlier\n") (map undo-log-test/logs:read-text (list aside earlier)))))
+
+(test "reloading undo-log alone sets aside a log of another version for a buffer undo keeps a history for"
+  (let* ([f-path (undo-log-test/logs:home-path "f.txt")] [file #f]
+         [old "(undo-history 1 0 7 0)\n(group 1 0 0 () #(1 () (\"x\")))\n(at 1)\n"])
+    (undo-log-test/logs:write-text! f-path "foxtrot\n")
+    (let ([f (files:visit f-path)])
+      (undo-log-test/edits:run-in f undo-log-test/edits:insert 1 "1 ")
+      (undo-log-test/logs:logged-kinds f-path 4)
+      (set! file (undo-log-test/logs:log-of f-path))
+      (undo-log-test/logs:write-text! file old)
+      (check-equal? (list (format "the log of edits to ~a is from another version of Tuna, so it is set aside as ~a"
+                                  (files:abbreviated-path f-path) (files:abbreviated-path (string-append file ".stale"))))
+                    (map (lambda (c) (apply format (condition-message c) (condition-irritants c)))
+                         (filter warning? (test-runner:reports-during (lambda () (reload-modules! '((undo-log)))) 1))))
+      (check-equal? old (undo-log-test/logs:read-text (string-append file ".stale")))
+      (check-equal? '("1 foxtrot\n" #t) (text-and-modified f)))))
+
+(test "an edit made while undo-log reads a log at its attach is the user's, so nothing says edits were restored"
+  (let ([e-path (undo-log-test/logs:home-path "e.txt")])
+    (undo-log-test/logs:write-text! e-path "echo\n")
+    (let ([e (files:visit e-path)])
+      (undo-log-test/edits:run-in e undo-log-test/edits:insert 1 "1 ")
+      (undo-log-test/logs:logged-kinds e-path 4)
+      (unload-owner! (module-owner '(undo)))
+      (files:revert-from-file e)
+      (check-equal? '("echo\n" #f) (text-and-modified e))
+      (load-module! '(undo))
+      (load-module! '(undo-log))
+      (buffers:replace! e 1 1 "z")
+      (load-module! '(undo-log-test edits))
+      (check-equal? '("zecho\n" #t) (text-and-modified e))
+      (undo-log-test/edits:tree e)
+      (check-equal? '("zecho\n" #t) (text-and-modified e))
+      (check-equal? '() (undo-log-test/edits:take-said!)))))

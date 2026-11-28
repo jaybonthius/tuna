@@ -16,11 +16,13 @@
     (list (buffers:name buffer) (document:line doc point)
           (document:text doc point (min (+ point 5) (document:length doc))))))
 
+(define (points) (map views:cursor-point (views:cursors (layout:selected-view))))
+
 (define (wait-for-restart!)
   (test-runner:wait-until
     (lambda () (and (= (length (files:buffers)) 2) (b) (eq? (views:buffer (layout:selected-view)) (b))))))
 
 ;; The test home is under /tmp, where undo-log keeps no log by default.
 (options:set! undo-log:keep-log? (lambda (path) #t))
-(options:set! ask:message-writer (lambda (text) (void)))
+(options:set! ask:message-writer (lambda (text) (note! (string-append "said: " text))))
 (options:set! ask:yes-or-no-reader (lambda (question) (note! (string-append "asked: " question)) #t))

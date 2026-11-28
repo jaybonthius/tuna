@@ -290,7 +290,7 @@
       [(not (%at-end? e (%expansion-view e))) (%forget!)]
       [found
        (let ([index (car found)])
-         (when (and (fx> index 0) (not (eqv? index (%expansion-last-index e))))
+         (when (fx> index 0)
            (ask:message (string-append "Expansion found in ‘" (list-ref (%expansion-names e) index) "’")))
          (%expansion-last-index-set! e index)
          (%put! e (%cased e (cdr found))))]

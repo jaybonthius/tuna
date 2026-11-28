@@ -1,4 +1,5 @@
-(import (tuna) (test) (test-user) (buffers) (views) (kill-ring) (editing) (editing-test scene) (editing-test md))
+(import (tuna) (test) (test-user) (test-runner) (buffers) (views) (kill-ring) (editing) (minibuffer) (completion)
+        (editing-test scene) (editing-test md) (completion-test sessions))
 
 (editing-test/scene:take-said!)
 
@@ -105,7 +106,7 @@
   (check-equal? '(("ab" ((1 #f))) ("a")) (list (editing-test/scene:state) (editing-test/scene:kills 1)))
   (check-equal? '() (editing-test/scene:take-said!)))
 
-(test "M-y right after a yank replaces it with the next older kill, a count further; after anything else it raises"
+(test "M-y right after a yank replaces it with the next older kill, a count further"
   (editing-test/scene:show! "ab" 3)
   (kill-ring:push! (list "P"))
   (kill-ring:push! (list "a"))
@@ -115,8 +116,61 @@
   (test-user:press! "M-y")
   (check-equal? '("aba" ((4 #f))) (editing-test/scene:state))
   (test-user:press! "M-y")
-  (check-equal? '(("abP" ((4 #f))) ("b")) (list (editing-test/scene:state) (editing-test/scene:kills 1)))
-  (check-equal? '((editing:yank-pop "the previous command was not a yank")) (editing-test/scene:press-reports! "C-g M-y")))
+  (check-equal? '(("abP" ((4 #f))) ("b")) (list (editing-test/scene:state) (editing-test/scene:kills 1))))
+
+(define (question)
+  (let ([shown (test-user:elements (test-user:screen) "minibuffer-question")])
+    (and (pair? shown) (test-user:element-text (car (reverse shown))))))
+
+(define (offered n)
+  (let ([s (completion-test/sessions:session)])
+    (completion-test/sessions:wait-matches s)
+    (list-head (completion-test/sessions:texts s) n)))
+
+(test "M-y after anything but a yank asks for a kill, newest first, and yanks the one chosen, which becomes current"
+  (kill-ring:push! (list "older"))
+  (kill-ring:push! (list "newer"))
+  (editing-test/scene:show-marked! "a|b")
+  (test-user:press! "M-y")
+  (check-equal? '("Yank from kill-ring: " ("newer" "older")) (list (question) (offered 2)))
+  (test-user:type! "old")
+  (test-user:press! "RET")
+  (check-equal? '("aolder|b" #f ("older")) (list (test-user:text) (completion-test/sessions:prompt) (kill-ring:current)))
+  (test-user:press! "M-y")
+  (check-equal? (string-append "a" (kill-ring:text (list-ref (kill-ring:entries) 2)) "|b") (test-user:text)))
+
+(test "C-u M-y after anything but a yank leaves point before the entry chosen"
+  (kill-ring:push! (list "chosen"))
+  (editing-test/scene:show-marked! "a|b")
+  (test-user:press! "C-u M-y")
+  (test-user:type! "chosen")
+  (test-user:press! "RET")
+  (check-equal? "a|chosenb" (test-user:text)))
+
+(test "an entry chosen at M-y's question that a kill dropped from the ring meanwhile goes back on it"
+  (editing-test/scene:with-setting kill-ring:max 2
+    (lambda ()
+      (kill-ring:push! (list "dropped"))
+      (kill-ring:push! (list "kept"))
+      (editing-test/scene:show-marked! "a|b")
+      (test-user:press! "M-y")
+      (test-user:type! "drop")
+      (kill-ring:push! (list "meanwhile"))
+      (check-equal? '("meanwhile" "kept") (editing-test/scene:kills 2))
+      (test-user:press! "RET")
+      (check-equal? '("adropped|b" ("dropped" "meanwhile")) (list (test-user:text) (editing-test/scene:kills 2))))))
+
+(test "M-y after anything but a yank yanks an entry of a kill per cursor one kill at each cursor; C-g at its question changes nothing"
+  (kill-ring:push! (list "1" "2"))
+  (kill-ring:push! (list "newer"))
+  (editing-test/scene:show! "ab" 2 3)
+  (test-user:press! "M-y")
+  (test-user:type! "1")
+  (test-user:press! "RET")
+  (check-equal? '("a1b2" ((3 #f) (5 #f))) (editing-test/scene:state))
+  (test-user:press! "C-g M-y")
+  (check-equal? '(#t) (map cancelled? (test-runner:reports-during (lambda () (test-user:press! "C-g")))))
+  (check-equal? '("a1b2" ((3 #f) (5 #f)) #f) (append (editing-test/scene:state) (list (completion-test/sessions:prompt)))))
 
 (test "C-u 2 M-y goes two kills further, and C-y after M-y yanks the kill M-y left current"
   (kill-ring:push! (list "one"))

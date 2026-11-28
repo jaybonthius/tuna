@@ -49,9 +49,9 @@
 
 (test "the heading, a number and a context line refuse edits"
   (views:set-point! (occur-test:view) 3)
-  (check-equal? '("a read-only span refuses the edit") (occur-test:reported "Z"))
+  (check-equal? '("the text of *Occur* is read-only") (occur-test:reported "Z"))
   (at-line! "two")
-  (check-equal? '("a read-only span refuses the edit") (occur-test:reported "Z"))
+  (check-equal? '("the text of *Occur* is read-only") (occur-test:reported "Z"))
   (check-equal? "one foo\ntwo\nfoo three foo\nfour\n" (source)))
 
 (test "a line break is refused with a sentence"

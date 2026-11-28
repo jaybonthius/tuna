@@ -30,6 +30,6 @@
 (test "the reply is silent, keeping no undo history and never modified, and read-only"
   (check-equal? '(#f 1) (list (buffers:modified? chat) (length (cddr (undo:history chat)))))
   (views:set-point! (view) 5)
-  (check-equal? '((buffers:replace! "a read-only span refuses the edit"))
+  (check-equal? '((buffers:replace! "the text of *chat* is read-only"))
                 (map (lambda (c) (list (condition-who c) (condition-message c))) (test-runner:reports-during (lambda () (test-user:press! "x")))))
   (check-equal? "Steps:\none and two\n" (document:text (buffers:document chat))))

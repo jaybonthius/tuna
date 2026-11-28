@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (test-user) (options) (buffers) (document) (undo) (undo-test edits))
+(import (tuna) (test) (test-runner) (test-user) (options) (commands) (buffers) (document) (views) (undo) (undo-test edits))
 
 (define (shapes records) (map (lambda (x) (list (car x) (cadr x))) records))
 
@@ -9,17 +9,40 @@
 (test "take-records! gives the whole history the first time, then what changed since; #f with no history, () with no change"
   (check-equal? #f (undo:take-records! r))
   (undo-test/edits:run-in r undo-test/edits:insert 1 "a")
-  (check-equal? '((undo-history 1) (group 1) (at 1)) (shapes (undo:take-records! r)))
+  (check-equal? '((undo-history 2) (group 1) (at 1)) (shapes (undo:take-records! r)))
   (check-equal? '() (undo:take-records! r))
   (undo-test/edits:run-in r undo-test/edits:insert 2 "b")
   (let ([g (car (undo:take-records! r))])
-    (check-equal? '(group 2 1 () ((2 () ("b"))))
-      (list (car g) (cadr g) (caddr g) (list-ref g 4)
+    (check-equal? '(group 2 1 () () ((2 () ("b"))))
+      (list (car g) (cadr g) (caddr g) (list-ref g 4) (list-ref g 5)
             (map (lambda (e) (list (vector-ref e 0) (document:datums (vector-ref e 1)) (document:datums (vector-ref e 2))))
-                 (list-tail g 5)))))
+                 (list-tail g 6)))))
   (undo-test/edits:run-in r undo:undo 1)
   (check-equal? '((at 1)) (undo:take-records! r))
-  (check-equal? '((undo-history 1) (group 1) (group 2) (at 1)) (shapes (undo:take-all-records! r)))
+  (check-equal? '((undo-history 2) (group 1) (group 2) (at 1)) (shapes (undo:take-all-records! r)))
+  (undo-test/edits:take-said!))
+
+(test "a group taken while still open gets the cursors after it in a more record when it closes, which a history from the records keeps"
+  (let* ([o (buffers:make "open" "abc\n")] [v (views:make o)] [taken #f])
+    (views:set-point! v 2)
+    (views:with-view v
+      (undo:with-edit-group o
+        (buffers:replace! o 2 2 "x")
+        (set! taken (undo:take-records! o))
+        (views:set-point! v 4)))
+    (check-equal? '((undo-history 2) (group 1) (at 1)) (shapes taken))
+    (check-equal? '() (list-ref (cadr taken) 5))
+    (let ([more (undo:take-records! o)])
+      (check-equal? '((more 1 (4))) more)
+      (let-values ([(h fits?) (undo:records->history (append taken more))])
+        (let* ([copy (buffers:make "open copy" "axbc\n")] [w (views:make copy)])
+          (check-equal? #t (undo:install! copy h 0))
+          (views:with-view w (commands:run undo:undo 1))
+          (views:set-point! w 1)
+          (views:with-view w (commands:run undo:redo 1))
+          (check-equal? '("axbc\n" (4)) (list (undo-test/edits:text copy) (map views:cursor-point (views:cursors w))))
+          (views:drop! w))))
+    (views:drop! v))
   (undo-test/edits:take-said!))
 
 (test "a history built from records holds the same tree, and gives the text of its current state from the text of any state"
@@ -64,10 +87,12 @@
   (let-values ([(fourth fits?) (undo:records->history (undo:take-all-records! r))])
     (check-equal? #f (undo:install! (buffers:make "longer" "abc\n") fourth 0))))
 
-(test "replaying stops at the first record that does not fit; records without a header give no history; records->history takes a list"
-  (let-values ([(h fits?) (undo:records->history '((undo-history 1 0 2 0) (group 1 7 0 () #(1 #f #f))))])
+(test "replaying stops at the first record that does not fit; records without a header, or with another version's, give no history; records->history takes a list"
+  (let-values ([(h fits?) (undo:records->history '((undo-history 2 0 2 0) (group 1 7 0 () () #(1 #f #f))))])
     (check-equal? '(#t #f) (list (and h #t) fits?)))
   (let-values ([(h fits?) (undo:records->history '((at 1)))])
+    (check-equal? '(#f #f) (list h fits?)))
+  (let-values ([(h fits?) (undo:records->history '((undo-history 1 0 2 0) (at 0)))])
     (check-equal? '(#f #f) (list h fits?)))
   (let-values ([(h fits?) (undo:records->history '())])
     (check-equal? '(#f #t) (list h fits?)))

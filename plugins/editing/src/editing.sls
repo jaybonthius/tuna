@@ -1228,13 +1228,21 @@
     (when (pair? prefix)
       (exchange-marks! view))))
 
-(commands:define-command (yank-pop [n (commands:prefix-number)])
-  "Replaces the text the previous command yanked with the entry N older in the kill ring."
+(commands:define-command (yank-pop [n (commands:prefix-number)] [before? (pair? (commands:prefix-argument))])
+  "Replaces the text the previous command yanked with the entry N older in the kill ring; after any other command, asks for an entry, makes it the current one and yanks it as yank does, with point before it and the mark after it when BEFORE?, as C-u gives."
   (check-count 'editing:yank-pop n)
   (let ([view (command-view 'editing:yank-pop)])
-    (unless (and (memq (commands:last-command) (list yank yank-pop)) (yanked-in? view))
-      (error 'editing:yank-pop "the previous command was not a yank"))
-    (replace-yank! view (kill-ring:rotate! n))))
+    (cond
+      [(and (memq (commands:last-command) (list yank yank-pop)) (yanked-in? view))
+       (replace-yank! view (kill-ring:rotate! n))]
+      [(not (kill-ring:current)) (error 'editing:yank-pop "the kill ring is empty")]
+      [else
+       (let ([entry (ask:choice "Yank from kill-ring: "
+                      (map (lambda (e) (cons (kill-ring:text e) e)) (kill-ring:entries)))])
+         (kill-ring:make-current! entry)
+         (yank-kills! view entry (delete-selection))
+         (when before?
+           (exchange-marks! view)))])))
 
 (commands:define-command (transpose-chars)
   "Swaps the characters before and after each cursor and moves past both; at a line's end, swaps the two before it."

@@ -6,11 +6,13 @@
 (options:define-option limit 4000000 (lambda (v) (and (integer? v) (exact? v) (>= v 0)))
   "How large a buffer's history may grow: the characters its edits removed and inserted, plus 32 per edit. 0 keeps no history.")
 
+(define records-version 2)
+
 (module %internals
   (check-main-thread check-buffer check-count current-buffer without-cancels history-of buffer-history
-   state-id state-parent state-time state-cursors state-of states-by-id history? history-buffer
+   state-id state-parent state-time undo-points redo-points state-of states-by-id history? history-buffer
    history-current history-holds saved-state close-group! take-hold! release-hold! leave-hold!
-   forget-escape! cancel-group! move! redo-child group-end restore-cursors! place-cursors! path-moves
+   forget-escape! cancel-group! move! redo-child restore-cursors! path-moves
    no-further amalgamate-history! record-edit! forget-history! note-command-start! note-command-end!
    end-batch! take-buffer-records! replay current-text attach-buffer! install-history!)
 
@@ -25,9 +27,14 @@
       (assertion-violation who "not a buffer" b))
     (check-main-thread who))
 
-  (define (check-count who n)
-    (unless (and (fixnum? n) (fx> n 0))
-      (assertion-violation who "not a positive count" n)))
+  ;; A count typed as a prefix, such as M--, reaches the user, so it is
+  ;; refused in the user's words.
+  (define (check-count who what n)
+    (unless (fixnum? n)
+      (assertion-violation who "not a positive count" n))
+    (unless (fx> n 0)
+      (raise (condition (make-error) (make-who-condition who)
+                        (make-message-condition (format "~a takes a count of 1 or more" what))))))
 
   (define (current-buffer who)
     (check-main-thread who)
@@ -45,9 +52,9 @@
     (raise (condition (make-stale-condition) (make-who-condition who)
                       (make-message-condition "the buffer does not hold the text its history expects"))))
 
-  (define (warn who message irritants)
-    (report (condition (make-warning) (make-who-condition who) (make-message-condition message)
-                       (make-irritants-condition irritants))))
+  (define (warn who message . irritants)
+    (report (condition (make-warning) (make-who-condition who) (make-format-condition)
+                       (make-message-condition message) (make-irritants-condition irritants))))
 
   ;; Tuna's dynamic-wind holds cancels off while its in runs, so the tree,
   ;; the buffer and the records queued never part company halfway.
@@ -75,7 +82,7 @@
   (define-record-type state
     (sealed #t)
     (fields id (mutable parent) (mutable edits-newest-first) (mutable count) (mutable time) (mutable cursors)
-            (mutable children) (mutable left) (mutable length) (mutable size)
+            (mutable after) (mutable children) (mutable left) (mutable length) (mutable size)
             (mutable command) (mutable run) (mutable joins) (mutable written-count) (mutable queued?)))
 
   (define-record-type history
@@ -86,7 +93,7 @@
             (mutable dirty?)))
 
   (define (new-history id length time)
-    (let ([root (make-state id #f '() 0 time '() '() #f length 0 #f #f 0 0 #f)]
+    (let ([root (make-state id #f '() 0 time '() '() '() #f length 0 #f #f 0 0 #f)]
           [h (make-history (make-eqv-hashtable) #f #f #f #f #f (fx+ id 1) 0 #f '() #f 0 #f #f '() #f)])
       (hashtable-set! (history-states h) id root)
       (history-root-set! h root)
@@ -104,8 +111,8 @@
     (list-sort (lambda (a b) (fx< (state-id a) (state-id b)))
                (vector->list (hashtable-values (history-states h)))))
 
-  (define (add-state! h id parent cursors time)
-    (let ([s (make-state id parent '() 0 time cursors '() #f (state-length parent) 0 #f #f 1 #f #f)])
+  (define (add-state! h id parent cursors after time)
+    (let ([s (make-state id parent '() 0 time cursors after '() #f (state-length parent) 0 #f #f 1 #f #f)])
       (history-next-id-set! h (fxmax (history-next-id h) (fx+ id 1)))
       (hashtable-set! (history-states h) id s)
       (state-children-set! parent (cons s (state-children parent)))
@@ -180,7 +187,7 @@
   ;; take is whole.
   (define (split-state! h s kept)
     (let* ([edits (state-edits-newest-first s)] [p (state-parent s)]
-           [m (add-state! h (history-next-id h) p (state-cursors s) (state-time s))])
+           [m (add-state! h (history-next-id h) p (state-cursors s) '() (state-time s))])
       (state-children-set! p (remq s (state-children p)))
       (state-children-set! m (list s))
       (state-left-set! m s)
@@ -215,27 +222,31 @@
 
   (define (count? v) (and (fixnum? v) (fx>= v 0)))
 
+  (define (counts? v) (and (list? v) (for-all count? v)))
+
   ;; Replaying records stops at the first that does not fit the history,
   ;; as at a record cut short.
   (define (apply-record! h r)
     (and (pair? r) (list? r)
          (case (car r)
            [(group)
-            (and (fx>= (length r) 5)
+            (and (fx>= (length r) 6)
                  (let ([id (list-ref r 1)] [p (state-of h (list-ref r 2))] [time (list-ref r 3)]
-                       [cursors (list-ref r 4)] [edits (vector-edits (list-tail r 5))])
+                       [cursors (list-ref r 4)] [after (list-ref r 5)] [edits (vector-edits (list-tail r 6))])
                    (and p edits (count? id) (not (state-of h id)) (fixnum? time)
-                        (list? cursors) (for-all count? cursors) (edits-fit? (state-length p) edits)
-                        (let ([s (add-state! h id p cursors time)])
+                        (counts? cursors) (counts? after) (edits-fit? (state-length p) edits)
+                        (let ([s (add-state! h id p cursors after time)])
                           (for-each (lambda (e) (push-edit! h s e)) edits)
                           (state-written-count-set! s (state-count s))
                           (history-current-set! h s)
                           #t))))]
            [(more)
-            (and (fx>= (length r) 2)
-                 (let ([s (state-of h (cadr r))] [edits (vector-edits (cddr r))])
-                   (and s edits (state-parent s) (null? (state-children s)) (edits-fit? (state-length s) edits)
+            (and (fx>= (length r) 3)
+                 (let ([s (state-of h (cadr r))] [after (caddr r)] [edits (vector-edits (cdddr r))])
+                   (and s edits (state-parent s) (null? (state-children s)) (counts? after)
+                        (edits-fit? (state-length s) edits)
                         (begin
+                          (state-after-set! s after)
                           (for-each (lambda (e) (push-edit! h s e)) edits)
                           (state-written-count-set! s (state-count s))
                           #t))))]
@@ -251,7 +262,7 @@
            [else #f])))
 
   (define (header? r)
-    (and (list? r) (fx= (length r) 5) (eq? (car r) 'undo-history) (eqv? (cadr r) 1)
+    (and (list? r) (fx= (length r) 5) (eq? (car r) 'undo-history) (eqv? (cadr r) records-version)
          (count? (caddr r)) (count? (cadddr r)) (fixnum? (list-ref r 4))))
 
   (define (replay records)
@@ -271,7 +282,7 @@
     (vector (edit-start e) (content-document (edit-removed e)) (content-document (edit-inserted e))))
 
   (define (group-record s)
-    (cons* 'group (state-id s) (state-id (state-parent s)) (state-time s) (state-cursors s)
+    (cons* 'group (state-id s) (state-id (state-parent s)) (state-time s) (state-cursors s) (state-after s)
            (map edit-vector (reverse (state-edits-newest-first s)))))
 
   ;; Records follow the tree, not ids: a state split from a group is its
@@ -282,7 +293,7 @@
       (let loop ([stack (reverse (state-children root))] [groups '()])
         (if (null? stack)
             (append
-              (list (list 'undo-history 1 (state-id root) (state-length root) (state-time root)))
+              (list (list 'undo-history records-version (state-id root) (state-length root) (state-time root)))
               (reverse groups)
               (list (list 'at (state-id (history-current h)))))
             (let ([s (car stack)])
@@ -321,9 +332,9 @@
                    [(not written)
                     (state-written-count-set! s count)
                     (next (group-record s))]
-                   [(fx> count written)
+                   [(fx>= count written)
                     (state-written-count-set! s count)
-                    (next (cons* 'more (state-id s)
+                    (next (cons* 'more (state-id s) (state-after s)
                                  (map edit-vector
                                       (reverse (list-head (state-edits-newest-first s) (fx- count written))))))]
                    [else (next #f)]))]
@@ -376,6 +387,8 @@
         (let ([o (history-open h)])
           (when (and o (null? (history-holds h)))
             (state-time-set! o (now))
+            (state-after-set! o (cursors-after (history-buffer h)))
+            (when (state-written-count o) (queue-group! h o))
             (history-open-set! h #f)))
         (history-join-set! h #f))))
 
@@ -476,6 +489,10 @@
         [(fx>= p end) (fx+ (fx- p end) (fx+ start (content-length (edit-removed e))))]
         [else start])))
 
+  (define (cursors-after b)
+    (let ([v (view-of b)])
+      (if v (cursor-points v) '())))
+
   (define (cursors-before b e)
     (if (and command-buffer (eq? command-buffer b) (commands:this-command))
         command-points
@@ -519,7 +536,7 @@
          (push-edit! h c e)
          (queue-group! h c)]
         [else
-         (let ([s (add-state! h (history-next-id h) c (cursors-before b e) (now))])
+         (let ([s (add-state! h (history-next-id h) c (cursors-before b e) '() (now))])
            (state-command-set! s command)
            (state-run-set! s (and command run))
            (history-open-set! h s)
@@ -537,9 +554,16 @@
       [(fx>= p (fx+ start removed)) (fx+ p (fx- inserted removed))]
       [else start]))
 
+  (define (map-points points start removed inserted)
+    (map (lambda (p) (map-point p start removed inserted)) points))
+
+  ;; A state's cursors before its group are in its parent's text, those
+  ;; after it in its own.
   (define (map-cursors! x start removed inserted)
-    (unless (null? (state-cursors x))
-      (state-cursors-set! x (map (lambda (p) (map-point p start removed inserted)) (state-cursors x)))))
+    (state-cursors-set! x (map-points (state-cursors x) start removed inserted)))
+
+  (define (map-after! x start removed inserted)
+    (state-after-set! x (map-points (state-after x) start removed inserted)))
 
   (define (drop-edits! h x dropped)
     (for-each
@@ -591,6 +615,7 @@
     (let-values ([(start removed*) (carry! h x start removed inserted #f)])
       (if start
           (begin
+            (map-after! x start removed* inserted)
             (state-length-set! x (fx+ (state-length x) (fx- inserted removed*)))
             (for-each (lambda (k) (map-branch! h k start removed* inserted)) (state-children x))
             (when (emptied? x) (splice-out! h x)))
@@ -606,6 +631,7 @@
     (let ([inserted (buffers:piece-length (buffers:edit-inserted e))])
       (let up ([x (history-current h)] [start (buffers:edit-start e)]
                [removed (buffers:piece-length (buffers:edit-removed e))] [from #f] [emptied '()])
+        (map-after! x start removed inserted)
         (state-length-set! x (fx+ (state-length x) (fx- inserted removed)))
         (for-each (lambda (k) (unless (eq? k from) (map-branch! h k start removed inserted))) (state-children x))
         (if (state-parent x)
@@ -666,10 +692,12 @@
                 (add-edits! h b edits)
                 (history-recorded-version-set! h (buffers:version b)))
               (begin
-                (warn 'undo "edits were made that undo could not record, so the buffer's history starts again"
-                      (list (buffers:name b)))
                 (drop! h)
-                (mark-dirty! (begin-history! b (document:length (buffers:document b)) (buffers:version b)))))))))
+                (start-unrecorded! b)))))))
+
+  (define (start-unrecorded! b)
+    (warn 'undo "edits were made that undo could not record, so the history of ~a starts again" (buffers:name b))
+    (mark-dirty! (begin-history! b (document:length (buffers:document b)) (buffers:version b))))
 
   (define (amalgamate-history! h command)
     (let ([o (history-open h)])
@@ -846,9 +874,19 @@
     (let ([left (state-left c)] [children (state-children c)])
       (if (and left (memq left children)) left (and (pair? children) (car children)))))
 
-  (define (group-end s)
-    (let ([e (car (state-edits-newest-first s))])
-      (fx+ (edit-start e) (content-length (edit-inserted e)))))
+  ;; A group made with no view showing its buffer has no cursors, so they
+  ;; go to its edits, as Emacs's primitive-undo leaves point at each
+  ;; change.
+  (define (undo-points s)
+    (if (null? (state-cursors s))
+        (list (edit-start (car (last-pair (state-edits-newest-first s)))))
+        (state-cursors s)))
+
+  (define (redo-points s)
+    (if (null? (state-after s))
+        (let ([e (car (state-edits-newest-first s))])
+          (list (fx+ (edit-start e) (content-length (edit-inserted e)))))
+        (state-after s)))
 
   (define (ancestors s)
     (let loop ([s s] [acc '()])
@@ -879,11 +917,6 @@
              (views:set-cursor! (car cs) (clamp b (car ps)) (views:cursor-mark (car cs)))
              (loop (cdr cs) (cdr ps))])))
       (void)))
-
-  (define (place-cursors! b p)
-    (let ([v (view-of b)])
-      (when v
-        (for-each (lambda (c) (views:set-cursor! c (clamp b p) (views:cursor-mark c))) (views:cursors v)))))
 
   ;; A nested body that raises takes back only the edits made since it
   ;; took its hold. The hold keeps the group's edits rather than their
@@ -999,8 +1032,8 @@
 
   (define (start-again! h)
     (let ([c (history-current h)])
-      (warn 'undo:limit "an edit group is larger than the limit, so the buffer's history starts again"
-            (list (buffers:name (history-buffer h))))
+      (warn 'undo:limit "an edit group is larger than the limit, so the history of ~a starts again"
+            (buffers:name (history-buffer h)))
       (hashtable-clear! (history-states h))
       (hashtable-set! (history-states h) (state-id c) c)
       (state-parent-set! c #f)
@@ -1050,9 +1083,7 @@
     (let ([edits (buffers:edits-since b version)])
       (if (not edits)
           (begin
-            (warn 'undo "edits were made that undo could not record, so the buffer's history starts again"
-                  (list (buffers:name b)))
-            (mark-dirty! (begin-history! b (document:length (buffers:document b)) (buffers:version b)))
+            (start-unrecorded! b)
             #f)
           (let* ([h (or h (new-history 0 (length-at b edits) (now)))]
                  [saved (and saved-id (state-of h saved-id))]
@@ -1130,7 +1161,7 @@
 
 (commands:define-command (undo [n (commands:prefix-number)])
   "Undoes the current buffer's last N edit groups and puts the view's cursors back where they were before them."
-  (check-count 'undo:undo n)
+  (check-count 'undo:undo "undo" n)
   (let* ([b (current-buffer 'undo:undo)] [h (history-of 'undo:undo b)])
     (close-group! h)
     (let loop ([k n] [c (history-current h)] [moves '()])
@@ -1138,13 +1169,13 @@
           (loop (fx- k 1) (state-parent c) (cons (cons 'undo c) moves))
           (begin
             (move! h b (reverse moves) 'undo:undo)
-            (unless (null? moves) (restore-cursors! b (state-cursors (cdar moves))))
+            (unless (null? moves) (restore-cursors! b (undo-points (cdar moves))))
             (when (fx> k 0) (no-further 'undo:undo "undo"))
             (%say! b "Undo"))))))
 
 (commands:define-command (redo [n (commands:prefix-number)])
-  "Redoes N edit groups, following the branch undo last left, and puts the cursors at the end of the last one."
-  (check-count 'undo:redo n)
+  "Redoes N edit groups, following the branch undo last left, and puts the view's cursors back where they were after the last one."
+  (check-count 'undo:redo "redo" n)
   (let* ([b (current-buffer 'undo:redo)] [h (history-of 'undo:redo b)])
     (close-group! h)
     (let loop ([k n] [c (history-current h)] [moves '()])
@@ -1153,7 +1184,7 @@
             (loop (fx- k 1) child (cons (cons 'redo child) moves))
             (begin
               (move! h b (reverse moves) 'undo:redo)
-              (unless (null? moves) (place-cursors! b (group-end (cdar moves))))
+              (unless (null? moves) (restore-cursors! b (redo-points (cdar moves))))
               (when (fx> k 0) (no-further 'undo:redo "redo"))
               (%say! b "Redo")))))))
 

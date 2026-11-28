@@ -6,6 +6,8 @@
 
 (define (current-buffer) (views:buffer (layout:selected-view)))
 
+(define (points) (map views:cursor-point (views:cursors (layout:selected-view))))
+
 (keys:bind! keys:global "C-z" undo:undo)
 (keys:bind! keys:global "C-Z" undo:redo)
 
@@ -50,6 +52,16 @@
   (check-equal? "one |" (test-user:text))
   (undo-test/edits:take-said!))
 
+(test "M-- C-/ and M-0 C-? change nothing and say the count must be 1 or more"
+  (test-user:show! "x|y")
+  (test-user:type! "abc")
+  (check-equal? '((undo:undo "undo takes a count of 1 or more")) (reports "M-- C-/"))
+  (check-equal? "xabc|y" (test-user:text))
+  (test-user:press! "C-/")
+  (check-equal? '((undo:redo "redo takes a count of 1 or more")) (reports "M-0 C-?"))
+  (check-equal? "x|y" (test-user:text))
+  (undo-test/edits:take-said!))
+
 (test "C-/ with nothing left changes nothing and says so"
   (test-user:show! "x|y")
   (check-equal? '((undo:undo "no further undo information")) (reports "C-/"))
@@ -62,6 +74,18 @@
   (check-equal? "xabc|y" (test-user:text))
   (check-equal? '("Undo" "Redo") (undo-test/edits:take-said!))
   (check-equal? '((undo:redo "no further redo information")) (reports "C-?")))
+
+(test "C-/ after a yank at three cursors puts each back where it was before it, and C-? where it was after it"
+  (test-user:show! "|one\ntwo\nthree")
+  (views:add-cursor! (layout:selected-view) 5)
+  (views:add-cursor! (layout:selected-view) 9)
+  (test-user:press! "C-k C-y")
+  (check-equal? '("one\ntwo\nthree" (4 8 14)) (list (undo-test/edits:text (current-buffer)) (points)))
+  (test-user:press! "C-/")
+  (check-equal? '("\n\n" (1 2 3)) (list (undo-test/edits:text (current-buffer)) (points)))
+  (test-user:press! "C-?")
+  (check-equal? '("one\ntwo\nthree" (4 8 14)) (list (undo-test/edits:text (current-buffer)) (points)))
+  (undo-test/edits:take-said!))
 
 (test "after an undo, C-g then C-/ moves on to the parent state, not back"
   (test-user:show! "x|y")

@@ -36,4 +36,8 @@
 
 ;; ask's own writer reports each message as a warning, which would fail
 ;; the test file.
-(options:set! ask:message-writer (lambda (text) (void)))
+(define %said '())
+
+(define (take-said!) (let ([said (reverse %said)]) (set! %said '()) said))
+
+(options:set! ask:message-writer (lambda (text) (set! %said (cons text %said))))

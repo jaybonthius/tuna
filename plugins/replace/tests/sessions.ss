@@ -23,7 +23,8 @@
     (replace-test:replace! "M-%" "x" "y")
     (isearch-test:take-said!)
     (test-user:press! "y y")
-    (check-equal? '(#f "y1 x2 x3\n" ("a read-only span refuses the edit")) (list (replace-test:session) (text) (isearch-test:take-said!)))
+    (check-equal? (list #f "y1 x2 x3\n" (list (string-append "the text of " (buffers:name b) " is read-only")))
+                  (list (replace-test:session) (text) (isearch-test:take-said!)))
     (at! 1)
     (isearch-test:with-setting replace:skip-read-only #t
       (lambda ()

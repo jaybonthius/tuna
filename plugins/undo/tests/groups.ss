@@ -26,8 +26,9 @@
   (undo-test/edits:take-said!))
 
 (test "undo and redo take a positive count, a current buffer and a buffer"
-  (for-each (lambda (n) (check-raises (undo-test/edits:raised? 'undo:undo "not a positive count") (undo:undo n))) '(0 -1 1.5 x))
-  (check-raises (undo-test/edits:raised? 'undo:redo "not a positive count") (undo:redo 0))
+  (for-each (lambda (n) (check-raises (undo-test/edits:raised? 'undo:undo "undo takes a count of 1 or more") (undo:undo n))) '(0 -1))
+  (for-each (lambda (n) (check-raises (undo-test/edits:raised? 'undo:undo "not a positive count") (undo:undo n))) '(1.5 x))
+  (check-raises (undo-test/edits:raised? 'undo:redo "redo takes a count of 1 or more") (undo:redo 0))
   (check-raises (undo-test/edits:raised? 'undo:undo "no buffer is current") (undo:undo 1))
   (check-raises (undo-test/edits:raised? 'undo:history "not a buffer") (undo:history "notes")))
 
