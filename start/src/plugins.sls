@@ -4,7 +4,7 @@
 (module %manager (start-plugins! read-configuration-lines! read-configuration-line! configuration-line read-repl-line! raise-line-failure
                   plugin-line? line-id index-module? install-plugin! update-plugin! remove-plugin!
                   remove-unused-plugins! installed-plugins plugin-commit module-plugin-source
-                  configuration-file module-imports module-file-of install-own-libraries! own-plugin-ids
+                  configuration-file module-file-of install-own-libraries! own-plugin-ids
                   reached-left-out unavailable-library-of build-failure-of test-library-names failure-text)
   (define main-thread (get-thread-id))
 
@@ -1594,12 +1594,15 @@
       (let ([me (current-task)])
         (%on-leave %read-configuration! (lambda () (%give-turn! me)))))))
 
+;; A loaded module's imports are those its instance was compiled with,
+;; which the kernel's reload follows, whatever its source says now.
 (define (%with-importers names)
   (let ([loaded (loaded-modules)])
     (let loop ([found names])
       (let ([more (filter (lambda (name)
                             (and (not (member name found))
-                                 (exists (lambda (import) (member import found)) (module-imports name))))
+                                 (exists (lambda (import) (member import found))
+                                         (library-requirements name (library-requirements-options import)))))
                           loaded)])
         (if (null? more) found (loop (append found more)))))))
 

@@ -144,21 +144,27 @@
   ;; unloaded. So each entry procedure's definer is kept from when it was
   ;; loaded, and #f for a procedure that is not changeable; one first seen
   ;; with no loaded definer is taken for a definition whose module is gone.
-  ;; hooks:entries may be called on any thread.
+  ;; hooks:entries may be called on any thread, and a key lookup asks for
+  ;; each entry; only the main thread adds to the table, so it alone reads
+  ;; it without the mutex.
   (define %definers (make-weak-eq-hashtable))
   (define %definers-mutex (make-mutex))
 
   (define (%note-definer! p)
-    (with-mutex %definers-mutex
-      (let ([known (hashtable-ref %definers p 'unknown)])
-        (if (eq? known 'unknown)
-            (let ([changes (guard (c [(assertion-violation? c) 'none]) (definition-changes p))])
-              (cond
-                [(eq? changes 'none) (hashtable-set! %definers p #f) #f]
-                [(find (lambda (change) (eq? (cadr change) 'define)) changes)
-                 => (lambda (change) (hashtable-set! %definers p (car change)) (car change))]
-                [else 'unknown]))
-            known))))
+    (let* ([main? (eqv? (get-thread-id) %main-thread)]
+           [known (if main?
+                      (hashtable-ref %definers p 'unknown)
+                      (with-mutex %definers-mutex (hashtable-ref %definers p 'unknown)))])
+      (if (eq? known 'unknown)
+          (let* ([changes (guard (c [(assertion-violation? c) 'none]) (definition-changes p))]
+                 [definer (cond
+                            [(eq? changes 'none) #f]
+                            [(find (lambda (change) (eq? (cadr change) 'define)) changes) => car]
+                            [else 'unknown])])
+            (when (and main? (not (eq? definer 'unknown)))
+              (with-mutex %definers-mutex (hashtable-set! %definers p definer)))
+            definer)
+          known)))
 
   ;; A definition its loaded module no longer defines does not count: a
   ;; call of it is a mistake to report.

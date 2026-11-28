@@ -282,6 +282,20 @@
     (check-equal? 3 (length (hooks:entries changed)))
     (unload-owner! o)))
 
+(test "on another thread too, hooks:entries leaves out an entry whose definition's module is unloaded"
+  (load-module! '(hooks-test helper))
+  (let ([o (make-owner '(entries helper))] [mark (eval 'hooks-test/helper:mark (environment '(hooks-test helper)))])
+    (call-as-owner o
+      (lambda ()
+        (hooks:add! changed mark)
+        (hooks:add! changed (marker 'after) 2)))
+    (check-equal? 2 (length (in-thread (lambda () (hooks:entries changed)))))
+    (unload-owner! (module-owner '(hooks-test helper)))
+    (check-equal? 1 (length (in-thread (lambda () (hooks:entries changed)))))
+    (load-module! '(hooks-test helper))
+    (check-equal? 2 (length (in-thread (lambda () (hooks:entries changed)))))
+    (unload-owner! o)))
+
 (test "an owner's entry is out of effect once its unload begins, though its own code runs the hook"
   (let ([o (make-owner '(hook unloading))] [seen (box '())])
     (call-as-owner o

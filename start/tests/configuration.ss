@@ -115,3 +115,14 @@
     (check (module-owner '(greet)))
     (check (not (eq? old (module-owner '(greet))))))
   (check-equal? "HI, HARPO!" (greet:text "Harpo")))
+
+(test "a module whose file has come to import another since it loaded is not that one's importer, so that one's reload leaves the configuration loaded"
+  (fixtures:write-lib-module! '(speller) '((define (n) 1)))
+  (fixtures:write-lib-module! '(spelling) '((define (word) "fish")))
+  (fixtures:load-configuration! '((import (tuna) (speller))))
+  (fixtures:at-repl '(import (spelling)))
+  (fixtures:write-lib-module! '(speller) '((import (spelling)) (define (n) (string-length (spelling:word)))))
+  (let ([before (plugins:configuration-owner)])
+    (reload-modules! '((spelling)))
+    (check-equal? before (plugins:configuration-owner))
+    (check-equal? 1 (fixtures:at-repl '(speller:n)))))
