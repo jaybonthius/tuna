@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (options) (saved) (tables) (keys) (commands) (buffers) (views) (layout) (editing) (undo) (echo-area) (ask)
+(import (tuna) (test) (test-user) (test-runner) (options) (saved) (tables) (keys) (commands) (buffers) (views) (layout) (editing) (undo) (echo-area) (ask)
         (minibuffer) (minibuffer-test reading) (minibuffer-test screen))
 
 (define (raised? who message)
@@ -259,3 +259,20 @@
     (check-equal? #f (minibuffer:current-prompt))
     (check-equal? '() (test-user:elements (test-user:screen) "minibuffer-prompt")))
   (tables:remove! layout:display-rules minibuffer:buffer?))
+
+(define order '())
+
+(commands:define-command (note-order)
+  "Records that it ran."
+  (set! order (cons 'noted order)))
+
+(keys:bind! keys:global "C-c n" note-order)
+
+(test "keys that reach Tuna with the RET that answers a prompt run once the prompt's command has the answer"
+  (set! order '())
+  (minibuffer-test/reading:start!
+    (lambda () (let ([answer (minibuffer:read "Name: ")]) (set! order (cons answer order)) answer)))
+  (test-user:type! "ab")
+  (test-user:press-together! "RET C-c n")
+  (test-runner:wait-until (lambda () (= 2 (length order))))
+  (check-equal? '("ab" noted) (reverse order)))

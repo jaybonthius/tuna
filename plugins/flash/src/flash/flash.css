@@ -1,0 +1,94 @@
+@layer defaults, themes, preferences;
+
+@layer defaults.faces {
+  [data-face="flash.backdrop"] {
+    color: var(--flash-backdrop-color, revert-layer);
+    background-color: var(--flash-backdrop-background, revert-layer);
+    font-weight: var(--flash-backdrop-font-weight, revert-layer);
+    font-style: var(--flash-backdrop-font-style, revert-layer);
+    font-family: var(--flash-backdrop-font-family, revert-layer);
+    font-size: var(--flash-backdrop-font-size, revert-layer);
+    text-decoration: var(--flash-backdrop-text-decoration, revert-layer);
+  }
+}
+
+@layer defaults {
+  /* An opacity reaches everything its element holds, whatever colours
+     the kinds inside give themselves, and nothing beside it, so the
+     backdrop covers the text around the matches and never the matches.
+     An atom standing alone draws no box of its own, so its kind's
+     elements take it. */
+  .view :not(.node)[data-face="flash.backdrop"],
+  .view .node[data-face="flash.backdrop"] > * {
+    opacity: var(--flash-backdrop-opacity, 0.45);
+  }
+
+  /* An absolute label takes no room, so no text moves. */
+  .view :not(.node)[data-flash-label],
+  .view .node[data-flash-label] > :first-child {
+    position: relative;
+  }
+
+  .view :not(.node)[data-flash-label]::before,
+  .view .node[data-flash-label] > :first-child::before {
+    content: var(--flash-label);
+    position: absolute;
+    z-index: 1;
+    inset-block: 0;
+    inset-inline-start: 0;
+    min-inline-size: 100%;
+    text-align: center;
+    font-family: var(--tuna-font-code);
+    font-weight: bold;
+    background-color: var(--flash-label-background, var(--tuna-match));
+    color: var(--flash-label-color, var(--tuna-text));
+    pointer-events: none;
+  }
+
+  .view .node[data-flash-label] > :first-child::before {
+    inset-block-end: auto;
+    min-inline-size: 1ch;
+    line-height: var(--tuna-line-height-code);
+  }
+
+  .view :not(.node)[data-flash-rainbow="1"]::before,
+  .view .node[data-flash-rainbow="1"] > :first-child::before {
+    background-color: var(--flash-rainbow-1-background, var(--tuna-red-6));
+  }
+
+  .view :not(.node)[data-flash-rainbow="2"]::before,
+  .view .node[data-flash-rainbow="2"] > :first-child::before {
+    background-color: var(--flash-rainbow-2-background, var(--tuna-amber-6));
+  }
+
+  .view :not(.node)[data-flash-rainbow="3"]::before,
+  .view .node[data-flash-rainbow="3"] > :first-child::before {
+    background-color: var(--flash-rainbow-3-background, var(--tuna-green-6));
+  }
+
+  .view :not(.node)[data-flash-rainbow="4"]::before,
+  .view .node[data-flash-rainbow="4"] > :first-child::before {
+    background-color: var(--flash-rainbow-4-background, var(--tuna-cyan-6));
+  }
+
+  .view :not(.node)[data-flash-rainbow="5"]::before,
+  .view .node[data-flash-rainbow="5"] > :first-child::before {
+    background-color: var(--flash-rainbow-5-background, var(--tuna-blue-6));
+  }
+
+  .view :not(.node)[data-flash-rainbow="6"]::before,
+  .view .node[data-flash-rainbow="6"] > :first-child::before {
+    background-color: var(--flash-rainbow-6-background, var(--tuna-violet-6));
+  }
+}
+
+@layer preferences {
+  @media (forced-colors: active) {
+    .view [data-flash-label]::before,
+    .view .node[data-flash-label] > :first-child::before {
+      forced-color-adjust: none;
+      background-color: Highlight;
+      color: HighlightText;
+    }
+  }
+}

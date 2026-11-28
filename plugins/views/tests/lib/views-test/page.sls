@@ -103,6 +103,7 @@
         ("version" . ,(number e "data-version"))
         ("top" . ,(mark top)) ("spacer" . ,(not (assv top marks))) ("fraction" . ,(inexact (/ offset 20)))
         ("left" . ,(mark top)) ("past" . 0) ("sides" . #())
+        ("shownStart" . null) ("shownEnd" . null)
         ("start" . ,(append (mark whole-from) '(("count" . 0))))
         ("end" . ,(append (mark (max whole-from whole-to)) '(("count" . 0))))
         ("atStart" . ,(and (test-user:element-attribute e "data-run-at-start") (= top 1) (= offset 0) #t))

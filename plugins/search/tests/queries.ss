@@ -124,6 +124,14 @@
     (check-equal? '("missing closing parenthesis" 4) (pattern-error "(abc"))
     (check-equal? '("unmatched closing parenthesis" 1) (pattern-error "a)"))))
 
+(test "a pattern error's description is incomplete input at the text's end, else PCRE2's message"
+  (let ([described
+         (lambda (text)
+           (guard (c [(search:pattern-error? c) (search:pattern-error-description c text)])
+             (search:find b (search:make-query text search:regexp) 0 search-test:forward)))])
+    (check-equal? '("incomplete input" "unmatched closing parenthesis") (map described '("(abc" "a)")))
+    (check-raises (lambda (c) (equal? "not a pattern error" (condition-message c))) (search:pattern-error-description 'c "x"))))
+
 (test "search:whitespace is the pattern a run of spaces matches under lax, read when the query is made"
   (let ([q (options:with ([search:whitespace "[ \\t_]+"]) (search:make-query "vector ref"))])
     (check-equal? '((8 18 "vector-ref") (20 30 "vector\tref"))

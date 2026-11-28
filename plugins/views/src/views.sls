@@ -78,7 +78,7 @@
    posn-record? make-posn-record posn-record-view posn-record-point posn-record-node posn-record-keymaps
    posn-record-x posn-record-y posn-record-column posn-record-row posn-record-part keymap-id marked-keymaps click-state
    view-client scroll-page! recenter! follows-point? leader-of region-ranges-of
-   rows-shown-in hscroll-column-of hscroll-line-of set-hscroll-in! move-to-row! row-start-in
+   rows-shown-in shown-range-in hscroll-column-of hscroll-line-of set-hscroll-in! move-to-row! row-start-in
    face-attributes title-attributes text-spans-html
    anchor-record? anchor-record-id anchor-record-view anchor-record-spot anchor-record-gone?
    new-anchor! forget-anchor! anchor-of-id anchor-drawn-for? drawn-ranges-of
@@ -149,7 +149,8 @@
 
   (define-record-type facts
     (sealed #t)
-    (fields top fraction column line sides start end at-start? at-end? columns rows point-visible? edge))
+    (fields top fraction column line sides start end shown-start shown-end at-start? at-end? columns rows point-visible?
+            edge version))
 
   ;; LINE is the start of a long line's item; FROM and TO count from it to
   ;; the positions at the view's left and right edges.
@@ -1532,8 +1533,8 @@
 
   (define-record-type measured
     (sealed #t)
-    (fields placement version top spacer? fraction left past sides start end at-start? at-end? columns rows
-            point-visible? lost? wanted hand? settled? edge))
+    (fields placement version top spacer? fraction left past sides start end shown-start shown-end at-start? at-end?
+            columns rows point-visible? lost? wanted hand? settled? edge))
 
   ;; A place inside a spacer or a gap is counted in characters, the
   ;; spacer's own unit, since the page has no positions there.
@@ -1560,6 +1561,16 @@
         then)))
 
   (define (mark-resolver b version)
+    (resolver b version (lambda (p size edits) (and (fx< p size) (follow p edits)))))
+
+  ;; The end of a range names the gap after its last token and follows
+  ;; that token, so a range may end where the text does.
+  (define (end-resolver b version)
+    (resolver b version
+      (lambda (p size edits)
+        (and (fx<= 1 p size) (let ([q (follow (fx- p 1) edits)]) (and q (fx+ q 1)))))))
+
+  (define (resolver b version resolve)
     (let* ([edits (buffers:edits-since b version)]
            [doc (buffers:document b)]
            [size (and edits (fold-left (lambda (n e) (fx- n (edit-delta e))) (document:length doc) edits))]
@@ -1569,13 +1580,14 @@
              (let ([p (mark-position then (field-or-false mark "token") (field-or-false mark "at")
                                      (field-or-false mark "line") (field-or-false mark "count")
                                      (field-or-false mark "chars"))])
-               (and p (fx< p size) (follow p edits)))))))
+               (and p (resolve p size edits)))))))
 
   ;; The column is counted on the line the page names by the position at
   ;; its left edge, and past that line's end in cells, as Emacs counts
   ;; columns past a line's end.
   (define (report-facts v b doc r)
     (let* ([resolve (mark-resolver b (measured-version r))]
+           [resolve-end (end-resolver b (measured-version r))]
            [position (lambda (mark) (and mark (resolve mark)))]
            [spot (lambda (p) (and p (make-spot b p #f)))]
            [left (position (measured-left r))]
@@ -1591,8 +1603,10 @@
       (make-facts (spot (position (measured-top r))) (measured-fraction r)
                   (if left (fx+ (fx- left line) (measured-past r)) 0) (spot line) sides
                   (spot (position (measured-start r))) (spot (position (measured-end r)))
+                  (spot (position (measured-shown-start r))) (spot (resolve-end (measured-shown-end r)))
                   (measured-at-start? r) (measured-at-end? r)
-                  (measured-columns r) (measured-rows r) (measured-point-visible? r) (measured-edge r))))
+                  (measured-columns r) (measured-rows r) (measured-point-visible? r) (measured-edge r)
+                  (measured-version r))))
 
   ;; A page moved by hand, or by C-v, shares where it went only once it
   ;; comes to rest, so a fling moves the other clients once; that page
@@ -1712,13 +1726,15 @@
     (fields view client doc lo hi ws we root cursors anchors regions spans longest folds (mutable shown) item-ids marks? ends
             marker pieces gaps before))
 
+  ;; CLASSES and ATTRIBUTES are kept apart from OPEN, since an atom
+  ;; standing alone that the span covers takes them on its own element.
   (define-record-type span-entry
     (sealed #t)
-    (fields start end rank open close before after replace face))
+    (fields start end rank open close before after replace classes attributes))
 
   (define-record-type span-style
     (sealed #t)
-    (fields open close before after replace))
+    (fields open close before after replace classes attributes))
 
   (define-record-type insertion
     (sealed #t)
@@ -1780,7 +1796,7 @@
                 (loop (cdr cs) #f
                       (if (and (fx<= ws p) (fx< p we) (on-shown-character? doc replacing p))
                           (cons (make-span-entry p (cluster-after doc p) cursor-rank (if primary? primary-on-open cursor-on-open)
-                                                 span-close #f #f #f #f)
+                                                 span-close #f #f #f '() '())
                                 acc)
                           acc)))))
         '()))
@@ -1815,27 +1831,10 @@
 
   ;; Attribute names come from users' tables, so the element is written
   ;; here rather than by haml, which takes names only as written in code.
-  (define (put-element p value classes malformed! click)
-    (let loop ([value (if (list? value) value '())] [classes (reverse classes)] [others (if click (list (cons "data-click" click)) '())])
+  (define (value-attributes value malformed!)
+    (let loop ([value (if (list? value) value '())] [classes '()] [others '()])
       (cond
-        [(null? value)
-         (put-string p "<span")
-         (unless (null? classes)
-           (put-string p " class=\"")
-           (let ([classes (reverse classes)])
-             (escape-attribute (car classes) p)
-             (for-each (lambda (c) (put-char p #\space) (escape-attribute c p)) (cdr classes)))
-           (put-char p #\"))
-         (for-each
-           (lambda (a)
-             (put-char p #\space)
-             (put-string p (car a))
-             (when (string? (cdr a))
-               (put-string p "=\"")
-               (escape-attribute (cdr a) p)
-               (put-char p #\")))
-           (reverse others))
-         (put-char p #\>)]
+        [(null? value) (values (reverse classes) (reverse others))]
         [(and (pair? (car value)) (symbol? (caar value)) (tables:ref span-properties (caar value) #f))
          => (lambda (proc)
               (let add ([as (let ([as (guard (c [(not (cancelled? c)) (report c) '()])
@@ -1856,33 +1855,60 @@
                      (add (cdr as) classes (if t (cons (cons (caar as) t) others) others)))])))]
         [else (loop (cdr value) classes others)])))
 
+  (define (put-element p tag classes others value-classes value-others)
+    (let ([classes (append classes value-classes)]
+          [others (append (remp (lambda (o) (assoc (car o) value-others)) others) value-others)])
+      (put-char p #\<)
+      (put-string p tag)
+      (unless (null? classes)
+        (put-string p " class=\"")
+        (escape-attribute (car classes) p)
+        (for-each (lambda (c) (put-char p #\space) (escape-attribute c p)) (cdr classes))
+        (put-char p #\"))
+      (for-each
+        (lambda (a)
+          (put-char p #\space)
+          (put-string p (car a))
+          (when (string? (cdr a))
+            (put-string p "=\"")
+            (escape-attribute (cdr a) p)
+            (put-char p #\")))
+        others)
+      (put-char p #\>)))
+
   ;; A list of faces is drawn as nested elements, the first innermost, so
   ;; its rules win, as Emacs gives a list's earlier faces priority.
+  ;; What the value gives a node standing alone comes with the first
+  ;; face, whose rules win.
   (define (span-open value classes malformed! click)
-    (define (element-start value click)
-      (call-with-string-output-port (lambda (p) (put-element p value classes malformed! click))))
-    (let* ([faces (value-ref value 'face)]
-           [bare (element-start '() #f)]
-           [elements
-            (filter (lambda (open) (not (string=? open bare)))
-              (if (and (pair? faces) (list? faces))
-                  (let ([faces (reverse faces)])
-                    (cons (element-start (map (lambda (e) (if (and (pair? e) (eq? (car e) 'face)) (cons 'face (car faces)) e)) value) click)
-                          (map (lambda (face) (element-start (list (cons 'face face)) #f)) (cdr faces))))
-                  (list (element-start value click))))])
-      (values (and (pair? elements) (apply string-append elements)) (length elements))))
+    (let* ([value (if (list? value) value '())]
+           [face? (lambda (e) (and (pair? e) (eq? (car e) 'face)))]
+           [faces (let ([f (value-ref value 'face)]) (if (and (pair? f) (list? f)) f (list f)))]
+           [of-face (lambda (face)
+                      (if (exists face? value)
+                          (let-values ([(c o) (value-attributes (list (cons 'face face)) malformed!)]) (cons c o))
+                          (cons '() '())))]
+           [face-parts (map of-face faces)]
+           [rest (let-values ([(c o) (value-attributes (remp face? value) malformed!)]) (cons c o))]
+           [joined (lambda (a b)
+                     (cons (append (car a) (car b))
+                           (append (remp (lambda (o) (assoc (car o) (cdr b))) (cdr a)) (cdr b))))]
+           [element-start (lambda (parts click)
+                            (call-with-string-output-port
+                              (lambda (p)
+                                (put-element p "span" classes (if click (list (cons "data-click" click)) '()) (car parts) (cdr parts)))))]
+           [bare (element-start (cons '() '()) #f)]
+           [outer-first (reverse face-parts)]
+           [elements (filter (lambda (open) (not (string=? open bare)))
+                       (cons (element-start (joined (car outer-first) rest) click)
+                             (map (lambda (parts) (element-start parts #f)) (cdr outer-first))))]
+           [node (joined (car face-parts) rest)])
+      (values (and (pair? elements) (apply string-append elements)) (length elements) (car node) (cdr node))))
 
   (define (span-closing n)
     (if (fx= n 1)
         span-close
         (raw-html (apply string-append (make-list n "</span>")))))
-
-  (define (span-face value)
-    (let ([face (value-ref value 'face)])
-      (cond
-        [(symbol? face) (symbol->string face)]
-        [(string? face) face]
-        [else #f])))
 
   (define (value-ref value key)
     (and (list? value)
@@ -1907,16 +1933,17 @@
       (lambda (value classes click)
         (let ([key (cons (cons click classes) value)])
           (or (hashtable-ref styles key #f)
-              (let ([style (let-values ([(open n) (span-open value classes malformed! click)])
+              (let ([style (let-values ([(open n node-classes node-others) (span-open value classes malformed! click)])
                              (make-span-style (and open (raw-html open)) (span-closing n)
-                                              (value-ref value 'before) (value-ref value 'after) (value-ref value 'replace)))])
+                                              (value-ref value 'before) (value-ref value 'after) (value-ref value 'replace)
+                                              node-classes node-others))])
                 (hashtable-set! styles key style)
                 style))))))
 
-  (define (styled-entry style start end rank value)
+  (define (styled-entry style start end rank)
     (make-span-entry start end rank (span-style-open style) (span-style-close style)
                      (span-style-before style) (span-style-after style) (span-style-replace style)
-                     (span-face value)))
+                     (span-style-classes style) (span-style-attributes style)))
 
   (define-record-type span-group
     (sealed #t)
@@ -1961,7 +1988,7 @@
                                                         above-region
                                                         '())
                                                     (span-click (span-group-keymap g) s))])
-                                  (cons (styled-entry style (car s) (cadr s) rank (caddr s)) acc)))
+                                  (cons (styled-entry style (car s) (cadr s) rank) acc)))
                               acc ((span-group-spans g))))))))]
            [replacing (filter span-entry-replace entries)]
            [pieces
@@ -2037,7 +2064,7 @@
                   (let ([eol? (or (fx< line last) (fx< last end-line))])
                     (cons (make-span-entry (if (fx= line first) s (document:line-start doc line))
                                            (if eol? (fx- (document:line-start doc (fx+ line 1)) 1) e)
-                                           region-rank (if eol? region-eol-open region-open) span-close #f #f #f #f)
+                                           region-rank (if eol? region-eol-open region-open) span-close #f #f #f '() '())
                           acc)))))))
 
   (define (region-piece? s) (fx= (span-entry-rank s) region-rank))
@@ -2202,25 +2229,42 @@
     (mark-node ctx node inline? (node-html ctx node inline?) #f))
 
   ;; A cursor right before a node standing alone is drawn on the node's
-  ;; elements: as a mark before it, it would take a line of its own.
+  ;; elements: as a mark before it, it would take a line of its own. Such
+  ;; a node's element is written as a span's is, since the attributes of
+  ;; a span that covers it come from views:span-properties, by names no
+  ;; form knows.
   (define (mark-node ctx node inline? html cursor)
-    (let ([start (document:node-start node)]
-          [at-cursor (case cursor [(primary) "at-cursor primary"] [(other) "at-cursor"] [else #f])])
+    (let ([start (document:node-start node)])
       (cond
         [(not (context-marks? ctx)) html]
         [inline? (haml (:span.node ([data-at start] [data-to (node-end ctx node)] [data-region (atom-in-region? ctx node)]
                                     [data-click (node-click ctx node)])
                          html))]
-        [(whole-node? node)
-         (haml (:div.node.whole ([id (item-id ctx start)] [class at-cursor] [data-at start] [data-to (node-end ctx node)]
-                                 [data-line (document:line (context-doc ctx) start)] [data-before (chars-before ctx start)]
-                                 [data-region (atom-in-region? ctx node)] [data-click (node-click ctx node)]
-                                 [data-face (covering-face ctx start (node-end ctx node))])
-                 html))]
-        [else (haml (:div.node ([id (item-id ctx start)] [class at-cursor] [data-at start] [data-to (node-end ctx node)]
-                                [data-region (atom-in-region? ctx node)] [data-click (node-click ctx node)]
-                                [data-face (covering-face ctx start (node-end ctx node))])
-                      html))])))
+        [else
+         (let* ([end (node-end ctx node)] [whole? (whole-node? node)]
+                [covering (if (document:atom? node) (covering-spans ctx start end) '())]
+                [own (filter cdr
+                       (list (cons "id" (item-id ctx start)) (cons "data-at" (number->string start))
+                             (cons "data-to" (number->string end))
+                             (cons "data-line" (and whole? (number->string (document:line (context-doc ctx) start))))
+                             (cons "data-before" (and whole? (let ([n (chars-before ctx start)]) (and n (number->string n)))))
+                             (cons "data-region" (atom-in-region? ctx node)) (cons "data-click" (node-click ctx node))))])
+           (list (raw-html
+                   (call-with-string-output-port
+                     (lambda (p)
+                       (put-element p "div"
+                         (append (if whole? '("node" "whole") '("node"))
+                                 (case cursor [(primary) '("at-cursor" "primary")] [(other) '("at-cursor")] [else '()]))
+                         own
+                         (apply append (map span-entry-classes covering))
+                         (fold-left (lambda (others s)
+                                      (append (remp (lambda (o) (assoc (car o) (span-entry-attributes s))) others)
+                                              (span-entry-attributes s)))
+                                    '() covering)))))
+                 html
+                 node-close))])))
+
+  (define node-close (raw-html "</div>"))
 
   ;; The place a click on the node's own element names, as item-place
   ;; maps it, so the look and the click agree.
@@ -2233,18 +2277,18 @@
                                              node '() #f #f #f #f #f))])
              (and state (symbol->string state))))))
 
-  ;; A node standing alone has no characters for a span to colour, so the
-  ;; innermost span covering it marks its element, which its kind's
-  ;; elements are styled under.
-  (define (covering-face ctx start end)
-    (let loop ([spans (spans-near ctx start end)] [face #f] [rank -1])
-      (if (null? spans)
-          face
-          (let ([s (car spans)])
-            (if (and (span-entry-face s) (fx<= (span-entry-start s) start) (fx<= end (span-entry-end s))
-                     (fx> (span-entry-rank s) rank))
-                (loop (cdr spans) (span-entry-face s) (span-entry-rank s))
-                (loop (cdr spans) face rank))))))
+  ;; An atom standing alone has no characters for spans to mark, so the
+  ;; spans covering it mark its element, which its kind's elements are
+  ;; styled under: each adds its classes, and of two attributes of one
+  ;; name, the inner span's stands, as it would be drawn inside. A node
+  ;; with content is not marked: the spans mark its characters, and a
+  ;; face on both would apply twice.
+  (define (covering-spans ctx start end)
+    (list-sort (lambda (a b) (fx< (span-entry-rank a) (span-entry-rank b)))
+               (filter (lambda (s)
+                         (and (or (pair? (span-entry-classes s)) (pair? (span-entry-attributes s)))
+                              (fx<= (span-entry-start s) start) (fx<= end (span-entry-end s))))
+                       (spans-near ctx start end))))
 
   (define (no-element? html)
     (cond
@@ -2780,7 +2824,7 @@
                           acc
                           (let ([s (car spans)])
                             (loop (cdr spans) (fx+ rank 1)
-                                  (cons (styled-entry (style (caddr s) '() #f) (car s) (cadr s) rank (caddr s)) acc)))))]
+                                  (cons (styled-entry (style (caddr s) '() #f) (car s) (cadr s) rank) acc)))))]
            [sorted (list->vector (list-sort (lambda (a b) (fx< (span-entry-start a) (span-entry-start b))) entries))]
            [ctx (new-context v client #f 0 n 0 n #f '() '() '#() sorted (longest-span sorted) '() '() #f #f
                              (make-eqv-hashtable) #f #f '() 0)])
@@ -2942,6 +2986,28 @@
           (values (spot-position (facts-start f)) (spot-position (facts-end f)))
           (values #f #f))))
 
+  ;; A page's report tells what it shows while the page has reported
+  ;; under the placement sent it last, as focus-of reads it, and of the
+  ;; text as it is: output since may have moved the rows. Otherwise only
+  ;; the page knows.
+  (define (shown-range-in v b c)
+    (let* ([cs (hashtable-ref (view-record-clients v) c #f)] [f (and cs (client-view-facts cs))])
+      (cond
+        [(not (and cs (eq? (client-view-range-buffer cs) b) (fx= (client-view-drawn-batch cs) batches)))
+         (values #f #f)]
+        [(and f (eqv? (client-view-measured cs) (client-view-number cs)) (fx= (facts-version f) (buffers:version b))
+              (facts-shown-start f) (facts-shown-end f))
+         (values (spot-position (facts-shown-start f)) (spot-position (facts-shown-end f)))]
+        [else
+         (let* ([answer (web:ask-page c "views-shown" (list (cons "view" (view-record-id v))))]
+                [version (and (pair? answer) (field answer "version"))]
+                [start-mark (and (pair? answer) (field answer "start"))]
+                [end-mark (and (pair? answer) (field answer "end"))])
+           (let* ([start (and (fixnum? version) (fx<= 0 version (buffers:version b)) (pair? start-mark)
+                              ((mark-resolver b version) start-mark))]
+                  [end (and start (pair? end-mark) ((end-resolver b version) end-mark))])
+             (if (and end (fx<= start end)) (values start end) (values #f #f))))])))
+
   ;; The vertical place stays the leading page's, so only the lines move
   ;; sideways, as Emacs's set-window-hscroll leaves window-start.
   (define (set-hscroll-in! v column line)
@@ -2956,16 +3022,18 @@
 
   ;; The leading page's last report is where the view is; the shared
   ;; place is what the others are sent.
-  (define (leading-facts v)
-    (let* ([c (leader-of v)] [cs (and c (hashtable-ref (view-record-clients v) c #f))])
+  (define (leading-facts v) (client-facts v (leader-of v)))
+
+  (define (client-facts v c)
+    (let ([cs (and c (hashtable-ref (view-record-clients v) c #f))])
       (and cs (client-view-facts cs))))
 
-  (define (hscroll-column-of v)
-    (let ([f (leading-facts v)])
+  (define (hscroll-column-of v c)
+    (let ([f (client-facts v c)])
       (if f (facts-column f) (or (place-column (view-record-place v)) 0))))
 
-  (define (hscroll-line-of v)
-    (let* ([f (leading-facts v)] [line (if f (facts-line f) (place-line (view-record-place v)))])
+  (define (hscroll-line-of v c)
+    (let* ([f (client-facts v c)] [line (if f (facts-line f) (place-line (view-record-place v)))])
       (and line (spot-position line))))
 
   ;; Only the page knows where lines wrap, so it finds the row. ROW
@@ -3362,6 +3430,7 @@
           [top (field item "top")] [spacer (field item "spacer")] [fraction (field item "fraction")]
           [left (field item "left")] [past (field item "past")] [sides (field item "sides")]
           [start (field item "start")] [end (field item "end")]
+          [shown-start (field item "shownStart")] [shown-end (field item "shownEnd")]
           [at-start (field item "atStart")] [at-end (field item "atEnd")]
           [columns (field item "columns")] [rows (field item "rows")]
           [point-visible (field item "pointVisible")] [lost (field item "lost")]
@@ -3370,13 +3439,15 @@
       (unless (and (fixnum? placement) (fixnum? version) (fx>= version 0)
                    (mark-or-null? top) (boolean? spacer) (fraction? fraction)
                    (mark-or-null? left) (count? past) (vector? sides) (for-all side? (vector->list sides))
-                   (mark-or-null? start) (mark-or-null? end) (boolean? at-start) (boolean? at-end)
+                   (mark-or-null? start) (mark-or-null? end) (mark-or-null? shown-start) (mark-or-null? shown-end)
+                   (boolean? at-start) (boolean? at-end)
                    (count? columns) (count? rows) (boolean? point-visible) (or (eq? lost 'null) (boolean? lost))
                    wanted (boolean? hand) (boolean? settled) edge)
         (assertion-violation 'views "not a scroll report" item))
       (make-measured placement version (and (pair? top) top) spacer (inexact fraction) (and (pair? left) left) past
                      (map (lambda (x) (cons (vector-ref x 0) (vector-ref x 1))) (vector->list sides))
-                     (and (pair? start) start) (and (pair? end) end) at-start at-end columns rows point-visible
+                     (and (pair? start) start) (and (pair? end) end) (and (pair? shown-start) shown-start)
+                     (and (pair? shown-end) shown-end) at-start at-end columns rows point-visible
                      (eq? lost #t) wanted hand settled edge)))
 
   (define (wanted-counts x)
@@ -3892,15 +3963,23 @@
   (check-view 'views:drawn-ranges view)
   (drawn-ranges-of view))
 
-(define (hscroll view)
+(define (hscroll view client)
   (check-view 'views:hscroll view)
-  (values (hscroll-column-of view) (hscroll-line-of view)))
+  (unless (web:client? client)
+    (assertion-violation 'views:hscroll "not a client" client))
+  (values (hscroll-column-of view client) (hscroll-line-of view client)))
+
+(define (shown-range view client)
+  (check-view 'views:shown-range view)
+  (unless (web:client? client)
+    (assertion-violation 'views:shown-range "not a client" client))
+  (shown-range-in view (shown-buffer 'views:shown-range view) client))
 
 (define set-hscroll!
   (case-lambda
     [(view column)
      (check-view 'views:set-hscroll! view)
-     (set-hscroll! view column (hscroll-line-of view))]
+     (set-hscroll! view column (hscroll-line-of view (leader-of view)))]
     [(view column line)
      (check-view 'views:set-hscroll! view)
      (unless (and (fixnum? column) (fx>= column 0))

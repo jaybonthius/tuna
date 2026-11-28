@@ -300,6 +300,12 @@
     --search-group-1-background: var(--modus-bg-blue-intense);
     --isearch-fail-background: var(--modus-bg-red-intense);
     --replace-match-background: var(--modus-bg-red-intense);
+    --flash-rainbow-1-background: var(--modus-bg-red-intense);
+    --flash-rainbow-2-background: var(--modus-bg-yellow-intense);
+    --flash-rainbow-3-background: var(--modus-bg-green-intense);
+    --flash-rainbow-4-background: var(--modus-bg-cyan-intense);
+    --flash-rainbow-5-background: var(--modus-bg-blue-intense);
+    --flash-rainbow-6-background: var(--modus-bg-magenta-intense);
     --occur-match-background: var(--modus-bg-magenta-subtle);
     --search-group-2-background: var(--modus-bg-green-intense);
     --completion-match-0-color: var(--modus-fg-completion-match-0);

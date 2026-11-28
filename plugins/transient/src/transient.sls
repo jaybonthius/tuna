@@ -335,11 +335,8 @@
                                       (%entry-argument e)))
                   (cons 'in in)))))))
 
-;; keys offers no predicate for the keys its <printing-char> stands for.
 (define (%printing-key? key)
-  (and (fx= (string-length key) 1)
-       (let ([c (string-ref key 0)])
-         (not (or (char=? c #\space) (eq? (char-general-category c) 'Cc))))))
+  (and (fx= (string-length key) 1) (keys:printing-char? (string-ref key 0))))
 
 (define (%item-order item)
   (if (%placed? item) (%placed-order item) (%computed-order item)))

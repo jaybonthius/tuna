@@ -551,7 +551,7 @@ function rowAt(view, x, y) {
   const element = elementOf(caret.node);
   const marked = element && view.contains(element) ? markedAncestor(element, view, false) : null;
   const at = marked !== null ? placeIn(marked, caret.node, caret.offset) : placeOf(view, target, x, y);
-  return at ? { at, top: b.top, bottom: b.bottom } : null;
+  return at ? { at, top: b.top, bottom: b.bottom, caret } : null;
 }
 
 function rowAtY(view, x, y) {
@@ -574,6 +574,73 @@ function rowsInView(view) {
   let last = rowAtY(view, x, bottom - m - 1);
   if (last !== null && last.bottom > bottom - m + 0.5) last = rowAtY(view, x, last.bottom - 1.5 * lh) ?? last;
   return { start: first?.at ?? null, end: last?.at ?? null };
+}
+
+// The place after the last character of ROW: the end of its line, or,
+// where the line, or the node drawn whole it is in, goes on below the
+// row, where the next row starts. The point at the row's right end may
+// be a scroll bar's, so the row's characters are walked from its first,
+// as rowAt walks to it, through WITHIN, so a table row's later cells
+// count.
+function rowEnd(view, row, within) {
+  const line = lineAbove(view, (row.top + row.bottom) / 2);
+  if (line === null) return null;
+  const root = within ?? line;
+  const start = row.caret?.node;
+  if (start && root.contains(start) && root.getBoundingClientRect().bottom > row.bottom + 0.5) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    walker.currentNode = start;
+    const range = document.createRange();
+    let node = start.nodeType === Node.TEXT_NODE ? start : walker.nextNode();
+    let i = node === start ? row.caret.offset : 0;
+    for (; node !== null; node = walker.nextNode(), i = 0) {
+      for (; i < node.data.length; i++) {
+        range.setStart(node, i);
+        range.setEnd(node, i + 1);
+        const r = range.getBoundingClientRect();
+        if (r.height > 0 && r.top >= row.bottom - 0.5) {
+          const marked = markedAncestor(elementOf(node), view, false);
+          if (marked !== null) return placeIn(marked, node, i);
+        }
+      }
+    }
+  }
+  return placeIn(line, line, line.childNodes.length);
+}
+
+function lastItemAbove(view, y) {
+  const items = viewItems(view);
+  const end = firstNotBefore(items, (item) => {
+    const b = box(item);
+    return b === null || b.top < y - 0.5;
+  });
+  for (let k = end - 1; k >= 0; k--) {
+    const b = box(items[k]);
+    if (b !== null) return { item: items[k], box: b };
+  }
+  return null;
+}
+
+// The text of the rows at least partly in view, the scroll margin
+// ignored, as avy and flash search from window-start to window-end. A
+// row in a spacer shows no text, so the range ends where it stands; an
+// atom has no row, so the range takes it whole, as it does a node drawn
+// whole that ends in view.
+function rangeShown(view) {
+  const top = contentTop(view);
+  const bottom = top + view.clientHeight;
+  const x = textLeft(view) + 1;
+  const first = rowAtY(view, x, top + 1);
+  const start = first?.at ?? null;
+  if (spacerAt(view, bottom - 1) !== null) return { start, end: rowAtY(view, x, bottom - 1)?.at ?? null };
+  const found = lastItemAbove(view, bottom);
+  if (found === null) return { start, end: null };
+  const node = found.item.classList.contains("node") ? found.item : null;
+  if (node !== null && (found.box.bottom <= bottom + 0.5 || node.querySelector(".line[data-line]") === null)) {
+    return { start, end: { at: number(node, "data-to"), count: 0 } };
+  }
+  const last = rowAt(view, x, Math.min(bottom, found.box.bottom) - 1);
+  return { start, end: last === null ? null : rowEnd(view, last, node) };
 }
 
 // The rows wholly in view, top to bottom, as Emacs counts a window's
@@ -811,6 +878,7 @@ function topPlace(view, st) {
 function measure(view, st, settled, reask) {
   const at = topPlace(view, st);
   const { start, end } = rowsInView(view);
+  const shown = rangeShown(view);
   const { columns, rows } = st.reportedCells ?? cells(view);
   const { left, past } = columnOf(view);
   return {
@@ -826,6 +894,8 @@ function measure(view, st, settled, reask) {
     sides: sidesOf(view),
     start,
     end,
+    shownStart: shown.start,
+    shownEnd: shown.end,
     atStart: view.hasAttribute("data-run-at-start") && view.scrollTop <= 0.5,
     atEnd: atEnd(view),
     columns,
@@ -1461,6 +1531,13 @@ define("views-row", ({ view: id, row }) => {
   if (rows.length === 0) return null;
   const index = row === null ? Math.floor(rows.length / 2) : row < 0 ? rows.length + row : row;
   return { version: number(view, "data-version"), at: rows[Math.min(rows.length - 1, Math.max(0, index))].at };
+});
+
+define("views-shown", ({ view: id }) => {
+  const view = document.getElementById(`view-${id}`);
+  if (view === null || number(view, "data-view") !== id) return null;
+  const { start, end } = rangeShown(view);
+  return start === null || end === null ? null : { version: number(view, "data-version"), start, end };
 });
 
 // A strip comes to rest when no scroll has come for restMs, not at

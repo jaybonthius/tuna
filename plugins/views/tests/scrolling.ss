@@ -102,6 +102,7 @@
                    ("placement" . ,(number (views-test/page:shown-element page view) "data-placement"))
                    ("version" . 0) ("top" . (("line" . ,top))) ("spacer" . #f) ("fraction" . 0) ("left" . null)
                    ("past" . 0) ("sides" . #()) ("start" . (("line" . ,start))) ("end" . (("line" . ,end)))
+                   ("shownStart" . null) ("shownEnd" . null)
                    ("atStart" . #f) ("atEnd" . #f) ("columns" . 80) ("rows" . 20) ("pointVisible" . #f)
                    ("wanted" . (("aboveLines" . 41) ("aboveChars" . 3280) ("belowLines" . 41) ("belowChars" . 3280)
                                 ("side" . 160)))
@@ -290,7 +291,7 @@
     (report! desktop s 1 0 #t (cons "left" '(("at" . 1) ("count" . 2000)))
              (cons "sides" (vector (vector '(("at" . 1) ("count" . 2000)) '(("at" . 1) ("count" . 2080)))
                                    (vector '(("at" . 3002) ("count" . 1000)) '(("at" . 3002) ("count" . 1040))))))
-    (check-equal? '(2000 1) (call-with-values (lambda () (views:hscroll s)) list))
+    (check-equal? '(2000 1) (call-with-values (lambda () (views:hscroll s (client desktop))) list))
     (check-equal? '((0 3 4) (1 2)) (list (segments 1) (segments 2)))
     (let ([placed-column (lambda (page)
                            (let ([e (views-test/page:view-element page s)])
@@ -311,7 +312,7 @@
         `(("report" . (("type" . "scroll") ("view" . ,(views:id v))
                        ("placement" . ,(number (views-test/page:shown-element desktop v) "data-placement"))
                        ("version" . 0) ("top" . (("line" . 1))) ("spacer" . #f) ("fraction" . 0)
-                       ("left" . (("at" . 1) ("count" . 2078))) ("past" . 0) ("sides" . #()) ("start" . (("line" . 1)))
+                       ("left" . (("at" . 1) ("count" . 2078))) ("past" . 0) ("sides" . #()) ("shownStart" . null) ("shownEnd" . null) ("start" . (("line" . 1)))
                        ("end" . (("line" . 3))) ("atStart" . #t) ("atEnd" . #t) ("columns" . 80) ("rows" . 20)
                        ("pointVisible" . #t)
                        ("wanted" . (("aboveLines" . 41) ("aboveChars" . 3280) ("belowLines" . 41) ("belowChars" . 3280)
@@ -319,7 +320,7 @@
                        ("hand" . #t) ("settled" . #t) ("edge" . "top") ("report" . 501))))))
     (test-user:press! (client desktop) "C-x <")
     (check-equal? '(#t #t 2 null) asked)
-    (check-equal? '(2078 1) (call-with-values (lambda () (views:hscroll v)) list))
+    (check-equal? '(2078 1) (call-with-values (lambda () (views:hscroll v (client desktop))) list))
     (let ([e (views-test/page:view-element phone v)])
       (check-equal? '(2078 1) (list (number e "data-place-column") (number e "data-place-column-item"))))
     (test-user:press! (client desktop) "M-- 5 C-x <")
@@ -375,6 +376,53 @@
                            (lambda (first last) (list (line-of v first) (line-of v last)))))
   (let ([fresh (views-test/page:open 400)])
     (check-equal? '(#f #f) (call-with-values (lambda () (views:rows-shown v (client fresh))) list))))
+
+(test "shown-range gives the start of the first row and the end of the last row at least partly in view, from the report under the newest placement, else from the page"
+  (report! desktop v 40 0 #t (cons "shownStart" '(("line" . 40))) (cons "shownEnd" '(("line" . 61))))
+  (check-equal? (list (line-start v 40) (line-start v 61))
+                (call-with-values (lambda () (views:shown-range v (client desktop))) list))
+  (let ([asked '()])
+    (views-test/page:set-answer! phone
+      (lambda (name value)
+        (set! asked (cons (list name (cdr (assoc "view" value))) asked))
+        `(("version" . ,(buffers:version b)) ("start" . (("line" . 3))) ("end" . (("line" . 9))))))
+    (check-equal? (list (line-start v 3) (line-start v 9))
+                  (call-with-values (lambda () (views:shown-range v (client phone))) list))
+    (check-equal? (list (list "views-shown" (views:id v))) asked)
+    (views-test/page:set-answer! phone (lambda (name value) 'null))
+    (check-equal? '(#f #f) (call-with-values (lambda () (views:shown-range v (client phone))) list))))
+
+(test "shown-range asks the page once the text has changed since the page's report"
+  (report! desktop v 40 0 #t (cons "shownStart" '(("line" . 40))) (cons "shownEnd" '(("line" . 61))))
+  (let ([asked 0])
+    (views-test/page:set-answer! desktop
+      (lambda (name value)
+        (set! asked (+ asked 1))
+        `(("version" . ,(buffers:version b)) ("start" . (("line" . 41))) ("end" . (("line" . 62))))))
+    (buffers:insert! b (line-start v 2) "x")
+    (check-equal? (list (line-start v 41) (line-start v 62))
+                  (call-with-values (lambda () (views:shown-range v (client desktop))) list))
+    (check-equal? 1 asked)
+    (views-test/page:set-answer! desktop (lambda (name value) 'null))))
+
+(test "shown-range reaches the end of the text, and gives #f #f for a view the client's last screen did not draw"
+  (let ([short (make-buffer "short" "one\ntwo")] [hidden (views:make b)])
+    (views:set-buffer! v short)
+    (test-user:settle)
+    (views-test/page:set-answer! phone
+      (lambda (name value)
+        `(("version" . ,(buffers:version short)) ("start" . (("at" . 1))) ("end" . (("at" . 8))))))
+    (check-equal? '(1 8) (call-with-values (lambda () (views:shown-range v (client phone))) list))
+    (views-test/page:set-answer! phone (lambda (name value) 'null))
+    (check-equal? '(#f #f) (call-with-values (lambda () (views:shown-range hidden (client desktop))) list))
+    (views:set-buffer! v b)))
+
+(test "hscroll gives the column at the left edge as the client's own page last reported it"
+  (let* ([wide (make-buffer "wider" (string-append (make-string 3000 #\a) "\n"))] [s (views:make wide)])
+    (report! desktop s 1 0 #t (cons "left" '(("at" . 1) ("count" . 2000))))
+    (report! phone s 1 0 #f (cons "left" '(("at" . 1) ("count" . 30))))
+    (check-equal? '((2000 1) (30 1))
+                  (map (lambda (page) (call-with-values (lambda () (views:hscroll s (client page))) list)) (list desktop phone)))))
 
 (test "with tail on, a view a page left at its end follows the end, and every other page keeps it at the bottom edge"
   (let ([log (make-buffer "log" (views-test/text:lines 30))])

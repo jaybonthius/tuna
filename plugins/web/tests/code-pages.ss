@@ -216,6 +216,92 @@
     (tables:remove! web:input-handlers "key")
     (web:close-client! c)))
 
+(define reader #f)
+(define reader-task #f)
+
+(define (open-reading)
+  (let ([c (open-noting 'a)])
+    (tables:set! web:input-handlers "read"
+      (lambda (client item)
+        (set! reader-task (current-task))
+        (guard (e [(cancelled? e) (note! 'cancelled)])
+          (note! (web:suspend-for-input (lambda (resume) (set! reader resume)))))))
+    (tables:set! web:input-handlers "key" (lambda (client item) (reader (lambda () (cdr (assoc "name" item))))))
+    (tables:set! web:input-handlers "note" (lambda (client item) (note! (cdr (assoc "n" item)))))
+    (web:post-input! c '(("type" . "read")))
+    (test-runner:wait-for-batch)
+    c))
+
+(define (close-reading c)
+  (for-each (lambda (type) (tables:remove! web:input-handlers type)) '("read" "key" "note"))
+  (web:close-client! c))
+
+(define (wait-for-notes n) (test-runner:wait-until (lambda () (>= (length seen) n))))
+
+(test "items that come after the item that resumes a reader, quits among them, wait until the reader has what it was handed, then run in order"
+  (let ([c (open-reading)])
+    (for-each (lambda (item) (web:post-input! c item))
+              '((("type" . "key") ("name" . "a")) (("type" . "note") ("n" . 1)) (("type" . "note") ("n" . 2) ("quit" . #t))
+                (("type" . "note") ("n" . 3))))
+    (wait-for-notes 4)
+    (check-equal? '("a" 1 2 3) (taken!))
+    (close-reading c)))
+
+(test "a resume called once its reader has left holds nothing"
+  (let ([c (open-reading)])
+    (cancel-task reader-task)
+    (wait-for-notes 1)
+    (reader (lambda () "late"))
+    (web:post-input! c '(("type" . "note") ("n" . 1)))
+    (wait-for-notes 2)
+    (check-equal? '(cancelled 1) (taken!))
+    (close-reading c)))
+
+(test "a reader stopped after its resume was called releases the items the resume held"
+  (let ([c (open-reading)])
+    (stop-task reader-task)
+    (reader (lambda () "a"))
+    (test-runner:wait-until (lambda () (eq? 'done (task-state reader-task))))
+    (web:post-input! c '(("type" . "note") ("n" . 1)))
+    (wait-for-notes 1)
+    (check-equal? '(1) (taken!))
+    (check-equal? 'stopped (call-with-values (lambda () (join-task reader-task)) (lambda (how detail) how)))
+    (close-reading c)))
+
+;; A page that is sent no screen never answers, so its asker waits.
+(define (open-asking)
+  (let ([c (open-noting 'a)] [asker #f])
+    (tables:set! web:input-handlers "note" (lambda (client item) (note! (cdr (assoc "n" item)))))
+    (values c (lambda (ask) (tables:set! web:input-handlers "ask" (lambda (client item) (set! asker (current-task)) (ask client))))
+            (lambda () asker))))
+
+(define (asked-and-left! c leave!)
+  (web:post-input! c '(("type" . "ask")))
+  (test-runner:wait-for-batch)
+  (leave!)
+  (web:post-input! c '(("type" . "note") ("n" . 1)))
+  (wait-for-notes 1)
+  (check-equal? '(1) (taken!))
+  (for-each (lambda (type) (tables:remove! web:input-handlers type)) '("ask" "note"))
+  (web:close-client! c))
+
+(test "a command stopped while it asks its page holds its client's later items no longer"
+  (let-values ([(c set-ask! asker) (open-asking)])
+    (set-ask! (lambda (client) (web:ask-page client "size" 1)))
+    (asked-and-left! c
+      (lambda ()
+        (stop-task (asker))
+        (test-runner:wait-until (lambda () (eq? 'done (task-state (asker)))))))))
+
+(test "a command whose owner unloads while it asks its page holds its client's later items no longer"
+  (let-values ([(c set-ask! asker) (open-asking)])
+    (let ([o (make-owner '(code-pages asking))])
+      (set-ask! (lambda (client) (call-as-owner o (lambda () (web:ask-page client "size" 1)))))
+      (asked-and-left! c
+        (lambda ()
+          (check-equal? '(#t)
+            (map unloaded? (test-runner:reports-during (lambda () (unload-owner! o) (test-runner:wait-for-batch))))))))))
+
 ;; The spinning item holds the main thread, so the quit comes from a
 ;; thread of its own, as a page's would; a second quit, should the first
 ;; not end the item within 5 s, lets the test end and fail.

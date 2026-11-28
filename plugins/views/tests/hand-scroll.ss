@@ -49,6 +49,7 @@
                                                                                   "data-placement")))
                      ("version" . 0) ("top" . (("line" . 178))) ("spacer" . #f) ("fraction" . 0) ("left" . null)
                      ("past" . 0) ("sides" . #()) ("start" . (("line" . 180))) ("end" . (("line" . 195)))
+                     ("shownStart" . null) ("shownEnd" . null)
                      ("atStart" . #f) ("atEnd" . #f) ("columns" . 80) ("rows" . 20) ("pointVisible" . #f)
                      ("wanted" . (("aboveLines" . 41) ("aboveChars" . 3280) ("belowLines" . 41) ("belowChars" . 3280)
                                   ("side" . 160)))

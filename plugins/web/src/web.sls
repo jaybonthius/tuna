@@ -22,8 +22,8 @@
       [(_ e1 e2 ...)
        (call-with-cancellation-masked (lambda (restore) (with-mutex lock e1 e2 ...)))]))
 
-  ;; Only the main thread uses through, removal-timer, held and deferred;
-  ;; the lock guards the other mutable fields.
+  ;; Only the main thread uses through and removal-timer; the lock guards
+  ;; the other mutable fields.
   ;; FIRST is the screen the page carries: #f until a batch draws one,
   ;; and the symbol served once the page has gone with it. TITLE is the
   ;; one the page shows, as far as this plugin knows; #f when it cannot
@@ -145,17 +145,37 @@
                 (client-quit-cancelled-set! c t)
                 (cancel-task t 'quit)))))))
 
-  ;; A handler, not dynamic-wind, forgets the reader: a wind's after
-  ;; thunk would run at the pause itself. A stop passes every handler, so
-  ;; ended readers are dropped at the next mark.
+  ;; LEFT runs under the lock. A stop and an unload's raise pass every
+  ;; handler, so a wind sees the task leave; its after thunk also runs
+  ;; each time the loop switches the paused task out, which is no
+  ;; leaving. A hold! once the task has left takes nothing, since nothing
+  ;; would release it.
+  (define (holding c body left)
+    (let ([t (current-task)] [hold 'waiting])
+      (define (hold!)
+        (with-lock
+          (when (eq? hold 'waiting)
+            (set! hold 'held)
+            (client-held-set! c (fx+ (client-held c) 1)))))
+      (dynamic-wind
+        void
+        (lambda () (body hold!))
+        (lambda ()
+          (unless (and t (memq (task-state t) '(paused woken)))
+            (with-lock
+              (when (eq? hold 'held) (release-held! c))
+              (set! hold 'left)
+              (left)))))))
+
+  ;; A reader holds its client from the call of its resume, so a key
+  ;; typed after the one it takes acts on what the reader made of it.
   (define (suspend-for-client-input c receiver)
-    (let* ([t (current-task)]
-           [forget! (lambda () (with-lock (client-input-readers-set! c (remq t (client-input-readers c)))))])
-      (with-lock (client-input-readers-set! c (cons t (live-tasks-of (client-input-readers c)))))
-      (guard (e [#t (forget!) (raise e)])
-        (call-with-values
-          (lambda () (suspend receiver))
-          (lambda vs (forget!) (apply values vs))))))
+    (let ([t (current-task)])
+      (holding c
+        (lambda (hold!)
+          (with-lock (client-input-readers-set! c (cons t (client-input-readers c))))
+          (suspend (lambda (resume) (receiver (lambda (thunk) (resume thunk) (hold!))))))
+        (lambda () (client-input-readers-set! c (remq t (client-input-readers c)))))))
 
   (define (post-item c procedure)
     (let ([t (spawn-as-web procedure)])
@@ -275,15 +295,18 @@
       (assertion-violation 'web:post-input! "a closed client" c)))
 
   ;; While a command waits for its page's answer, the client's later
-  ;; items wait too, so they act on what the command made of the answer;
-  ;; a quit does not wait, so it can stop the command. An item that
-  ;; arrives while earlier ones still wait joins them, since it may run
-  ;; before the task that releases them continues.
+  ;; items wait too, so they act on what the command made of the answer.
+  ;; A quit waits in its turn: it cancelled the command it stops when it
+  ;; was admitted, and running before the items ahead of it would leave
+  ;; them to run outside what it quit. An item that arrives while earlier
+  ;; ones still wait joins them, since it may run before the task that
+  ;; releases them continues.
   (define (run-item c seq item restore)
-    (with-lock (set! queued (fx- queued 1)))
-    (if (and (or (fx> (client-held c) 0) (pair? (client-deferred c))) (not (eq? (field item "quit") #t)))
-        (client-deferred-set! c (append (client-deferred c) (list (cons seq item))))
-        (handle-in-order c seq item restore)))
+    (unless (with-lock
+              (set! queued (fx- queued 1))
+              (and (or (fx> (client-held c) 0) (pair? (client-deferred c)))
+                   (begin (client-deferred-set! c (append (client-deferred c) (list (cons seq item)))) #t)))
+      (handle-in-order c seq item restore)))
 
   ;; An item task spawned under the lock by a task starts masked, as the
   ;; lock's holder is, so the handler runs through the task's restore, or
@@ -300,26 +323,30 @@
         (when (with-lock (fx= queued 0))
           (timers:set-idle! #t)))))
 
-  (define (release-deferred! c)
+  ;; Caller holds the lock.
+  (define (release-held! c)
     (client-held-set! c (fx- (client-held c) 1))
     (when (and (fx= (client-held c) 0) (pair? (client-deferred c)))
-      (with-lock (post-deferred! c))))
+      (post-deferred! c)))
 
   ;; Caller holds the lock. Each waiting item runs in a task of its own,
   ;; posted before the one ahead of it runs, so a raise, a quit or a pause
   ;; in one leaves the rest to run, as for items that never waited; one
-  ;; that asks its page in turn holds the rest again.
+  ;; that holds them in turn holds the rest again.
   (define (post-deferred! c)
     (set! queued (fx+ queued 1))
     (post-item c
       (lambda (restore)
-        (with-lock (set! queued (fx- queued 1)))
-        (let ([items (client-deferred c)])
-          (when (and (fx= (client-held c) 0) (pair? items))
-            (client-deferred-set! c (cdr items))
-            (when (pair? (cdr items))
-              (with-lock (post-deferred! c)))
-            (handle-in-order c (caar items) (cdar items) restore))))))
+        (let ([next (with-lock
+                      (set! queued (fx- queued 1))
+                      (let ([items (client-deferred c)])
+                        (and (fx= (client-held c) 0) (pair? items)
+                             (begin
+                               (client-deferred-set! c (cdr items))
+                               (when (pair? (cdr items)) (post-deferred! c))
+                               (car items)))))])
+          (when next
+            (handle-in-order c (car next) (cdr next) restore))))))
 
   ;; The question goes after the screen the batch draws, so the page
   ;; answers about what the asking command has done so far.
@@ -328,19 +355,19 @@
            [ask (if (client-code c)
                     (make-code-question id name value)
                     (format "tuna.ask(~a, ~s, ~a)" id name (parameterize ([json-escape-html? #t]) (json->string value))))])
-      (client-held-set! c (fx+ (client-held c) 1))
-      (guard (e [#t (with-lock (hashtable-delete! questions id)) (release-deferred! c) (raise e)])
-        (let ([answer (suspend
-                        (lambda (resume)
-                          (unless (with-lock
-                                    (and (or (client-code c) (client-stream c)) (not (client-removed? c))
-                                         (begin
-                                           (hashtable-set! questions id (cons c resume))
-                                           (client-asks-set! c (append (client-asks c) (list ask)))
-                                           #t)))
-                            (resume (lambda () #f)))))])
-          (release-deferred! c)
-          answer))))
+      (holding c
+        (lambda (hold!)
+          (suspend
+            (lambda (resume)
+              (hold!)
+              (unless (with-lock
+                        (and (or (client-code c) (client-stream c)) (not (client-removed? c))
+                             (begin
+                               (hashtable-set! questions id (cons c resume))
+                               (client-asks-set! c (append (client-asks c) (list ask)))
+                               #t)))
+                (resume (lambda () #f))))))
+        (lambda () (hashtable-delete! questions id)))))
 
   ;; Caller holds the lock.
   (define (send-asks! c)

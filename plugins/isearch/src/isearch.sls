@@ -148,17 +148,12 @@
 (define (%bounds s)
   (views:bounds (%search-view s)))
 
-(define (%pattern-error c state)
-  (if (and (search:pattern-error-offset c) (= (search:pattern-error-offset c) (string-length (%state-text state))))
-      "incomplete input"
-      (if (search:pattern-error-offset c) (condition-message c) "pattern too complex")))
-
 ;; A quit key stops a long find and then runs as the next key, so the
 ;; state the find was making fails and C-g goes back to the last state
 ;; that matched, as Emacs's isearch turns a quit in its search into C-g.
 (define (%find s state position direction)
   (let-values ([(start end) (%bounds s)])
-    (guard (c [(search:pattern-error? c) (values #f (%pattern-error c state))]
+    (guard (c [(search:pattern-error? c) (values #f (search:pattern-error-description c (%state-text state)))]
               [(cancelled? c) (values #f #f)])
       (values (search:find (%buffer s) (%query-of s state) (max start (min end position)) direction start end start end) #f))))
 

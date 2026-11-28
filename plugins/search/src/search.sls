@@ -339,6 +339,17 @@
 (define-condition-type &pattern-error &error %make-pattern-error pattern-error?
   (offset pattern-error-offset))
 
+(define (pattern-error-description c text)
+  (unless (pattern-error? c)
+    (assertion-violation 'search:pattern-error-description "not a pattern error" c))
+  (unless (string? text)
+    (assertion-violation 'search:pattern-error-description "not a string" text))
+  (let ([offset (pattern-error-offset c)])
+    (cond
+      [(not offset) "pattern too complex"]
+      [(= offset (string-length text)) "incomplete input"]
+      [else (condition-message c)])))
+
 (define (%raise-pattern-error who c)
   (raise (condition (%make-pattern-error (pcre2-error-offset c)) (make-who-condition who)
                     (make-message-condition (condition-message c))

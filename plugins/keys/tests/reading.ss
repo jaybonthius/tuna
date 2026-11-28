@@ -248,3 +248,21 @@
   (check-equal? '("C-c b" "Bind key: ") (list (keys:reading (test-user:client)) (keys:reading-prompt (test-user:client))))
   (test-user:press! "C-c v")
   (check-equal? layout:other-view (keys:lookup (test-user:client) "C-c v")))
+
+(commands:define-command (note-x)
+  "Records that it ran."
+  (got! 'x))
+
+(keys:bind! keys:global "C-c x" note-x)
+
+(test "keys that reach Tuna with the key a read takes run once the reading command has that key"
+  (test-user:press! "C-c k")
+  (test-user:press-together! "TAB C-c x")
+  (test-runner:wait-until (lambda () (= 2 (length got))))
+  (check-equal? '(("TAB" #f "C-c k") x) (take-got!)))
+
+(test "C-g that reaches Tuna with the key a read takes waits for the reading command, and quits nothing"
+  (test-user:press! "C-c k")
+  (test-user:press-together! "a C-g C-c x")
+  (test-runner:wait-until (lambda () (= 2 (length got))))
+  (check-equal? '(("a" #f "C-c k") x) (take-got!)))

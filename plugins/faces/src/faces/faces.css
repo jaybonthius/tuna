@@ -807,7 +807,7 @@
   }
 }
 
-/* A node standing alone that a span covers carries the span's face on
+/* An atom standing alone that a span covers carries the span's face on
    its own element, which draws nothing, so the face goes on what its
    kind drew. */
 @layer defaults {

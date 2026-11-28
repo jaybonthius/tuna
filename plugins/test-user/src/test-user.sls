@@ -47,14 +47,18 @@
   (test-runner:wait-for-batch)
   (when %answered? (settle)))
 
-;; Each key is posted once Tuna has handled the one before, as a user who
-;; types after the screen changes does, so its quit mark is the one the
-;; page would have from keys by then: none while a command reads a key.
-(define (%press-key! client key)
+;; A key's quit mark is the one the page would have from keys when it is
+;; posted: none while a command reads a key.
+(define (%post-key! client key)
   (web:post-input! client
     (if (member key (keys:page-quit-keys client))
         (list (cons "type" "key") (cons "name" key) (cons "quit" #t))
-        (list (cons "type" "key") (cons "name" key))))
+        (list (cons "type" "key") (cons "name" key)))))
+
+;; Each key is posted once Tuna has handled the one before, as a user who
+;; types after the screen changes does.
+(define (%press-key! client key)
+  (%post-key! client key)
   (settle))
 
 (define press!
@@ -64,12 +68,22 @@
      (%page-of 'test-user:press! client)
      (for-each (lambda (key) (%press-key! client key)) (keys:sequence-keys keys))]))
 
+;; Keys posted together reach Tuna in one batch, as keys typed faster
+;; than a screen comes back do. What they do may take several batches,
+;; so the caller waits for what it expects.
+(define press-together!
+  (case-lambda
+    [(keys) (press-together! %first keys)]
+    [(client keys)
+     (%page-of 'test-user:press-together! client)
+     (for-each (lambda (key) (%post-key! client key)) (keys:sequence-keys keys))]))
+
 (define (%char-key c)
   (case c
     [(#\space) "SPC"]
     [(#\newline) "RET"]
     [(#\tab) "TAB"]
-    [else (and (not (eq? (char-general-category c) 'Cc)) (string c))]))
+    [else (and (keys:printing-char? c) (string c))]))
 
 (define type!
   (case-lambda

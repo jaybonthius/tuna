@@ -162,7 +162,7 @@
       `(("type" . "scroll") ("view" . ,(views:id v)) ("placement" . ,(string->number (placement)))
         ("report" . ,%reports) ("version" . ,(buffers:version (views:buffer v)))
         ("top" . ,(at row)) ("spacer" . #f) ("fraction" . 0) ("left" . null) ("past" . 0) ("sides" . #())
-        ("start" . ,(at row)) ("end" . ,(at (+ row 9))) ("atStart" . #f) ("atEnd" . #f)
+        ("start" . ,(at row)) ("end" . ,(at (+ row 9))) ("shownStart" . null) ("shownEnd" . null) ("atStart" . #f) ("atEnd" . #f)
         ("columns" . 40) ("rows" . 10) ("pointVisible" . #t)
         ("wanted" . (("aboveLines" . 41) ("aboveChars" . 1640) ("belowLines" . 41) ("belowChars" . 1640) ("side" . 80)))
         ("settled" . #t) ("hand" . #t) ("edge" . "top")))

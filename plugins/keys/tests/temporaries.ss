@@ -239,3 +239,31 @@
                     (keys-test:report-messages (lambda () (set! prompt (keys:prompt one)))))
       (check-equal? #f prompt)
       (end))))
+
+;; The command pauses as a reader of its client's input, as a prompt's
+;; command does, and its keymap's on-exit hands the reader 'ended.
+(tables:define-table reader-keymap "Keys that keep read-in-keymap's keymap.")
+
+(commands:define-command (read-in-keymap)
+  "Reads until its keymap's on-exit hands it 'ended, or it is quit."
+  (let ([resume #f])
+    (keys:push-keymap! (web:current-client) reader-keymap
+      (lambda (found command) (eq? command keys:keyboard-quit))
+      (lambda () (when resume (let ([r resume]) (set! resume #f) (r (lambda () 'ended))))))
+    (see! (guard (c [(cancelled? c) 'quit])
+            (web:suspend-for-input (lambda (r) (set! resume r)))))))
+
+(keys:bind! keys:global "C-c e" read-in-keymap)
+
+(test "keyboard-quit quits a paused reader before its temporary keymap ends, so the reader raises rather than taking what the keymap's on-exit hands it"
+  (test-user:press! "C-c e")
+  (test-user:press! "C-g")
+  (check-equal? '((quit)) (take-seen!))
+  (check-equal? #f (keys:prompt (test-user:client))))
+
+(test "a removed client's paused reader is quit before its temporary keymaps end"
+  (let ([c (test-user:open-client)])
+    (test-user:press! c "C-c e")
+    (web:close-client! c)
+    (test-runner:wait-until (lambda () (pair? seen)))
+    (check-equal? '((quit)) (take-seen!))))

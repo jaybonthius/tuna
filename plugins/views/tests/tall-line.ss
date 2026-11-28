@@ -174,6 +174,7 @@
         ("version" . ,(number e "data-version"))
         ("top" . ,top) ("spacer" . ,spacer?) ("fraction" . ,(inexact fraction)) ("left" . null) ("past" . 0) ("sides" . #())
         ("start" . ,(row (+ scroll-top margin) #t)) ("end" . ,(row (- (+ scroll-top h) margin 1) #f))
+        ("shownStart" . null) ("shownEnd" . null)
         ("atStart" . ,(<= scroll-top 0)) ("atEnd" . #f) ("columns" . 80) ("rows" . ,(quotient h 20))
         ("pointVisible" . ,(and p (>= (item-box-top p) scroll-top) (<= (item-box-bottom p) (+ scroll-top h)) #t))
         ("wanted" . (("aboveLines" . 41) ("aboveChars" . 3280) ("belowLines" . 41) ("belowChars" . 3280) ("side" . 160)))

@@ -33,7 +33,7 @@
    running-press session-wrappers session-wrappers-set! press-handed? press-handed?-set! press-wrapped? press-wrapped?-set! press-session
    push-temporary! end-temporary! end-temporaries! end-owned! test-temporaries! quit-paused!
    set-prefix! prefix-keys push-universal-arguments! give-page-settings! client-quit-keys
-   call-ending-idleness)
+   call-ending-idleness printing?)
 
   (define main-thread (get-thread-id))
 
@@ -75,7 +75,7 @@
                  (or (fx= i (fx- end 1))
                      (and (name-char? (string-ref s i)) (loop (fx+ i 1)))))))))
 
-  (define (printing-char? c)
+  (define (printing? c)
     (not (or (char=? c #\space) (eq? (char-general-category c) 'Cc))))
 
   ;; Shift on a character is in the character itself, so S- goes only on
@@ -85,7 +85,7 @@
       (and base
            (fx< base end)
            (if (fx= (fx- end base) 1)
-               (and (printing-char? (string-ref s base)) (not (shift-modifier? s start base)))
+               (and (printing? (string-ref s base)) (not (shift-modifier? s start base)))
                (named-base? s base end)))))
 
   (define (valid-sequence? s)
@@ -691,7 +691,10 @@
   ;; The command that keys:keyboard-quit runs in is running, not paused,
   ;; and a command's task that has ended pauses no more. A cancelled task
   ;; stays paused until it runs, so its entry goes at once and the next
-  ;; C-g reaches the next paused command.
+  ;; C-g reaches the next paused command. It is quit before the
+  ;; session's temporary keymaps end, since an on-exit may resume a
+  ;; reader the command paused in: the cancel's wake, queued first, makes
+  ;; it raise rather than go on with what on-exit handed it.
   (define (quit-paused! s)
     (let loop ([es (session-running s)])
       (unless (null? es)
@@ -765,8 +768,8 @@
     (let ([s (eq-hashtable-ref sessions client #f)])
       (when s
         (quit-reads! (lambda (r) (eq? (waiting-read-session r) s)))
-        (end-temporaries! s)
-        (quit-paused! s))))
+        (quit-paused! s)
+        (end-temporaries! s))))
 
   (define (temporary-prompt-of s)
     (let loop ([ts (if s (session-temporaries s) '())])
@@ -1097,6 +1100,11 @@
   (check-event 'keys:event-modifiers event)
   (event-modifiers-of (car event)))
 
+(define (printing-char? c)
+  (unless (char? c)
+    (assertion-violation 'keys:printing-char? "not a character" c))
+  (printing? c))
+
 (define %named-key-chars
   '(("SPC" . #\space) ("TAB" . #\tab) ("RET" . #\return) ("ESC" . #\esc) ("DEL" . #\delete)
     ("C-SPC" . #\nul) ("C-?" . #\delete)))
@@ -1216,7 +1224,7 @@
     (set-prefix! s prefix)))
 
 (commands:define-command (keyboard-quit)
-  "Clears the frame's pending keys and prefix argument; with none, also ends its temporary keymaps and quits the newest paused command its keys started."
+  "Clears the frame's pending keys and prefix argument; with none, also quits the newest paused command its keys started and ends its temporary keymaps."
   (let ([s (current-session)])
     (when s
       (let ([none? (and (not (commands:prefix-argument)) (fx= (key-count (current-keys)) 1)
@@ -1225,8 +1233,8 @@
         (session-prefix-set! s #f)
         (session-wrappers-set! s '())
         (when none?
-          (end-temporaries! s)
-          (quit-paused! s))))))
+          (quit-paused! s)
+          (end-temporaries! s))))))
 
 (commands:define-command (ignore)
   "Does nothing; bound to a key, keeps the key from the keymaps searched after its keymap."

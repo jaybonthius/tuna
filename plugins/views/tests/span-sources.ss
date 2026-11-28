@@ -102,3 +102,19 @@
     (check-equal? "match" (test-user:element-attribute (image-node) "data-face"))
     (tables:remove! views:span-sources cover)
     (check-equal? #f (test-user:element-attribute (image-node) "data-face"))))
+
+(test "a span covering an atom standing alone gives the atom's element what views:span-properties gives the span, a class among them; a node with content is not marked"
+  (tables:set! views:span-properties 'test-mark (lambda (v) (list (cons "data-test-mark" v) (cons "class" "test-marked"))))
+  (let* ([pic (make-buffer "pic" (views-test/md:doc '() (views-test/md:heading '() "a\n") (views-test/md:image '((src . "a.png")))
+                                                        (views-test/md:heading '() "b\n")))]
+         [pv (views:make pic)]
+         [n (document:length (buffers:document pic))]
+         [cover (lambda (view client start end) (if (eq? view pv) (list (list 0 n '((face . match) (test-mark . "x")))) '()))]
+         [marked (lambda () (filter (lambda (e) (test-user:element-attribute e "data-face")) (test-user:elements (drawn desktop pv) "node")))])
+    (tables:set! views:span-sources cover 1000)
+    (let ([nodes (marked)])
+      (check-equal? '(("match" "x")) (map (lambda (e) (map (lambda (a) (test-user:element-attribute e a)) '("data-face" "data-test-mark"))) nodes))
+      (check-equal? '("node whole test-marked") (map (lambda (e) (test-user:element-attribute e "class")) nodes)))
+    (tables:remove! views:span-sources cover)
+    (tables:remove! views:span-properties 'test-mark)
+    (check-equal? '() (marked))))

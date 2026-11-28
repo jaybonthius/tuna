@@ -346,3 +346,7 @@
   (keys:bind! hidden-keymap "C-n" first-command)
   (check-equal? keys:undefined (keys:lookup-in (list hiding-keymap hidden-keymap) "C-n"))
   (check-equal? '(() ()) (map (lambda (c) (tables:ref commands:command-modes c #f)) (list keys:ignore keys:undefined))))
+
+(test "printing-char? says which characters <printing-char> binds: any but a space or a control character"
+  (check-equal? '(#t #t #t #f #f) (map keys:printing-char? (list #\a #\; #\x3bb #\space #\tab)))
+  (check-raises (lambda (c) (equal? "not a character" (condition-message c))) (keys:printing-char? "a")))

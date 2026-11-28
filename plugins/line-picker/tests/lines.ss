@@ -277,7 +277,7 @@
         (web:post-input! (test-user:client)
           `(("type" . "scroll") ("view" . ,(views:id src)) ("placement" . ,(string->number (test-user:element-attribute e "data-placement")))
             ("report" . ,%reports) ("version" . ,(buffers:version (buffer))) ("top" . ,(mark 0)) ("spacer" . #f) ("fraction" . 0)
-            ("left" . null) ("past" . 0) ("sides" . #()) ("start" . ,(mark 2)) ("end" . ,(mark 7)) ("atStart" . #f) ("atEnd" . #f)
+            ("left" . null) ("past" . 0) ("sides" . #()) ("start" . ,(mark 2)) ("end" . ,(mark 7)) ("shownStart" . null) ("shownEnd" . null) ("atStart" . #f) ("atEnd" . #f)
             ("columns" . 80) ("rows" . 10) ("pointVisible" . #t)
             ("wanted" . (("aboveLines" . 41) ("aboveChars" . 3280) ("belowLines" . 41) ("belowChars" . 3280) ("side" . 160)))
             ("settled" . #t) ("hand" . #t) ("edge" . "top"))))
