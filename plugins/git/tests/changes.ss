@@ -11,11 +11,12 @@
     (map (lambda (f) (list (diff:file-path f) (diff:file-status f) (length (diff:file-hunks f)))) (git:diff repo '())))
   (check-equal? '("b.txt") (map diff:file-path (git:diff repo '("--cached")))))
 
-(test "git:diff-arguments are added to every diff"
+(test "git:diff adds none of git:diff-arguments; a caller passes them"
   (options:set! git:diff-arguments '("-U0"))
-  (let ([headings (map (lambda (h) (utf8->string (diff:hunk-heading h))) (diff:file-hunks (car (git:diff repo '()))))])
-    (options:unset! git:diff-arguments)
-    (check-equal? '("@@ -2 +2 @@ one" "@@ -9 +9 @@ eight") headings)))
+  (let ([headings (lambda (arguments) (map (lambda (h) (utf8->string (diff:hunk-heading h))) (diff:file-hunks (car (git:diff repo arguments)))))])
+    (check-equal? '("@@ -1,10 +1,10 @@") (headings '()))
+    (check-equal? '("@@ -2 +2 @@ one" "@@ -9 +9 @@ eight") (headings (git:diff-arguments)))
+    (options:unset! git:diff-arguments)))
 
 (test "a textconv driver does not change the diff, which holds the file's bytes"
   (git-test/repositories:write-file! "repo/.gitattributes" "*.up diff=upper\n")

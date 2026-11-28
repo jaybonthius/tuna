@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (buffers) (views) (layout) (layout-split) (editing) (files) (ui) (git) (git-mode) (git-status)
+(import (tuna) (test) (test-user) (buffers) (views) (layout) (layout-split) (editing) (files) (ui) (git) (git-mode) (git-status) (git-apply)
         (git-status-test) (git-test repositories))
 
 (define git! git-test/repositories:git!)
@@ -50,9 +50,9 @@
 
 (test "k on the conflicted file, and u on it under Staged changes, raise until conflicts can be resolved"
   (git-status-test:go-to-section! '(file . "f.txt") '(unstaged . #f))
-  (refused 'git-status:discard "Discarding a conflict waits for conflict resolution" "k")
+  (refused 'git-apply:discard "Discarding a conflict waits for conflict resolution" "k")
   (git-status-test:go-to-section! '(file . "f.txt") '(staged . #f))
-  (refused 'git-status:unstage "Unstaging a conflict waits for conflict resolution" "u"))
+  (refused 'git-apply:unstage "Unstaging a conflict waits for conflict resolution" "u"))
 
 (test "s on the conflicted file stages it as it stands"
   (git-status-test:go-to-section! '(file . "f.txt") '(unstaged . #f))

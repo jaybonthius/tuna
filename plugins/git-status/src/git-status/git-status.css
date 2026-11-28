@@ -8,22 +8,6 @@
   .git-status-counts > span + span {
     margin-inline-start: 0.5ch;
   }
-
-  .git-status-buttons {
-    margin-inline-start: auto;
-    padding-inline-start: 1ch;
-    visibility: hidden;
-    white-space: nowrap;
-  }
-
-  .ui-section-heading:hover > .git-status-buttons {
-    visibility: visible;
-  }
-
-  .git-status-button {
-    min-width: 2ch;
-    padding-inline: 0.25em;
-  }
 }
 
 @layer defaults.faces {

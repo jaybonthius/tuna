@@ -62,7 +62,7 @@
       (string-append "--" (hyphens face) "-" suffix)))
 
 (test "each face rule declares the seven properties, each reading the face's own token first and ending in a default or revert-layer"
-  (check-equal? 136
+  (check-equal? 140
     (length (filter (lambda (r) (string=? "defaults.faces" (design-tokens-test/css:rule-layer r)))
                     (apply append (map design-tokens-test/css:file-rules face-stylesheets)))))
   (check-equal? '()

@@ -1,0 +1,13 @@
+@layer defaults, themes, preferences;
+
+@layer defaults.faces {
+  [data-face="git-diff.header-label"] {
+    color: var(--git-diff-header-label-color, var(--tuna-text-muted));
+    background-color: var(--git-diff-header-label-background, revert-layer);
+    font-weight: var(--git-diff-header-label-font-weight, revert-layer);
+    font-style: var(--git-diff-header-label-font-style, revert-layer);
+    font-family: var(--git-diff-header-label-font-family, revert-layer);
+    font-size: var(--git-diff-header-label-font-size, revert-layer);
+    text-decoration: var(--git-diff-header-label-text-decoration, revert-layer);
+  }
+}

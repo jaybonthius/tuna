@@ -16,7 +16,7 @@
   "Variables added to git's environment.")
 
 (options:define-option diff-arguments '() (lambda (v) (and (list? v) (for-all string? v)))
-  "Arguments every git:diff adds, such as \"--histogram\" or \"-w\".")
+  "The diff switches the user wants, such as \"--histogram\" or \"-w\", which a caller passes to git:diff; a Git buffer sets it locally.")
 
 (options:define-option command-log-size 32 (lambda (v) (and (fixnum? v) (fx> v 0)))
   "How many commands each repository's log keeps.")
@@ -45,10 +45,20 @@
   (sealed #t)
   (fields name short-name refs subject))
 
+(define-record-type (%details %make-details details?)
+  (sealed #t)
+  (fields name short-name refs author author-date committer committer-date parents message))
+
+(define-record-type (%related %make-related related?)
+  (sealed #t)
+  (fields merged contained follows precedes))
+
+(define-enumeration branch-scope (local all mixed) %branch-scopes)
+
 (module %internals
   (check-repository check-arguments check-paths repository-vector call-git logged-command start-command
    failure-condition summary-of output-of bytes-join split-bytes lines text with-slash
-   status-of untracked-of commits-of first-commit? paths-input stop-command! state-of log-of)
+   status-of untracked-of commits-of refs-of starts-with? first-commit? paths-input stop-command! state-of log-of)
 
   (define (repository-vector root git-folder) (vector 'git-repository root git-folder))
 
@@ -534,7 +544,121 @@
 (define (diff repository arguments)
   (check-repository 'git:diff repository)
   (check-arguments 'git:diff arguments)
-  (diff:parse (query repository (append '("diff" "-p" "--no-ext-diff" "--no-textconv") (diff-arguments) arguments))))
+  (diff:parse (query repository (append '("diff" "-p" "--no-ext-diff" "--no-textconv") arguments))))
+
+(define (%check-revision who revision)
+  (unless (string? revision)
+    (assertion-violation who "not a string" revision)))
+
+(define show
+  (case-lambda
+    [(repository revision arguments) (show repository revision arguments '())]
+    [(repository revision arguments files)
+     (check-repository 'git:show repository)
+     (%check-revision 'git:show revision)
+     (check-arguments 'git:show arguments)
+     (check-arguments 'git:show files)
+     (diff:parse (query repository (append '("show" "--format=" "-p" "--cc" "--no-ext-diff" "--no-textconv") arguments
+                                           (list revision "--") files)))]))
+
+;; git pairs a rename only when the pathspec holds both its paths.
+(define (%external-arguments who external files)
+  (unless (string? external)
+    (assertion-violation who "not a string" external))
+  (unless (and (list? files) (pair? files) (for-all diff:file? files))
+    (assertion-violation who "not a list of file diffs" files))
+  (values (list "-c" (string-append "diff.external=" external))
+          (cons "--" (fold-right
+                       (lambda (f paths)
+                         (let ([old (diff:file-old-path f)] [new (diff:file-path f)])
+                           (if (and old (not (string=? old new))) (cons* old new paths) (cons new paths))))
+                       '() files))))
+
+(define (diff-with repository arguments external files)
+  (check-repository 'git:diff-with repository)
+  (check-arguments 'git:diff-with arguments)
+  (let-values ([(config pathspec) (%external-arguments 'git:diff-with external files)])
+    (query repository (append config '("diff" "--ext-diff") arguments pathspec))))
+
+(define (show-with repository revision arguments external files)
+  (check-repository 'git:show-with repository)
+  (%check-revision 'git:show-with revision)
+  (check-arguments 'git:show-with arguments)
+  (let-values ([(config pathspec) (%external-arguments 'git:show-with external files)])
+    (query repository (append config '("show" "--format=" "--ext-diff") arguments (list revision) pathspec))))
+
+(define (%without-final-newlines s)
+  (let loop ([end (string-length s)])
+    (if (and (fx> end 0) (char=? (string-ref s (fx- end 1)) #\newline))
+        (loop (fx- end 1))
+        (substring s 0 end))))
+
+(define (commit-details repository revision)
+  (check-repository 'git:commit-details repository)
+  (%check-revision 'git:commit-details revision)
+  (let* ([fields (split-bytes (query repository (list "show" "-s" "--format=%H%x00%h%x00%D%x00%an <%ae>%x00%ad%x00%cn <%ce>%x00%cd%x00%P%x00%B"
+                                                       revision "--"))
+                              0)]
+         [field (lambda (i) (if (fx< i (length fields)) (text (list-ref fields i)) ""))]
+         [parents (let loop ([s (field 7)] [i 0] [start 0] [acc '()])
+                    (cond
+                      [(fx= i (string-length s)) (reverse (if (fx< start i) (cons (substring s start i) acc) acc))]
+                      [(char=? (string-ref s i) #\space) (loop s (fx+ i 1) (fx+ i 1) (if (fx< start i) (cons (substring s start i) acc) acc))]
+                      [else (loop s (fx+ i 1) start acc)]))])
+    (%make-details (field 0) (field 1) (refs-of (field 2)) (field 3) (field 4) (field 5) (field 6)
+                   (if (null? parents)
+                       '()
+                       (commits-of (query repository (append '("log" "--no-walk=unsorted" "--format=%H%x00%h%x00%D%x00%s") parents '("--")))))
+                   (%without-final-newlines (field 8)))))
+
+(define (%related-branches repository relation revision remote?)
+  (filter (lambda (b) (not (or (starts-with? b "(HEAD") (starts-with? b "HEAD -> "))))
+          (map (lambda (l) (substring l 2 (string-length l)))
+               (filter (lambda (l) (fx> (string-length l) 2))
+                       (lines (query repository (append '("branch") (if remote? '("-a") '()) (list relation revision))))))))
+
+(define (%tag-distance described)
+  (let ([dash (let loop ([i (fx- (string-length described) 1)] [n 0])
+                (cond
+                  [(fx< i 0) #f]
+                  [(char=? (string-ref described i) #\-) (if (fx= n 1) i (loop (fx- i 1) (fx+ n 1)))]
+                  [else (loop (fx- i 1) n)]))])
+    (and dash
+         (let* ([rest (substring described (fx+ dash 1) (string-length described))]
+                [count (let loop ([i 0]) (if (or (fx= i (string-length rest)) (char=? (string-ref rest i) #\-)) (substring rest 0 i) (loop (fx+ i 1))))])
+           (cons (substring described 0 dash) (string->number count))))))
+
+(define (%first-line bytes)
+  (let ([ls (lines bytes)]) (and (pair? ls) (car ls))))
+
+(define (%follows repository revision)
+  (let-values ([(status out err) (call-git (vector-ref repository 1) (list "describe" "--long" "--tags" revision) #f)])
+    (and (eqv? status 0) (let ([l (%first-line out)]) (and l (%tag-distance l))))))
+
+(define (%precedes repository revision follows)
+  (let-values ([(status out err) (call-git (vector-ref repository 1) (list "describe" "--contains" revision) #f)])
+    (and (eqv? status 0)
+         (let* ([l (or (%first-line out) "")]
+                [tag (let loop ([i 0]) (if (or (fx= i (string-length l)) (memv (string-ref l i) '(#\~ #\^))) (substring l 0 i) (loop (fx+ i 1))))])
+           (and (not (string=? tag "")) (not (and follows (string=? tag (car follows))))
+                (let ([count (%first-line (query repository (list "rev-list" "--count" (string-append revision ".." tag) "--")))])
+                  (cons tag (string->number count))))))))
+
+(define (related-refs repository revision scope)
+  (check-repository 'git:related-refs repository)
+  (%check-revision 'git:related-refs revision)
+  (unless (memq scope (enum-set->list (enum-set-universe (%branch-scopes))))
+    (assertion-violation 'git:related-refs "not a git:branch-scope" scope))
+  (let ([follows (%follows repository revision)])
+    (%make-related (%related-branches repository "--merged" revision (eq? scope 'all))
+                   (%related-branches repository "--contains" revision (memq scope '(all mixed)))
+                   follows
+                   (%precedes repository revision follows))))
+
+(define (refs repository)
+  (check-repository 'git:refs repository)
+  (filter (lambda (l) (not (string=? l "")))
+          (lines (query repository '("for-each-ref" "--sort=-committerdate" "--format=%(refname:short)" "refs/heads" "refs/remotes" "refs/tags")))))
 
 (define (commits repository range count)
   (check-repository 'git:commits repository)
@@ -560,6 +684,33 @@
 (define (commit-refs commit)
   ((%checked 'git:commit-refs commit? "not a commit" %commit-refs) commit))
 
+(define (details-name details) ((%checked 'git:details-name details? "not a commit's details" %details-name) details))
+
+(define (details-short-name details) ((%checked 'git:details-short-name details? "not a commit's details" %details-short-name) details))
+
+(define (details-refs details) ((%checked 'git:details-refs details? "not a commit's details" %details-refs) details))
+
+(define (details-author details) ((%checked 'git:details-author details? "not a commit's details" %details-author) details))
+
+(define (details-author-date details) ((%checked 'git:details-author-date details? "not a commit's details" %details-author-date) details))
+
+(define (details-committer details) ((%checked 'git:details-committer details? "not a commit's details" %details-committer) details))
+
+(define (details-committer-date details)
+  ((%checked 'git:details-committer-date details? "not a commit's details" %details-committer-date) details))
+
+(define (details-parents details) ((%checked 'git:details-parents details? "not a commit's details" %details-parents) details))
+
+(define (details-message details) ((%checked 'git:details-message details? "not a commit's details" %details-message) details))
+
+(define (related-merged related) ((%checked 'git:related-merged related? "not a commit's related refs" %related-merged) related))
+
+(define (related-contained related) ((%checked 'git:related-contained related? "not a commit's related refs" %related-contained) related))
+
+(define (related-follows related) ((%checked 'git:related-follows related? "not a commit's related refs" %related-follows) related))
+
+(define (related-precedes related) ((%checked 'git:related-precedes related? "not a commit's related refs" %related-precedes) related))
+
 (define (stashes repository)
   (check-repository 'git:stashes repository)
   (map (lambda (line)
@@ -579,14 +730,20 @@
   (run repository '("add" "--intent-to-add" "--pathspec-from-file=-" "--pathspec-file-nul") (paths-input paths))
   (void))
 
-(define (stage-tracked repository)
+(define (stage-tracked repository paths)
   (check-repository 'git:stage-tracked repository)
-  (run repository '("add" "-u" "."))
+  (when paths (check-paths 'git:stage-tracked paths))
+  (if paths
+      (run repository '("add" "-u" "--pathspec-from-file=-" "--pathspec-file-nul") (paths-input paths))
+      (run repository '("add" "-u" ".")))
   (void))
 
-(define (stage-all repository)
+(define (stage-all repository paths)
   (check-repository 'git:stage-all repository)
-  (run repository '("add" "--all" "."))
+  (when paths (check-paths 'git:stage-all paths))
+  (if paths
+      (run repository '("add" "--all" "--pathspec-from-file=-" "--pathspec-file-nul") (paths-input paths))
+      (run repository '("add" "--all" ".")))
   (void))
 
 (define (unstage repository paths)

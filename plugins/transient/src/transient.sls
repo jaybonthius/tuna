@@ -160,6 +160,8 @@
 
 (tables:define-table %computed-groups)
 
+(tables:define-table %group-depths)
+
 (define %order 0)
 
 (define (%next-order!)
@@ -184,6 +186,14 @@
   (unless (procedure? entries)
     (assertion-violation 'transient:add-computed! "not a procedure" entries))
   (tables:set! %computed-groups (cons menu heading) (%make-computed heading entries (%next-order!))))
+
+(define (set-group-depth! menu heading depth)
+  (%check-main-thread 'transient:set-group-depth!)
+  (%check-menu 'transient:set-group-depth! menu)
+  (%check-heading 'transient:set-group-depth! heading)
+  (unless (fixnum? depth)
+    (assertion-violation 'transient:set-group-depth! "not a fixnum" depth))
+  (tables:set! %group-depths (cons menu heading) depth))
 
 (define (remove! menu key)
   (%check-main-thread 'transient:remove!)
@@ -352,10 +362,12 @@
         (lambda (acc e) (if (eq? (car (car e)) menu) (cons (cdr e) acc) acc))
         '() (tables:entries %computed-groups)))))
 
-(define (%grouped items)
+(define (%grouped menu items)
+  (define (depth g) (tables:ref %group-depths (cons menu (car g)) 0))
   (let loop ([items items] [groups '()])
     (if (null? items)
-        (reverse (map (lambda (g) (cons (car g) (reverse (cdr g)))) groups))
+        (list-sort (lambda (a b) (fx< (depth a) (depth b)))
+                   (reverse (map (lambda (g) (cons (car g) (reverse (cdr g)))) groups)))
         (let* ([item (car items)] [heading (%item-heading item)] [g (assoc heading groups)])
           (if g
               (begin (set-cdr! g (cons item (cdr g))) (loop (cdr items) groups))
@@ -404,7 +416,7 @@
                  (loop (cdr items) acc)
                  (let ([d (computed-datum (car es))])
                    (each (cdr es) (if d (cons d acc) acc)))))])))
-    (let loop ([groups (%grouped (%items menu))] [acc '()])
+    (let loop ([groups (%grouped menu (%items menu))] [acc '()])
       (if (pair? groups)
           (let* ([g (car groups)]
                  [heading (and (car g)

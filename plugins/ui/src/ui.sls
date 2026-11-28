@@ -468,6 +468,9 @@
 
 (options:define-option highlight-current-section? #t boolean? "Whether the section at point is highlighted.")
 
+(hooks:define-hook section-shown
+  "Called with a view and a section after a command or a search shows the section in the view, which hid it.")
+
 (hooks:define-hook section-heading-adornments
   "Called with a view and a section as its heading is drawn; each entry returns HTML drawn after the heading, which is no text of the buffer, or #f.")
 
@@ -486,11 +489,13 @@
 
 (module %sections
   (section-node? section-at-position enclosing-section heading-node heading-start heading-end section-sections
-   top-sections next-sibling previous-sibling identity-of walk-sections folded-at? hidden-in? hide! show!
+   top-sections-of next-sibling previous-sibling identity-of walk-sections folded-at? hidden-in? hide! show!
    settle-visibility! repair-after-edit! opened! in-heading? empty-body? record-section! current-section-of)
 
   (define (section-node? n)
-    (and (document:node? n) (not (document:atom? n)) (eq? (document:node-kind n) %section-kind)))
+    (and (document:node? n) (not (document:atom? n))
+         (let ([kind (document:node-kind n)])
+           (or (eq? kind %section-kind) (tables:ref %section-kinds kind #f)))))
 
   (define (enclosing-section doc p)
     (let loop ([n (and (fx< p (document:length doc)) (document:enclosing doc p))])
@@ -544,12 +549,12 @@
 
   (define (section-sections section) (sections-below section))
 
-  (define (top-sections doc)
+  (define (top-sections-of doc)
     (if (fx= (document:length doc) 0) '() (sections-below (document:token doc 0))))
 
   (define (siblings doc section)
     (let ([parent (enclosing-section doc (document:node-start section))])
-      (if parent (section-sections parent) (top-sections doc))))
+      (if parent (section-sections parent) (top-sections-of doc))))
 
   (define (same? a b) (fx= (document:node-start a) (document:node-start b)))
 
@@ -704,7 +709,8 @@
       (hashtable-set! table identity 'show)
       (when hidden?
         (when folded? (remove-fold! view section folds))
-        (derive-below! view record section identity))))
+        (derive-below! view record section identity)
+        (section-shown view section))))
 
   ;; As magit-section-show when a search or motion opens a section, so
   ;; a refresh keeps it open. A cursor's opening is told after the draw,
@@ -715,7 +721,8 @@
         (let ([record (visibilities-of view b)] [identity (identity-of (buffers:document b) s)])
           (hashtable-set! (visibilities-table record) identity 'show)
           (settle-visibility! view)
-          (derive-below! view record s identity)))))
+          (derive-below! view record s identity)
+          (section-shown view s)))))
 
   ;; An edit moves or strands folds only where it begins and ends. A
   ;; section whose opening it inserted has new identities inside it; a
@@ -842,20 +849,42 @@
       s
       (string-append s "\n")))
 
-(define (section attributes heading . body)
+(define (%make-section who node attributes heading body)
   (unless (and (list? attributes) (for-all (lambda (a) (and (pair? a) (symbol? (car a)))) attributes))
-    (assertion-violation 'ui:section "not an association list of attributes" attributes))
+    (assertion-violation who "not an association list of attributes" attributes))
   (let ([type (assq 'type attributes)])
     (unless (and type (symbol? (cdr type)))
-      (assertion-violation 'ui:section "a section's type is not a symbol" (and type (cdr type))))
+      (assertion-violation who "a section's type is not a symbol" (and type (cdr type))))
     (unless (or (string? heading) (list? heading))
-      (assertion-violation 'ui:section "not a heading's text or inline content" heading))
+      (assertion-violation who "not a heading's text or inline content" heading))
     (let* ([value (cond [(assq 'value attributes) => cdr] [else #f])]
            [attributes (if (assq 'value attributes) attributes (append attributes '((value . #f))))]
            [attributes (if (assq 'key attributes) attributes (append attributes `((key . (,(cdr type) . ,value)))))])
-      (apply %section attributes
+      (apply node attributes
              (apply %section-heading '() (append (if (string? heading) `(,heading) heading) '("\n")))
              (map (lambda (item) (if (string? item) (%section-text '() (%with-newline item)) item)) body)))))
+
+(define (section attributes heading . body) (%make-section 'ui:section %section attributes heading body))
+
+(tables:define-table %section-kinds)
+
+(define (%add-section-kind! node)
+  (tables:set! %section-kinds (buffers:kind-name (buffers:constructor-kind node))))
+
+(define-syntax define-section-kind
+  (lambda (x)
+    (syntax-case x ()
+      [(_ id)
+       (identifier? #'id)
+       (let ([name (symbol->string (syntax->datum #'id))])
+         (with-syntax ([id-keys (datum->syntax #'id (string->symbol (string-append name "-keys")))]
+                       [node (datum->syntax #'id (string->symbol (string-append "%" name "-node")))])
+           #'(begin
+               (tables:define-table id-keys "The keys of a section kind.")
+               (buffers:define-kind node (content nodes) (draw %draw-section) (keymap id-keys))
+               (define-values () (begin (%add-section-kind! node) (values)))
+               (define-public id (lambda (attributes heading . body) (%make-section 'ui:define-section-kind node attributes heading body))))))]
+      [_ (syntax-violation 'ui:define-section-kind "expected (ui:define-section-kind id)" x)])))
 
 (define (%check-view-buffer who view)
   (unless (views:view? view)
@@ -893,6 +922,11 @@
 (define (section-children section)
   (%check-section 'ui:section-children section)
   (section-sections section))
+
+(define (top-sections buffer)
+  (unless (buffers:buffer? buffer)
+    (assertion-violation 'ui:top-sections "not a buffer" buffer))
+  (top-sections-of (buffers:document buffer)))
 
 (define (section-identity section buffer)
   (%check-section 'ui:section-identity section)
@@ -974,7 +1008,7 @@
               (or (and (pair? children) (not (hidden-in? view s)) (car children))
                   (let up ([s s])
                     (and s (or (next-sibling doc s) (up (enclosing-section doc (document:node-start s))))))))
-            (find (lambda (t) (fx> (heading-start t) p)) (top-sections doc)))
+            (find (lambda (t) (fx> (heading-start t) p)) (top-sections-of doc)))
         (error 'ui:section-forward "No next section"))))
 
 ;; Point rests at the stop of the heading's start, which is past it when
@@ -986,7 +1020,7 @@
       [else
        (let ([previous (if s
                            (previous-sibling doc s)
-                           (let ([before (filter (lambda (t) (fx< (heading-start t) p)) (top-sections doc))])
+                           (let ([before (filter (lambda (t) (fx< (heading-start t) p)) (top-sections-of doc))])
                              (and (pair? before) (car (reverse before)))))])
          (cond
            [previous (%last-shown view previous)]
@@ -1095,7 +1129,7 @@
     [else (hide-all!)]))
 
 (define (%cycle-global! v)
-  (let ([tops (top-sections (buffers:document (views:buffer v)))])
+  (let ([tops (top-sections-of (buffers:document (views:buffer v)))])
     (%cycle-children! v tops (lambda () (for-each (lambda (s) (hide! v s)) tops)))))
 
 (commands:define-command (section-cycle)
@@ -1132,7 +1166,7 @@
       (let loop ([s s] [i (if s (%level-of doc s) 0)])
         (cond
           [(not s)
-           (%show-children! v (top-sections doc) (fx- level 1))
+           (%show-children! v (top-sections-of doc) (fx- level 1))
            (views:set-point! v 0)]
           [(fx< i level)
            (show! v s)
@@ -1151,7 +1185,7 @@
           (let ([parent (enclosing-section doc (document:node-start s))])
             (%goto! v parent)
             (loop parent))))
-      (%show-children! v (top-sections doc) (fx- level 1)))))
+      (%show-children! v (top-sections-of doc) (fx- level 1)))))
 
 (commands:define-command (section-mouse-toggle [event (keys:command-event)])
   "Toggles the section whose heading's chevron was clicked."

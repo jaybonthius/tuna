@@ -115,3 +115,11 @@
 (test "the job's library parses on any thread, as diff:parse does"
   (let ([text (string->utf8 "diff --git a/f b/f\nold mode 100644\nnew mode 100755\n")])
     (check-equal? (diff:parse text) (test-runner:join (fork-task (lambda (restore) (parse-diff text)))))))
+
+(test "diff:file-line-counts gives the added and the removed lines of a file; a combined line counts where any column marks it"
+  (check-equal? '(1 1) (call-with-values (lambda () (diff:file-line-counts (car one-line-change))) list))
+  (let ([files (parse "diff --git a/n.txt b/n.txt\nnew file mode 100644\nindex 0000000..3\n--- /dev/null\n+++ b/n.txt\n@@ -0,0 +1,2 @@\n+a\n+b\n"
+                      "diff --git a/x.bin b/x.bin\nindex 1..2 100644\nBinary files a/x.bin and b/x.bin differ\n"
+                      "diff --cc f.txt\nindex 1,2..0\n--- a/f.txt\n+++ b/f.txt\n@@@ -1,3 -1,3 +1,4 @@@\n  one\n++<<<<<<< HEAD\n +MINE\n- OTHER\n  three\n")])
+    (check-equal? '((2 0) (0 0) (2 1)) (map (lambda (f) (call-with-values (lambda () (diff:file-line-counts f)) list)) files)))
+  (check-raises assertion-violation? (diff:file-line-counts 'no)))

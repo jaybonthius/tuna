@@ -1,10 +1,12 @@
 #!tuna
-(import (git-mode) (git) (with-editor) (transient) (modes) (auto-mode) (keys) (commands) (buffers) (document) (views)
+(import (git-mode) (git-diff) (git) (with-editor) (transient) (modes) (auto-mode) (keys) (commands) (buffers) (document) (views)
         (layout) (files) (faces) (ask) (web) (hooks) (options) (tables) (saved))
+
+(define %self (current-owner))
 
 (define-enumeration committer-date (now keep) %committer-dates)
 
-(define-enumeration staging (ask stage refuse) %stagings)
+(define-enumeration staging (verbose ask stage refuse) %stagings)
 
 (define-enumeration style-check (non-empty-second-line overlong-summary-line) %style-checks)
 
@@ -17,8 +19,11 @@
 (options:define-option published-branches '("origin/master") %strings?
   "The branches whose commits are published; amending one of their commits asks first.")
 
-(options:define-option ask-to-stage (staging ask) (%one-of (%stagings))
-  "What git-commit:create does with nothing staged: ask asks, stage commits everything without asking, refuse raises Nothing staged.")
+(options:define-option ask-to-stage (staging verbose) (%one-of (%stagings))
+  "What git-commit:create does with nothing staged: verbose asks while showing the unstaged diff, ask asks without it, stage commits everything without asking, refuse raises Nothing staged.")
+
+(options:define-option show-diff #t boolean?
+  "Whether a message buffer's opening shows the diff of what will be committed, in another view that is not selected.")
 
 (options:define-option extend-override-date? #t boolean? "Whether extending sets the committer date to now; #f keeps HEAD's.")
 
@@ -100,10 +105,74 @@
                   "\nDo you really want to modify it? "))
         (error 'git-commit "Abort")))))
 
+(define-record-type %committing
+  (sealed #t)
+  (fields spec alternative (mutable view)))
+
+(define %committing-in (make-hashtable string-hash string=?))
+
+(define (%commit-spec arguments)
+  (cond
+    [(member "--amend" arguments)
+     (if (member "--only" arguments) (git-diff:range-spec "HEAD^..HEAD") (git-diff:staged-spec "HEAD^"))]
+    [(or (member "--all" arguments) (member "--allow-empty" arguments)) (git-diff:range-spec "HEAD")]
+    [else (git-diff:staged-spec)]))
+
+(define (%alternative-spec arguments)
+  (and (member "--amend" arguments) (not (member "--only" arguments)) (git-diff:staged-spec)))
+
+;; A view that already showed the diff before the commit is the user's,
+;; so closing leaves it alone.
+(define-record-type %shown
+  (sealed #t)
+  (fields view made? buffer))
+
+(define (%display-diff! repository spec)
+  (let* ([before (layout:views)]
+         [was (git-mode:unlocked-buffer repository git-diff:mode)]
+         [already (and was (pair? (views:showing was)))]
+         [b (git-diff:show repository spec (git:diff-arguments))] [v (layout:display-buffer b)])
+    (and (not already) (make-%shown v (not (memq v before)) b))))
+
+(define (%close-diff! shown)
+  (let ([v (and shown (%shown-view shown))])
+    (when (and v (memq v (layout:views)) (eq? (views:buffer v) (%shown-buffer shown)))
+      (if (%shown-made? shown)
+          (layout:delete-part! (layout:view-node v))
+          (views:replace-buffer! v)))))
+
+(define (%show-commit-diff! repository committing spec)
+  (ask:message "Diffing changes to be committed (C-g to abort diffing)")
+  (let ([shown (%display-diff! repository spec)])
+    (when (and shown (not (%committing-view committing)))
+      (%committing-view-set! committing shown))))
+
+(define (%close-commit-diff! repository)
+  (let ([c (hashtable-ref %committing-in (git:repository-root repository) #f)])
+    (hashtable-delete! %committing-in (git:repository-root repository))
+    (when c
+      (%close-diff! (%committing-view c)))))
+
+(commands:define-command (diff)
+  "Shows the diff of what the commit in progress will hold; amending with it shown, the changes the amend adds and all the commit's changes in turn."
+  (let* ([repository (git-mode:current-repository)] [c (hashtable-ref %committing-in (git:repository-root repository) #f)])
+    (unless c
+      (error 'git-commit:diff "No commit in progress"))
+    (let* ([shown (git-mode:unlocked-buffer repository git-diff:mode)]
+           [shown-spec (and shown (pair? (views:showing shown)) (git-diff:buffer-spec shown))]
+           [spec (cond
+                   [(not (and shown-spec (git-diff:spec=? shown-spec (%committing-spec c)))) (%committing-spec c)]
+                   [(%committing-alternative c) (%committing-alternative c)]
+                   [else (error 'git-commit:diff "No alternative diff while committing")])])
+      (%show-commit-diff! repository c spec))))
+
 (define (%commit! repository arguments environment)
+  (hashtable-set! %committing-in (git:repository-root repository)
+                  (make-%committing (%commit-spec arguments) (%alternative-spec arguments) #f))
   (let ([editing (with-editor:output-wrapper)])
     (git-mode:start repository (cons "commit" arguments)
       (lambda (command)
+        (%close-commit-diff! repository)
         (cond
           [(with-editor:canceled? editing) (git:set-command-canceled! command)]
           [(and (not (eqv? (git:command-exit command) 0))
@@ -114,6 +183,13 @@
       (append (with-editor:environment "GIT_EDITOR") environment)
       editing)
     (void)))
+
+;; A task's pause leaves its continuation, so dynamic-wind would close
+;; the view at the question's pause; this closes it once, when the
+;; question is answered or refused.
+(define (%finally-close shown thunk)
+  (guard (c [#t (%close-diff! shown) (raise c)])
+    (let ([result (thunk)]) (%close-diff! shown) result)))
 
 (define (%check-strings who arguments)
   (unless (%strings? arguments)
@@ -132,6 +208,10 @@
                  (case (ask-to-stage)
                    [(stage) (append arguments '("--all"))]
                    [(refuse) (error 'git-commit:create "Nothing staged")]
+                   [(verbose)
+                    (let ([shown (%display-diff! repository (git-diff:unstaged-spec))])
+                      (let ([yes? (%finally-close shown (lambda () (ask:y-or-n? "Nothing staged.  Commit all uncommitted changes? ")))])
+                        (and yes? (append arguments '("--all")))))]
                    [else (and (ask:y-or-n? "Nothing staged.  Commit all uncommitted changes? ")
                               (append arguments '("--all")))])))])
       (when arguments
@@ -373,8 +453,12 @@
 (define %message-buffers (make-weak-eq-hashtable))
 
 (define (%setup)
-  (let ([b (buffers:current)])
+  (let* ([b (buffers:current)] [repository (git-mode:find-current-repository)]
+         [c (and repository (hashtable-ref %committing-in (git:repository-root repository) #f))])
     (eq-hashtable-set! %message-buffers b #t)
+    (when (and c (show-diff))
+      (call-as-owner %self
+        (lambda () (spawn-task (lambda (restore) (%show-commit-diff! repository c (%committing-spec c)))))))
     (hooks:add-local! with-editor:finish-checks check-style)
     (%paint! b (document:length (buffers:document b)))
     (for-each %fold-diff (views:showing b))
@@ -407,7 +491,8 @@
 (keys:bind! keymap "C-c C-r" reviewed-by)
 (keys:bind! keymap "C-c C-t" tested-by)
 (keys:bind! keymap "C-c M-i" suggested-by)
-(keys:bind! keymap "C-c C-d" keys:undefined)
+(keys:bind! keymap "C-c C-d" diff)
+(keys:bind! git-diff:keymap "C-c C-d" diff)
 (keys:bind! keymap "C-c C-w" keys:undefined)
 (transient:add! menu "Arguments"
   (transient:switch "- a" "Stage all modified and deleted files" "--all")

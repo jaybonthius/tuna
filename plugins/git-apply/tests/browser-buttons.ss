@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-browser) (test-runner) (cdp page) (processes) (buffers) (views) (layout) (layout-split) (editing)
-        (echo-area) (status-line) (minibuffer) (files) (ui) (git) (git-mode) (git-status) (git-test repositories))
+        (echo-area) (status-line) (minibuffer) (files) (ui) (git) (git-mode) (git-status) (git-apply) (git-test repositories))
 
 (git-test/repositories:git! "" "init" "-q" "-b" "main" "repo")
 (git-test/repositories:write-file! "repo/a.py" "one\ntwo\nthree\n")
@@ -85,11 +85,11 @@
 
 (define (buttons-of nodes text label)
   (let ([h (heading-node nodes text)])
-    (filter (lambda (i) (and (inside? nodes i h) (string=? label (node-text nodes i)))) (classed nodes "git-status-button"))))
+    (filter (lambda (i) (and (inside? nodes i h) (string=? label (node-text nodes i)))) (classed nodes "git-apply-button"))))
 
 (define (button text label)
   (let ([nodes (snapshot)])
-    (element nodes (car (buttons-of nodes text label)) "git-status-button" ".git-status-button")))
+    (element nodes (car (buttons-of nodes text label)) "git-apply-button" ".git-apply-button")))
 
 (define (button-count text label) (length (buttons-of (snapshot) text label)))
 

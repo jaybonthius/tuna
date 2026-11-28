@@ -1,0 +1,2 @@
+{"aligned_lines":[[0,0],[1,1],[2,null],[3,2],[4,3]],"chunks":[[{"lhs":{"line_number":3,"changes":[{"start":11,"end":12,"content":"2","highlight":"normal"}]},"rhs":{"line_number":2,"changes":[{"start":11,"end":12,"content":"3","highlight":"normal"}]}}]],"language":"Python","path":"a.py","status":"changed"}
+{"language":"Python","path":"c.py","status":"unchanged"}

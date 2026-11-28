@@ -1,4 +1,4 @@
-(import (tuna) (test) (diff) (git) (git-test repositories) (git-status-test patches))
+(import (tuna) (test) (diff) (git) (git-test repositories) (git-apply-test patches))
 
 (define (raised-message thunk)
   (guard (c [(or (error? c) (assertion-violation? c)) (list (condition-who c) (condition-message c))])
@@ -8,18 +8,18 @@
 (define resolution "Cannot un-/stage resolution hunks.  Stage the whole file")
 
 (test "a conflicted file's combined diff parses, and no partial patch is built for it"
-  (let* ([d (git-status-test/patches:fresh "conflict")] [git! (lambda arguments (apply git-test/repositories:git! d arguments))])
-    (git-status-test/patches:write-file! d "f.txt" "one\ntwo\nthree\n")
+  (let* ([d (git-apply-test/patches:fresh "conflict")] [git! (lambda arguments (apply git-test/repositories:git! d arguments))])
+    (git-apply-test/patches:write-file! d "f.txt" "one\ntwo\nthree\n")
     (git! "add" ".")
     (git! "commit" "-qm" "base")
     (git! "checkout" "-q" "-b" "other")
-    (git-status-test/patches:write-file! d "f.txt" "one\nOTHER\nthree\n")
+    (git-apply-test/patches:write-file! d "f.txt" "one\nOTHER\nthree\n")
     (git! "commit" "-qam" "other")
     (git! "checkout" "-q" "-")
-    (git-status-test/patches:write-file! d "f.txt" "one\nMINE\nthree\n")
+    (git-apply-test/patches:write-file! d "f.txt" "one\nMINE\nthree\n")
     (git! "commit" "-qam" "mine")
     (git-test/repositories:run! d "sh" "-c" "git merge -q other || true")
-    (let* ([repo (git-status-test/patches:repository-of d)] [f (car (git:diff repo '()))] [h (car (diff:file-hunks f))])
+    (let* ([repo (git-apply-test/patches:repository-of d)] [f (car (git:diff repo '()))] [h (car (diff:file-hunks f))])
       (check-equal? '("f.txt" unmerged #t 1) (list (diff:file-path f) (diff:file-status f) (diff:file-combined? f) (length (diff:file-hunks f))))
       (check-equal? "@@@ -1,3 -1,3 +1,7 @@@" (utf8->string (diff:hunk-heading h)))
       (check-equal? '((context "  " "one") (added "++" "<<<<<<< HEAD") (added " +" "MINE") (added "++" "=======") (added "+ " "OTHER")
@@ -35,21 +35,21 @@
                     (map (lambda (f) (list (diff:file-path f) (diff:file-status f) (diff:file-combined? f))) (git:diff repo '("--cached")))))))
 
 (test "a binary file has no hunks and gets no patch"
-  (let ([d (git-status-test/patches:fresh "binary")])
-    (git-status-test/patches:write-file! d "x.bin" (git-status-test/patches:bytes 0 1 2))
-    (git-status-test/patches:commit! d)
-    (git-status-test/patches:write-file! d "x.bin" (git-status-test/patches:bytes 0 1 3))
-    (let ([f (car (git:diff (git-status-test/patches:repository-of d) '()))])
+  (let ([d (git-apply-test/patches:fresh "binary")])
+    (git-apply-test/patches:write-file! d "x.bin" (git-apply-test/patches:bytes 0 1 2))
+    (git-apply-test/patches:commit! d)
+    (git-apply-test/patches:write-file! d "x.bin" (git-apply-test/patches:bytes 0 1 3))
+    (let ([f (car (git:diff (git-apply-test/patches:repository-of d) '()))])
       (check-equal? '(#t ()) (list (diff:file-binary? f) (diff:file-hunks f)))
       (check-equal? '(diff:file-patch "binary files have no hunks") (raised-message (lambda () (diff:file-patch f))))
       (check-equal? '(diff:hunks-patch "binary files have no hunks") (raised-message (lambda () (diff:hunks-patch f '())))))))
 
 (test "a selection holding no change, and hunks that are not the file's, are refused; a hunk equal to one of the file's is the file's"
-  (let ([d (git-status-test/patches:fresh "plain")])
-    (git-status-test/patches:write-file! d "p.txt" "one\ntwo\nthree\n")
-    (git-status-test/patches:commit! d)
-    (git-status-test/patches:write-file! d "p.txt" "one\nTWO\nthree\n")
-    (let* ([repo (git-status-test/patches:repository-of d)] [f (car (git:diff repo '()))] [h (car (diff:file-hunks f))]
+  (let ([d (git-apply-test/patches:fresh "plain")])
+    (git-apply-test/patches:write-file! d "p.txt" "one\ntwo\nthree\n")
+    (git-apply-test/patches:commit! d)
+    (git-apply-test/patches:write-file! d "p.txt" "one\nTWO\nthree\n")
+    (let* ([repo (git-apply-test/patches:repository-of d)] [f (car (git:diff repo '()))] [h (car (diff:file-hunks f))]
            [other (car (diff:file-hunks (car (diff:parse (string->utf8 "diff --git a/q b/q\n--- a/q\n+++ b/q\n@@ -5 +5 @@\n-x\n+y\n")))))])
       (check-equal? '(diff:lines-patch "no change in these lines") (raised-message (lambda () (diff:lines-patch f h 0 0))))
       (check-equal? '(diff:lines-patch "not a range of the hunk's lines") (raised-message (lambda () (diff:lines-patch f h 2 9))))

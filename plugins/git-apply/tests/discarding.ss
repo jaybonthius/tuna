@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (options) (buffers) (document) (views) (layout) (layout-split) (editing) (files) (ui) (git)
-        (git-mode) (git-status) (git-status-test) (git-test repositories))
+        (git-mode) (git-status) (git-apply) (git-status-test) (git-test repositories))
 
 (define repo (git-status-test:fresh! "repo"))
 
@@ -170,6 +170,21 @@
   (git! "repo" "reset" "-q" "--soft" "HEAD~1")
   (git! "repo" "rm" "-q" "-r" "-f" "old"))
 
+(test "k on several staged renames asks once, Undo N renames?; n changes nothing, y moves each back"
+  (git! "repo" "mv" "b.txt" "b2.txt")
+  (git! "repo" "mv" "long.txt" "long2.txt")
+  (refresh!)
+  (go-to-section! '(file . "b2.txt") '(staged . #f))
+  (views:set-mark! (git-status-test:view) (views:point (git-status-test:view)))
+  (go-to-section! '(file . "long2.txt") '(staged . #f))
+  (git-status-test:answer! #f)
+  (refused 'git-mode:confirm "Abort" "k")
+  (check-equal? '(("Undo 2 renames? ") "R  b.txt -> b2.txt\nRM long.txt -> long2.txt\n") (list (asked) (short)))
+  (views:set-mark! (git-status-test:view) #f)
+  (go-to-section! '(staged . #f))
+  (discard! #t "k")
+  (check-equal? '(("Undo 2 renames? ") " M long.txt\n") (list (asked) (short))))
+
 (test "k on a list of mixed kinds asks once per kind, in Magit's order, and n stops with Abort"
   (delete-file (git-status-test:path "repo/gone.txt"))
   (write-file! "repo/a.py" "x\n")
@@ -179,11 +194,11 @@
   (refused 'git-mode:confirm "Abort" "k")
   (check-equal? '(("Resurrect \"gone.txt\"? " "Discard unstaged changes in 2 files? ") " M a.py\n M long.txt\n") (list (asked) (short))))
 
-(test "k on a commit, or on what is no change, raises"
+(test "k on a commit, or on what is no change, says there is nothing to delete, as Magit's placeholder does"
   (git-status-test:go-to-in! "Second commit" '(unpushed . "@{upstream}"))
-  (refused 'git-status:discard "Cannot discard committed changes" "k")
+  (refused 'git-mode:delete-thing "There is no thing at point that could be deleted" "k")
   (press! "M-<")
-  (refused 'git-status:discard "Cannot apply this, it's not a change" "k"))
+  (refused 'git-mode:delete-thing "There is no thing at point that could be deleted" "k"))
 
 (test "an action in git-mode:no-confirm runs without its question"
   (options:set! git-mode:no-confirm (list (git-mode:confirmation discard)))
@@ -197,7 +212,7 @@
   (refresh!)
   (git-status-test:show-files! '(untracked . #f))
   (go-to-section! '(file . "~tilde") '(untracked . #f))
-  (refused 'git-status:discard "Refusing to delete \"~tilde\", too dangerous" "k")
+  (refused 'git-apply:discard "Refusing to delete \"~tilde\", too dangerous" "k")
   (check (file-exists? (git-status-test:path "repo/~tilde"))))
 
 (test "a discard reverts the unmodified buffers visiting the files it changed, and leaves a modified one with its edits"

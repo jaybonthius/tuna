@@ -1,24 +1,24 @@
-(import (tuna) (test) (diff) (git) (git-test repositories) (git-status-test patches))
+(import (tuna) (test) (diff) (git) (git-test repositories) (git-apply-test patches))
 
-(define edges git-status-test/patches:edges)
+(define edges git-apply-test/patches:edges)
 
 (define (edge name) (cdr (assq name edges)))
 
 (define (fresh-edge name)
-  (let ([d (git-status-test/patches:fresh (symbol->string name))])
-    (values d ((edge name) d) (git-status-test/patches:repository-of d))))
+  (let ([d (git-apply-test/patches:fresh (symbol->string name))])
+    (values d ((edge name) d) (git-apply-test/patches:repository-of d))))
 
 (test "bytes that are not UTF-8 stay as they were, and a user's apply.whitespace neither fixes nor refuses the selection"
-  (check-equal? '(trials 52 failures ()) (git-status-test/patches:run-edges! '(latin1 latin1-staged whitespace-fix))))
+  (check-equal? '(trials 52 failures ()) (git-apply-test/patches:run-edges! '(latin1 latin1-staged whitespace-fix))))
 
 (test "neither a user's diff prefixes nor a textconv driver changes the patch, and apply.whitespace error refuses nothing"
-  (check-equal? '(trials 42 failures ()) (git-status-test/patches:run-edges! '(whitespace-error other-prefixes textconv))))
+  (check-equal? '(trials 42 failures ()) (git-apply-test/patches:run-edges! '(whitespace-error other-prefixes textconv))))
 
 (test "lines and hunks of renamed, new and intent-to-add files"
-  (check-equal? '(trials 46 failures ()) (git-status-test/patches:run-edges! '(rename-two-hunks new-file-staged new-file-intent-to-add))))
+  (check-equal? '(trials 46 failures ()) (git-apply-test/patches:run-edges! '(rename-two-hunks new-file-staged new-file-intent-to-add))))
 
 (test "lines and hunks of deleted files, and of a file whose mode changed"
-  (check-equal? '(trials 46 failures ()) (git-status-test/patches:run-edges! '(deleted-unstaged deleted-staged mode-change))))
+  (check-equal? '(trials 46 failures ()) (git-apply-test/patches:run-edges! '(deleted-unstaged deleted-staged mode-change))))
 
 (test "staging one hunk of a file whose mode changed keeps the old mode"
   (let-values ([(d setup repo) (fresh-edge 'mode-change)])
@@ -34,18 +34,18 @@
 
 (test "every selection at a missing final newline leaves what a line model gives"
   (check-equal? '(trials 96 failures ())
-    (git-status-test/patches:run-edges! '(no-newline-append no-newline-change-last no-newline-added no-newline-removed no-newline-staged))))
+    (git-apply-test/patches:run-edges! '(no-newline-append no-newline-change-last no-newline-added no-newline-removed no-newline-staged))))
 
 (test "every selection in CRLF files and among blank lines, with diff.suppressBlankEmpty set, leaves what a line model gives"
-  (check-equal? '(trials 52 failures ()) (git-status-test/patches:run-edges! '(crlf crlf-staged blank-lines))))
+  (check-equal? '(trials 52 failures ()) (git-apply-test/patches:run-edges! '(crlf crlf-staged blank-lines))))
 
 (test "paths git quotes, a path that is not UTF-8, and paths holding spaces"
-  (check-equal? '(trials 42 failures ()) (git-status-test/patches:run-edges! '(quoted-tab quoted-quote-and-backslash latin1-path)))
+  (check-equal? '(trials 42 failures ()) (git-apply-test/patches:run-edges! '(quoted-tab quoted-quote-and-backslash latin1-path)))
   (check-equal? '(trials 70 failures ())
-    (git-status-test/patches:run-edges! '(space-file space-folder-staged space-and-quote space-new-file space-deleted-file))))
+    (git-apply-test/patches:run-edges! '(space-file space-folder-staged space-and-quote space-new-file space-deleted-file))))
 
 (test "near repeated lines a patch keeps git's start on the side it applies to, so the hunk's own place is patched"
-  (check-equal? '(trials 236 failures ()) (git-status-test/patches:run-edges! '(repeated-lines repeated-lines-staged)))
+  (check-equal? '(trials 236 failures ()) (git-apply-test/patches:run-edges! '(repeated-lines repeated-lines-staged)))
   (let-values ([(d setup repo) (fresh-edge 'repeated-lines-staged)])
     (let ([f (car (git:diff repo '("--cached")))])
       (check-equal? '("@@ -1,4 +1,14 @@" "@@ -19,7 +29,6 @@ x") (map (lambda (h) (utf8->string (diff:hunk-heading h))) (diff:file-hunks f)))

@@ -41,7 +41,7 @@
   (let-values ([(status out err)
                 (%with-path folder path "mkdir -p \"$(dirname -- \"$p\")\" && cat > \"$p\""
                   (if (string? data) (string->utf8 data) data))])
-    (unless (eqv? status 0) (error 'git-status-test/patches:write-file! (utf8->string err) path))))
+    (unless (eqv? status 0) (error 'git-apply-test/patches:write-file! (utf8->string err) path))))
 
 (define (read-worktree folder path)
   (let-values ([(status out err) (%with-path folder path "[ -e \"$p\" ] && cat -- \"$p\"" #f)])

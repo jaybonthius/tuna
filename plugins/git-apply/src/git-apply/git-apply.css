@@ -1,0 +1,19 @@
+@layer defaults, themes, preferences;
+
+@layer defaults {
+  .git-apply-buttons {
+    margin-inline-start: auto;
+    padding-inline-start: 1ch;
+    visibility: hidden;
+    white-space: nowrap;
+  }
+
+  .ui-section-heading:hover > .git-apply-buttons {
+    visibility: visible;
+  }
+
+  .git-apply-button {
+    min-width: 2ch;
+    padding-inline: 0.25em;
+  }
+}

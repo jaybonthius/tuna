@@ -3,6 +3,8 @@
 
 (define %self (current-owner))
 
+(define-condition-type &scroll-limit &error %make-scroll-limit scroll-limit?)
+
 (options:define-option drawn-screens 2 (lambda (v) (and (real? v) (finite? v) (> v 0)))
   "How many view heights a view keeps drawn beyond each edge of what is in view.")
 (options:define-option tail #f boolean?
@@ -1657,7 +1659,8 @@
           (cond
             [(not (pair? answer))]
             [(eq? (field answer "limit") #t)
-             (error who (if forward? "end of buffer" "beginning of buffer"))]
+             (raise (condition (%make-scroll-limit) (make-who-condition who)
+                               (make-message-condition (if forward? "end of buffer" "beginning of buffer"))))]
             [(eq? (field answer "more") #t)
              (client-view-wanted-set! cs (further (client-view-wanted cs) forward?))
              (mark-dirty!)

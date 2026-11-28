@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (buffers) (document) (views) (layout) (layout-split) (editing) (files) (ui) (git) (git-mode)
+(import (tuna) (test) (test-user) (keys) (buffers) (document) (views) (layout) (layout-split) (editing) (files) (ui) (git) (git-mode)
         (git-status) (git-status-test) (git-test repositories))
 
 (define repo (git-status-test:fresh! "repo"))
@@ -64,12 +64,31 @@
   (git-status-test:press! "RET")
   (check-equal? "new.txt" (git-status-test:shown-buffer)))
 
-(test "RET on a list heading, a header or a commit raises Cannot determine file to visit"
+(test "RET on a list heading or a header says There is no thing at point that could be visited"
   (back!)
-  (let ([refused (lambda () (check-equal? '((git-status:visit "Cannot determine file to visit")) (git-status-test:press-reporting! "RET")))])
-    (git-status-test:go-to-section! '(unstaged . #f))
+  (let ([refused (lambda () (check-equal? '((git-mode:visit-thing "There is no thing at point that could be visited"))
+                                          (git-status-test:press-reporting! "RET")))])
+    (git-status-test:go-to-section! '(untracked . #f))
     (refused)
     (git-status-test:press! "M-<")
-    (refused)
-    (git-status-test:go-to-in! "Second commit" '(unpushed . "@{upstream}"))
     (refused)))
+
+(test "RET on a URL opens it in the browser"
+  (back!)
+  (test-user:take-page-calls!)
+  (git-test/repositories:git! "repo" "commit" "-q" "--allow-empty" "-m" "See https://tuna.example/a")
+  (git-mode:refresh-repository repo)
+  (git-status-test:settle!)
+  (git-status-test:go-to! "https://tuna")
+  (git-status-test:press! "RET")
+  (check-equal? '("https://tuna.example/a")
+                (map cdr (filter (lambda (call) (equal? "browse-url" (car call))) (test-user:take-page-calls!)))))
+
+(test "C-j and C-RET visit on files alone; off a file they are the global keys"
+  (define (looked-up) (views:call-with-view (git-status-test:view)
+                        (lambda () (map (lambda (k) (keys:lookup (test-user:client) k)) '("C-j" "C-RET")))))
+  (back!)
+  (git-status-test:go-to-section! '(file . "a.py") '(unstaged . #f))
+  (check-equal? (list git-mode:visit-worktree-file git-mode:visit-worktree-file) (looked-up))
+  (git-status-test:press! "M-<")
+  (check-equal? (list editing:electric-newline-and-maybe-indent editing:open-line-below) (looked-up)))

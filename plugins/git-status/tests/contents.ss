@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (hooks) (options) (buffers) (document) (views) (layout) (layout-split) (editing) (files) (ui)
-        (git) (git-mode) (git-status) (git-status-test) (git-test repositories))
+        (git) (git-mode) (git-status) (git-apply) (git-status-test) (git-test repositories))
 
 (define git! git-test/repositories:git!)
 
@@ -61,7 +61,9 @@
   (git-status:show rows)
   (git-status-test:settle!)
   (check-equal? '("deleted    a.py…" "modified   c.txt…" "deleted    gone.txt…" "renamed    b.txt -> c.txt…" "new file   new.txt…")
-                (filter (lambda (l) (memv (string-ref l 0) '(#\d #\m #\r #\n))) (list-tail (git-status-test:status) 2))))
+                (filter (lambda (l) (exists (lambda (word) (and (>= (string-length l) 11) (string=? word (substring l 0 11))))
+                                            '("deleted    " "modified   " "renamed    " "new file   ")))
+                        (list-tail (git-status-test:status) 2))))
 
 (test "a tracked file replaced by a symbolic link shows as a deletion and an addition, and s on either stages the type change"
   (git! "rows" "reset" "-q")
@@ -167,43 +169,15 @@
     (check-equal? '("Notes" "a note" "Staged changes (1)") (list-head (member "Notes" (git-status-test:status)) 3))
     (git-mode:refresh-repository repo)))
 
-(test "a file, hunk and list heading carry their buttons, drawn after the heading and no text: + or − and ⟲"
-  (check-equal? '("+" "⟲") (map test-user:element-text (map (lambda (t) (git-status-test:row-button "unstaged" "a.py" t)) '("Stage" "Discard"))))
-  (check-equal? '("−" "⟲") (map test-user:element-text (map (lambda (t) (git-status-test:row-button "staged" "b.txt" t)) '("Unstage" "Discard"))))
-  (check-equal? '("+" "⟲") (map test-user:element-text (map (lambda (t) (git-status-test:row-button "untracked" "Untracked" t)) '("Stage" "Discard"))))
-  (check-equal? #f (git-status-test:row-button "unstaged" "a.py" "Unstage"))
-  (check (not (exists (lambda (l) (git-status-test:contains? l "⟲")) (git-status-test:status)))))
-
-(test "a row's buttons stage, unstage and discard that row whatever point is, and point and the selected view stay"
-  (git-status-test:press! "M-<")
-  (let ([before (views:point (git-status-test:view))] [v (git-status-test:view)])
-    (git-status-test:click-button! "unstaged" "a.py" "Stage")
-    (check-equal? '("M  a.py\n" #t #t) (list (git-status-test:short "fresh" "a.py") (= before (views:point v)) (eq? v (git-status-test:view))))
-    (git-status-test:click-button! "staged" "a.py" "Unstage")
-    (check-equal? " M a.py\n" (git-status-test:short "fresh" "a.py"))
-    (git-status-test:answer! #t)
-    (git-status-test:click-button! "unstaged" "a.py" "Discard")
-    (check-equal? '(("Discard unstaged changes in \"a.py\"? ") "" #t)
-                  (list (git-status-test:take-asked!) (git-status-test:short "fresh" "a.py") (= before (views:point v))))))
-
-(test "a hunk's button stages the hunk, and a list's button the list"
-  (ui:show-section! (git-status-test:view) (git-status-test:section '(file . "long.txt") '(unstaged . #f)))
-  (git-status-test:click-button! "unstaged" "@@ -1,5 +1,5 @@" "Stage")
-  (check-equal? " long.txt | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n"
-                (git-status-test:git-out "fresh" "diff" "--cached" "--stat" "long.txt"))
-  (git-status-test:answer! #t)
-  (git-status-test:click-button! "unstaged" "Unstaged changes" "Stage")
-  (check-equal? '("Stage all changes? ") (git-status-test:take-asked!))
-  (check-equal? "M  b.txt\nD  gone.txt\nM  long.txt\n?? folder/\n?? new.txt\n?? u1.txt\n?? u2.txt\n" (git-status-test:short "fresh")))
-
 (test "a refresh keeps each section's visibility, and a new section takes its first visibility"
   (git! "fresh" "reset" "-q")
+  (git! "fresh" "checkout" "--" "a.py")
   (git-mode:refresh-repository repo)
   (ui:show-section! (git-status-test:view) (git-status-test:section '(file . "b.txt") '(unstaged . #f)))
   (git-test/repositories:write-file! "fresh/c.txt" "c\n")
   (git! "fresh" "add" "c.txt")
   (git-status-test:press! "g")
   (check-equal? '("Unstaged changes (3)" "modified   b.txt" "@@ -1,8 +1,8 @@" " alpha" "-beta" "+BETA" " gamma" " delta" " epsilon" " zeta"
-                  "-eta" "+ETA" " theta" "deleted    gone.txt…" "modified   long.txt")
+                  "-eta" "+ETA" " theta" "deleted    gone.txt…" "modified   long.txt…")
                 (list-head (member "Unstaged changes (3)" (git-status-test:status)) 15))
   (check (member "new file   c.txt…" (git-status-test:status))))

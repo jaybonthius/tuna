@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (modes) (buffers) (views) (layout) (layout-split) (editing) (files) (git) (git-mode) (git-status)
+(import (tuna) (test) (test-user) (modes) (buffers) (views) (layout) (layout-split) (editing) (files) (git) (git-mode) (git-status) (git-apply)
         (git-commit) (git-remotes) (transient-test) (git-status-test) (git-test repositories))
 
 (define repo (git-status-test:fresh! "repo"))
@@ -8,13 +8,13 @@
 (define (git-buffer-names)
   (map buffers:name (filter (lambda (b) (modes:derived? (modes:major-mode b) git-mode:mode)) (buffers:all))))
 
-(test "?, h and C-c C-c show the dispatch menu: Essential commands, then each Git menu and I, then Applying changes"
+(test "?, h and C-c C-c show the dispatch menu as Magit's: each Git menu and I, then Applying changes, then Essential commands"
   (git-status-test:press! "?")
   (check-equal? '("Transient and dwim commands"
+                  (("I" "Init") ("d" "Diff") ("c" "Commit") ("f" "Fetch") ("F" "Pull") ("P" "Push"))
+                  ("Applying changes" ("s" "Stage") ("u" "Unstage") ("k" "Discard") ("S" "Stage all") ("U" "Unstage all"))
                   ("Essential commands" ("g" "Refresh current buffer") ("q" "Bury current buffer") ("TAB" "Toggle section at point")
-                   ("RET" "Visit thing at point"))
-                  (("I" "Init") ("c" "Commit") ("f" "Fetch") ("F" "Pull") ("P" "Push"))
-                  ("Applying changes" ("s" "Stage") ("u" "Unstage") ("k" "Discard") ("S" "Stage all") ("U" "Unstage all")))
+                   ("RET" "Visit thing at point")))
                 (transient-test:menu))
   (git-status-test:press! "C-g")
   (for-each

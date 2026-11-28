@@ -144,7 +144,7 @@
          [heading-element (find (lambda (e) (contains? (test-user:element-text e) heading))
                                 (test-user:elements list-element "ui-section-heading"))])
     (find (lambda (b) (equal? title (test-user:element-attribute b "title")))
-          (test-user:elements heading-element "git-status-button"))))
+          (test-user:elements heading-element "git-apply-button"))))
 
 (define (click-button! list heading title)
   (test-user:click-element! (row-button list heading title))

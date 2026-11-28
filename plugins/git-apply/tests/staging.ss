@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (hooks) (options) (buffers) (views) (layout) (layout-split) (editing) (files) (ui) (git) (git-mode)
-        (git-status) (git-status-test) (git-test repositories))
+        (git-status) (git-apply) (git-status-test) (git-test repositories))
 
 (define repo (git-status-test:fresh! "repo"))
 
@@ -73,9 +73,9 @@
 
 (test "s on a staged change, or on Staged changes, raises Already staged; u on Staged changes asks, as U does with unstaged changes too"
   (go-to-section! '(file . "b.txt") '(staged . #f))
-  (refused 'git-status:stage "Already staged" "s")
+  (refused 'git-apply:stage "Already staged" "s")
   (go-to-section! '(staged . #f))
-  (refused 'git-status:stage "Already staged" "s")
+  (refused 'git-apply:stage "Already staged" "s")
   (git-status-test:answer! #t)
   (press! "u")
   (check-equal? '(("Unstage all changes? ") " M a.py\n M b.txt\n D gone.txt\n M long.txt\n?? new.txt\n")
@@ -89,7 +89,7 @@
   (git-test/repositories:write-file! "repo/newer.txt" "n\n")
   (git-mode:refresh-repository repo)
   (go-to-section! '(file . "newer.txt") '(untracked . #f))
-  (refused 'git-status:unstage "Cannot unstage untracked changes" "u")
+  (refused 'git-apply:unstage "Cannot unstage untracked changes" "u")
   (press! "C-u s")
   (check-equal? " M a.py\n M b.txt\n D gone.txt\n M long.txt\nA  new.txt\n A newer.txt\n" (short))
   (check-equal? '("a.py" "b.txt" "gone.txt" "long.txt" "newer.txt")
@@ -97,7 +97,7 @@
 
 (test "u on an unstaged change raises Already unstaged, unless its file was staged with intent to add, which it unstages"
   (go-to-section! '(file . "a.py") '(unstaged . #f))
-  (refused 'git-status:unstage "Already unstaged" "u")
+  (refused 'git-apply:unstage "Already unstaged" "u")
   (go-to-section! '(file . "newer.txt") '(unstaged . #f))
   (press! "u")
   (check-equal? " M a.py\n M b.txt\n D gone.txt\n M long.txt\nA  new.txt\n?? newer.txt\n" (short)))
@@ -115,7 +115,7 @@
   (press! "U")
   (check-equal? '(() " M a.py\n M b.txt\n D gone.txt\n M long.txt\n?? new.txt\n?? newer.txt\n?? third.txt\n")
                 (list (git-status-test:take-asked!) (short)))
-  (refused 'git-status:unstage-all "Nothing to unstage" "U"))
+  (refused 'git-apply:unstage-all "Nothing to unstage" "U"))
 
 (test "S stages every tracked change, asking Stage all changes? when something is staged; n does nothing; s on Unstaged changes is S; C-u S stages untracked files too"
   (press! "S")
@@ -147,12 +147,28 @@
   (check-equal? '(("Stage file,s: ") " M a.py\n M b.txt\nD  gone.txt\n M long.txt\nA  z.txt\n?? new.txt\n?? newer.txt\n?? third.txt\n")
                 (list (git-status-test:take-asked!) (short))))
 
+(test "u on no change reads staged files to unstage, Unstage file,s: "
+  (press! "M-<")
+  (git-status-test:answer! "gone.txt")
+  (press! "u")
+  (check-equal? '(("Unstage file,s: ") " M a.py\n M b.txt\n D gone.txt\n M long.txt\nA  z.txt\n?? new.txt\n?? newer.txt\n?? third.txt\n")
+                (list (git-status-test:take-asked!) (short))))
+
+(test "s, u and k on a commit row read files, read staged files, and say there is nothing to delete"
+  (git-status-test:go-to-in! "Second commit" '(unpushed . "@{upstream}"))
+  (git-status-test:answer! "")
+  (press! "s")
+  (git-status-test:answer! "")
+  (press! "u")
+  (check-equal? '("Stage file,s: " "Unstage file,s: ") (git-status-test:take-asked!))
+  (refused 'git-mode:delete-thing "There is no thing at point that could be deleted" "k"))
+
 (test "with no context lines, a hunk command raises Not enough context; a whole file still stages"
   (options:set! git:diff-arguments '("-U0"))
   (git-mode:refresh-repository repo)
   (ui:show-section! (git-status-test:view) (git-status-test:section '(file . "long.txt") '(unstaged . #f)))
   (go-to-section! '(hunk . "@@ -2 +2 @@") '(file . "long.txt") '(unstaged . #f))
-  (refused 'git-status:stage "Not enough context to apply patch.  Increase the context" "s")
+  (refused 'git-apply:stage "Not enough context to apply patch.  Increase the context" "s")
   (go-to-section! '(file . "long.txt") '(unstaged . #f))
   (press! "s")
   (check-equal? "M  long.txt\n" (git-status-test:short "repo" "long.txt"))

@@ -263,6 +263,18 @@
     (check-equal? 0 (parameterize ([scopes:current s]) (level)))
     (unload-owner! (as-test-owner current-owner))))
 
+(test "local values in one scope are ranked as settings are: the highest-ranked owner's is in effect whatever order they were set in"
+  (let* ([low (make-owner '(local rank low))] [high (make-owner '(local rank high))] [s (scopes:make)])
+    (parameterize ([scopes:current s])
+      (call-as-owner high (lambda () (options:set-local! level 2)))
+      (call-as-owner low (lambda () (options:set-local! level 1)))
+      (check-equal? 2 (level))
+      (unload-owner! high)
+      (check-equal? 1 (level))
+      (unload-owner! low)
+      (check-equal? 0 (level)))))
+
+
 (test "settings and local values outlive a reload of options"
   (let ([s (scopes:make)] [o (make-owner '(reloaded))])
     (call-as-owner o

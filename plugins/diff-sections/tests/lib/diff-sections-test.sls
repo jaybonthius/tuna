@@ -47,3 +47,7 @@
       (find (lambda (e) (equal? id (test-user:element-attribute e "data-view")))
             (test-user:elements-with (test-user:screen) "data-view"))
       class)))
+
+(define (show-buffer! b)
+  (views:set-buffer! (view) b)
+  (views:set-point! (view) 1))

@@ -1,13 +1,13 @@
 #!tuna
-(import (git) (processes) (ui) (buffers) (document) (views) (layout) (modes) (keys) (commands) (transient) (files)
-        (ask) (status-line) (hooks) (options) (tables))
+(import (git) (diff) (diff-sections) (processes) (ui) (buffers) (document) (views) (layout) (modes) (keys) (commands)
+        (transient) (files) (browse-url) (web) (ask) (status-line) (hooks) (options) (tables))
 
 (define %self (current-owner))
 
 (define-enumeration saving (ask save never) %savings)
 
 (define-enumeration confirmation
-  (discard trash delete resurrect rename stage-all-changes unstage-all-changes kill-process set-and-push)
+  (discard trash delete resurrect rename reverse stage-all-changes unstage-all-changes kill-process set-and-push)
   %confirmations)
 
 (define (%one-of names) (lambda (v) (and (memq v (enum-set->list (enum-set-universe names))) #t)))
@@ -28,11 +28,28 @@
 (options:define-option %refresher #f (lambda (v) (or (not v) (procedure? v)))
   "The procedure of a Git buffer that rebuilds it, set locally.")
 
+(options:define-option side (lambda (section view) #f) procedure?
+  "A procedure of a section and a view that returns what the section's changes are: unstaged, staged, untracked, committed or #f for a section that holds no change; each Git buffer sets it locally.")
+
+(options:define-option %prefix "git" string? "The prefix of a Git buffer's name, set locally.")
+
+(options:define-option locked? #f boolean?
+  "Whether a Git buffer keeps what it shows, so a command that would show something else in a buffer of its mode makes another; set locally.")
+
+(options:define-option files '() (lambda (v) (and (list? v) (for-all string? v)))
+  "The files a Git buffer is limited to, '() for none; set locally.")
+
+(hooks:define-hook repository-visitors
+  "Called with a repository when git-mode:visit-file visits a row that is the root of another repository, such as a submodule's; the first entry, by depth, that returns a buffer has shown it. With none, the folder is visited as files:visit visits it.")
+
 (hooks:define-hook before-refresh "Called with the repository before each refresh.")
 
 (hooks:define-hook after-refresh "Called with the repository after each refresh.")
 
 (tables:define-table keymap "Keys in every Git buffer.")
+
+(tables:define-table status-modes
+  "Modes, as keys, of a repository's status buffers, which git-mode:refresh refreshes beside the current Git buffer.")
 
 (hooks:define-hook mode-hook "Called in each buffer that turns on git-mode:mode.")
 
@@ -70,6 +87,11 @@
   (filter (lambda (b) (and (%git-buffer? b) (string=? (%root (%repository-of b)) (%root repository))))
           (buffers:all)))
 
+(define (repository-buffers repository)
+  (unless (git:repository? repository)
+    (assertion-violation 'git-mode:repository-buffers "not a repository" repository))
+  (%buffers-of repository))
+
 (define (%check-task who)
   (unless (current-task)
     (assertion-violation who "not in a task")))
@@ -91,19 +113,44 @@
     (assertion-violation 'git-mode:buffer "not a mode derived from git-mode:mode" major-mode))
   (unless (procedure? rebuild)
     (assertion-violation 'git-mode:buffer "not a procedure" rebuild))
-  (or (find (lambda (b) (eq? (modes:major-mode b) major-mode)) (%buffers-of repo))
-      (let* ([name (string-append "*" prefix ": " (git:repository-name repo) "*")]
-             [name (let loop ([n 2] [candidate name])
-                     (if (buffers:find candidate)
-                         (loop (+ n 1) (string-append "*" prefix ": " (git:repository-name repo) "<" (number->string n) ">*"))
-                         candidate))]
+  (or (unlocked-buffer repo major-mode)
+      (let* ([name (%name repo prefix #f #f)]
              [b (buffers:make name (%contents '()))])
         (buffers:set-silent! b #t)
         (modes:set-major-mode major-mode b)
+        ;; As git-mode, so the buffer stays a Git buffer whichever plugin
+        ;; asked for it unloads.
         (buffers:with-buffer b
-          (options:set-local! repository repo %refresher rebuild buffers:revert-function refresh
-                             files:offer-save? #f))
+          (call-as-owner %self
+            (lambda ()
+              (options:set-local! repository repo %refresher rebuild %prefix prefix buffers:revert-function refresh
+                                 files:offer-save? #f))))
         b)))
+
+(define (%name repository prefix value self)
+  (let loop ([n 1])
+    (let* ([name (string-append "*" prefix ": " (git:repository-name repository)
+                                (if (= n 1) "" (string-append "<" (number->string n) ">")) "*"
+                                (if value (string-append "<" value ">") ""))]
+           [holder (buffers:find name)])
+      (if (and holder (not (eq? holder self)))
+          (loop (+ n 1))
+          name))))
+
+(define buffer-name
+  (case-lambda
+    [(buffer) (buffer-name buffer #f)]
+    [(buffer value)
+     (unless (%git-buffer? buffer)
+       (assertion-violation 'git-mode:buffer-name "not a Git buffer" buffer))
+     (unless (or (not value) (string? value))
+       (assertion-violation 'git-mode:buffer-name "not a string or #f" value))
+     (buffers:with-buffer buffer (%name (repository) (%prefix) value buffer))]))
+
+(define (unlocked-buffer repository major-mode)
+  (unless (git:repository? repository)
+    (assertion-violation 'git-mode:unlocked-buffer "not a repository" repository))
+  (find (lambda (b) (and (eq? (modes:major-mode b) major-mode) (not (buffers:with-buffer b (locked?))))) (%buffers-of repository)))
 
 ;; A file git asks to edit, such as COMMIT_EDITMSG, is in the git folder,
 ;; where git finds no work tree; its repository is the folder holding it.
@@ -189,20 +236,16 @@
           (%refreshing-again?-set! running #t)
           (suspend (lambda (resume) (%refreshing-waiters-set! running (cons resume (%refreshing-waiters running))))))
         (let ([state (make-%refreshing #f '())])
-          (define (done!)
+          (define (done! outcome)
             (eq-hashtable-delete! %refreshes b)
-            (for-each (lambda (resume) (resume void)) (%refreshing-waiters state)))
+            (for-each (lambda (resume) (resume outcome)) (%refreshing-waiters state)))
           (eq-hashtable-set! %refreshes b state)
-          (%finally
-            (lambda ()
-              (let loop ()
-                (let ([waiters (%refreshing-waiters state)])
-                  (%refreshing-again?-set! state #f)
-                  (%refreshing-waiters-set! state '())
-                  (when (buffers:live? b) (%rebuild! b))
-                  (for-each (lambda (resume) (resume void)) waiters)
-                  (when (%refreshing-again? state) (loop)))))
-            done!)))))
+          (guard (c [#t (done! (lambda () (raise c))) (raise c)])
+            (let loop ()
+              (%refreshing-again?-set! state #f)
+              (when (buffers:live? b) (%rebuild! b))
+              (when (%refreshing-again? state) (loop))))
+          (done! void)))))
 
 ;; A task's pause leaves its continuation, so dynamic-wind would run the
 ;; cleanup at every pause; this runs it once, when the body returns or
@@ -211,6 +254,12 @@
   (guard (c [#t (cleanup) (raise c)])
     (call-with-values body
       (lambda results (cleanup) (apply values results)))))
+
+(define (refresh-buffer buffer)
+  (unless (%git-buffer? buffer)
+    (assertion-violation 'git-mode:refresh-buffer "not a Git buffer" buffer))
+  (%check-task 'git-mode:refresh-buffer)
+  (%refresh-buffer! buffer))
 
 (define (%in-repository? repository)
   (let ([root (%root repository)])
@@ -229,7 +278,9 @@
 (define (%refresh-buffers! repository buffers)
   (before-refresh repository)
   (%save-repository-buffers! repository)
-  (for-each %refresh-buffer! buffers)
+  ;; A rebuild can fail for its own buffer alone, as a diff whose range
+  ;; names a deleted branch does.
+  (for-each (lambda (b) (guard (c [(not (cancelled? c)) (report c)]) (%refresh-buffer! b))) buffers)
   (after-refresh repository)
   (when (revert-buffers?)
     (files:revert-changed-buffers (%in-repository? repository)))
@@ -242,7 +293,7 @@
   (%refresh-buffers! repository (%buffers-of repository)))
 
 (define (%status-buffers-of repository)
-  (filter (lambda (b) (not (modes:derived? (modes:major-mode b) commands-mode))) (%buffers-of repository)))
+  (filter (lambda (b) (tables:ref status-modes (modes:major-mode b) #f)) (%buffers-of repository)))
 
 (commands:define-command (refresh)
   "Refreshes the current Git buffer and its repository's status buffer."
@@ -437,6 +488,133 @@
       (eq-hashtable-delete! %shown-from b)
       (layout:select! from))))
 
+(define (section-side section view)
+  (unless (views:view? view)
+    (assertion-violation 'git-mode:section-side "not a view" view))
+  (buffers:with-buffer (views:buffer view) ((side) section view)))
+
+(ui:define-section-kind file-section)
+
+(ui:define-section-kind change-list-section)
+
+(ui:define-section-kind commit-section)
+
+(ui:define-section-kind range-list-section)
+
+(commands:define-command (visit-thing)
+  "RET where no section's keymap gives it a meaning: opens the URL at point, else says There is no thing at point that could be visited."
+  (let* ([v (views:current)] [b (and v (views:buffer v))])
+    (let-values ([(start end) (if b (browse-url:url-at b (views:point v)) (values #f #f))])
+      (unless start
+        (error 'git-mode:visit-thing "There is no thing at point that could be visited"))
+      (browse-url:open (document:text (buffers:document b) start end) (web:current-client)))))
+
+(commands:define-command (delete-thing)
+  "k where no section's keymap gives it a meaning: says There is no thing at point that could be deleted."
+  (error 'git-mode:delete-thing "There is no thing at point that could be deleted"))
+
+(define (%git-view who)
+  (let ([v (views:current)])
+    (unless (and v (%git-buffer? (views:buffer v)))
+      (error who "Not in a Git buffer"))
+    v))
+
+(define (%worktree-line repository from file line)
+  (let ([later (find (lambda (f) (equal? (diff:file-path-bytes f) (diff:file-path-bytes file))) (git:diff repository from))])
+    (if later
+        (let loop ([hunks (diff:file-hunks later)] [shift 0])
+          (cond
+            [(null? hunks) (+ line shift)]
+            [(< line (diff:hunk-old-start (car hunks))) (+ line shift)]
+            [(< line (+ (diff:hunk-old-start (car hunks)) (diff:hunk-old-count (car hunks))))
+             (%new-line (car hunks) line)]
+            [else (loop (cdr hunks) (+ shift (- (diff:hunk-new-count (car hunks)) (diff:hunk-old-count (car hunks)))))]))
+        line)))
+
+;; A removed line's new line is the one that follows it.
+(define (%new-line hunk line)
+  (let ([lines (diff:hunk-lines hunk)])
+    (let loop ([i 0] [next (diff:hunk-new-start hunk)])
+      (if (fx= i (vector-length lines))
+          next
+          (let-values ([(old new) (diff:line-numbers hunk i)])
+            (if (and old (= old line))
+                (or new next)
+                (loop (fx+ i 1) (if new (+ new 1) next))))))))
+
+(define (%line-of hunk index)
+  (let ([lines (diff:hunk-lines hunk)])
+    (let loop ([i index])
+      (if (fx>= i (vector-length lines))
+          (let-values ([(old new) (diff:line-numbers hunk (fx- (vector-length lines) 1))])
+            (if new (+ new 1) (diff:hunk-new-start hunk)))
+          (let-values ([(old new) (diff:line-numbers hunk i)])
+            (or new (loop (fx+ i 1))))))))
+
+(define (%first-changed-line file)
+  (let ([hunks (diff:file-hunks file)])
+    (if (null? hunks)
+        1
+        (let* ([hunk (car hunks)] [lines (diff:hunk-lines hunk)])
+          (let loop ([i 0])
+            (cond
+              [(fx= i (vector-length lines)) (diff:hunk-new-start hunk)]
+              [(eq? (diff:line-kind (vector-ref lines i)) 'context) (loop (fx+ i 1))]
+              [else (%line-of hunk i)]))))))
+
+(define (%later-diff side file-section)
+  (case side
+    [(staged) '()]
+    [(committed) (let ([revision (document:node-attribute file-section 'revision #f)]) (and revision (list revision)))]
+    [else #f]))
+
+(define (%visit-target view)
+  (let* ([b (views:buffer view)] [repository (%repository-of b)] [root (git:repository-root repository)]
+         [section (ui:section-at view)] [file-section (and section (diff-sections:file-section-of section b))]
+         [side (and file-section (section-side file-section view))])
+    (unless (and file-section side)
+      (error 'git-mode:visit-file "There is no thing at point that could be visited"))
+    (let ([path (string-append root (ui:section-value file-section))])
+      (if (eq? side 'untracked)
+          (values path 1 0)
+          (let ([file (diff-sections:file file-section b)] [later (%later-diff side file-section)])
+            (let-values ([(hunk-section index) (diff-sections:line-at view)])
+              (let* ([line (if hunk-section
+                               (%line-of (diff-sections:hunk hunk-section) index)
+                               (%first-changed-line file))]
+                     [line (if later (%worktree-line repository later file line) line)]
+                     [column (if hunk-section
+                                 (let* ([doc (buffers:document b)] [p (views:point view)]
+                                        [width (bytevector-length (diff:line-prefix (vector-ref (diff:hunk-lines (diff-sections:hunk hunk-section)) index)))])
+                                   (fxmax 0 (fx- (document:column doc p) width)))
+                                 0)])
+                (values path line column))))))))
+
+(define (%with-slash path)
+  (if (and (fx> (string-length path) 0) (char=? (string-ref path (fx- (string-length path) 1)) #\/)) path (string-append path "/")))
+
+(define (%visit! view other-view?)
+  (let-values ([(path line column) (%visit-target view)])
+    (let ([repository (and (file-directory? path) (git:find-repository path))])
+      (unless (and repository (string=? (git:repository-root repository) (%with-slash path))
+                   (exists (lambda (entry) (entry repository)) (hooks:entries repository-visitors)))
+        (let ([b (files:visit path)])
+          (if other-view?
+              (layout:select! (layout:display-buffer b layout:display-in-other-view))
+              (layout:switch-to-buffer b))
+          (let* ([v (layout:selected-view)] [doc (buffers:document b)])
+            (when (eq? (views:buffer v) b)
+              (let ([last (document:line doc (document:length doc))])
+                (views:set-point! v (document:column-position doc (fxmax 1 (fxmin line last)) column))))))))))
+
+(commands:define-command (visit-file [other-view (commands:prefix-argument)])
+  "Visits the working tree's file of the section at point, at the line of point's diff line; with C-u, in another view."
+  (%visit! (%git-view 'git-mode:visit-file) (and other-view #t)))
+
+(commands:define-command (visit-worktree-file [other-view (commands:prefix-argument)])
+  "Visits the working tree's file of the section at point, at the line of point's diff line, from a staged or committed diff too."
+  (%visit! (%git-view 'git-mode:visit-worktree-file) (and other-view #t)))
+
 (transient:define-menu dispatch-menu "Every Git menu and the commands that act on changes."
   (title "Transient and dwim commands"))
 
@@ -459,6 +637,11 @@
 (keys:bind! keymap "?" dispatch)
 (keys:bind! keymap "h" dispatch)
 (keys:bind! keymap "C-c C-c" dispatch)
+(keys:bind! keymap "RET" visit-thing)
+(keys:bind! keymap "k" delete-thing)
+(keys:remap! file-section-keys visit-thing visit-file)
+(keys:bind! file-section-keys "C-j" visit-worktree-file)
+(keys:bind! file-section-keys "C-RET" visit-worktree-file)
 (for-each (lambda (key) (keys:bind! keymap key keys:undefined))
           '("b" "d" "D" "l" "L" "m" "M" "r" "t" "v" "V" "x" "X" "y" "z" "A" "a" "i" "K" "R" "w" "W" "Z" "!" "+"
             "C-w" "M-w" "j" "J"))
@@ -468,7 +651,9 @@
 (transient:add! dispatch-menu "Essential commands"
   (transient:command "g" "Refresh current buffer" refresh)
   (transient:command "q" "Bury current buffer" quit)
-  (transient:command "TAB" "Toggle section at point" ui:section-toggle))
+  (transient:command "TAB" "Toggle section at point" ui:section-toggle)
+  (transient:command "RET" "Visit thing at point" visit-thing))
+(transient:set-group-depth! dispatch-menu "Essential commands" 100)
 (tables:set! status-line:segments running (status-line:left 60))
 (hooks:add! git:command-updated %command-updated)
 (hooks:add! git:command-ended %command-ended)

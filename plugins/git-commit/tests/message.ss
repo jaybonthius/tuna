@@ -89,9 +89,8 @@
     (options:unset! git-commit:summary-max-length)
     (buffers:replace! m 1 2 "")))
 
-(test "C-c C-d and C-c C-w are undefined"
-  (check-equal? '("C-c C-d is undefined" "C-c C-w is undefined")
-                (apply append (map git-status-test:press-reporting-messages! '("C-c C-d" "C-c C-w")))))
+(test "C-c C-w is undefined"
+  (check-equal? '("C-c C-w is undefined") (git-status-test:press-reporting-messages! "C-c C-w")))
 
 (test "C-c C-c with a non-empty second line asks, n keeping the buffer; overlong-summary-line asks of a long summary; C-u C-c C-c skips the checks"
   (let ([m (git-status-test:wait-until-shown "COMMIT_EDITMSG")])

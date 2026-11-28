@@ -1,3 +1,5 @@
+@layer defaults, themes, preferences;
+
 @layer defaults {
   .ui-section[data-type="file"] > .node > .ui-section-heading {
     font-weight: var(--tuna-font-weight-semibold);
@@ -5,12 +7,12 @@
   }
 
   .ui-section[data-type="hunk"] > .node > .ui-section-heading {
-    background: var(--diff-sections-hunk-heading-background, var(--tuna-surface-subtle));
+    background-color: var(--diff-sections-hunk-heading-background, var(--tuna-surface-subtle));
     color: var(--diff-sections-hunk-heading-text, var(--tuna-text-muted));
   }
 
   .ui-section.current[data-type="hunk"] > .node > .ui-section-heading {
-    background: var(--diff-sections-hunk-heading-current-background, var(--tuna-selected));
+    background-color: var(--diff-sections-hunk-heading-current-background, var(--tuna-selected));
     color: var(--diff-sections-hunk-heading-current-text, var(--tuna-on-selected, var(--tuna-text)));
   }
 
@@ -20,7 +22,81 @@
 
   .diff-sections-text {
     flex: 1 1 auto;
-    min-width: 0;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .diff-sections-cell-number {
+    display: none;
+    min-inline-size: 4ch;
+    padding-inline-end: var(--tuna-space-2);
+    text-align: end;
+    color: var(--diff-sections-line-number-text, var(--tuna-text-faint));
+    font-variant-numeric: tabular-nums;
+  }
+
+  .diff-sections-copy {
+    display: none;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .diff-sections-stat-bar {
+    margin-inline-start: 1ch;
+  }
+
+  /* A line holding a new token is drawn lighter than a plain changed
+     line, so the token stands out. */
+  .diff-sections-line[data-face="diff.plus"]:has([data-face="diff-sections.novel-added"]) {
+    background-color: var(--diff-sections-refined-added-background, color-mix(in oklab, var(--tuna-added-surface) 45%, transparent));
+  }
+
+  .diff-sections-line[data-face="diff.minus"]:has([data-face="diff-sections.novel-removed"]) {
+    background-color: var(--diff-sections-refined-removed-background, color-mix(in oklab, var(--tuna-removed-surface) 45%, transparent));
+  }
+
+  .ui-section[data-type="hunk"]:has(> .node > .diff-sections-line[data-layout="split"]) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .ui-section[data-type="hunk"]:has(> .node > .diff-sections-line[data-layout="split"]) > .node {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .ui-section[data-type="hunk"] > .node:has(> .diff-sections-line[data-layout="split"]) {
+    display: contents;
+  }
+
+  .diff-sections-line[data-layout="split"] {
+    grid-row: calc(var(--diff-sections-row) + 1);
+  }
+
+  .diff-sections-line[data-layout="split"][data-side="left"] {
+    grid-column: 1;
+  }
+
+  .diff-sections-line[data-layout="split"][data-side="right"] {
+    grid-column: 2;
+  }
+
+  .diff-sections-line[data-layout="split"][data-side="both"] {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+  }
+
+  .diff-sections-line[data-layout="split"] > .diff-sections-numbers {
+    display: none;
+  }
+
+  .diff-sections-line[data-layout="split"] > .diff-sections-copy {
+    display: block;
+  }
+
+  .diff-sections-line[data-layout="split"] .diff-sections-cell-number {
+    display: inline-block;
   }
 
   .diff-sections-numbers {
@@ -33,7 +109,88 @@
   }
 
   .diff-sections-numbers > span {
-    min-width: 4ch;
+    min-inline-size: 4ch;
     text-align: end;
+  }
+}
+
+@container (min-width: 100ch) {
+  @layer defaults {
+    .ui-section[data-type="hunk"]:has(> .node > .diff-sections-line[data-layout="automatic"]) {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .ui-section[data-type="hunk"]:has(> .node > .diff-sections-line[data-layout="automatic"]) > .node {
+      grid-column: 1 / -1;
+      grid-row: 1;
+    }
+
+    .ui-section[data-type="hunk"] > .node:has(> .diff-sections-line[data-layout="automatic"]) {
+      display: contents;
+    }
+
+    .diff-sections-line[data-layout="automatic"] {
+      grid-row: calc(var(--diff-sections-row) + 1);
+    }
+
+    .diff-sections-line[data-layout="automatic"][data-side="left"] {
+      grid-column: 1;
+    }
+
+    .diff-sections-line[data-layout="automatic"][data-side="right"] {
+      grid-column: 2;
+    }
+
+    .diff-sections-line[data-layout="automatic"][data-side="both"] {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: subgrid;
+    }
+
+    .diff-sections-line[data-layout="automatic"] > .diff-sections-numbers {
+      display: none;
+    }
+
+    .diff-sections-line[data-layout="automatic"] > .diff-sections-copy {
+      display: block;
+    }
+
+    .diff-sections-line[data-layout="automatic"] .diff-sections-cell-number {
+      display: inline-block;
+    }
+  }
+
+}
+
+@layer defaults.faces {
+  [data-face="diff-sections.novel-added"] {
+    color: var(--diff-sections-novel-added-color, revert-layer);
+    background-color: var(--diff-sections-novel-added-background, color-mix(in oklab, var(--tuna-added) 30%, var(--tuna-added-surface)));
+    font-weight: var(--diff-sections-novel-added-font-weight, revert-layer);
+    font-style: var(--diff-sections-novel-added-font-style, revert-layer);
+    font-family: var(--diff-sections-novel-added-font-family, revert-layer);
+    font-size: var(--diff-sections-novel-added-font-size, revert-layer);
+    text-decoration: var(--diff-sections-novel-added-text-decoration, revert-layer);
+  }
+
+  [data-face="diff-sections.novel-removed"] {
+    color: var(--diff-sections-novel-removed-color, revert-layer);
+    background-color: var(--diff-sections-novel-removed-background, color-mix(in oklab, var(--tuna-removed) 30%, var(--tuna-removed-surface)));
+    font-weight: var(--diff-sections-novel-removed-font-weight, revert-layer);
+    font-style: var(--diff-sections-novel-removed-font-style, revert-layer);
+    font-family: var(--diff-sections-novel-removed-font-family, revert-layer);
+    font-size: var(--diff-sections-novel-removed-font-size, revert-layer);
+    text-decoration: var(--diff-sections-novel-removed-text-decoration, revert-layer);
+  }
+
+  [data-face="diff-sections.reformatted"] {
+    color: var(--diff-sections-reformatted-color, var(--tuna-text-faint));
+    background-color: var(--diff-sections-reformatted-background, revert-layer);
+    font-weight: var(--diff-sections-reformatted-font-weight, revert-layer);
+    font-style: var(--diff-sections-reformatted-font-style, revert-layer);
+    font-family: var(--diff-sections-reformatted-font-family, revert-layer);
+    font-size: var(--diff-sections-reformatted-font-size, revert-layer);
+    text-decoration: var(--diff-sections-reformatted-text-decoration, revert-layer);
   }
 }

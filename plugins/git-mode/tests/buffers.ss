@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (hooks) (options) (modes) (buffers) (views) (layout) (layout-split) (editing) (files) (ui) (git)
+(import (tuna) (test) (test-user) (test-runner) (hooks) (options) (modes) (buffers) (views) (layout) (layout-split) (editing) (files) (ui) (git)
         (git-mode) (git-status-test) (git-test repositories))
 
 (define one (git-status-test:sample! "one"))
@@ -55,3 +55,37 @@
   (git-mode:confirm (git-mode:confirmation set-and-push) "Set? ")
   (check-equal? '() (git-status-test:take-asked!))
   (check-raises syntax-violation? (eval '(git-mode:confirmation sometimes) (interaction-environment))))
+
+(test "a Git buffer keeps its repository, refresher and revert function when the plugin that made it unloads"
+  (let* ([maker (make-owner '(git-buffer maker))]
+         [b (call-as-owner maker (lambda () (git-mode:buffer other "made" git-mode:commands-mode rebuild)))])
+    (unload-owner! maker)
+    (check-equal? (list other git-mode:refresh)
+                  (buffers:with-buffer b (list (git-mode:repository) (buffers:revert-function))))
+    (set! rebuilt '())
+    (git-mode:refresh-repository other)
+    (check (member "*made: one*" rebuilt))))
+
+(test "a refresh joined while the buffer is being rebuilt ends with the rebuild: when the rebuild raises, the joining task sees the raise"
+  (let* ([runs 0] [paused #f]
+         [rebuild (lambda (b)
+                    (set! runs (+ runs 1))
+                    (suspend (lambda (resume) (set! paused resume)))
+                    (when (= runs 2) (error 'rebuild "refused")))]
+         [b (git-mode:buffer one "raising" git-mode:commands-mode rebuild)]
+         [ended '()]
+         [refresh (lambda (name)
+                    (spawn-task
+                      (lambda (restore)
+                        (set! ended (cons (cons name (guard (c [(error? c) (condition-message c)]) (git-mode:refresh-buffer b) 'returned))
+                                          ended)))))])
+    (refresh 'first)
+    (test-runner:wait-until (lambda () paused))
+    (refresh 'second)
+    (test-user:settle)
+    (let ([resume paused]) (set! paused #f) (resume void))
+    (test-runner:wait-until (lambda () paused))
+    (let ([resume paused]) (set! paused #f) (resume void))
+    (test-runner:wait-until (lambda () (= 2 (length ended))))
+    (check-equal? '((first . "refused") (second . "refused")) (list-sort (lambda (a b) (string<? (symbol->string (car a)) (symbol->string (car b)))) ended))
+    (buffers:kill! b)))

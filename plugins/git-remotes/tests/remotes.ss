@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (test-runner) (options) (buffers) (document) (views) (layout) (layout-split) (editing) (files)
-        (ui) (git) (git-mode) (git-status) (with-editor) (git-commit) (git-remotes) (transient-test) (git-status-test)
+        (ui) (git) (git-mode) (git-status) (git-apply) (with-editor) (git-commit) (git-remotes) (transient-test) (git-status-test)
         (git-test repositories))
 
 (define repo (git-status-test:fresh! "repo"))

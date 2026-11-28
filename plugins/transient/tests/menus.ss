@@ -136,6 +136,27 @@
     (check-equal? '(#f #f) (list (transient-test:menu) (transient-test:popup-view))))
   (tables:remove! layout:display-rules transient:buffer?))
 
+(transient:define-menu ordered "Groups in an order of their own.")
+
+(commands:define-command (show-ordered) "Shows the ordered menu." (transient:show! ordered))
+
+(keys:bind! keys:global "C-c d" show-ordered)
+
+(test "a group's depth orders it among the menu's groups, lower first; groups of equal depth keep the order they were added in"
+  (transient:add! ordered "Essential" (transient:command "e" "Essential" show-ordered))
+  (transient:add! ordered #f (transient:command "c" "Commit" show-ordered))
+  (transient:add! ordered "Applying" (transient:command "s" "Stage" show-ordered))
+  (test-user:press! "C-c d")
+  (check-equal? '(("Essential" ("e" "Essential")) (("c" "Commit")) ("Applying" ("s" "Stage"))) (transient-test:menu))
+  (transient:set-group-depth! ordered "Essential" 10)
+  (test-user:settle)
+  (check-equal? '((("c" "Commit")) ("Applying" ("s" "Stage")) ("Essential" ("e" "Essential"))) (transient-test:menu))
+  (transient:set-group-depth! ordered #f -10)
+  (test-user:settle)
+  (check-equal? '((("c" "Commit")) ("Applying" ("s" "Stage")) ("Essential" ("e" "Essential"))) (transient-test:menu))
+  (check-raises assertion-violation? (transient:set-group-depth! ordered "Essential" 1.5))
+  (test-user:press! "C-g"))
+
 (test "when the plugin unloads, the menus close, its buffer goes, and the modules that import it unload"
   (test-user:press! "C-c m")
   (let ([old (map module-owner '((transient) (transient-test magit)))] [old-buffer (buffers:find " *transient*")])

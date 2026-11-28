@@ -53,7 +53,8 @@
   (let ([m (message!)])
     (check-equal? '(#t #t modes:fundamental)
                   (list (buffers:with-buffer m (with-editor:mode)) (buffers:with-buffer m (git-commit:mode)) (modes:major-mode m)))
-    (check-equal? '("Type C-c C-c to finish, C-c C-k to cancel" "Type C-c C-c to finish, C-c C-k to cancel, and M-p and M-n to recover older messages")
+    (check-equal? '("Type C-c C-c to finish, C-c C-k to cancel" "Type C-c C-c to finish, C-c C-k to cancel, and M-p and M-n to recover older messages"
+                    "Diffing changes to be committed (C-g to abort diffing)")
                   (git-status-test:take-said!))
     (check-equal? '("commit" "--verbose") (running-arguments))
     (check (pair? (views:folds-at (git-status-test:view) (- (document:length (buffers:document m)) 2))))

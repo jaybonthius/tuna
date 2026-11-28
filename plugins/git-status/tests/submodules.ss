@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (buffers) (views) (layout) (layout-split) (editing) (files) (ui) (git) (git-mode) (git-status)
+(import (tuna) (test) (test-user) (buffers) (views) (layout) (layout-split) (editing) (files) (ui) (git) (git-mode) (git-status) (git-apply)
         (git-status-test) (git-test repositories))
 
 (define git! git-test/repositories:git!)
