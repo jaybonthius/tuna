@@ -11,6 +11,14 @@
   "Whether a view scrolled to its end stays at its end as its buffer grows there.")
 (options:define-option scroll-margin 0 (lambda (v) (and (fixnum? v) (fx>= v 0)))
   "How many of a client's line heights a view keeps between the primary cursor and its top and bottom edges, at most a quarter of the view's height.")
+(options:define-option sideways-margin 5 (lambda (v) (and (fixnum? v) (fx>= v 0)))
+  "How many columns a view whose lines do not wrap keeps between the primary cursor and its left and right edges as it follows point sideways, at most a quarter of the view's width.")
+(options:define-option page-overlap 2 (lambda (v) (and (fixnum? v) (fx>= v 0)))
+  "How many rows in view before a scroll by a page are still in view after it.")
+(options:define-option page-scroll-keeps-row #f boolean?
+  "Whether point that a scroll by a page or by rows takes out of view goes to the place in the view it had, rather than to the nearest row in view.")
+(options:define-option page-scroll-to-ends #f boolean?
+  "Whether views:scroll-up and views:scroll-down move point to the end or the start, when the view can scroll no further, before they raise.")
 (options:define-option wrap-lines #t boolean?
   "Whether a line longer than the view wraps onto several screen lines.")
 (options:define-option cursor-visible #t boolean?
@@ -77,7 +85,7 @@
    atom-view-of copy-state-in! keymaps-at note-edit note-kill after-batch scroll-report mouse-item posn-keymaps forget-client!
    posn-record? make-posn-record posn-record-view posn-record-point posn-record-node posn-record-keymaps
    posn-record-x posn-record-y posn-record-column posn-record-row posn-record-part keymap-id marked-keymaps click-state
-   view-client scroll-page! recenter! follows-point? leader-of region-ranges-of
+   view-client scroll-page! raise-scroll-limit page-to-end! recenter! follows-point? leader-of region-ranges-of
    rows-shown-in shown-range-in hscroll-column-of hscroll-line-of set-hscroll-in! move-to-row! row-start-in
    face-attributes title-attributes text-spans-html
    anchor-record? anchor-record-id anchor-record-view anchor-record-spot anchor-record-gone?
@@ -1493,8 +1501,6 @@
   (define (indices from to)
     (if (fx> from to) '() (cons from (indices (fx+ from 1) to))))
 
-  (define next-screen-context-lines 2)
-
   (define (set-point-quietly! v b p)
     (let ([c (car (view-record-cursors v))])
       (let-values ([(lo hi) (bounds-of v)])
@@ -1654,8 +1660,8 @@
          (follow-from! v c)])))
 
   ;; The commanding client's page scrolls by its own view height less the
-  ;; context lines, as Emacs's C-v does, and answers with the report of
-  ;; where it went; a page with too little drawn asks for more first.
+  ;; overlap, as Emacs's C-v does, and answers with the report of where
+  ;; it went; a page with too little drawn asks for more first.
   ;; The page sends that report as an item too, which changes nothing
   ;; once the answer is taken and tells where the view went when a cancel
   ;; came first.
@@ -1663,29 +1669,69 @@
   ;; never reaches it cannot keep the command asking. Sideways, Emacs
   ;; keeps two columns of context. BY, rows or columns, steps by that
   ;; many instead.
-  (define (scroll-page! who v b c cs forward? sideways? by)
-    (unless (and sideways? (with-view-bound v b wrap-lines))
-      (let ask ([again? #f])
-        (let ([answer (web:ask-page c "views-page"
-                        (list (cons "view" (view-record-id v)) (cons "forward" forward?)
-                              (cons "context" (if sideways? 2 next-screen-context-lines)) (cons "again" again?)
-                              (cons "sideways" sideways?) (cons "by" (or by 'null))))])
-          (cond
-            [(not (pair? answer))]
-            [(eq? (field answer "limit") #t)
-             (raise (condition (%make-scroll-limit) (make-who-condition who)
-                               (make-message-condition (if forward? "end of buffer" "beginning of buffer"))))]
-            [(eq? (field answer "more") #t)
-             (client-view-wanted-set! cs (further (client-view-wanted cs) forward?))
-             (mark-dirty!)
-             (ask #t)]
-            [else
-             (let* ([item (field answer "report")] [r (and (pair? item) (parse-report item))])
-               (when (and r (fixnum? (field item "report")))
-                 (client-view-reported-set! cs (field item "report")))
-               (when (and r (bound-buffer v) (fx<= (measured-version r) (buffers:version b)))
-                 (view-record-moved?-set! v #f)
-                 (with-view-bound v b (lambda () (adopt-report! v b c cs r #t)))))])))))
+  (define (scroll-page! v b c cs forward? sideways? by chained?)
+    (or (and sideways? (with-view-bound v b wrap-lines))
+        (let ([keep (and (not sideways?) (with-view-bound v b page-scroll-keeps-row) (page-keep v c chained?))]
+              [overlap (if sideways? 2 (with-view-bound v b page-overlap))])
+          (let ask ([again? #f])
+            (let ([answer (web:ask-page c "views-page"
+                            (list (cons "view" (view-record-id v)) (cons "forward" forward?)
+                                  (cons "context" overlap) (cons "again" again?)
+                                  (cons "sideways" sideways?) (cons "by" (or by 'null)) (cons "keep" keep)))])
+              (cond
+                [(not (pair? answer)) #t]
+                [(eq? (field answer "limit") #t) #f]
+                [(eq? (field answer "more") #t)
+                 (client-view-wanted-set! cs (further (client-view-wanted cs) forward?))
+                 (mark-dirty!)
+                 (ask #t)]
+                [else
+                 (let* ([item (field answer "report")] [r (and (pair? item) (parse-report item))] [kept (field answer "kept")])
+                   (when (and r (fixnum? (field item "report")))
+                     (client-view-reported-set! cs (field item "report")))
+                   (when (and r (bound-buffer v) (fx<= (measured-version r) (buffers:version b)))
+                     (view-record-moved?-set! v #f)
+                     (with-view-bound v b
+                       (lambda ()
+                         (let ([p (and (pair? kept) ((mark-resolver b (measured-version r)) kept))])
+                           (when p (set-point-quietly! v b p)))
+                         (adopt-report! v b c cs r #t))))
+                   (note-page-keep! v c (field answer "keptAt")))
+                 #t]))))))
+
+  ;; As Emacs keeps the screen place of point across consecutive scroll
+  ;; commands, so that point does not stick on a short line, the place
+  ;; the last page scroll kept goes back to the page that measured it.
+  (define last-page-keep #f)
+
+  (define (page-keep v c chained?)
+    (let ([k last-page-keep])
+      (if (and chained? k (eq? (car k) v) (eq? (cadr k) c)) (caddr k) #t)))
+
+  (define (note-page-keep! v c at)
+    (set! last-page-keep (and (pair? at) (list v c at))))
+
+  (define (raise-scroll-limit who forward?)
+    (raise (condition (%make-scroll-limit) (make-who-condition who)
+                      (make-message-condition (if forward? "end of buffer" "beginning of buffer")))))
+
+  ;; As Emacs's scroll-up-command under scroll-error-top-bottom.
+  (define (page-to-end! v b forward? by)
+    (let ([c (car (view-record-cursors v))] [doc (buffers:document b)])
+      (let-values ([(lo hi) (bounds-of v)])
+        (let ([p (point-of c)] [edge (stop-within b lo hi (if forward? hi lo))])
+          (and (not (fx= p edge))
+               (begin
+                 (move-point! v c
+                   (if by
+                       (let ([line ((if forward? fx+ fx-) (document:line doc p) by)])
+                         (cond
+                           [(fx> line (document:line doc hi)) hi]
+                           [(fx< line (document:line doc lo)) lo]
+                           [else (document:line-start doc line)]))
+                       edge))
+                 (primary-moved! v)
+                 #t))))))
 
   (define (field item key) (let ([e (assoc key item)]) (if e (cdr e) 'null)))
 
@@ -2171,6 +2217,7 @@
                       [data-place-column-item column-item]
                       [data-place-column-line (and column-item (line-number-at column-item))]
                       [data-scroll-margin (scroll-margin)]
+                      [data-sideways-margin (and (not (wrap-lines)) (sideways-margin))]
                       [data-reported (client-view-reported cs)]
                       [data-drawn-screens (number->string (inexact (drawn-screens)))]
                       [data-run-at-start (fx<= ws lo)]
@@ -4020,24 +4067,57 @@
     (let ([b (shown-buffer who v)] [c (%commanding-client who v)])
       (scroll v b c (view-client v c)))))
 
+(define (%way forward? amount)
+  (cond
+    [(not amount) (values forward? #f)]
+    [(eq? amount '-) (values (not forward?) #f)]
+    [else (values (if (fx< amount 0) (not forward?) forward?) (fxabs amount))]))
+
+;; As Emacs keeps the screen place only while the last command has the
+;; scroll-command property, only the two page commands chain.
+(define (%scrolled? who v b forward? sideways? by)
+  (let ([c (%commanding-client who v)])
+    (scroll-page! v b c (view-client v c) forward? sideways? by
+                  (and (memq (commands:last-command) (list scroll-up scroll-down)) #t))))
+
 (define (%scroll who amount forward? sideways?)
-  (%commanded who
-    (lambda (v b c cs)
-      (cond
-        [(not amount) (scroll-page! who v b c cs forward? sideways? #f)]
-        [(eq? amount '-) (scroll-page! who v b c cs (not forward?) sideways? #f)]
-        [else (scroll-page! who v b c cs (if (fx< amount 0) (not forward?) forward?) sideways? (fxabs amount))]))))
+  (let ([v (current-view)])
+    (unless v
+      (assertion-violation who "no current view"))
+    (let-values ([(forward? by) (%way forward? amount)])
+      (let ([b (shown-buffer who v)])
+        (unless (or (%scrolled? who v b forward? sideways? by)
+                    (and (not sideways?) (with-view-bound v b page-scroll-to-ends) (page-to-end! v b forward? by)))
+          (raise-scroll-limit who forward?))))))
+
+(define (%scroll-view who view count forward?)
+  (check-view who view)
+  (unless (or (not count) (fixnum? count))
+    (assertion-violation who "not a count or #f" count))
+  (let-values ([(forward? by) (%way forward? count)])
+    (unless (%scrolled? who view (shown-buffer who view) forward? #f by)
+      (raise-scroll-limit who forward?))))
+
+(define scroll-forward!
+  (case-lambda
+    [(view) (scroll-forward! view #f)]
+    [(view count) (%scroll-view 'views:scroll-forward! view count #t)]))
+
+(define scroll-backward!
+  (case-lambda
+    [(view) (scroll-backward! view #f)]
+    [(view count) (%scroll-view 'views:scroll-backward! view count #f)]))
 
 (define (%amount)
   (let ([p (commands:prefix-argument)])
     (if (eq? p '-) p (and p (commands:prefix-number)))))
 
 (commands:define-command (scroll-up [lines (%amount)])
-  "Scrolls the current view forward by its height less two lines, as the browser of the client whose key ran it shows it; by LINES lines, the prefix argument, back when negative; with -, back by its height less two lines."
+  "Scrolls the current view forward by its height less views:page-overlap rows, as the browser of the client whose key ran it shows it; by LINES lines, the prefix argument, back when negative; with -, back by a page."
   (%scroll 'views:scroll-up lines #t #f))
 
 (commands:define-command (scroll-down [lines (%amount)])
-  "Scrolls the current view back by its height less two lines, as the browser of the client whose key ran it shows it; by LINES lines, the prefix argument, forward when negative; with -, forward by its height less two lines."
+  "Scrolls the current view back by its height less views:page-overlap rows, as the browser of the client whose key ran it shows it; by LINES lines, the prefix argument, forward when negative; with -, forward by a page."
   (%scroll 'views:scroll-down lines #f #f))
 
 (define (following? view)
@@ -4077,10 +4157,11 @@
          [way (case (posn-part posn) [(above-handle before-handle) 'back] [(below-handle after-handle) 'forward] [else #f])])
     (when (and b way)
       (let ([c (%commanding-client who v)])
-        (scroll-page! who v b c (view-client v c) (eq? way 'forward) sideways? #f)))))
+        (unless (scroll-page! v b c (view-client v c) (eq? way 'forward) sideways? #f #f)
+          (raise-scroll-limit who (eq? way 'forward)))))))
 
 (commands:define-command (scroll-bar-scroll [event (keys:command-event)])
-  "Scrolls the view whose vertical scroll bar was pressed by its height less two lines toward the part pressed, above or below the thumb as the page drew it, as C-v and M-v do."
+  "Scrolls the view whose vertical scroll bar was pressed by its height less views:page-overlap rows toward the part pressed, above or below the thumb as the page drew it, as C-v and M-v do."
   (%bar-press 'views:scroll-bar-scroll event #f))
 
 (commands:define-command (horizontal-scroll-bar-scroll [event (keys:command-event)])

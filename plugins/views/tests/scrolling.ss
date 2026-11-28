@@ -96,20 +96,8 @@
   (report! desktop v 250 0 #f)
   (check-equal? '((new position 250) (209 291 83 (208) (9))) (list (placement desktop v) (drawn desktop v))))
 
-(define (page-report-answer page view top start end)
-  (lambda (name value)
-    `(("report" . (("type" . "scroll") ("view" . ,(views:id view))
-                   ("placement" . ,(number (views-test/page:shown-element page view) "data-placement"))
-                   ("version" . 0) ("top" . (("line" . ,top))) ("spacer" . #f) ("fraction" . 0) ("left" . null)
-                   ("past" . 0) ("sides" . #()) ("start" . (("line" . ,start))) ("end" . (("line" . ,end)))
-                   ("shownStart" . null) ("shownEnd" . null)
-                   ("atStart" . #f) ("atEnd" . #f) ("columns" . 80) ("rows" . 20) ("pointVisible" . #f)
-                   ("wanted" . (("aboveLines" . 41) ("aboveChars" . 3280) ("belowLines" . 41) ("belowChars" . 3280)
-                                ("side" . 160)))
-                   ("hand" . #t) ("settled" . #t) ("edge" . "top") ("report" . 500))))))
-
 (test "C-v asks the commanding client's page to scroll by its height, drawing more and asking again when it has too little"
-  (let* ([asked '()] [report-answer (page-report-answer desktop v 268 270 285)])
+  (let* ([asked '()] [report-answer (views-test/page:report-answer desktop v 268 270 285)])
     (views-test/page:set-answer! desktop
       (lambda (name value)
         (set! asked (cons (cdr (assoc "again" value)) asked))
@@ -121,7 +109,7 @@
       (list (reverse asked) (line-of v (views:top v #f)) (placement phone v) (line-of v (views:point v))))))
 
 (test "with a prefix C-v asks for that many lines, the other way when negative, and with - a page the other way"
-  (let* ([steps '()] [report-answer (page-report-answer desktop v 268 270 285)])
+  (let* ([steps '()] [report-answer (views-test/page:report-answer desktop v 268 270 285)])
     (views-test/page:set-answer! desktop
       (lambda (name value)
         (set! steps (cons (map (lambda (key) (cdr (assoc key value))) '("forward" "by")) steps))
@@ -160,7 +148,7 @@
     '("down" "click")))
 
 (test "a press on the bar off its thumb scrolls a page toward its part, as Emacs's toolkit bar does; a press with no part does nothing"
-  (let* ([steps '()] [report-answer (page-report-answer desktop v 268 270 285)])
+  (let* ([steps '()] [report-answer (views-test/page:report-answer desktop v 268 270 285)])
     (views-test/page:set-answer! desktop
       (lambda (name value)
         (set! steps (cons (map (lambda (key) (cdr (assoc key value))) '("forward" "by")) steps))
@@ -170,8 +158,19 @@
     (press-bar! desktop #f views:scroll-bar-keymap)
     (check-equal? '((#t null) (#f null)) (reverse steps))))
 
+(test "a press on the bar off its thumb keeps views:page-overlap rows in view, as C-v does"
+  (let* ([overlaps '()] [report-answer (views-test/page:report-answer desktop v 268 270 285)])
+    (views-test/page:set-answer! desktop
+      (lambda (name value)
+        (set! overlaps (cons (cdr (assoc "context" value)) overlaps))
+        (report-answer name value)))
+    (options:set! views:page-overlap 0)
+    (press-bar! desktop "below-handle" views:scroll-bar-keymap)
+    (options:set! views:page-overlap 2)
+    (check-equal? '(0) overlaps)))
+
 (test "a press on the horizontal bar off its thumb scrolls the lines sideways toward its part, as C-x < and C-x > do; a press with no part does nothing"
-  (let* ([steps '()] [report-answer (page-report-answer desktop v 268 270 285)])
+  (let* ([steps '()] [report-answer (views-test/page:report-answer desktop v 268 270 285)])
     (views-test/page:set-answer! desktop
       (lambda (name value)
         (set! steps (cons (map (lambda (key) (cdr (assoc key value))) '("sideways" "forward" "context" "by")) steps))
@@ -184,7 +183,7 @@
 (test "a mouse key on the bar names the part the page drew it in"
   (let* ([parts '()]
          [note (lambda (next event) (set! parts (cons (views:posn-part (keys:event-start event)) parts)) (next event))])
-    (views-test/page:set-answer! desktop (page-report-answer desktop v 268 270 285))
+    (views-test/page:set-answer! desktop (views-test/page:report-answer desktop v 268 270 285))
     (advice-add! views:scroll-bar-scroll note)
     (press-bar! desktop "above-handle" views:scroll-bar-keymap)
     (advice-remove! views:scroll-bar-scroll note)

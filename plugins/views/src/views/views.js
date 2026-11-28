@@ -1,6 +1,6 @@
 import { send, define } from "tuna";
 
-const { number, box, viewItems, contentTop, extent, own, lineHeight, setScroll, byHand, forgetWrite, sideways,
+const { number, box, viewItems, contentTop, contentLeft, extent, own, lineHeight, setScroll, byHand, forgetWrite, sideways,
         textLeft, textRight, pieces, longLines, textBox, pointExtent, margin, follow, keepAt, charWidth, contentSize,
         charsPerRow, px, setBlock, setGap, rowGaps, sizeSpacers, placeView, firstEdge, extentOf } = window.tunaViews;
 
@@ -1477,8 +1477,9 @@ function repeatPress(p, place, fields) {
 // Sideways, as C-x < scrolls, the step is the view's width less the
 // context columns, in the cells the page shows, as Emacs counts columns;
 // what lies past it is drawn, or a gap whose place the report names.
-// BY, rows or columns, makes the step that many.
-define("views-page", ({ view: id, forward, context, again, sideways: across, by }) => {
+// BY, rows or columns, makes the step that many. KEEP asks for point's
+// place in the view to be kept, at the place given or at point's.
+define("views-page", ({ view: id, forward, context, again, sideways: across, by, keep }) => {
   const view = document.getElementById(`view-${id}`);
   if (view === null || number(view, "data-view") !== id) return null;
   const st = stateOf(view);
@@ -1506,9 +1507,37 @@ define("views-page", ({ view: id, forward, context, again, sideways: across, by 
   if (!again && (forward ? view.scrollTop + step > most + 0.5 && !atEndOfRun : view.scrollTop - step < least - 0.5 && !atStart)) {
     return { more: true };
   }
+  const at = keep === true ? pointPlace(view) : keep || null;
   setScroll(view, forward ? Math.min(most, view.scrollTop + step) : Math.max(least, view.scrollTop - step));
-  return pageReport(view, st);
+  return { ...pageReport(view, st), ...keptAnswer(view, at) };
 });
+
+// As Emacs's scroll-preserve-screen-position t, the place is x and y
+// from the view's top left inside its border, so it outlasts the scroll.
+function pointPlace(view) {
+  const b = pointExtent(view);
+  if (b === null || b.top + b.height <= view.scrollTop || b.top >= view.scrollTop + view.clientHeight) return null;
+  return { x: b.left - view.scrollLeft, y: b.top - view.scrollTop + b.height / 2 };
+}
+
+// As Emacs's t leaves point that the scroll did not take out of view.
+function keptAnswer(view, at) {
+  if (at === null) return {};
+  const b = pointExtent(view);
+  const m = margin(view);
+  if (b !== null && b.top >= view.scrollTop + m - 0.5 && b.top + b.height <= view.scrollTop + view.clientHeight - m + 0.5) {
+    return { keptAt: at };
+  }
+  const rows = rowsShown(view);
+  if (rows.length === 0) return { keptAt: at };
+  const n = Math.min(number(view, "data-scroll-margin") ?? 0, Math.floor(rows.length / 4));
+  const y = contentTop(view) + at.y;
+  const below = rows.findIndex((row) => y < row.bottom);
+  const row = rows[Math.max(n, Math.min(below < 0 ? rows.length - 1 : below, rows.length - 1 - n))];
+  const x = contentLeft(view) + at.x;
+  const middle = (row.top + row.bottom) / 2;
+  return { keptAt: at, kept: placeOf(view, document.elementFromPoint(x, middle), x, middle) };
+}
 
 function pageReport(view, st) {
   st.pointShown = false;

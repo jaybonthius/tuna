@@ -10,7 +10,6 @@
 (define %ticks (make-weak-eq-hashtable))
 (define %count 0)
 (define %visited '())
-(define %seen #f)
 (define %timer #f)
 
 (define (%tick! view)
@@ -21,12 +20,9 @@
   (%tick! (layout:selected-view))
   (set! %visited '()))
 
-(define (%note-selection command)
-  (let ([view (layout:selected-view)])
-    (unless (eq? view %seen)
-      (set! %seen view)
-      (when %timer (timers:cancel! %timer))
-      (set! %timer (timers:run-after (delay) (lambda () (set! %timer #f) (%end-cycle!)))))))
+(define (%note-selection view previous)
+  (when %timer (timers:cancel! %timer))
+  (set! %timer (timers:run-after (delay) (lambda () (set! %timer #f) (%end-cycle!)))))
 
 (define (%pick views oldest?)
   (let ([tick (lambda (v) (eq-hashtable-ref %ticks v 0))])
@@ -52,4 +48,4 @@
     (%end-cycle!))
   (%select! oldest?))
 
-(hooks:add! commands:after-command %note-selection)
+(hooks:add! layout:selection-changed %note-selection)

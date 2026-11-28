@@ -80,15 +80,10 @@
     (test-user:press! "s-o")
     (check-equal? '("a" "b") (list-head (order) 2))))
 
-(test "a view selected by code gets no tick until a command ends and the delay passes after it"
+(test "a view selected by code, with no command after it, gets its tick once the delay passes, as one selected by a key"
   (let ([a (car (start!))])
     (layout:select! a)
-    (pause!)
-    (test-user:press! "C-x o")
-    (test-user:press! "s-o")
-    (check-equal? "c" (selected))
-    (layout:select! a)
-    (test-user:press! "C-a")
+    (test-runner:wait-for-batch)
     (pause!)
     (test-user:press! "C-x o")
     (test-user:press! "s-o")

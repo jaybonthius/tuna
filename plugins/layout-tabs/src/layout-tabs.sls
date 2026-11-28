@@ -166,6 +166,8 @@
   "Selects the view the focused children lead to in the tab n before the selected view's tab, cyclically."
   (%switch-tab! 'layout-tabs:previous-tab n -1))
 
+(tables:define-table switch-keymap "Keys that go on selecting tabs after C-x t o or C-x t O.")
+
 ;; The view selected last in a tab is the one its focused children lead
 ;; to, so selecting the tab's part-view returns the user to where they were.
 (commands:define-command (recent-tab [n (commands:prefix-number)])
@@ -221,6 +223,9 @@
 (keys:bind! keys:global "C-x t 1" close-other-tabs)
 (keys:bind! keys:global "C-x t o" next-tab)
 (keys:bind! keys:global "C-x t O" previous-tab)
+(keys:bind! switch-keymap "o" next-tab)
+(keys:bind! switch-keymap "O" previous-tab)
+(tables:set! keys:repeat-keymaps switch-keymap)
 (keys:bind! keymap "<down-mouse-1>" mouse-select-tab)
 (keys:bind! keymap "<mouse-1>" keys:ignore)
 (keys:bind! keymap "<mouse-2>" mouse-close-tab)

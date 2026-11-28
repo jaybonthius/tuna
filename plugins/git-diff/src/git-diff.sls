@@ -353,17 +353,17 @@
     (if existing
         (let ([v (car (views:showing existing))])
           (guard (c [(views:scroll-limit? c)
-                     (views:set-point! v (if (eq? scroll views:scroll-up) 0 (views:previous-stop v (document:length (buffers:document existing)))))])
-            (views:call-with-view v (lambda () (scroll #f)))))
+                     (views:set-point! v (if (eq? scroll views:scroll-forward!) 0 (views:previous-stop v (document:length (buffers:document existing)))))])
+            (scroll v)))
         (layout:display-buffer (show-revision repository revision (git:diff-arguments))))))
 
 (commands:define-command (show-or-scroll-up)
   "Shows the commit at point in the commit buffer without selecting it; when that buffer already shows it, scrolls its view up a page."
-  (%show-or-scroll! 'git-diff:show-or-scroll-up views:scroll-up))
+  (%show-or-scroll! 'git-diff:show-or-scroll-up views:scroll-forward!))
 
 (commands:define-command (show-or-scroll-down)
   "As git-diff:show-or-scroll-up, scrolling down."
-  (%show-or-scroll! 'git-diff:show-or-scroll-down views:scroll-down))
+  (%show-or-scroll! 'git-diff:show-or-scroll-down views:scroll-backward!))
 
 (define (%list-diff section view)
   (case (ui:section-type section)

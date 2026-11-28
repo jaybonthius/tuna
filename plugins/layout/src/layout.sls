@@ -1737,6 +1737,23 @@
 ;; so a click on it is a mouse key at a position in the buffer.
 (define screen-view (views:make buffer))
 
+(hooks:define-hook selection-changed
+  "Called once at the end of each batch in which the selected view changed, with the view selected and the one selected when it was last called, or #f when that one has left the layout.")
+
+;; The view is known by its number, since a view that left the layout is
+;; dropped by the end of the batch, and a dropped view answers nothing.
+(define %told-selection (selected-id))
+
+;; Told at the end of the batch, whatever made the change, as Emacs runs
+;; window-selection-change-functions at redisplay: a selection a job's
+;; callback makes runs no command, and one undone within the batch is
+;; none.
+(define (%tell-selection!)
+  (let ([id (selected-id)] [previous (atom-of %told-selection)])
+    (unless (eqv? id %told-selection)
+      (set! %told-selection id)
+      (selection-changed (selected-view) (and previous (view-of previous))))))
+
 (define (view-node view)
   (check-view 'layout:view-node view)
   (check-main-thread 'layout:view-node)
@@ -2373,6 +2390,8 @@
   "Restores the selected view's level's interior as it was before the last history-back."
   (history-step! 'layout:history-forward #f))
 
+(tables:define-table history-keymap "Keys that go on through the window history after C-c <left> or C-c <right>.")
+
 (define (%history-before command)
   (unless (or (eq? command history-back) (eq? command history-forward))
     (note-before!)))
@@ -2456,12 +2475,13 @@
       (set! %title-failing #f)
       title)))
 
-;; A raise in note-batch must not skip the advice it encloses, which
-;; ends the batch for the plugins loaded before this one; nor may a raise
-;; there stop the clients being drawn, or every screen would freeze with
-;; nothing on it to act on.
+;; A raise in note-batch, or in telling a selection, must not skip the
+;; advice it encloses, which ends the batch for the plugins loaded before
+;; this one; nor may a raise there stop the clients being drawn, or every
+;; screen would freeze with nothing on it to act on.
 (define (%end-batch ended)
   (guard (c [#t (report c)]) (note-batch))
+  (guard (c [#t (report c)]) (%tell-selection!))
   (guard (c [(not (%warning-only? c)) (report c)])
     (ended))
   (let ([clients (web:clients)])
@@ -2527,6 +2547,9 @@
 (keys:bind! part-mode-keymap "w l" wrap-in-level)
 (keys:bind! keymap "C-c <left>" history-back)
 (keys:bind! keymap "C-c <right>" history-forward)
+(keys:bind! history-keymap "<left>" history-back)
+(keys:bind! history-keymap "<right>" history-forward)
+(tables:set! keys:repeat-keymaps history-keymap)
 (keys:bind! keymap "<mouse-1>" mouse-select-view)
 (keys:bind! keymap "<down-mouse-1>" keys:ignore)
 (hooks:add! keys:find-keymaps cursor-keymaps)

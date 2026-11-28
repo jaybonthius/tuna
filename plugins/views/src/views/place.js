@@ -240,11 +240,16 @@
     return Math.min((number(view, "data-scroll-margin") ?? 0) * lineHeight(view), view.clientHeight / 4);
   }
 
+  // As Emacs's hscroll-margin, the margin counts columns, inside the
+  // padding, which holds no text; at most a quarter of the width, as the
+  // scroll margin is of the height, so a narrow view keeps room for point
+  // between the two.
   function followSideways(view, b) {
     if (!sideways(view)) return;
     const style = getComputedStyle(view);
-    const left = view.scrollLeft + parseFloat(style.paddingInlineStart);
-    const right = view.scrollLeft + view.clientWidth - parseFloat(style.paddingInlineEnd);
+    const m = Math.min((number(view, "data-sideways-margin") ?? 0) * charWidth(view), contentSize(view).width / 4);
+    const left = view.scrollLeft + parseFloat(style.paddingInlineStart) + m;
+    const right = view.scrollLeft + view.clientWidth - parseFloat(style.paddingInlineEnd) - m;
     if (b.left < left) setScroll(view, view.scrollTop, view.scrollLeft - (left - b.left));
     else if (b.left + b.width > right) setScroll(view, view.scrollTop, view.scrollLeft + b.left + b.width - right);
   }
@@ -436,7 +441,7 @@
 
   // A classic script cannot import a module, so the views module takes
   // what it shares with the first screen from this global.
-  window.tunaViews = { number, box, viewItems, contentTop, extent, own, lineHeight, setScroll, byHand, forgetWrite,
+  window.tunaViews = { number, box, viewItems, contentTop, contentLeft, extent, own, lineHeight, setScroll, byHand, forgetWrite,
                        sideways, textLeft, textRight, pieces, longLines, textBox, pointExtent, extentOf, margin, follow, keepAt,
                        charWidth, contentSize, charsPerRow, px, setBlock, setGap, rowGaps, sizeSpacers, placeView,
                        firstEdge };

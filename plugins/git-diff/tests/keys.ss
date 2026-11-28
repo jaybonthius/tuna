@@ -21,16 +21,16 @@
 (define scrolled '())
 
 (define (note-scroll direction)
-  (lambda (next . arguments)
-    (set! scrolled (cons (list direction (buffers:name (views:buffer (views:current)))) scrolled))))
+  (lambda (next view)
+    (set! scrolled (cons (list direction (buffers:name (views:buffer view))) scrolled))))
 
 (define scroll-up-note (note-scroll 'up))
 
 (define scroll-down-note (note-scroll 'down))
 
-(advice-add! views:scroll-up scroll-up-note)
+(advice-add! views:scroll-forward! scroll-up-note)
 
-(advice-add! views:scroll-down scroll-down-note)
+(advice-add! views:scroll-backward! scroll-down-note)
 
 (test "SPC on a commit row shows its commit buffer in another view, unselected, point staying; SPC again scrolls that view up, S-SPC and DEL down"
   (git-status-test:go-to-in! "Second commit" '(unpushed . "@{upstream}"))
@@ -215,8 +215,8 @@
 
 (test "SPC at the end of the commit buffer goes back to its start, and S-SPC at its start to its end"
   (let* ([limit (test-user:open-client (lambda (name value) (if (equal? name "views-page") '(("limit" . #t)) 'null)))])
-    (advice-remove! views:scroll-up scroll-up-note)
-    (advice-remove! views:scroll-down scroll-down-note)
+    (advice-remove! views:scroll-forward! scroll-up-note)
+    (advice-remove! views:scroll-backward! scroll-down-note)
     (back-to-status!)
     (git-status-test:go-to-in! "Second commit" '(unpushed . "@{upstream}"))
     (press! "SPC")
@@ -229,6 +229,19 @@
       (test-user:press! limit "S-SPC")
       (git-status-test:settle!)
       (check-equal? (views:previous-stop v (document:length (buffers:document (revision-buffer)))) (views:point v)))))
+
+(test "with views:page-scroll-to-ends on, SPC at the end of the commit buffer still goes back to its start in one press, as Magit's scroll-up does"
+  (let ([limit (test-user:open-client (lambda (name value) (if (equal? name "views-page") '(("limit" . #t)) 'null)))])
+    (options:set! views:page-scroll-to-ends #t)
+    (back-to-status!)
+    (git-status-test:go-to-in! "Second commit" '(unpushed . "@{upstream}"))
+    (press! "SPC")
+    (let ([v (car (views:showing (revision-buffer)))])
+      (views:set-point! v 20)
+      (test-user:press! limit "SPC")
+      (git-status-test:settle!)
+      (check (<= (views:point v) (ui:section-heading-start (car (ui:top-sections (revision-buffer)))))))
+    (options:set! views:page-scroll-to-ends #f)))
 
 (test "D in the status buffer or a commit buffer offers no Do group and no buffer lock"
   (back-to-status!)
