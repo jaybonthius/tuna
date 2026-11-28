@@ -26,14 +26,15 @@
                   (lexeme-depth t) (lexeme-open-ended? t) (lexeme-mismatched? t)))
           (lex text)))))
 
+  (define (after-colon head)
+    (let loop ([i (fx- (string-length head) 1)])
+      (cond
+        [(fx< i 0) head]
+        [(char=? (string-ref head i) #\:) (substring head (fx+ i 1) (string-length head))]
+        [else (loop (fx- i 1))])))
+
   (define (definer? head)
-    (let* ([n (string-length head)]
-           [after (let loop ([i (fx- n 1)])
-                    (cond
-                      [(fx< i 0) 0]
-                      [(char=? (string-ref head i) #\:) (fx+ i 1)]
-                      [else (loop (fx- i 1))]))]
-           [name (substring head after n)])
+    (let ([name (after-colon head)])
       (and (fx>= (string-length name) 6)
            (string=? (substring name 0 6) "define")
            name)))
@@ -262,6 +263,85 @@
                                name #t configuration?))]))
                   (loop (fx+ i 1) specs own found? configuration?)))))))
 
+  (define (close-indices lexemes)
+    (let* ([n (vector-length lexemes)] [closes (make-vector n n)])
+      (let loop ([j 0] [open '()])
+        (unless (fx= j n)
+          (case (lexeme-kind (vector-ref lexemes j))
+            [(open) (loop (fx+ j 1) (cons j open))]
+            [(close)
+             (if (pair? open)
+                 (begin (vector-set! closes (car open) j) (loop (fx+ j 1) (cdr open)))
+                 (loop (fx+ j 1) open))]
+            [else (loop (fx+ j 1) open)])))
+      closes))
+
+  (define (elements lexemes closes i)
+    (let ([end (vector-ref closes i)])
+      (let loop ([j (fx+ i 1)] [acc '()])
+        (if (fx>= j end)
+            (reverse acc)
+            (case (lexeme-kind (vector-ref lexemes j))
+              [(line-comment block-comment datum-comment directive prefix dot close) (loop (fx+ j 1) acc)]
+              [(open) (loop (fx+ (vector-ref closes j) 1) (cons j acc))]
+              [else (loop (fx+ j 1) (cons j acc))])))))
+
+  ;; A job's data is plain data, so each definition is a list: its head,
+  ;; its name, its range, its name's start, whether it defines a
+  ;; procedure, and a library's or named module's own definitions.
+  (define (definitions lexemes text heads start-of end-of)
+    (let ([closes (close-indices lexemes)] [n (vector-length lexemes)])
+      (define (kind j) (lexeme-kind (vector-ref lexemes j)))
+      (define (word j) (let ([t (vector-ref lexemes j)]) (substring text (lexeme-start t) (lexeme-end t))))
+      (define (text-end i)
+        (let ([c (vector-ref closes i)])
+          (if (fx< c n) (lexeme-end (vector-ref lexemes c)) (string-length text))))
+      (define (first-symbol j)
+        (case (kind j)
+          [(symbol) j]
+          [(open) (let ([es (elements lexemes closes j)]) (and (pair? es) (first-symbol (car es))))]
+          [else #f]))
+      (define (headed-by? j words)
+        (and (eq? (kind j) 'open)
+             (let ([es (elements lexemes closes j)])
+               (and (pair? es) (eq? (kind (car es)) 'symbol) (member (word (car es)) words) #t))))
+      (define (definer-head? head)
+        (or (definer? head) (member head heads) (member (after-colon head) heads)))
+      (define (entry i head name name-start procedure? children)
+        (list head name (start-of (lexeme-start (vector-ref lexemes i))) (end-of (text-end i)) (start-of name-start)
+              procedure? children))
+      (define (body forms)
+        (fold-right (lambda (j acc) (append (form j #f) acc)) '() (filter (lambda (j) (eq? (kind j) 'open)) forms)))
+      (define (form i top?)
+        (let ([es (elements lexemes closes i)])
+          (if (and (pair? es) (eq? (kind (car es)) 'symbol))
+              (let ([head (word (car es))] [rest (cdr es)])
+                (cond
+                  [(null? rest) '()]
+                  [(and top? (string=? head "library") (eq? (kind (car rest)) 'open))
+                   (let ([name (lexeme-start (vector-ref lexemes (car rest)))])
+                     (list (entry i head (substring text name (text-end (car rest))) name #f (body (cdr rest)))))]
+                  [(and top? (string=? head "module") (eq? (kind (car rest)) 'open)) (body (cdr rest))]
+                  [(and top? (string=? head "module") (eq? (kind (car rest)) 'symbol))
+                   (list (entry i head (word (car rest)) (lexeme-start (vector-ref lexemes (car rest))) #f
+                                (body (cdr rest))))]
+                  [(definer-head? head)
+                   (let ([name (first-symbol (car rest))])
+                     (if name
+                         (list (entry i head (word name) (lexeme-start (vector-ref lexemes name))
+                                      (or (eq? (kind (car rest)) 'open)
+                                          (and (pair? (cdr rest)) (headed-by? (cadr rest) '("lambda" "case-lambda"))))
+                                      '()))
+                         '()))]
+                  [else '()]))
+              '())))
+      (let loop ([j 0] [acc '()])
+        (cond
+          [(fx>= j n) (reverse acc)]
+          [(and (eq? (kind j) 'open) (fx= (lexeme-depth (vector-ref lexemes j)) 1))
+           (loop (fx+ (vector-ref closes j) 1) (append (reverse (form j #t)) acc))]
+          [else (loop (fx+ j 1) acc)]))))
+
   (define (names-table pairs)
     (let ([names (make-hashtable string-hash string=?)])
       (vector-for-each (lambda (pair) (hashtable-set! names (symbol->string (car pair)) (cdr pair))) pairs)
@@ -270,7 +350,7 @@
   (define (make-highlight)
     (let ([roles #f] [faces #f] [pairs #f] [names #f])
       (lambda (doc input edits)
-        (let ([given-roles (car input)] [brackets? (cadr input)] [given-pairs (caddr input)])
+        (let ([given-roles (car input)] [brackets? (cadr input)] [given-pairs (caddr input)] [heads (cadddr input)])
           (unless (eq? given-roles roles)
             (set! roles given-roles)
             (set! faces (map (lambda (role) (cons (car role) (list (cons 'face (cdr role))))) given-roles)))
@@ -278,6 +358,7 @@
             (set! pairs given-pairs)
             (set! names (and given-pairs (names-table given-pairs))))
           (let* ([text (document:text doc)] [lexemes (lex text)])
-            (values (list (list->vector (face-spans lexemes text faces names))
-                          (if brackets? (list->vector (bracket-spans lexemes)) '#()))
-                    (scope-of lexemes text))))))))
+            (let-values ([(start-of end-of) (position-mapping doc text)])
+              (values (list (list->vector (face-spans lexemes text faces names))
+                            (if brackets? (list->vector (bracket-spans lexemes)) '#()))
+                      (list (scope-of lexemes text) (definitions lexemes text heads start-of end-of))))))))))

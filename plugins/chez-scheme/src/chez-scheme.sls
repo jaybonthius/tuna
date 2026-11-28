@@ -1,6 +1,6 @@
 #!tuna
 (import (prog) (modes) (auto-mode) (buffers) (document) (files) (jobs) (faces) (syntax)
-        (syntax-highlighting) (indentation) (chez-scheme highlight) (hooks) (options) (tables))
+        (syntax-highlighting) (indentation) (outline) (chez-scheme highlight) (hooks) (options) (tables))
 
 (define %self (current-owner))
 
@@ -225,9 +225,28 @@
         [(char=? (string-ref s i) #\/) (loop (fx+ i 1) (fx+ i 1) (cons (substring s start i) acc))]
         [else (loop (fx+ i 1) start acc)])))
 
+  ;; Finding a file's module searches the library folders, which takes
+  ;; milliseconds, and the scope is read again after nearly every edit,
+  ;; since the job's definitions move with the text. The answer changes
+  ;; only with the file's path, the folders, or a module loading or
+  ;; unloading.
+  (define-record-type known-own
+    (sealed #t)
+    (fields path directories generation name))
+
+  (define generation 0)
+
+  (define owns (make-weak-eq-hashtable))
+
   (define (own-module scope buffer)
     (or (and (pair? (cadr scope)) (cadr scope))
-        (file-module (files:path buffer))))
+        (let ([path (files:path buffer)] [directories (library-directories)] [known (eq-hashtable-ref owns buffer #f)])
+          (if (and known (equal? (known-own-path known) path) (eq? (known-own-directories known) directories)
+                   (fx= (known-own-generation known) generation))
+              (known-own-name known)
+              (let ([name (file-module path)])
+                (eq-hashtable-set! owns buffer (make-known-own path directories generation name))
+                name)))))
 
   (define (own-names own)
     (if own
@@ -307,6 +326,7 @@
           (repl-names-and-table))))
 
   (define (note-changed! name)
+    (set! generation (fx+ generation 1))
     (hashtable-delete! classes name)
     (set! repl #f)
     (set! stale (cons name stale)))
@@ -384,8 +404,40 @@
                         acc))))
     (list->vector (reverse acc))))
 
-(define (%highlight-input buffer scope)
-  (list %face-roles (syntax:brackets-used? buffer) (and scope (name-pairs buffer scope))))
+(tables:define-table outline-kinds
+  "Maps a head symbol to the kind of the outline entries its definitions give, looked up as chez-scheme:indent-rules is: the whole symbol, then its part after the last colon.")
+
+(define %definitions (make-weak-eq-hashtable))
+
+(define (%outline-heads)
+  (list-sort string<? (map (lambda (entry) (symbol->string (car entry))) (tables:entries outline-kinds))))
+
+(define (%highlight-input buffer data)
+  (when (and data (not (equal? (cadr data) (eq-hashtable-ref %definitions buffer #f))))
+    (eq-hashtable-set! %definitions buffer (cadr data))
+    (outline:forget! buffer))
+  (list %face-roles (syntax:brackets-used? buffer) (and data (name-pairs buffer (car data))) (%outline-heads)))
+
+(define (%outline-kind head procedure?)
+  (let ([plain (%after-last-colon head)])
+    (or (tables:ref outline-kinds (string->symbol head) #f)
+        (and plain (tables:ref outline-kinds (string->symbol plain) #f))
+        (if procedure? 'function 'variable))))
+
+(define (%outline-entry definition)
+  (let-values ([(head name start end point procedure? children) (apply values definition)])
+    (if (member head '("library" "module"))
+        (outline:make-parent (outline:make-entry name 'module start end point) (map %outline-entry children))
+        (outline:make-entry name (%outline-kind head procedure?) start end point))))
+
+(define (outline-source buffer)
+  (unless (buffers:buffer? buffer)
+    (assertion-violation 'chez-scheme:outline-source "not a buffer" buffer))
+  (and (modes:derived? (modes:major-mode buffer) mode)
+       (let ([definitions (eq-hashtable-ref %definitions buffer #f)]
+             [version (syntax-highlighting:data-version buffer)])
+         (and definitions version
+              (outline:make-outline buffer version (map %outline-entry definitions))))))
 
 (define (%note-module-loaded loaded instance)
   (loaded instance)
@@ -565,5 +617,12 @@
     (buffers:call-with-buffer . 1) (undo:with-edit-group . 1) (undo:call-with-edit-group . 1)
     (views:with-view . 1) (views:call-with-view . 1) (minibuffer:call-with-setup . 1)))
 (tables:set! indentation:indenters mode indenter)
+(for-each (lambda (rule) (tables:set! outline-kinds (car rule) (cdr rule)))
+  '((define-syntax . macro) (define-record-type . struct) (define-condition-type . struct) (define-ftype . struct)
+    (define-enumeration . enum) (define-values . variable) (options:define-option . variable)
+    (tables:define-table . variable) (saved:define-saved . variable) (status-line:define-segment . variable)
+    (completion:define-category . variable) (hooks:define-hook . event) (commands:define-command . function)
+    (use-plugin . package)))
+(hooks:add! outline:sources outline-source)
 (advice-add! module-loaded %note-module-loaded)
 (advice-add! batch-ended %update-names)

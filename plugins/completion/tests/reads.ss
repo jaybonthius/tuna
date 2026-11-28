@@ -150,6 +150,20 @@
     (check-equal? "banana" (completion-test/sessions:result r))
     (check-equal? '("banana" "cherry" "apple") (fruit-history))))
 
+(test "in a read of several sources the source whose first match is the default comes first, so RET on an empty input chooses the row selected; once the default no longer matches, the sources keep their order"
+  (let ([r (completion-test/sessions:start!
+             (lambda ()
+               (completion:read "Food: "
+                 (list (completion:source (candidates (vector "carrot" "cabbage")) (title "Vegetables") (in-order))
+                       (completion:source (candidates (vector "cherry" "banana")) (title "Fruit") (in-order)))
+                 #f "banana")))])
+    (check-equal? '("banana" "cherry" "carrot" "cabbage") (texts))
+    (check-equal? "banana" (selected))
+    (test-user:type! "c")
+    (check-equal? '("carrot" "cabbage" "cherry") (texts))
+    (test-user:press! "DEL RET")
+    (check-equal? "banana" (completion-test/sessions:result r))))
+
 (test "M-w puts the selected match on the kill ring and leaves the read open"
   (let ([r (completion-test/sessions:start! read-fruit)])
     (test-user:type! "ap")

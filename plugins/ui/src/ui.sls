@@ -977,10 +977,12 @@
             (find (lambda (t) (fx> (heading-start t) p)) (top-sections doc)))
         (error 'ui:section-forward "No next section"))))
 
+;; Point rests at the stop of the heading's start, which is past it when
+;; the heading starts with a node, so the two are compared as places.
 (define (%backward-target view doc)
-  (let* ([p (views:point view)] [s (section-at-position doc p)])
+  (let* ([b (views:buffer view)] [p (views:point view)] [s (section-at-position doc p)])
     (cond
-      [(and s (not (fx= p (heading-start s)))) s]
+      [(and s (not (eqv? (buffers:stop b p) (buffers:stop b (heading-start s))))) s]
       [else
        (let ([previous (if s
                            (previous-sibling doc s)

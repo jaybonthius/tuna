@@ -1,0 +1,5 @@
+(library chez-haml
+  (git "https://github.com/jaybonthius/chez-haml.git")
+  (commit "2dcde95b747ad3e011ae1ed60c7cadfff9b24ade")
+  (library-directories ("src" . "build/obj/src"))
+  (build))

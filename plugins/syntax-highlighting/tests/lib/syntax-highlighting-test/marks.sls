@@ -44,11 +44,19 @@
 (hooks:define-hook unknown-hook "Setup.")
 (modes:define-major-mode unknown (keymap unknown-keymap) (hook unknown-hook) (language "nothing"))
 
+(tables:define-table counting-keymap "Keys.")
+(hooks:define-hook counting-hook "Setup.")
+(modes:define-major-mode counting (keymap counting-keymap) (hook counting-hook))
+
 (buffers:define-layer parens (priority -5) (evaporate))
 
 (jobs:define-worker (%marks input emit receive)
   (import (syntax-highlighting job) (syntax-highlighting-test highlight))
   (serve input emit receive (make-marks-highlight)))
+
+(jobs:define-worker (%counting input emit receive)
+  (import (syntax-highlighting job) (syntax-highlighting-test highlight))
+  (serve input emit receive (make-counting-highlight)))
 
 (jobs:define-worker (%raising input emit receive)
   (import (syntax-highlighting job) (syntax-highlighting-test highlight))
@@ -83,6 +91,17 @@
     (error 'marks:input "the input raised"))
   (list (mark)))
 
+(define %counted '())
+
+(define (counted)
+  (let ([found (reverse %counted)])
+    (set! %counted '())
+    found))
+
+(define (%counting-input buffer data)
+  (set! %counted (cons (list data (syntax-highlighting:data-version buffer)) %counted))
+  #f)
+
 (define (%own-input buffer data)
   (set! %inputs (cons (list (buffers:name buffer) data (length (views:showing buffer))) %inputs))
   (list "!"))
@@ -111,6 +130,8 @@
   (syntax-highlighting:make-highlighter %marks (list syntax-highlighting:faces parens) %input))
 (tables:set! syntax-highlighting:highlighters own
   (syntax-highlighting:make-highlighter %marks (list syntax-highlighting:faces parens) %own-input))
+(tables:set! syntax-highlighting:highlighters counting
+  (syntax-highlighting:make-highlighter %counting (list syntax-highlighting:faces) %counting-input))
 (tables:set! syntax-highlighting:highlighters raising
   (syntax-highlighting:make-highlighter %raising (list syntax-highlighting:faces) %input))
 (tables:set! syntax-highlighting:highlighters ranged

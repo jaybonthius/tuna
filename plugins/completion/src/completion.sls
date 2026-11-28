@@ -1001,12 +1001,24 @@
     (session-record-narrowed-set! s (and (memv c (narrow-chars s)) c))
     (session-record-dirty?-set! s #t))
 
+  ;; The selection starts on the first match, so without this RET with
+  ;; nothing typed would choose another source's row over the default.
+  (define (default-first s sts)
+    (let* ([default (session-record-default s)]
+           [holder (and default (pair? sts) (pair? (cdr sts))
+                        (find (lambda (st)
+                                (let ([m (state-matches st)])
+                                  (and (fx> (match-list-count m) 0)
+                                       (string=? default (string-append (lead st) (match-text s (match-list-ref m 0)))))))
+                              sts))])
+      (if holder (cons holder (remq holder sts)) sts)))
+
   ;; Only new matches set the session's matches and select again, so a
   ;; selection cleared while a job matches stays clear until they come.
   (define (combine! s)
     (when (session-record-dirty? s)
       (session-record-dirty?-set! s #f)
-      (let ([matches (let ([sts (shown-states s)])
+      (let ([matches (let ([sts (default-first s (shown-states s))])
                        (if (and (pair? sts) (null? (cdr sts)))
                            (state-matches (car sts))
                            (let* ([n (fold-left (lambda (n st) (fx+ n (match-list-count (state-matches st)))) 0 sts)]

@@ -16,7 +16,7 @@
 (module %internals
   (make-highlighter-record highlighter-record? check-main-thread note-faces-changed! note-mode-set!
    note-mode-set-delaying-hooks! note-module-loaded! stop-stale! start-pending! stop! forget-buffer! send-edit!
-   update-buffer! reread-input! update-all! stop-all!)
+   update-buffer! reread-input! update-all! stop-all! buffer-data-version)
 
   (define main-thread (get-thread-id))
 
@@ -30,7 +30,8 @@
 
   (define-record-type state
     (sealed #t)
-    (fields buffer highlighter (mutable job) (mutable input) (mutable data) (mutable faces?) layers))
+    (fields buffer highlighter (mutable job) (mutable input) (mutable data) (mutable data-version) (mutable faces?)
+            layers))
 
   (define running (make-eq-hashtable))
 
@@ -122,8 +123,10 @@
       (case (car result)
         [(spans) (set-updates! s (cadr result) (caddr result))]
         [(data)
-         (state-data-set! s (cdr result))
-         (send-input! s)])))
+         (state-data-set! s (caddr result))
+         (state-data-version-set! s (cadr result))
+         (send-input! s)]
+        [(data-version) (state-data-version-set! s (cdr result))])))
 
   (define (ended! s ended)
     (when (current? s)
@@ -138,7 +141,7 @@
       ;; The layers are taken at the start: from the first step of this
       ;; plugin's unload its layer types are out of effect, and the unload
       ;; still clears them.
-      (let* ([s (make-state buffer h #f #f #f (faces-on? buffer)
+      (let* ([s (make-state buffer h #f #f #f #f (faces-on? buffer)
                             (map (lambda (type) (buffers:layer buffer type)) (highlighter-record-layers h)))]
              [input (input-of s)])
         (state-input-set! s input)
@@ -249,6 +252,10 @@
   (define (stop-all!)
     (vector-for-each stop! (hashtable-keys running)))
 
+  (define (buffer-data-version buffer)
+    (let ([s (eq-hashtable-ref running buffer #f)])
+      (and s (state-data-version s))))
+
   (record-writer (record-type-descriptor highlighter-record)
     (lambda (h p wr) (display "#<highlighter>" p))))
 
@@ -286,6 +293,12 @@
   (unless (buffers:buffer? buffer)
     (assertion-violation 'syntax-highlighting:input-changed! "not a buffer" buffer))
   (reread-input! buffer))
+
+(define (data-version buffer)
+  (check-main-thread 'syntax-highlighting:data-version)
+  (unless (buffers:buffer? buffer)
+    (assertion-violation 'syntax-highlighting:data-version "not a buffer" buffer))
+  (buffer-data-version buffer))
 
 (define (%note-faces-changed!) (note-faces-changed!))
 

@@ -158,7 +158,7 @@
     (let ([version (list-ref input 0)] [doc (list-ref input 1)] [given (list-ref input 2)]
           [faces? (list-ref input 3)] [faces-index (list-ref input 4)] [count (list-ref input 5)])
       (let ([records (make-vector count #f)] [edited (make-vector count '())]
-            [edits '()] [unmoved '()] [dirty? #t] [more? #f] [last-data #f])
+            [edits '()] [unmoved '()] [dirty? #t] [more? #f] [last-data #f] [data-version #f])
         (define (settle!)
           (unless (null? unmoved)
             (let ([in-order (reverse unmoved)])
@@ -199,8 +199,13 @@
                     (emit-updates! (reverse updates))
                     (let ([u (answer! i (car layers) n start-of end-of)])
                       (loop (fx+ i 1) (cdr layers) (if u (cons u updates) updates)))))))
-          (when (and data (not (equal? data last-data)))
-            (emit (cons 'data data)))
+          ;; Data equal to the last holds positions of this version too, so
+          ;; the version is sent alone.
+          (when data
+            (cond
+              [(not (equal? data last-data)) (emit (list 'data version data))]
+              [(not (eqv? version data-version)) (emit (cons 'data-version version))])
+            (set! data-version version))
           (set! last-data data)
           (set! more? (and more #t)))
         (define (run!)

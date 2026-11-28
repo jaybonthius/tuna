@@ -1,5 +1,6 @@
 (library (syntax-highlighting-test highlight)
-  (export make-marks-highlight make-raising-highlight make-ranged-highlight make-pieces-highlight make-misshapen-highlight)
+  (export make-marks-highlight make-raising-highlight make-ranged-highlight make-pieces-highlight make-misshapen-highlight
+          make-counting-highlight)
   (import (chezscheme) (document))
 
   (define (separator? c) (memv c '(#\space #\newline #\( #\))))
@@ -32,6 +33,14 @@
         (let ([text (document:text doc)])
           (values (list (mark-spans text (string-ref (car input) 0) 0 (string-length text)) (paren-spans text))
                   (list calls edits))))))
+
+  ;; Its data, the number of marks, stays the same across edits that
+  ;; type no mark.
+  (define (make-counting-highlight)
+    (lambda (doc input edits)
+      (let ([text (document:text doc)])
+        (values (list (mark-spans text #\# 0 (string-length text)))
+                (length (filter (lambda (c) (char=? c #\#)) (string->list text)))))))
 
   (define (make-raising-highlight)
     (lambda (doc input edits)

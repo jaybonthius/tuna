@@ -273,3 +273,18 @@
         (buffers:reconcile! c (document:token (buffers:document c) 0) (cddr (renamed "two")))
         (hooks:remove! buffers:after-edit count)
         (check-equal? '(1 ("Head:     main Second commit" "Unstaged" "Stashes…")) (list renames (visible u)))))))
+
+(buffers:define-kind styled (inline))
+
+(test "n and p move between sections whose headings start with a node, where point rests past the heading's start"
+  (let ([c (buffers:make "*styled*"
+             (status-datum
+               (ui:section '((type . file) (value . "one")) (list (styled '() "one") " file")
+                 (ui:section '((type . hunk) (value . "inner")) (list (styled '() "inner") " hunk")))
+               (ui:section '((type . file) (value . "two")) (list (styled '() "two") " file"))))])
+    (buffers:set-silent! c #t)
+    (modes:set-major-mode ui:section-mode c)
+    (ui-test:show! c)
+    (let* ([u (view)] [here (lambda () (let ([s (ui:section-at u)]) (and s (ui:section-value s))))])
+      (check-equal? '("one" "inner" "two" "inner" "one")
+                    (each (lambda (keys) (test-user:press! keys) (here)) '("n" "n" "n" "p" "p"))))))

@@ -1,6 +1,6 @@
 #!tuna
 (import (jsonrpc) (projects) (files) (buffers) (document) (views) (layout) (modes) (commands) (keys) (ask) (faces)
-        (completion) (xref) (diagnostics) (docs-at-point) (status-line) (syntax) (jobs) (processes) (haml)
+        (completion) (xref) (diagnostics) (docs-at-point) (status-line) (syntax) (outline) (jobs) (processes) (haml)
         (json-rpc) (rename (only (chezscheme) format) (format %fmt)) (hooks) (options) (tables) (timers))
 
 (define %self (current-owner))
@@ -12,7 +12,8 @@
 
 (define-enumeration %capability
   (completion hover signature-help definition declaration type-definition implementation references
-   document-highlight workspace-symbol code-action formatting range-formatting on-type-formatting rename diagnostics)
+   document-highlight document-symbol workspace-symbol code-action formatting range-formatting on-type-formatting rename
+   diagnostics)
   %capability-set)
 
 (define-syntax capabilities
@@ -23,8 +24,8 @@
                   (and (identifier? n)
                        (memq (syntax->datum n)
                              '(completion hover signature-help definition declaration type-definition implementation
-                               references document-highlight workspace-symbol code-action formatting range-formatting
-                               on-type-formatting rename diagnostics))))
+                               references document-highlight document-symbol workspace-symbol code-action formatting
+                               range-formatting on-type-formatting rename diagnostics))))
                 #'(name ...))
        #'(%capability-set name ...)]
       [_ (syntax-violation 'lsp:capabilities "not a capability" x)])))
@@ -404,6 +405,7 @@
            [(implementation) (on? "implementationProvider")]
            [(references) (on? "referencesProvider")]
            [(document-highlight) (on? "documentHighlightProvider")]
+           [(document-symbol) (on? "documentSymbolProvider")]
            [(workspace-symbol) (on? "workspaceSymbolProvider")]
            [(code-action) (on? "codeActionProvider")]
            [(formatting) (on? "documentFormattingProvider")]
@@ -482,6 +484,7 @@
          ("implementation" ("dynamicRegistration" . #f) ("linkSupport" . #t))
          ("typeDefinition" ("dynamicRegistration" . #f) ("linkSupport" . #t))
          ("documentHighlight" ("dynamicRegistration" . #f))
+         ("documentSymbol" ("dynamicRegistration" . #f) ("hierarchicalDocumentSymbolSupport" . #t))
          ("codeAction" ("dynamicRegistration" . #f) ("resolveSupport" ("properties" . #("edit" "command")))
           ("dataSupport" . #t) ("isPreferredSupport" . #t)
           ("codeActionLiteralSupport"
@@ -1775,6 +1778,63 @@
       (set! %highlight-timer-delay delay)
       (set! %highlight-timer (call-as-owner %self (lambda () (timers:run-when-idle delay %on-idle)))))))
 
+(define %symbol-kinds
+  '#(file module namespace package class method property field constructor enum interface function variable constant
+     string number boolean array object key null enum-member struct event operator type-parameter))
+
+(define (%symbol-kind n)
+  (if (and (fixnum? n) (fx<= 1 n (vector-length %symbol-kinds))) (vector-ref %symbol-kinds (fx- n 1)) 'unknown))
+
+(define (%blank? s) (for-all char-whitespace? (string->list s)))
+
+;; The protocol neither orders a symbol's children nor keeps them inside
+;; its range, so a server's tree is sorted and repaired here rather than
+;; refused: a child outside its parent joins the parent's level, and a
+;; symbol overlapping the one before it at its level is left out.
+(define (%symbol-entries conn doc symbols)
+  (define (bounds r)
+    (let-values ([(s e) (%bounds-at doc r (%conn-encoding conn))]) (values s (fxmax s e))))
+  (define (convert symbol)
+    (let ([name (%ref symbol "name")] [range (or (%ref symbol "range") (%ref symbol "location" "range"))])
+      (if (and (string? name) (not (%blank? name)) range)
+          (let*-values ([(start end) (bounds range)]
+                        [(point) (let ([selection (%ref symbol "selectionRange")])
+                                   (if selection (let-values ([(s e) (bounds selection)]) s) start))]
+                        [(entry) (outline:make-entry name (%symbol-kind (%ref symbol "kind")) start end
+                                                     (fxmax start (fxmin point end)))]
+                        [(inside outside) (partition (lambda (child) (and (fx<= start (outline:entry-start child))
+                                                                          (fx<= (outline:entry-end child) end)))
+                                                     (level (%list (%ref symbol "children"))))])
+            (cons (outline:make-parent entry inside) outside))
+          '())))
+  (define (level symbols)
+    (let loop ([entries (list-sort (lambda (a b) (fx< (outline:entry-start a) (outline:entry-start b)))
+                                   (apply append (map convert symbols)))]
+               [kept '()])
+      (cond
+        [(null? entries) (reverse kept)]
+        [(and (pair? kept) (fx< (outline:entry-start (car entries)) (outline:entry-end (car kept))))
+         (loop (cdr entries) kept)]
+        [else (loop (cdr entries) (cons (car entries) kept))])))
+  (level symbols))
+
+(define (outline-source b)
+  (unless (buffers:buffer? b) (assertion-violation 'lsp:outline-source "not a buffer" b))
+  (let ([conns (%give (%ordered-conns b) 'document-symbol b)])
+    (and (pair? conns)
+         (let ([conn (car conns)])
+           (%flush! conn)
+           (let* ([version (buffers:version b)]
+                  [result (jsonrpc:request (%conn-rpc conn) "textDocument/documentSymbol"
+                            `(("textDocument" . ,(%doc-identifier conn b))))]
+                  [doc (and (buffers:live? b) (buffers:document-at b version))])
+             (and doc (outline:make-outline b version (%symbol-entries conn doc (%list result)))))))))
+
+(define (%forget-outlines rpc)
+  (let ([conn (eq-hashtable-ref %by-rpc rpc #f)])
+    (when conn
+      (for-each (lambda (d) (when (buffers:live? (%doc-buffer d)) (outline:forget! (%doc-buffer d)))) (%conn-docs conn)))))
+
 (define (%on-idle)
   (when %highlight-pending?
     (set! %highlight-pending? #f)
@@ -2192,6 +2252,9 @@
 (tables:set! status-line:segments status (status-line:right 30))
 (hooks:add! buffers:killed %killed)
 (hooks:add! modes:major-mode-changed %mode-changed)
+(hooks:add! outline:sources outline-source -10)
+(hooks:add! managed outline:forget!)
+(hooks:add! connected %forget-outlines)
 (hooks:add! files:after-rename %renamed)
 (hooks:add! files:before-save %will-save)
 (hooks:add! files:after-save %did-save)
