@@ -1,0 +1,5 @@
+(library chez-inotify
+  (git "https://github.com/jaybonthius/chez-inotify.git")
+  (commit "4fe0a30df8e200391c7638d467653f41767d7617")
+  (library-directories ("src" . "build/obj/src"))
+  (build))

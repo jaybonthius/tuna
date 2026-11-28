@@ -1,0 +1,5 @@
+(library chez-diff
+  (git "https://github.com/jaybonthius/chez-diff.git")
+  (commit "b430ba6d1df731ba1cbb2e9a820777cad4095350")
+  (library-directories ("src" . "build/obj/src"))
+  (build))

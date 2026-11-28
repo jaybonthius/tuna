@@ -142,3 +142,13 @@
       (commands:run buffers:revert-buffer))
     (check-equal? "again\n" (document:text (buffers:document t)))
     (buffers:kill! t)))
+
+(test "buffers:stale-function is #f until a buffer's mode or maker sets a procedure of the buffer locally; anything else is refused"
+  (let ([t (buffers:make "t" "old\n")])
+    (check-equal? #f (buffers:stale-function))
+    (buffers:with-buffer t
+      (options:set-local! buffers:stale-function (lambda (buffer) #t))
+      (check-equal? #t ((buffers:stale-function) t))
+      (check-raises assertion-violation? (options:set-local! buffers:stale-function 'stale)))
+    (check-equal? #f (buffers:stale-function))
+    (buffers:kill! t)))

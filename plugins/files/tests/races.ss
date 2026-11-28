@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (hooks) (options) (jobs) (timers) (buffers) (files) (files-test)
+(import (tuna) (test) (test-runner) (hooks) (options) (jobs) (timers) (document) (buffers) (files) (files-test)
         (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 
 (define request-quit! (test-runner:running-task-canceller))
@@ -165,7 +165,15 @@
 (define (note-rename from to) (set! renamed (list (path-last from) (path-last to))))
 
 (define (quit-as-job-ends start worker input on-result . on-end)
-  (let ([t renamer])
+  (quit-as-ends #t start worker input on-result on-end))
+
+;; A save reads the file's fingerprint on a job before it writes, so only
+;; the job given the buffer's text is the write.
+(define (quit-as-write-ends start worker input on-result . on-end)
+  (quit-as-ends (and (pair? input) (pair? (cdr input)) (document? (cadr input))) start worker input on-result on-end))
+
+(define (quit-as-ends quit? start worker input on-result on-end)
+  (let ([t (and quit? renamer)])
     (if t
         (start worker input on-result
           (lambda (ended)
@@ -268,10 +276,10 @@
   (let ([saving (files:visit "~/saved.txt")])
     (hooks:add! files:after-save note-saved)
     (buffers:replace! saving 1 1 "s")
-    (advice-add! jobs:start quit-as-job-ends)
+    (advice-add! jobs:start quit-as-write-ends)
     (check-equal? 'quit (quitting-call (lambda () (files:save-buffer saving))))
     (set! renamer #f)
-    (advice-remove! jobs:start quit-as-job-ends)
+    (advice-remove! jobs:start quit-as-write-ends)
     (hooks:remove! files:after-save note-saved)
     (check-equal? '(("saved.txt") #f "sa\n") (list saved (buffers:modified? saving) (files-test:read-text "~/saved.txt")))))
 

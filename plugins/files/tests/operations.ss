@@ -171,3 +171,8 @@
             (plain-data:plain-data? a))))
   (check-raises assertion-violation? (file-attributes-size (vector 'not)))
   (check (> (file-system-space (files-test:expand "~/")) 0)))
+
+(test "a file's modification time is its seconds and the nanoseconds past them, as stat gives them"
+  (let ([a (read-file-attributes (files-test:expand "~/e"))] [t (file-modification-time (files-test:expand "~/e"))])
+    (check-equal? (list (time-second t) (time-nanosecond t))
+      (list (file-attributes-modified a) (file-attributes-modified-nanoseconds a)))))

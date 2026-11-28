@@ -4,6 +4,9 @@
 
 (saved:define-saved file-name-history '() (lambda (v) (and (list? v) (for-all string? v))))
 
+(options:define-option preview-delay 0 (lambda (v) (and (real? v) (>= v 0)))
+  "Seconds the selection of a recent file must rest before the file is previewed in the selected view; 0 previews at once.")
+
 (define (%home) (or (getenv "HOME") "/"))
 
 (define (%expand path)
@@ -161,6 +164,52 @@
 (commands:define-command (find-file-other-view [path (ask:file-name "Find file in other view: ")])
   "Visits PATH and shows its buffer in another view, which it selects."
   (layout:call-with-overriding-action layout:display-in-other-view (lambda () (find-file path))))
+
+(jobs:define-worker (%existing-files input emit receive)
+  (import (file-picker folders))
+  (emit (existing-files (cdr input) (car input)))
+  (emit 'done)
+  (let loop () (receive) (loop)))
+
+(define (%recent-items value-of paths)
+  (map (lambda (path) (vector path (files:abbreviated-path path) (value-of path))) paths))
+
+(define (%no-line path) (cons path (cons #f #f)))
+
+(define (%after-preview view) (void))
+
+(define (%read-recent-file)
+  (let ([recent (files:recent-files)])
+    (when (null? recent)
+      (error 'file-picker:find-recent-file "the list is empty"))
+    (layout:call-with-display-view
+      (lambda (display-view)
+        (let-values ([(show end) (completion:location-preview display-view %after-preview)])
+          (completion:read "Find recent file: "
+            (list (completion:source
+                    (job %existing-files (cons #t (%recent-items values recent)))
+                    (in-order)
+                    (category completion:file-category)
+                    (preview (lambda (path) (show (and path (%no-line path)))) (lambda (path) (end (and path (%no-line path)))))
+                    (preview-delay (preview-delay))))
+            file-name-history))))))
+
+(commands:define-command (find-recent-file [path (%read-recent-file)])
+  "Visits PATH, read from files:recent-files, and shows its buffer in the selected view."
+  (find-file path))
+
+(define (recent-files display-view)
+  (unless (or (not display-view) (procedure? display-view))
+    (assertion-violation 'file-picker:recent-files "neither a procedure nor #f" display-view))
+  (let-values ([(show end) (if display-view (completion:location-preview display-view %after-preview) (values #f #f))])
+    (completion:source
+      (job %existing-files (cons #f (%recent-items %no-line (remp files:buffer-visiting (files:recent-files)))))
+      (in-order)
+      (title "Recent files")
+      (narrow #\f)
+      (category completion:location-category)
+      (preview show end)
+      (preview-delay (preview-delay)))))
 
 (options:set! ask:file-name-reader read-file-name)
 (hooks:add! minibuffer:input-changed %mark-discarded)

@@ -50,17 +50,19 @@
           [else (or (buffers:find v) (buffers:make v ""))])))))
 
 (define (%location? v)
-  (and (pair? v) (string? (car v)) (pair? (cdr v)) (integer? (cadr v)) (exact? (cadr v))
-       (integer? (cddr v)) (exact? (cddr v)) (>= (cddr v) 0)))
+  (and (pair? v) (string? (car v)) (pair? (cdr v))
+       (or (and (integer? (cadr v)) (exact? (cadr v)) (integer? (cddr v)) (exact? (cddr v)) (>= (cddr v) 0))
+           (and (not (cadr v)) (not (cddr v))))))
 
 (commands:define-command (switch-to-buffer [target (%read-switch)])
-  "Shows TARGET in the selected view: a buffer, or a location, a path, a line number and a column, whose file it visits there."
+  "Shows TARGET in the selected view: a buffer, or a location, a path, a line number and a column, whose file it visits there; a line of #f leaves point where the visit put it."
   (cond
     [(buffers:buffer? target) (layout:switch-to-buffer target)]
     [(%location? target)
      (let ([b (files:visit (car target))])
        (layout:switch-to-buffer b)
-       (views:set-point! (layout:selected-view) (editing:line-position b (cadr target) (cddr target))))]
+       (when (cadr target)
+         (views:set-point! (layout:selected-view) (editing:line-position b (cadr target) (cddr target)))))]
     [else (assertion-violation 'buffer-picker:switch-to-buffer "neither a buffer nor a location" target)]))
 
 (commands:define-command (switch-to-buffer-other-view)

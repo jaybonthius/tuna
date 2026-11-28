@@ -10,6 +10,9 @@
 (options:define-option revert-function #f (lambda (v) (or (not v) (commands:command? v)))
   "The command buffers:revert-buffer runs to make the current buffer again from its source, or #f when nothing does; a buffer's mode or maker sets it locally.")
 
+(options:define-option stale-function #f (lambda (v) (or (not v) (procedure? v)))
+  "A procedure of a buffer that returns true when the buffer's source changed since the buffer was made from it, or #f when the buffer declares no test; a buffer's mode or maker sets it locally, beside buffers:revert-function.")
+
 (module %internals
   (check-main-thread check-buffer check-change check-position check-range check-layer check-anchor
    check-edit check-spans check-version check-kind check-layer-change check-layer-read

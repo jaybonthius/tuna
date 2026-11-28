@@ -1,12 +1,12 @@
 (library (files disk)
-  (export true-folders-path writable? make-folders read-file revert-file save-file fnv-basis
+  (export true-folders-path writable? readable? make-folders read-file revert-file save-file fnv-basis
           failure failure? failure-violation? failure-message failure-irritants failure-format? failure-filename
           failure-already-exists?
           rename-path copy-path delete-path trash-path make-new-folder
           contents-document contents-length contents-hash contents-bom? contents-crlf? contents-missing?
           contents-folder-missing?
-          changed-on-disk?)
-  (import (chezscheme) (document) (files attributes) (files system) (files paths))
+          disk-fingerprint)
+  (import (chezscheme) (document) (sequence-diff) (files attributes) (files system) (files paths))
 
   ;; Each call that can wait on a slow or network file system lets other
   ;; threads collect meanwhile, so it takes no Scheme string: memory it
@@ -37,7 +37,11 @@
           (true-path path)
           (join (true-path (let ([folder (path-parent path)]) (if (string=? folder "") "." folder))) name))))
 
+  (define read-access 4)
   (define write-access 2)
+
+  (define (readable? path)
+    (fx= (call-with-c-string path (lambda (p) (c-access p read-access))) 0))
 
   (define (writable? path)
     (fx= (call-with-c-string path (lambda (p) (c-access p write-access))) 0))
@@ -172,25 +176,58 @@
                (equal? (document:datums (document:slice old pa (fx+ pa 1)))
                        (document:datums (document:slice new pb (fx+ pb 1))))))))
 
-  (define (changed-range old new)
+  (define (line-bounds s)
+    (let ([n (string-length s)])
+      (let loop ([i 0] [starts '(0)])
+        (cond
+          [(fx= i n) (list->vector (reverse (if (fx= (car starts) n) starts (cons n starts))))]
+          [(char=? (string-ref s i) #\newline) (loop (fx+ i 1) (cons (fx+ i 1) starts))]
+          [else (loop (fx+ i 1) starts)]))))
+
+  ;; Each distinct line is numbered, so lines compare as fixnums. A line
+  ;; of the buffer's text holding U+FFFC may hold an atom, which no line
+  ;; read from a file is, so it matches nothing.
+  (define (line-ids s bounds numbers atoms?)
+    (let* ([count (fx- (vector-length bounds) 1)] [ids (make-vector count)])
+      (do ([k 0 (fx+ k 1)]) ((fx= k count) ids)
+        (let ([start (vector-ref bounds k)] [end (vector-ref bounds (fx+ k 1))])
+          (vector-set! ids k
+            (if (and atoms? (let loop ([i start]) (and (fx< i end) (or (char=? (string-ref s i) #\xFFFC) (loop (fx+ i 1))))))
+                (fx- -1 k)
+                (let ([line (substring s start end)])
+                  (or (hashtable-ref numbers line #f)
+                      (let ([id (hashtable-size numbers)])
+                        (hashtable-set! numbers line id)
+                        id)))))))))
+
+  (define (changed-hunks old new)
     (let* ([a (document:text old)]
            [b (document:text new)]
-           [na (string-length a)]
-           [nb (string-length b)]
-           [m (fxmin na nb)])
+           [a-bounds (line-bounds a)]
+           [b-bounds (line-bounds b)]
+           [numbers (make-hashtable string-hash string=?)]
+           [a-ids (line-ids a a-bounds numbers #t)]
+           [b-ids (line-ids b b-bounds numbers #f)])
       (define (same? i j)
         (let ([c (string-ref a i)])
           (and (char=? c (string-ref b j))
                (or (not (char=? c #\xFFFC)) (same-object? old i new j)))))
       (define (position doc k)
         (fxmax 1 (document:position doc k (document:unit characters))))
-      (let* ([prefix (let loop ([i 0]) (if (and (fx< i m) (same? i i)) (loop (fx+ i 1)) i))]
-             [suffix (let loop ([k 0])
-                       (if (and (fx< k (fx- m prefix)) (same? (fx- na (fx+ k 1)) (fx- nb (fx+ k 1))))
-                           (loop (fx+ k 1))
-                           k))])
-        (list (position old prefix) (position old (fx- na suffix))
-              (position new prefix) (position new (fx- nb suffix))))))
+      (define (narrowed start end new-start new-end)
+        (let* ([m (fxmin (fx- end start) (fx- new-end new-start))]
+               [prefix (let loop ([i 0]) (if (and (fx< i m) (same? (fx+ start i) (fx+ new-start i))) (loop (fx+ i 1)) i))]
+               [suffix (let loop ([k 0])
+                         (if (and (fx< k (fx- m prefix)) (same? (fx- end (fx+ k 1)) (fx- new-end (fx+ k 1))))
+                             (loop (fx+ k 1))
+                             k))])
+          (list (position old (fx+ start prefix)) (position old (fx- end suffix))
+                (position new (fx+ new-start prefix)) (position new (fx- new-end suffix)))))
+      (filter (lambda (h) (not (and (fx= (car h) (cadr h)) (fx= (caddr h) (cadddr h)))))
+        (map (lambda (h)
+               (narrowed (vector-ref a-bounds (hunk-old-start h)) (vector-ref a-bounds (hunk-old-end h))
+                         (vector-ref b-bounds (hunk-new-start h)) (vector-ref b-bounds (hunk-new-end h))))
+             (vector-diff a-ids b-ids fx=)))))
 
   (define (revert-file path old)
     (check-not-folder path)
@@ -198,7 +235,7 @@
       (raise (condition (make-i/o-file-does-not-exist-error path) (make-message-condition "no such file")
                         (make-irritants-condition (list path)))))
     (let ([contents (decode (read-bytes path))])
-      (cons contents (changed-range old (contents-document contents)))))
+      (cons contents (changed-hunks old (contents-document contents)))))
 
   (define (encode doc bom crlf)
     (let-values ([(out extract) (open-bytevector-output-port)])
@@ -217,11 +254,10 @@
               (put-bytevector out bv start (fx- end start)))))
       (extract)))
 
-  (define (changed-on-disk? path length hash)
+  (define (disk-fingerprint path)
     (and (file-exists? path)
          (let ([bytes (read-bytes path)])
-           (not (and (= (bytevector-length bytes) length)
-                     (= (fnv bytes 0 (bytevector-length bytes) fnv-basis) hash))))))
+           (list (bytevector-length bytes) (fnv bytes 0 (bytevector-length bytes) fnv-basis)))))
 
   (define (flush! port path)
     (flush-output-port port)
@@ -277,19 +313,17 @@
       (mkdir folder))
     #t)
 
-  (define (save-file path doc bom crlf length hash check?)
+  (define (save-file path doc bom crlf)
     (let ([folder (path-parent path)])
       (unless (file-directory? folder)
         (raise (condition (make-i/o-file-does-not-exist-error folder) (make-message-condition "no such folder")
                           (make-irritants-condition (list folder)))))
       (check-not-folder path)
-      (if (and check? (changed-on-disk? path length hash))
-          'changed
-          (let ([bytes (encode doc bom crlf)])
-            (unless (and (not (and (file-exists? path) (in-place? path)))
-                         (write-by-rename! path bytes))
-              (write-in-place! path bytes))
-            (list (bytevector-length bytes) (fnv bytes 0 (bytevector-length bytes) fnv-basis))))))
+      (let ([bytes (encode doc bom crlf)])
+        (unless (and (not (and (file-exists? path) (in-place? path)))
+                     (write-by-rename! path bytes))
+          (write-in-place! path bytes))
+        (list (bytevector-length bytes) (fnv bytes 0 (bytevector-length bytes) fnv-basis)))))
 
   (define (inside? path folder)
     (let ([n (string-length folder)])

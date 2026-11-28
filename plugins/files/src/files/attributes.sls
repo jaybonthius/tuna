@@ -1,6 +1,7 @@
 (library (files attributes)
   (export read-file-attributes file-attributes? file-type file-system-space
           file-attributes-type file-attributes-size file-attributes-blocks file-attributes-modified
+          file-attributes-modified-nanoseconds
           file-attributes-mode file-attributes-links file-attributes-uid file-attributes-gid
           file-attributes-owner file-attributes-group file-attributes-target make-owner-names)
   (import (chezscheme) (files system))
@@ -32,6 +33,7 @@
   (define size-offset 48)
   (define blocks-offset 64)
   (define mtime-offset 88)
+  (define mtime-nanoseconds-offset 96)
   (define statvfs-size 112)
   (define frsize-offset 8)
   (define bavail-offset 32)
@@ -148,11 +150,12 @@
                           uid gid
                           (if names (cached (owner-names-users names) owner-name uid) (owner-name uid))
                           (if names (cached (owner-names-groups names) group-name gid) (group-name gid))
-                          (and (eq? type (file-type link)) (read-link 'read-file-attributes path p))))))
+                          (and (eq? type (file-type link)) (read-link 'read-file-attributes path p))
+                          (foreign-ref 'integer-64 buffer mtime-nanoseconds-offset)))))
             (lambda () (foreign-free buffer)))))))
 
   (define (file-attributes? v)
-    (and (vector? v) (fx= (vector-length v) 12) (eq? (vector-ref v 0) tag)))
+    (and (vector? v) (fx= (vector-length v) 13) (eq? (vector-ref v 0) tag)))
 
   (define-syntax define-accessor
     (syntax-rules ()
@@ -173,6 +176,7 @@
   (define-accessor file-attributes-owner 9)
   (define-accessor file-attributes-group 10)
   (define-accessor file-attributes-target 11)
+  (define-accessor file-attributes-modified-nanoseconds 12)
 
   (define (file-system-space path)
     (unless (string? path)

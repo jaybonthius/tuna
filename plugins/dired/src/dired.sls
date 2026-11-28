@@ -104,6 +104,10 @@
   (import (dired reading))
   (emit (read-folder folder)))
 
+(jobs:define-worker (%state-reader folder emit)
+  (import (dired reading))
+  (emit (folder-state folder)))
+
 (jobs:define-worker (%non-empty-folders paths emit)
   (import (dired reading))
   (emit (non-empty-folders paths)))
@@ -322,7 +326,7 @@
   (let* ([entries (vector->list (folder-read-entries read))]
          [sorted (append (list-head entries 2) (%sorted b (list-tail entries 2)))])
     (apply %folder (list (cons 'key 'folder) (cons 'path folder-path)
-                         (cons 'modified (file-attributes-modified (folder-read-attributes read)))
+                         (cons 'modified (modification-stamp (folder-read-attributes read)))
                          (cons 'widths (%widths entries)))
       (%header-datum folder-path
                      (fold-left (lambda (n e) (+ n (* 512 (file-attributes-blocks (listed-attributes e))))) 0 entries)
@@ -408,6 +412,16 @@
   (unless (current-task)
     (assertion-violation who "not in a task")))
 
+(define (%read-at? listing state)
+  (and (eqv? (state-stamp state) (document:node-attribute (%folder-node (buffers:document listing)) 'modified))
+       (equal? (state-names state) (list-sort string<? (map %entry-name (remp %trivial? (%entries listing)))))))
+
+;; A folder that is gone is no change, so a listing of it is not read again
+;; until the user asks.
+(define (%stale? listing)
+  (let ([state (guard (c [(i/o-error? c) #f]) (job-result 'dired:stale? %state-reader (folder listing)))])
+    (and state (not (%read-at? listing state)))))
+
 (define (visit folder-path)
   (unless (string? folder-path)
     (assertion-violation 'dired:visit "not a string" folder-path))
@@ -420,7 +434,7 @@
     (let ([b (%listing-of resolved)])
       (if b
           (begin
-            (unless (eqv? modified (document:node-attribute (%folder-node (buffers:document b)) 'modified))
+            (when (%stale? b)
               (if (buffers:with-buffer b (refresh-when-revisited?))
                   (refresh b)
                   (ask:message "Folder changed on disk; type g to refresh")))
@@ -1129,7 +1143,7 @@
                                    (document:node-start entry) (document:node-end entry))))))
 
 (define (%set-local-options)
-  (options:set-local! files:offer-save? #f buffers:revert-function refresh)
+  (options:set-local! files:offer-save? #f buffers:revert-function refresh buffers:stale-function %stale?)
   (hooks:add-local! completion:target-finders %entry-target -20))
 
 (hooks:add! mode-hook %set-local-options)

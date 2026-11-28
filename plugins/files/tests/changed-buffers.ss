@@ -53,3 +53,38 @@
   (check-equal? '(1 "changed too\n") (list reverts (files-test:text other)))
   (hooks:remove! files:after-revert count-revert)
   (check-raises assertion-violation? (files:revert-changed-buffers #f)))
+
+(test "files:revert-changed-buffers returns two lists, in the order visited, of the accepted buffers whose file changed: those it reloaded, and those it left alone, as a modified one; an unreadable file counts as unchanged"
+  (files-test:write-text! "~/clean.txt" "clean\n")
+  (files-test:write-text! "~/edited.txt" "edited\n")
+  (files-test:write-text! "~/locked.txt" "locked\n")
+  (let ([clean (files:visit "~/clean.txt")] [edited (files:visit "~/edited.txt")] [locked (files:visit "~/locked.txt")])
+    (buffers:replace! edited 1 1 "mine ")
+    (files-test:write-text! "~/clean.txt" "clean, theirs\n")
+    (files-test:write-text! "~/edited.txt" "edited, theirs\n")
+    (files-test:write-text! "~/locked.txt" "locked, theirs\n")
+    (files-test:set-mode! "~/locked.txt" #o000)
+    (let-values ([(reloaded left) (files:revert-changed-buffers (lambda (buffer) (memq buffer (list locked edited clean))))])
+      (check-equal? (list (list clean) (list edited)) (list reloaded left))
+      (check-equal? '("clean, theirs\n" #f) (list (files-test:text clean) (buffers:modified? clean)))
+      (check-equal? '("mine edited\n" "locked\n") (list (files-test:text edited) (files-test:text locked))))
+    (files-test:set-mode! "~/locked.txt" #o644)))
+
+(test "a buffer left alone, then made unmodified, is left alone again for the same change, and reloaded at the file's next change"
+  (let ([edited (files:buffer-visiting "~/edited.txt")])
+    (files:not-modified edited)
+    (let-values ([(reloaded left) (files:revert-changed-buffers (lambda (buffer) (eq? buffer edited)))])
+      (check-equal? (list '() (list edited) "mine edited\n") (list reloaded left (files-test:text edited))))
+    (files-test:write-text! "~/edited.txt" "edited, theirs again\n")
+    (let-values ([(reloaded left) (files:revert-changed-buffers (lambda (buffer) (eq? buffer edited)))])
+      (check-equal? (list (list edited) '() "edited, theirs again\n") (list reloaded left (files-test:text edited))))))
+
+(test "a buffer typed in while its reload's read runs keeps the typed text and is returned, the file's text not applied"
+  (files-test:write-text! "~/typed.txt" "before\n")
+  (let ([typed (files:visit "~/typed.txt")])
+    (files-test:write-text! "~/typed.txt" "after\n")
+    (let-values ([(reloaded left) (files-test:typing-during-read typed "typed "
+                                    (lambda () (files:revert-changed-buffers (lambda (buffer) (eq? buffer typed)))))])
+      (check-equal? (list '() (list typed)) (list reloaded left))
+      (check-equal? '("typed before\n" #t) (list (files-test:text typed) (buffers:modified? typed))))
+    (files:not-modified typed)))

@@ -1,5 +1,5 @@
 (library (dired reading)
-  (export resolve-folder resolved-path resolved-modified
+  (export resolve-folder resolved-path resolved-modified modification-stamp folder-state state-stamp state-names
           read-folder folder-read-attributes folder-read-space folder-read-entries
           listed-name listed-attributes listed-broken?
           non-empty-folders failure? failure-message failure-irritants failure-format?)
@@ -37,11 +37,28 @@
 
   (define (folder? a) (eq? (file-attributes-type a) (file-type folder)))
 
+  (define (modification-stamp a)
+    (+ (* (file-attributes-modified a) 1000000000) (file-attributes-modified-nanoseconds a)))
+
   (define (resolve-folder path)
     (failing
       (lambda ()
         (let* ([path (true-path path)] [a (read-file-attributes path)])
-          (vector path (and (folder? a) (file-attributes-modified a)))))))
+          (vector path (and (folder? a) (modification-stamp a)))))))
+
+  ;; A folder's time moves in the kernel's clock ticks, milliseconds apart,
+  ;; so an entry made in the tick the folder was read leaves it as it was;
+  ;; its names tell that change.
+  (define (folder-state folder)
+    (failing
+      (lambda ()
+        (let ([a (read-file-attributes folder)])
+          (unless (folder? a)
+            (raise (condition (make-error) (make-message-condition "not a folder") (make-irritants-condition (list folder)))))
+          (vector (modification-stamp a) (list-sort string<? (directory-list folder)))))))
+
+  (define (state-stamp state) (vector-ref state 0))
+  (define (state-names state) (vector-ref state 1))
 
   ;; A name gone between the folder's read and its own is left out, as ls
   ;; leaves it out.

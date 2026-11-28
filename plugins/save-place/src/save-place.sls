@@ -45,3 +45,6 @@
 ;; one runs first.
 (hooks:add! buffers:killed %keep-place! -10)
 (hooks:add! files:after-visit %restore-place!)
+;; A picker's preview is a temporary visit, which shows the file where it
+;; opens, as Consult lets save-place's hook run in its previews.
+(hooks:add! files:after-temporary-visit %restore-place!)

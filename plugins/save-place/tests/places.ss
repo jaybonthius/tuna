@@ -1,4 +1,4 @@
-(import (tuna) (test) (options) (save-place-test visits) (save-place))
+(import (tuna) (test) (options) (buffers) (views) (files) (save-place-test visits) (save-place))
 
 (define (place name) (assoc (save-place-test/visits:home-file name) (save-place:places)))
 
@@ -48,3 +48,11 @@
   (load-module! '(save-place))
   (check-equal? (cons (save-place-test/visits:home-file "kept.txt") 5) (place "kept.txt"))
   (check-equal? #f (place "off.txt")))
+
+(test "a temporary visit, as a picker's preview makes, opens the file at its place, and killing it keeps the place"
+  (save-place-test/visits:write-file! "preview.txt" "one\ntwo\nthree\n")
+  (save-place-test/visits:leave! "preview.txt" 6)
+  (let ([b (files:visit-temporarily (save-place-test/visits:home-file "preview.txt"))])
+    (check-equal? 6 (views:last-point b))
+    (buffers:kill! b))
+  (check-equal? (cons (save-place-test/visits:home-file "preview.txt") 6) (place "preview.txt")))

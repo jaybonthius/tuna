@@ -1,5 +1,5 @@
 #!tuna
-(import (options) (ask) (document) (buffers))
+(import (options) (ask) (jobs) (document) (buffers))
 
 (define (expand path)
   (if (and (>= (string-length path) 2) (string=? (substring path 0 2) "~/"))
@@ -70,6 +70,24 @@
 (define %said '())
 
 (define (take-said!) (let ([s (reverse %said)]) (set! %said '()) s))
+
+;; A user may type at any time, so also between the start of a reload's
+;; read and its result, which a job delivers in a later task. The job is
+;; known by the text it reads against, since this library imports no files,
+;; which a test unloads.
+(define (typing-during-read buffer text thunk)
+  (let ([typed? #f])
+    (define (type next worker input . rest)
+      (let ([job (apply next worker input rest)])
+        (when (and (not typed?) (pair? input) (eq? (cdr input) (buffers:document buffer)))
+          (set! typed? #t)
+          (buffers:replace! buffer 1 1 text))
+        job))
+    (advice-add! jobs:start type)
+    (call-with-values thunk
+      (lambda results
+        (advice-remove! jobs:start type)
+        (apply values results)))))
 
 ;; ask's own writer reports each message as a warning, which would fail
 ;; the test file; the tests read the messages instead.

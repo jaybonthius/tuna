@@ -1,5 +1,6 @@
 (library (file-picker folders)
-  (export discarded-length restarted-name expand-path directory? folder-entries prefix-base-length partial-expansions)
+  (export discarded-length restarted-name expand-path directory? folder-entries prefix-base-length partial-expansions
+          existing-files)
   (import (chezscheme) (completion matcher) (files attributes))
 
   (define (discarded-length name)
@@ -78,4 +79,18 @@
                                   (names path)))))
                  found))))
       (list (cons (expand-path home start (substring prefix 0 n)) ""))
-      (components (substring prefix n (string-length prefix))))))
+      (components (substring prefix n (string-length prefix)))))
+
+  (define (existing-files items details?)
+    (let ([owners (make-owner-names)])
+      (list->vector
+        (fold-right
+          (lambda (item kept)
+            (let ([a (attributes (vector-ref item 0) owners)])
+              (if a
+                  (cons (if details?
+                            (vector (vector-ref item 1) (vector-ref item 2) (cons (file-attributes-size a) (file-attributes-modified a)))
+                            (cons (vector-ref item 1) (vector-ref item 2)))
+                        kept)
+                  kept)))
+          '() items)))))

@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (options) (keys) (jobs) (buffers) (views) (layout) (layout-split)
+(import (tuna) (test) (test-runner) (test-user) (options) (keys) (jobs) (buffers) (views) (layout) (layout-split)
         (files) (minibuffer) (completion) (completion-list) (buffer-picker) (completion-test sessions) (minibuffer-test reading) (minibuffer-test screen) (completion-test picking))
 
 (define (check-eq? a b) (check (eq? a b)))
@@ -292,3 +292,24 @@
 (test "b and k act on a buffer chosen in any read of buffers"
   (check-eq? buffer-picker:switch-to-buffer (keys:lookup-in (list completion:buffer-action-keymap) "b"))
   (check-eq? buffer-picker:kill-buffer (keys:lookup-in (list completion:buffer-action-keymap) "k")))
+
+(test "a location whose line is #f visits its file and shows it where the visit put it, both when chosen and in a preview"
+  (let* ([path (home-file "noline.txt" "one\ntwo\nthree\n")]
+         [noline (lambda (display-view)
+                   (let-values ([(show end) (completion:location-preview display-view (lambda (v) (void)))])
+                     (completion:source (candidates (vector (cons "noline.txt" (cons* path #f #f))))
+                                        (category completion:location-category)
+                                        (preview show end))))])
+    (with-sources (list buffer-picker:buffers noline)
+      (lambda ()
+        (only! "notes")
+        (let ([v (view)])
+          (test-user:press! "C-x b")
+          (test-user:type! "noline")
+          (completion-test/picking:choices)
+          (test-runner:wait-until (lambda () (let ([b (views:buffer v)]) (and b (equal? path (files:path b))))))
+          (check (files:temporary? (views:buffer v)))
+          (completion-test/picking:press-until-ended! "RET" buffer-picker:switch-to-buffer)
+          (check-equal? "|one\ntwo\nthree\n" (test-user:text)))))
+    (buffer-picker:switch-to-buffer (cons* path #f #f))
+    (check-equal? path (files:path (views:buffer (view))))))

@@ -33,6 +33,9 @@
 (hooks:define-hook after-rename
   "Called with the old and new paths after files:rename-file has renamed a file or folder and moved the buffers visiting it.")
 
+(hooks:define-hook visited-path-changed
+  "Called with a buffer, the path it visited or #f, and the path it visits after it has started visiting another file, by files:write-file or files:rename-file; before the write that may follow.")
+
 (hooks:define-hook directory-finders
   "Called with a buffer by files:directory; the first entry, by depth, that returns a folder, a string starting with /, gives the buffer's folder. files' own entry, files:file-directory, is at depth -10.")
 
@@ -146,8 +149,6 @@
 
 (saved:define-saved %visits '() (lambda (v) (and (list? v) (for-all %visit? v))))
 
-(define-condition-type &changed-on-disk &error %make-changed-on-disk %changed-on-disk?)
-
 (define-condition-type &canceled &error %make-canceled %canceled?)
 
 (define-condition-type %&folder &i/o-filename %make-folder %folder?)
@@ -192,12 +193,17 @@
 
 ;; A file that cannot be read counts as unchanged, so its buffer is left
 ;; as a gone file's is.
-(jobs:define-worker (%change-checker files emit)
+(jobs:define-worker (%fingerprinter paths emit)
   (import (files disk))
-  (emit (map (lambda (f) (guard (c [#t #f]) (apply changed-on-disk? f))) files)))
+  (emit (map (lambda (path) (guard (c [#t #f]) (disk-fingerprint path))) paths)))
+
+(jobs:define-worker (%unreadable-finder paths emit)
+  (import (files disk))
+  (emit (filter (lambda (path) (not (readable? path))) paths)))
 
 (module %internals
   (check-main-thread check-buffer check-path check-task file-entry entry-of entry-path entry-length entry-hash
+   entry-left-alone entry-left-alone-set!
    entry-live? visited-buffers buffer-at open-buffer! remember-read! take-read!
    move-entry! move-entries-under! check-not-visited-under with-entry-lock run-job run-operation record-read! save! forget-killed!
    take-back! open-pending! save-visits! stop-waiting! mark-temporary! end-temporary! temporary-buffer?)
@@ -225,7 +231,7 @@
   (define-record-type entry
     (sealed #t)
     (fields buffer (mutable path) (mutable given-name) (mutable length) (mutable hash)
-            (mutable bom) (mutable crlf) (mutable holder) (mutable job) (mutable waiters)))
+            (mutable bom) (mutable crlf) (mutable holder) (mutable job) (mutable waiters) (mutable left-alone)))
 
   (define by-buffer (make-eq-hashtable))
   (define by-path (make-hashtable string-hash string=?))
@@ -256,7 +262,7 @@
 
   (define (visit->entry b v)
     (make-entry b (vector-ref v 0) (vector-ref v 2) (vector-ref v 3) (vector-ref v 4)
-                (vector-ref v 5) (vector-ref v 6) #f #f '()))
+                (vector-ref v 5) (vector-ref v 6) #f #f '() #f))
 
   (define (visit-path v) (vector-ref v 0))
   (define (visit-name v) (vector-ref v 1))
@@ -388,7 +394,7 @@
       (lambda ()
         (let* ([b (buffers:make (name-for! path) doc)]
                [e (make-entry b path (buffers:name b) length hash
-                    (and read (contents-bom? read)) (and read (contents-crlf? read)) #f #f '())])
+                    (and read (contents-bom? read)) (and read (contents-crlf? read)) #f #f '() #f)])
           (unless (and read (eq? doc (contents-document read)))
             (buffers:set-modified! b #t))
           (add-entry! e)
@@ -405,9 +411,16 @@
         (rename-group! (path-last (entry-path e)))
         (save-visits!))))
 
+  (define (move-entry! b path)
+    (let* ([old (let ([e (entry-of b)]) (and e (entry-path e)))]
+           [e (move-entry-quietly! b path)])
+      (unless (equal? old path)
+        (buffers:with-buffer b (visited-path-changed b old path)))
+      e))
+
   ;; The buffer leaves its name first, so a file named as the buffer is
   ;; not given a name made distinct from the buffer's own.
-  (define (move-entry! b path)
+  (define (move-entry-quietly! b path)
     (without-cancels
       (lambda ()
         (buffers:rename! b (string-append (buffers:name b) "\x0;"))
@@ -416,6 +429,7 @@
               (let ([old (entry-path e)])
                 (hashtable-delete! by-path old)
                 (entry-path-set! e path)
+                (entry-left-alone-set! e #f)
                 (set! visited (remq e visited))
                 (let ([name (name-for! path)])
                   (buffers:rename! b name)
@@ -427,7 +441,7 @@
                 e)
               (let ([name (name-for! path)])
                 (buffers:rename! b name)
-                (let ([e (make-entry b path name 0 fnv-basis #f #f #f #f '())])
+                (let ([e (make-entry b path name 0 fnv-basis #f #f #f #f '() #f)])
                   (add-entry! e)
                   (save-visits!)
                   e)))))))
@@ -441,6 +455,7 @@
           (lambda ()
             (entry-length-set! e (car result))
             (entry-hash-set! e (cadr result))
+            (entry-left-alone-set! e #f)
             (when (= version (buffers:version b))
               (buffers:set-modified! b #f))
             (save-visits!)))
@@ -454,13 +469,9 @@
       (lambda ()
         (entry-length-set! e (contents-length read))
         (entry-hash-set! e (contents-hash read))
+        (entry-left-alone-set! e #f)
         (entry-bom-set! e (contents-bom? read))
         (entry-crlf-set! e (contents-crlf? read)))))
-
-  (define (changed-on-disk who path)
-    (condition (%make-changed-on-disk) (make-who-condition who)
-               (make-message-condition "another program changed the file")
-               (make-irritants-condition (list (abbreviated-path path)))))
 
   (define (add-final-newline! b)
     (let* ([doc (buffers:document b)] [n (document:length doc)])
@@ -633,20 +644,16 @@
           (when path (move-entry! (entry-buffer e) path))))
       (reverse visited)))
 
-  (define (save! who e check?)
+  (define (save! who e)
     (let ([b (entry-buffer e)])
       (buffers:with-buffer b (before-save b))
       (when (and (entry-live? e) (buffers:with-buffer b (require-final-newline)))
         (add-final-newline! b))
       (when (entry-live? e)
-        (let* ([version (buffers:version b)]
-               [result (run-job who %writer
-                         (list (entry-path e) (buffers:document b) (entry-bom e) (entry-crlf e)
-                               (entry-length e) (entry-hash e) check?)
-                         (lambda (result) (record-save! e version result))
-                         e)])
-          (when (eq? result 'changed)
-            (raise (changed-on-disk who (entry-path e))))))))
+        (let ([version (buffers:version b)])
+          (run-job who %writer (list (entry-path e) (buffers:document b) (entry-bom e) (entry-crlf e))
+            (lambda (result) (record-save! e version result))
+            e)))))
 
   (define (forget-killed! buffer)
     (let ([e (entry-of buffer)])
@@ -830,6 +837,21 @@
       (%confirm-save 'files:write-file path)
       path)))
 
+;; Asked before before-save runs, as Emacs's basic-save-buffer asks, so an
+;; entry that edits the buffer or asks a server runs only for a save that
+;; will be made.
+;; The file is read under the entry lock, so a save still writing it is
+;; done and recorded first, and its write is no other program's change;
+;; that save may also leave nothing to save.
+(define (%confirm-changed-on-disk buffer e)
+  (when (and (with-entry-lock 'files:save-buffer e
+               (lambda ()
+                 (and (entry-live? e) (buffers:modified? buffer)
+                      (let ([on-disk (car (run-operation 'files:save-buffer %fingerprinter (list (entry-path e))))])
+                        (and on-disk (not (equal? on-disk (list (entry-length e) (entry-hash e)))))))))
+             (not (ask:yes-or-no? (format "~a changed on disk since it was read; save anyway? " (abbreviated-path (entry-path e))))))
+    (%cancel 'files:save-buffer (entry-path e))))
+
 (commands:define-command (save-buffer [buffer (buffers:current)])
   "Saves BUFFER to its file when it is modified, asking for a file when it visits none and files:offer-save? is true there."
   (check-buffer 'files:save-buffer buffer)
@@ -840,13 +862,14 @@
        (when (eq? (commands:this-command) save-buffer)
          (ask:message "(No changes need to be saved)"))]
       [e
-       ;; Asked before the entry lock is taken, so other saves of the
-       ;; buffer do not wait on the user.
+       ;; Asked outside the entry lock, so other saves of the buffer do not
+       ;; wait on the user.
        (%confirm-save 'files:save-buffer (entry-path e))
+       (%confirm-changed-on-disk buffer e)
        (with-entry-lock 'files:save-buffer e
          (lambda ()
            (when (and (entry-live? e) (buffers:modified? buffer))
-             (save! 'files:save-buffer e #t))))]
+             (save! 'files:save-buffer e))))]
       [else
        (let ([path (%ask-file-name 'files:save-buffer "File to save in: " buffer)])
          (%confirm-overwrite 'files:save-buffer path)
@@ -867,7 +890,7 @@
       (with-entry-lock 'files:write-file e
         (lambda ()
           (when (entry-live? e)
-            (save! 'files:write-file e #f)))))))
+            (save! 'files:write-file e)))))))
 
 (define (%every-buffer buffer) #t)
 
@@ -884,27 +907,78 @@
         (save-buffer b)))
     (visited-buffers)))
 
+(define (%disk-fingerprints buffers)
+  (run-operation 'files:revert-changed-buffers %fingerprinter (map (lambda (b) (entry-path (entry-of b))) buffers)))
+
+;; The hunks go in last first, so each one's positions are still those of
+;; the text they were found in; with no pause between them they are one
+;; group to undo.
+(define (%apply-hunks! buffer new hunks)
+  (for-each (lambda (hunk)
+              (apply (lambda (start end new-start new-end)
+                       (buffers:replace! buffer start end (document:slice new new-start new-end)))
+                     hunk))
+            (reverse hunks)))
+
+;; Typing goes on while a job reads the file, so the new text goes in only
+;; if the buffer still has the text it was read against.
+(define (%reload-unmodified! buffer checked)
+  (let ([e (entry-of buffer)])
+    (with-entry-lock 'files:revert-changed-buffers e
+      (lambda ()
+        (cond
+          [(not (entry-live? e)) 'unchanged]
+          [(buffers:modified? buffer) (entry-left-alone-set! e checked) 'left]
+          [else
+           (let* ([version (buffers:version buffer)]
+                  [read (guard (c [(i/o-error? c) #f])
+                          (run-job 'files:revert-changed-buffers %reverter (cons (entry-path e) (buffers:document buffer))
+                            (lambda (read) (void)) e))]
+                  [fingerprint (and read (list (contents-length (car read)) (contents-hash (car read))))])
+             (cond
+               [(or (not read) (not (entry-live? e))) 'unchanged]
+               [(equal? fingerprint (list (entry-length e) (entry-hash e))) 'unchanged]
+               [(and (= version (buffers:version buffer)) (not (buffers:modified? buffer)))
+                (record-read! e (car read))
+                (%apply-hunks! buffer (contents-document (car read)) (cdr read))
+                (buffers:set-modified! buffer #f)
+                (buffers:with-buffer buffer (after-revert buffer))
+                'reloaded]
+               [else (entry-left-alone-set! e fingerprint) 'left]))])))))
+
 (define (revert-changed-buffers predicate)
   (check-main-thread 'files:revert-changed-buffers)
   (unless (procedure? predicate)
     (assertion-violation 'files:revert-changed-buffers "not a procedure" predicate))
   (check-task 'files:revert-changed-buffers)
-  (let ([candidates (filter (lambda (b) (and (not (buffers:modified? b)) (predicate b))) (visited-buffers))])
-    (unless (null? candidates)
-      (let ([changed (run-operation 'files:revert-changed-buffers %change-checker
-                       (map (lambda (b)
-                              (let ([e (entry-of b)]) (list (entry-path e) (entry-length e) (entry-hash e))))
-                            candidates))])
-        ;; Typing goes on while a worker reads the files, so a buffer is
-        ;; checked again here and one modified meanwhile keeps its edits.
-        (for-each
-          (lambda (b changed?)
-            (when (and changed? (buffers:live? b) (entry-of b) (not (buffers:modified? b)))
-              (revert-from-file b)))
-          candidates changed)))))
+  (let ([candidates (filter predicate (visited-buffers))])
+    (let loop ([buffers candidates]
+               [fingerprints (if (null? candidates) '() (%disk-fingerprints candidates))]
+               [reloaded '()]
+               [left '()])
+      (if (null? buffers)
+          (values (reverse reloaded) (reverse left))
+          (let* ([b (car buffers)] [fingerprint (car fingerprints)] [e (and (buffers:live? b) (entry-of b))])
+            (define (next reloaded left) (loop (cdr buffers) (cdr fingerprints) reloaded left))
+            (cond
+              [(or (not e) (not fingerprint)) (next reloaded left)]
+              [(equal? fingerprint (list (entry-length e) (entry-hash e)))
+               (entry-left-alone-set! e #f)
+               (next reloaded left)]
+              ;; A change left alone stays left alone, even once the buffer is
+              ;; undone back to unmodified, since its edits were kept on
+              ;; purpose; the file's next change is a change again.
+              [(or (buffers:modified? b) (equal? fingerprint (entry-left-alone e)))
+               (entry-left-alone-set! e fingerprint)
+               (next reloaded (cons b left))]
+              [else
+               (case (%reload-unmodified! b fingerprint)
+                 [(reloaded) (next (cons b reloaded) left)]
+                 [(left) (next reloaded (cons b left))]
+                 [else (next reloaded left)])]))))))
 
 (commands:define-command (revert-from-file [buffer (buffers:current)])
-  "Reads BUFFER's file again and replaces the part of the text that differs, as one edit."
+  "Reads BUFFER's file again and replaces the lines that differ, as one edit."
   (let ([e (file-entry 'files:revert-from-file buffer)])
     (check-task 'files:revert-from-file)
     (with-entry-lock 'files:revert-from-file e
@@ -920,10 +994,7 @@
                (let ([new (contents-document (car read))])
                  (record-read! e (car read))
                  (if (= version (buffers:version buffer))
-                     (apply (lambda (start end new-start new-end)
-                              (unless (and (= start end) (= new-start new-end))
-                                (buffers:replace! buffer start end (document:slice new new-start new-end))))
-                            (cdr read))
+                     (%apply-hunks! buffer new (cdr read))
                      (buffers:replace! buffer 1 (fx- (document:length (buffers:document buffer)) 1)
                        (document:slice new 1 (fx- (document:length new) 1))))
                  (buffers:set-modified! buffer #f)
@@ -952,11 +1023,49 @@
   (let ([e (file-entry 'files:fingerprint buffer)])
     (values (entry-length e) (entry-hash e))))
 
-(define (changed-on-disk-condition? v)
-  (%changed-on-disk? v))
-
 (define (canceled-condition? v)
   (%canceled? v))
+
+(saved:define-saved recent-files '() (lambda (v) (and (list? v) (for-all string? v))))
+
+(options:define-option recent-limit 20 (lambda (v) (or (not v) (and (fixnum? v) (fx>= v 0))))
+  "How many paths files:recent-files keeps, the most recent; #f keeps every one.")
+
+(hooks:define-hook recent-excluded
+  "Called with a path before files:recent-files records it; an entry that returns true keeps it out.")
+
+(define (%record-recent! buffer)
+  (let ([p (path buffer)])
+    (when (and p (not (exists (lambda (entry) (entry p)) (hooks:entries recent-excluded))))
+      (let ([kept (cons p (remove p (recent-files)))] [n (recent-limit)])
+        (saved:set! recent-files (if (and n (> (length kept) n)) (list-head kept n) kept))))))
+
+(define (forget-recent! path)
+  (check-path 'files:forget-recent! path)
+  (when (member path (recent-files))
+    (saved:set! recent-files (remove path (recent-files)))))
+
+;; The list is filtered as it is when the job ends, since visits may have
+;; changed it meanwhile.
+(define (%forget-unreadable! paths)
+  (unless (null? paths)
+    (let ([gone (run-operation 'files:cleanup-recent %unreadable-finder paths)])
+      (unless (null? gone)
+        (saved:set! recent-files (remp (lambda (p) (member p gone)) (recent-files)))))))
+
+(commands:define-command (cleanup-recent)
+  "Removes the paths of files:recent-files whose files cannot be read."
+  (check-main-thread 'files:cleanup-recent)
+  (check-task 'files:cleanup-recent)
+  (%forget-unreadable! (recent-files)))
+
+;; Only the killed buffer's file is looked at, as Emacs's
+;; recentf-track-closed-file does, so a kill reads nothing else.
+(define (%forget-killed! buffer)
+  (let ([p (path buffer)])
+    (forget-killed! buffer)
+    (when (and p (member p (recent-files)))
+      (spawn-task (lambda (restore) (%forget-unreadable! (list p)))))))
 
 ;; A name that starts with a space marks an internal buffer, such as a
 ;; prompt's, which its plugin kills inside a command.
@@ -1014,7 +1123,9 @@
   (run-operation 'files:make-folder %folder-creator (%operation-path 'files:make-folder path))
   (void))
 
-(hooks:add! buffers:killed forget-killed!)
+(hooks:add! buffers:killed %forget-killed!)
+(hooks:add! after-visit %record-recent!)
+(hooks:add! after-save %record-recent!)
 (hooks:add! buffers:kill-queries %confirm-kill)
 (options:set! buffers:revert-function revert-from-file)
 (hooks:add! directory-finders file-directory -10)
@@ -1029,3 +1140,4 @@
 (on-unload stop-waiting!)
 (take-back!)
 (spawn-task (lambda (restore) (open-pending! visit)))
+(spawn-task (lambda (restore) (%forget-unreadable! (recent-files))))

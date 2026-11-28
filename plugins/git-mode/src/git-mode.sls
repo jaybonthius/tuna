@@ -232,7 +232,8 @@
   (for-each %refresh-buffer! buffers)
   (after-refresh repository)
   (when (revert-buffers?)
-    (files:revert-changed-buffers (%in-repository? repository))))
+    (files:revert-changed-buffers (%in-repository? repository)))
+  (void))
 
 (define (refresh-repository repository)
   (unless (git:repository? repository)

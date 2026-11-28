@@ -77,7 +77,7 @@
 
 (define-category file-category "File names, valued by the whole path.")
 
-(define-category location-category "Lines of files, valued by a location: a path, a line number and a column, as (path line . column).")
+(define-category location-category "Lines of files, valued by a location: a path, a line number and a column, as (path line . column); a line of #f names the file where it opens.")
 
 (define-category name-category "Scheme names exported by Tuna's libraries and Chez's, valued by the exported name.")
 
@@ -1543,7 +1543,9 @@
                         (set! buffer (views:buffer view))
                         (set! point (views:point view)))
                       (views:preview-buffer! view b)
-                      (preview-place view b (editing:line-position b (cadr location) (cddr location)) '())
+                      (if (cadr location)
+                          (preview-place view b (editing:line-position b (cadr location) (cddr location)) '())
+                          (end-preview-place))
                       (shown view)))))))))
     (define (end location)
       (set! ended? #t)
