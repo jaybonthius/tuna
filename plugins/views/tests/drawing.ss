@@ -133,6 +133,18 @@
       (check-equal? '("b.png") (map (lambda (i) (attribute i "src")) (test-user:elements e "md-image"))))
     (check-equal? #f (assoc "mine" (faces (drawn (views:make notes)))))))
 
+(test "a cursor in text a span's replace value hides is a bar at the replacement's end"
+  (let* ([notes (spans-buffer)] [n (views:make notes)])
+    (add-spans! notes n)
+    (for-each
+      (lambda (p)
+        (views:set-point! n p)
+        (check-equal? '(("datum" "") ("datum" "[x] ") ("datum" "now") ("cursor primary" ""))
+          (map (lambda (e) (list (attribute e "class") (test-user:element-text e)))
+               (filter (lambda (e) (member (attribute e "class") '("datum" "cursor primary" "cursor-on primary")))
+                       (test-user:elements-with (car (lines-of (drawn n))) "class")))))
+      '(10 12 14))))
+
 (test "a span-properties entry that raises goes to report, and its span draws without it"
   (let* ([notes (spans-buffer)] [n (views:make notes)])
     (add-spans! notes n)

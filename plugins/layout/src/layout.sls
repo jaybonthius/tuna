@@ -1,5 +1,5 @@
 #!tuna
-(import (buffers) (document) (views) (keys) (commands) (modes) (web) (haml) (ask) (hooks) (options) (tables) (saved))
+(import (buffers) (document) (views) (keys) (commands) (modes) (web) (haml) (ask) (hooks) (options) (tables) (saved) (plain-data))
 
 (define-enumeration direction (left right up down) directions)
 
@@ -1729,6 +1729,8 @@
   (check-main-thread 'layout:set-part-attribute!)
   (unless (symbol? key)
     (assertion-violation 'layout:set-part-attribute! "not a symbol" key))
+  (unless (plain-data:plain-data? value)
+    (assertion-violation 'layout:set-part-attribute! "not plain data" value))
   (let-values ([(ix n) (part-of 'layout:set-part-attribute! node)])
     (let* ([d (node-datum ix n)] [old (datum-attributes d)]
            [kept (remp (lambda (a) (eq? (car a) key)) old)]

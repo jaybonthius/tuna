@@ -164,7 +164,7 @@
                   (layout:set-part-attribute! (layout:view-node a) "title" "x"))
     (check-raises (lambda (e) (and (who-condition? e) (eq? 'layout:set-part-attribute! (condition-who e))))
                   (layout:set-part-attribute! 'node 'title "x"))
-    (check-raises (lambda (e) (and (message-condition? e) (string=? "not plain data" (condition-message e))))
+    (check-raises (layout-test/parts:raised-with 'layout:set-part-attribute! "not plain data")
                   (layout:set-part-attribute! (layout:view-node a) 'title (lambda () 1)))))
 
 (test "level-of gives a view's level, and takes a view"

@@ -82,9 +82,7 @@
   (test-user:press! "- s RET")
   (check-equal? plain (transient-test:menu))
   (test-user:press! "- s")
-  ;; Pressed as a key no page marks as a quit: a page's quit also reaches
-  ;; the menu once it has cancelled the switch's command.
-  (check-equal? '(cancelled) (report-messages (lambda () (keys:press! (test-user:client) "C-g") (test-user:settle))))
+  (check-equal? '(cancelled) (report-messages (lambda () (test-user:press! "C-g"))))
   (check-equal? plain (transient-test:menu)))
 
 (test "the command chosen reads the arguments set when it was chosen, and the menu has closed"

@@ -41,6 +41,16 @@
     (test-user:press! "RET")
     (check-equal? "abc" (minibuffer-test/reading:result outer))))
 
+(test "C-g in a prompt a key started inside another quits only the inner prompt; the outer one waits with its input"
+  (let ([outer (minibuffer-test/reading:start! (lambda () (minibuffer:read "Outer: ")))])
+    (test-user:type! "abc")
+    (let ([inner (minibuffer-test/reading:start! (lambda () (minibuffer:read "Inner: ")))])
+      (check-equal? 'cancelled (minibuffer-test/reading:quit! inner)))
+    (check-equal? 'waiting (minibuffer-test/reading:result outer))
+    (check-equal? '("Outer: ") (minibuffer-test/reading:questions))
+    (check-equal? "abc" (minibuffer-test/reading:input))
+    (check-equal? 'cancelled (minibuffer-test/reading:quit! outer))))
+
 (test "answering an outer prompt while an inner one waits leaves the inner one shown and answerable"
   (let* ([outer-prompt #f]
          [outer (minibuffer-test/reading:start! (lambda () (minibuffer:call-with-setup (lambda (p) (set! outer-prompt p)) (lambda () (minibuffer:read "Outer: ")))))]

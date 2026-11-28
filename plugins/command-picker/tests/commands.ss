@@ -11,18 +11,6 @@
     (check-equal? '(cancelled) (completion-test/picking:quit!))
     found))
 
-;; A quit of a read nested in a prompt also quits the outer prompt, so
-;; inside one the read ends by running a command that changes nothing.
-(define (offered-in-prompt text)
-  (test-user:press! "M-x")
-  (test-user:type! text)
-  (let ([found (completion-test/picking:choices)])
-    (test-user:press! "C-a C-k")
-    (test-user:type! "minibuffer:select-prompt")
-    (completion-test/picking:choices)
-    (test-user:press! "RET")
-    found))
-
 (define (bracket)
   (let ([shown (test-user:elements (test-user:screen) "minibuffer-message")])
     (and (pair? shown) (test-user:element-text (car shown)))))
@@ -72,8 +60,8 @@
   (check-equal? '("completion:next" "completion:next-group") (offered "M-x" "completion:next"))
   (check-equal? '("minibuffer:select-prompt") (offered "M-x" "minibuffer:select-prompt"))
   (let ([r (completion-test/sessions:start! (lambda () (minibuffer:read "Word: " #f)))])
-    (check-equal? '("minibuffer:exit") (offered-in-prompt "minibuffer:exit"))
-    (check-equal? '("completion:search-history") (offered-in-prompt "completion:search-history"))
+    (check-equal? '("minibuffer:exit") (offered "M-x" "minibuffer:exit"))
+    (check-equal? '("completion:search-history") (offered "M-x" "completion:search-history"))
     (test-user:press! "C-g")
     (check-raises cancelled? (completion-test/sessions:result r))))
 
@@ -81,7 +69,7 @@
   (test-user:show! "|")
   (check-equal? '() (offered "M-x" "minibuffer:answer-"))
   (let ([r (completion-test/sessions:start! (lambda () (minibuffer:ask-y-or-n "Save it? ")))])
-    (check-equal? '("minibuffer:answer-no" "minibuffer:answer-yes") (offered-in-prompt "minibuffer:answer-"))
+    (check-equal? '("minibuffer:answer-no" "minibuffer:answer-yes") (offered "M-x" "minibuffer:answer-"))
     (test-user:press! "y")
     (check-equal? #t (completion-test/sessions:result r))))
 

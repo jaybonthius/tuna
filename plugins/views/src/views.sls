@@ -1725,13 +1725,21 @@
     (let loop ([q (fx+ p 1)])
       (if (document:grapheme-boundary? doc q) q (loop (fx+ q 1)))))
 
-  (define (cursor-points v doc)
+  ;; A cluster that a span's replace value hides draws no text to put the
+  ;; cursor on, so its cursor is a bar, which the line puts after the
+  ;; replacement.
+  (define (on-shown-character? doc replacing p)
+    (and (on-character? doc p)
+         (let ([q (cluster-after doc p)])
+           (not (exists (lambda (s) (and (fx<= (span-entry-start s) p) (fx>= (span-entry-end s) q))) replacing)))))
+
+  (define (cursor-points v doc replacing)
     (if (cursor-visible)
         (by-position
           (let loop ([cs (view-record-cursors v)] [primary? #t])
             (cond
               [(null? cs) '()]
-              [(on-character? doc (point-of (car cs))) (loop (cdr cs) #f)]
+              [(on-shown-character? doc replacing (point-of (car cs))) (loop (cdr cs) #f)]
               [else (cons (cons (point-of (car cs)) primary?) (loop (cdr cs) #f))])))
         '()))
 
@@ -1745,14 +1753,14 @@
   (define cursor-on-open (raw-html "<span class=\"cursor-on\">"))
   (define primary-on-open (raw-html "<span class=\"cursor-on primary\">"))
 
-  (define (cursor-spans v doc ws we)
+  (define (cursor-spans v doc ws we replacing)
     (if (cursor-visible)
         (let loop ([cs (view-record-cursors v)] [primary? #t] [acc '()])
           (if (null? cs)
               acc
               (let ([p (point-of (car cs))])
                 (loop (cdr cs) #f
-                      (if (and (fx<= ws p) (fx< p we) (on-character? doc p))
+                      (if (and (fx<= ws p) (fx< p we) (on-shown-character? doc replacing p))
                           (cons (make-span-entry p (cluster-after doc p) cursor-rank (if primary? primary-on-open cursor-on-open)
                                                  span-close #f #f #f #f)
                                 acc)
@@ -1937,6 +1945,7 @@
                                                     (span-click (span-group-keymap g) s))])
                                   (cons (styled-entry style (car s) (cadr s) rank (caddr s)) acc)))
                               acc ((span-group-spans g))))))))]
+           [replacing (filter span-entry-replace entries)]
            [pieces
             (let loop ([i 0] [acc '()])
               (if (fx= i (vector-length regions))
@@ -1946,8 +1955,9 @@
                           (if (or (fx< (cdr r) ws) (fx> (car r) we))
                               acc
                               (append (region-pieces doc (car r) (cdr r) ws we) acc))))))])
-      (list->vector (list-sort (lambda (a b) (fx< (span-entry-start a) (span-entry-start b)))
-                               (append pieces entries (cursor-spans v doc ws we))))))
+      (values (list->vector (list-sort (lambda (a b) (fx< (span-entry-start a) (span-entry-start b)))
+                                       (append pieces entries (cursor-spans v doc ws we replacing))))
+              replacing)))
 
   ;; Ranges of several cursors that overlap or meet are joined, so a line
   ;; two of them hold between them is held, and they draw one span.
@@ -2040,15 +2050,16 @@
     (let-values ([(lo hi) (bounds-of v)])
       (let ([cs (view-client v client)])
         (let-values ([(ws we) (client-run! v doc cs)])
-          (let* ([regions (list->vector (region-ranges-of v doc (view-record-cursors v)))]
-                 [spans (window-spans b v client doc regions ws we)] [end (fxmin hi (fx- (document:length doc) 1))]
-                 [marker (place-marker v cs)]
-                 [marks (let ([points (map point-of (view-record-cursors v))]) (if marker (cons marker points) points))])
+          (let*-values ([(regions) (list->vector (region-ranges-of v doc (view-record-cursors v)))]
+                        [(spans replacing) (window-spans b v client doc regions ws we)]
+                        [(end) (fxmin hi (fx- (document:length doc) 1))]
+                        [(marker) (place-marker v cs)]
+                        [(marks) (let ([points (map point-of (view-record-cursors v))]) (if marker (cons marker points) points))])
             (define (shown marks) (filter (lambda (m) (or (fx< (fx- ws 1) (car m) we) (fx= (car m) we end))) marks))
             (let-values ([(pieces gaps) (if (wrap-lines)
                                             (values #f '())
                                             (sideways-pieces v doc ws we (side-windows v cs) marks))])
-              (new-context v client doc lo hi ws we (document:token doc 0) (shown (cursor-points v doc)) (shown (anchor-points v))
+              (new-context v client doc lo hi ws we (document:token doc 0) (shown (cursor-points v doc replacing)) (shown (anchor-points v))
                            regions spans (longest-span spans) (fold-index-spans (fold-index-of v)) '() (item-ids v b) #t (make-eqv-hashtable)
                            marker pieces gaps (document:offset doc lo (document:unit characters)))))))))
 
