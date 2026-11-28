@@ -102,7 +102,7 @@
 (define (%selected-tabs who)
   (let-values ([(tabs tab) (%view-tabs (layout:selected-view))])
     (unless tabs
-      (assertion-violation who "the selected view is in no tabs"))
+      (error who "the selected view is in no tabs"))
     (values tabs tab)))
 
 (define (%switch-tab! who n sign)
@@ -126,14 +126,22 @@
            new))))
 
 (commands:define-command (new-tab)
-  "Adds a tab after the selected view's tab, showing its buffer, and selects it."
+  "Adds a tab after the selected view's tab, showing its buffer as the selected view does, and selects it."
+  (let ([a (layout:view-node (layout:selected-view))])
+    (unless (and a (not (layout:locked? a)))
+      (error 'layout-tabs:new-tab "a locked part")))
+  (unless (views:buffer (layout:selected-view))
+    (error 'layout-tabs:new-tab "the view shows no buffer"))
   (let* ([v (layout:selected-view)] [new (add-tab! v (views:buffer v))])
-    (views:set-point! new (views:point v))
+    (views:copy-state! v new)
     (layout:select! new)))
 
 (commands:define-command (close-tab)
   "Deletes the tab holding the selected view, with every part in it."
   (let-values ([(tabs tab) (%selected-tabs 'layout-tabs:close-tab)])
+    (let ([refusal (layout:deletion-refusal tab)])
+      (when refusal
+        (error 'layout-tabs:close-tab refusal)))
     (layout:delete-part! tab)))
 
 ;; A lock binds the user's commands, so a tab holding a locked part stays.
@@ -144,7 +152,7 @@
   (let loop ()
     (let-values ([(tabs tab) (%selected-tabs 'layout-tabs:close-other-tabs)])
       (unless (fx< (document:node-start (layout:level-of (layout:selected-view))) (document:node-start tabs))
-        (assertion-violation 'layout-tabs:close-other-tabs "the selected view is in no tabs inside its level"))
+        (error 'layout-tabs:close-other-tabs "the selected view is in no tabs inside its level"))
       (let ([other (find (lambda (c) (not (or (same-part? c tab) (holds-locked? c)))) (parts tabs))])
         (when other
           (layout:delete-part! other)

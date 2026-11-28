@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (views) (buffers) (layout) (modes) (options) (tables) (commands) (keys) (editing)
+(import (tuna) (test) (test-runner) (test-user) (views) (buffers) (layout) (modes) (options) (tables) (commands) (keys) (editing)
         (echo-area) (completion) (help) (help-test) (help-test harpo))
 
 (define (report-messages thunk)
@@ -7,9 +7,6 @@
     (thunk)
     (advice-remove! report keep)
     (reverse reported)))
-
-(define (raised-by who message)
-  (lambda (c) (and (who-condition? c) (eq? who (condition-who c)) (string=? message (condition-message c)))))
 
 (test-user:show! "|one\ntwo\n")
 
@@ -124,7 +121,7 @@
                 (list (keys:lookup-in (list completion:command-action-keymap) "h") (keys:lookup-in (list completion:name-action-keymap) "h"))))
 
 (test "arguments are checked"
-  (check-raises (raised-by 'help:describe-key "neither a key sequence nor an event") (help:describe-key 'x (view)))
-  (check-raises (raised-by 'help:describe-key "not a view") (help:describe-key "C-x" 'x))
-  (check-raises (raised-by 'help:describe-key-briefly "neither a key sequence nor an event") (help:describe-key-briefly 'x (view)))
-  (check-raises (raised-by 'help:where-is "not a command") (help:where-is 'x (view))))
+  (check-raises (test-runner:raised-with 'help:describe-key "neither a key sequence nor an event") (help:describe-key 'x (view)))
+  (check-raises (test-runner:raised-with 'help:describe-key "not a view") (help:describe-key "C-x" 'x))
+  (check-raises (test-runner:raised-with 'help:describe-key-briefly "neither a key sequence nor an event") (help:describe-key-briefly 'x (view)))
+  (check-raises (test-runner:raised-with 'help:where-is "not a command") (help:where-is 'x (view))))

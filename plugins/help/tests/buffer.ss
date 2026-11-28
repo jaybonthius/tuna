@@ -1,8 +1,5 @@
-(import (tuna) (test) (test-user) (web) (views) (buffers) (document) (layout) (layout-split) (modes) (hooks) (options)
+(import (tuna) (test) (test-runner) (test-user) (web) (views) (buffers) (document) (layout) (layout-split) (modes) (hooks) (options)
         (tables) (commands) (keys) (editing) (help) (help-test) (help-test harpo))
-
-(define (raised-by who message)
-  (lambda (c) (and (who-condition? c) (eq? who (condition-who c)) (string=? message (condition-message c)))))
 
 (define (report-messages thunk)
   (let* ([reported '()] [keep (lambda (next c) (set! reported (cons (if (cancelled? c) 'cancelled (condition-message c)) reported)))])
@@ -18,7 +15,7 @@
        (filter (lambda (v) (not (buffers:internal-name? (buffers:name (views:buffer v))))) (layout:views))))
 
 (test "before the first description there is nothing to refresh"
-  (check-raises (raised-by 'help:refresh "no description") (help:refresh)))
+  (check-raises (test-runner:raised-with 'help:refresh "no description") (help:refresh)))
 
 (test-user:show! "|help-test/harpo:honk\n")
 

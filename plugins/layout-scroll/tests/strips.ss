@@ -1,11 +1,6 @@
 (import (tuna) (test) (test-runner) (layout) (layout-split) (layout-scroll) (layout-tabs) (views) (buffers) (document) (commands)
         (tables) (keys) (web) (test-user))
 
-(define (raised-with who message)
-  (lambda (e)
-    (and (who-condition? e) (eq? who (condition-who e))
-         (message-condition? e) (string=? message (condition-message e)))))
-
 (define desktop (test-user:client))
 (define phone (test-user:open-client))
 
@@ -40,10 +35,7 @@
 
 (define (press! client keys) (test-user:press! client keys))
 
-(define (reports-during thunk)
-  (map (lambda (c) (list (condition-who c) (condition-message c))) (reverse (test-runner:reports-during thunk))))
-
-(define (refusals keys) (reports-during (lambda () (press! desktop keys))))
+(define (refusals keys) (test-runner:shown-reports-during (lambda () (press! desktop keys))))
 
 (define (number e name) (string->number (test-user:element-attribute e name)))
 
@@ -190,12 +182,12 @@
     (test-user:settle)
     (check-equal? 'new (selected))
     (check-equal? '(layout-split:container new vd ve) (map car (cddr (caddr (shape)))))
-    (check-raises (raised-with 'layout-scroll:add-column! "not a view in the layout") (layout-scroll:add-column! (views:make e) e))
-    (check-raises (raised-with 'layout-scroll:display-in-new-column "not a buffer") (layout-scroll:display-in-new-column "e"))
+    (check-raises (test-runner:raised-with 'layout-scroll:add-column! "not a view in the layout") (layout-scroll:add-column! (views:make e) e))
+    (check-raises (test-runner:raised-with 'layout-scroll:display-in-new-column "not a buffer") (layout-scroll:display-in-new-column "e"))
     (set-parts! (atom va))
     (layout:select! va)
     (check-equal? '((layout-scroll:cycle-size "the selected view is in no strip"))
-                  (reports-during (lambda () (commands:run layout-scroll:cycle-size))))
+                  (test-runner:shown-reports-during (lambda () (commands:run layout-scroll:cycle-size))))
     (check-equal? #f (layout-scroll:display-in-new-column e))))
 
 (test "the commands refuse to change a locked strip"
@@ -284,3 +276,67 @@
   (test-user:settle)
   (check-equal? '(layout:level () (layout-scroll:container () (va))) (shape))
   (check-equal? layout-scroll:wrap-in-strip (keys:lookup-in (list layout:part-mode-keymap) "w s")))
+
+(define (unnamed-view) (find (lambda (v) (not (assv (views:id v) names))) (layout:views)))
+
+(test "C-x 3 in a row strip adds a column after the selected one, of the default size, showing its buffer at its point, and C-x 2 splits the column across"
+  (let ([vi (named 'vi (views:make a))] [vj (named 'vj (views:make b))])
+    (set-parts! (layout-scroll:container '() (atom vi '(size . 1/3)) (atom vj)))
+    (layout:select! vi)
+    (views:set-point! vi 20)
+    (press! desktop "C-x 3")
+    (let ([new (named 'vi-new (unnamed-view))])
+      (check-equal? '(layout:level () (layout-scroll:container () (vi (size . 1/3)) (vi-new (size . 1/2)) (vj))) (shape))
+      (check-equal? (list 'vi 20 a) (list (selected) (views:point new) (views:buffer new))))
+    (press! desktop "C-x 2")
+    (named 'vi-below (unnamed-view))
+    (check-equal? '(layout:level () (layout-scroll:container ()
+                     (layout-split:container ((direction . column) (size . 1/3)) (vi) (vi-below)) (vi-new (size . 1/2)) (vj)))
+                  (shape))))
+
+(test "C-x 2 in a column strip adds an item after the selected one, and C-x 3 splits the item across"
+  (let ([vk (named 'vk (views:make a))] [vl (named 'vl (views:make b))])
+    (set-parts! (layout-scroll:container '((direction . column)) (atom vk) (atom vl)))
+    (layout:select! vk)
+    (press! desktop "C-x 2")
+    (named 'vk-new (unnamed-view))
+    (check-equal? '(layout:level () (layout-scroll:container ((direction . column)) (vk) (vk-new (size . 1/2)) (vl))) (shape))
+    (press! desktop "C-x 3")
+    (named 'vk-right (unnamed-view))
+    (check-equal? '(layout:level () (layout-scroll:container ((direction . column))
+                     (layout-split:container ((direction . row)) (vk) (vk-right)) (vk-new (size . 1/2)) (vl)))
+                  (shape))))
+
+(test "C-x 3 in a view of a column split by C-x 2 adds a column after that column, as in a column of one view"
+  (let ([vm (named 'vm (views:make a))] [vn (named 'vn (views:make b))])
+    (set-parts! (layout-scroll:container '() (atom vm '(size . 1/3)) (atom vn)))
+    (layout:select! vm)
+    (press! desktop "C-x 2")
+    (named 'vm-below (unnamed-view))
+    (press! desktop "C-x 3")
+    (named 'vm-right (unnamed-view))
+    (check-equal? '(layout:level () (layout-scroll:container ()
+                     (layout-split:container ((direction . column) (size . 1/3)) (vm) (vm-below)) (vm-right (size . 1/2)) (vn)))
+                  (shape))))
+
+(test "a prefix to C-x 3 or C-x 2 sizes the part the new column went beside, a strip's split column too"
+  (let ([vo (named 'vo (views:make a))] [vp (named 'vp (views:make b))])
+    (set-parts! (layout-scroll:container '() (atom vo '(size . 1/3)) (atom vp)))
+    (layout:select! vo)
+    (press! desktop "C-x 2")
+    (named 'vo-below (unnamed-view))
+    (press! desktop "C-u 4 0 C-x 3")
+    (named 'vo-right (unnamed-view))
+    (check-equal? '(layout:level () (layout-scroll:container ()
+                     (layout-split:container ((direction . column) (size columns 40)) (vo) (vo-below)) (vo-right (size . 1/2)) (vp)))
+                  (shape)))
+  (let ([vq (named 'vq (views:make a))] [vr (named 'vr (views:make b))])
+    (set-parts! (layout-scroll:container '((direction . column)) (atom vq) (atom vr)))
+    (layout:select! vq)
+    (press! desktop "C-x 3")
+    (named 'vq-right (unnamed-view))
+    (press! desktop "C-u 6 C-x 2")
+    (named 'vq-below (unnamed-view))
+    (check-equal? '(layout:level () (layout-scroll:container ((direction . column))
+                     (layout-split:container ((direction . row) (size lines 6)) (vq) (vq-right)) (vq-below (size . 1/2)) (vr)))
+                  (shape))))

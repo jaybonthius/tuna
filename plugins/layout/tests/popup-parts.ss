@@ -1,9 +1,4 @@
-(import (tuna) (test) (layout) (layout-float) (views) (buffers) (document) (test-user))
-
-(define (raised-with who message)
-  (lambda (e)
-    (and (who-condition? e) (eq? who (condition-who e))
-         (message-condition? e) (string=? message (condition-message e)))))
+(import (tuna) (test) (test-runner) (layout) (layout-float) (views) (buffers) (document) (test-user))
 
 (define (atom view . attributes)
   (views:view (cons* (cons 'view (views:id view)) (cons 'buffer (buffers:name (views:buffer view))) attributes)))
@@ -27,7 +22,7 @@
 (test "popup-node finds a popup's atom, as view-node a view's in the layout"
   (check-equal? 2 (document:node-start (layout:popup-node p)))
   (check-equal? #f (layout:popup-node va))
-  (check-raises (raised-with 'layout:popup-node "not a view") (layout:popup-node 'p)))
+  (check-raises (test-runner:raised-with 'layout:popup-node "not a view") (layout:popup-node 'p)))
 
 (test "set-part-attribute! sets and removes an attribute of a part of either tree, keeping its others"
   (layout:set-part-attribute! (layout:popup-node p) 'title "pop")
@@ -39,8 +34,8 @@
   (check-equal? #t (document:node-attribute (layout:view-node va) 'other-view))
   (layout:set-part-attribute! (layout:view-node va) 'other-view #f)
   (check-equal? 'none (document:node-attribute (layout:view-node va) 'other-view 'none))
-  (check-raises (raised-with 'layout:set-part-attribute! "not a symbol") (layout:set-part-attribute! (layout:view-node va) "title" "x"))
-  (check-raises (raised-with 'layout:set-part-attribute! "not a node") (layout:set-part-attribute! 'part 'title "x")))
+  (check-raises (test-runner:raised-with 'layout:set-part-attribute! "not a symbol") (layout:set-part-attribute! (layout:view-node va) "title" "x"))
+  (check-raises (test-runner:raised-with 'layout:set-part-attribute! "not a node") (layout:set-part-attribute! 'part 'title "x")))
 
 (test "a popup is locked, so the user's commands refuse to delete it"
   (layout:select! p)

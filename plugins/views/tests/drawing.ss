@@ -6,11 +6,6 @@
 (buffers:define-layer hints)
 (buffers:define-layer marks (priority 10))
 
-(define (raised-with who message)
-  (lambda (e)
-    (and (who-condition? e) (eq? who (condition-who e))
-         (message-condition? e) (string=? message (condition-message e)))))
-
 (define (drawn v) (views-test/page:element-for-no-client v))
 
 (define (attribute e name) (test-user:element-attribute e name))
@@ -163,7 +158,7 @@
     (buffers:add-span! (buffers:layer notes marks) 19 20 '((odd . 2)))
     (let* ([e #f] [reported (test-runner:reports-during (lambda () (set! e (drawn n))))])
       (check-equal? 1 (length reported))
-      (check ((raised-with 'views:span-properties "not a list of attribute names and values") (car reported)))
+      (check ((test-runner:raised-with 'views:span-properties "not a list of attribute names and values") (car reported)))
       (check-equal? '(odd (5 ("ok" . "y"))) (condition-irritants (car reported)))
       (check-equal? "And bread." (test-user:element-text (cadr (lines-of e)))))
     (tables:remove! views:span-properties 'odd)))
@@ -199,7 +194,7 @@
 
 (test "atom-view takes a view atom's node"
   (let ([b (make-buffer "plain" "Buy\n")])
-    (check-raises (raised-with 'views:atom-view "not a node") (views:atom-view (document:token (buffers:document b) 1)))))
+    (check-raises (test-runner:raised-with 'views:atom-view "not a node") (views:atom-view (document:token (buffers:document b) 1)))))
 
 (test "atoms naming one view at one position in two buffers draw the view and a copy"
   (let* ([buy (make-buffer "buy" "Buy milk.\n")]
@@ -322,9 +317,9 @@
     (let ([e (drawn-text v "a\x7;b" '())])
       (check-equal? "a^Gb" (test-user:element-text e))
       (check-equal? '(("escape-glyph" "^G")) (faces e)))
-    (check-raises (raised-with 'views:draw-text "not a list of spans in the text")
+    (check-raises (test-runner:raised-with 'views:draw-text "not a list of spans in the text")
       (views:draw-text v "ab" '((0 3 ((face . keyword))))))
-    (check-raises (raised-with 'views:draw-text "not a string") (views:draw-text v 'ab '()))))
+    (check-raises (test-runner:raised-with 'views:draw-text "not a string") (views:draw-text v 'ab '()))))
 
 (test "draw-text draws with the view's buffer and options current, so a buffer's local values decide how a value looks"
   (let* ([b (make-buffer "plain" "x")] [v (views:make b)])

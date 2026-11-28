@@ -172,13 +172,13 @@
 (test "a read refuses what is no prompt, and needs the main thread and a command a key ran"
   (for-each
     (lambda (read who)
-      (check-raises (keys-test:raised-by who "not a prompt or #f") (read 'x))
+      (check-raises (test-runner:raised-with who "not a prompt or #f") (read 'x))
       (check-equal? (list who "not on the main thread") (keys-test:on-thread read))
-      (check-raises (keys-test:raised-by who "no command a key ran is running") (read)))
+      (check-raises (test-runner:raised-with who "no command a key ran is running") (read)))
     (list keys:read-key keys:read-key-sequence)
     '(keys:read-key keys:read-key-sequence))
   (for-each
-    (lambda (bad) (check-raises (keys-test:raised-by 'keys:read-key "not a prompt or #f") (keys:read-key bad)))
+    (lambda (bad) (check-raises (test-runner:raised-with 'keys:read-key "not a prompt or #f") (keys:read-key bad)))
     (list (lambda () "Key: ") '() '(("x" . #f))))
   (check-equal? '(keys:reading "not on the main thread") (keys-test:on-thread (lambda () (keys:reading (test-user:client)))))
   (check-equal? '(keys:reading-prompt "not on the main thread")

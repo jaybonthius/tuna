@@ -46,15 +46,19 @@
            ("item" . ,focus) ("align" . "start") ("focus" . ,focus)))))))
 
 ;; The commands refuse many of these steps, as a locked part or no strip;
-;; only a quit is the storm's.
-(define (attempt thunk) (guard (c [(not (cancelled? c)) #f]) (thunk)))
+;; any other raise is a fault the stress found.
+(define (attempt thunk) (guard (c [(error? c) #f]) (thunk)))
+
+;; A plugin asks before it deletes a part, as the API's refusal is a
+;; fault of its caller.
+(define (delete! node) (unless (layout:deletion-refusal node) (layout:delete-part! node)))
 
 (define (step! k)
   (let* ([shown (layout:views)] [many? (> (length (atom-ids (tree))) 10)])
     (attempt
       (lambda ()
         (case (mod k 16)
-          [(0) (if many? (layout:delete-part! (layout:view-node (pick shown k))) (layout-scroll:display-in-new-column notes))]
+          [(0) (if many? (delete! (layout:view-node (pick shown k))) (layout-scroll:display-in-new-column notes))]
           [(1) (layout-scroll:consume)]
           [(2) (layout-scroll:expel)]
           [(3) (if (even? k) (layout-scroll:consume-or-expel-left) (layout-scroll:consume-or-expel-right))]
@@ -70,7 +74,7 @@
           [(11) (let ([p (find (lambda (v) (eq? (views:buffer v) completions)) (views:showing completions))])
                   (when p (layout-float:close! p)))]
           [(12) (layout:select! (layout-float:display-palette question))]
-          [(13) (layout:other-view)]
+          [(13) (when (pair? (layout:other-views)) (layout:other-view 1))]
           [(14) (if (even? k) (layout-scroll:first) (layout-scroll:last))]
           [else (layout:select! (pick shown (* k 7)))])))))
 

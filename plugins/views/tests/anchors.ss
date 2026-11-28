@@ -1,14 +1,9 @@
-(import (tuna) (test) (views) (buffers) (options) (test-user) (views-test page) (views-test text))
+(import (tuna) (test) (test-runner) (views) (buffers) (options) (test-user) (views-test page) (views-test text))
 
 (options:set! views:scroll-margin 2 views:wrap-lines #f)
 
 (define desktop (views-test/page:open 400))
 (define c (views-test/page:client desktop))
-
-(define (raised-with who message)
-  (lambda (e)
-    (and (who-condition? e) (eq? who (condition-who e))
-         (message-condition? e) (string=? message (condition-message e)))))
 
 (define b (buffers:make (buffers:free-name "anchored") (views-test/text:lines 300)))
 (define v (views:make b))
@@ -54,7 +49,7 @@
     (views:remove-anchor! far)
     (views:remove-anchor! far)
     (check-equal? #f (views:find-anchor far-id))
-    (check-raises (raised-with 'views:anchor-position "a removed anchor") (views:anchor-position far))
+    (check-raises (test-runner:raised-with 'views:anchor-position "a removed anchor") (views:anchor-position far))
     (views:set-buffer! v (buffers:make (buffers:free-name "other") "x\n"))
     (check-equal? #f (views:find-anchor a-id))
-    (check-raises (raised-with 'views:add-anchor! "not a position in the view's buffer") (views:add-anchor! v 99))))
+    (check-raises (test-runner:raised-with 'views:add-anchor! "not a position in the view's buffer") (views:add-anchor! v 99))))

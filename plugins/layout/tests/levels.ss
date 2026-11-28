@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (layout) (layout-split) (layout-tabs) (views) (buffers) (document) (commands)
+(import (tuna) (test) (test-runner) (test-user) (layout) (layout-split) (layout-tabs) (views) (buffers) (document) (commands)
         (layout-test parts))
 
 (define named layout-test/parts:named)
@@ -81,6 +81,20 @@
   (check-equal? '("*explorer*") (names))
   (test-user:press! "C-x 1"))
 
+(test "a view added to the zoomed level, as C-x 3 adds one, ends the zoom, so the new view shows; one added outside it keeps the zoom"
+  (start!)
+  (test-user:press! "C-x 1")
+  (check-equal? '("*explorer*" "notes.org" " *Echo Area*") (names))
+  (test-user:press! "C-x 3")
+  (check-equal? #f (layout:zoomed-view))
+  (check-equal? '("*explorer*" "notes.org" "notes.org" "*pi*" " *Echo Area*") (names))
+  (check (eq? notes (layout:selected-view)))
+  (test-user:press! "C-x 1")
+  (layout-split:split-view! explorer (layout-split:direction column) (named "outside"))
+  (check (eq? notes (layout:zoomed-view)))
+  (check-equal? '("*explorer*" "outside" "notes.org" " *Echo Area*") (names))
+  (test-user:press! "C-x 1"))
+
 (test "C-x o goes round the selected view's level; from a part outside it the level counts as one view; the Super moves cross levels"
   (start!)
   (test-user:press! "C-x o")
@@ -130,15 +144,15 @@
   (start!)
   (layout:select! notes)
   (layout:delete-part! (layout:view-node pi))
-  (check-raises (layout-test/parts:raised-with 'layout:zoom "no other views in this level") (layout:zoom #f))
+  (check-raises (test-runner:raised-with 'layout:zoom "no other views in this level") (layout:zoom #f))
   (check-equal? '((layout:zoom "no other views in this level"))
-                (layout-test/parts:refusals-during (lambda () (test-user:press! "C-x 1"))))
+                (test-runner:shown-reports-during (lambda () (test-user:press! "C-x 1"))))
   (check-equal? #f (layout:zoomed-view))
   (test-user:press! "C-u C-x 1")
   (check-equal? '("notes.org") (names))
   (test-user:press! "C-x 1")
-  (check-equal? '((layout:delete-part! "the last view of its level"))
-                (layout-test/parts:refusals-during (lambda () (test-user:press! "C-x 0"))))
+  (check-equal? '((layout:delete-view "the last view of its level"))
+                (test-runner:shown-reports-during (lambda () (test-user:press! "C-x 0"))))
   (check-equal? '("*explorer*" "notes.org" " *Echo Area*") (names)))
 
 (test "C-x 0 in a placed part deletes it, and its split, left holding the level alone, collapses"

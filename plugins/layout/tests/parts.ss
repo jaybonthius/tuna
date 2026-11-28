@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (layout) (layout-split) (views) (buffers) (document) (commands)
+(import (tuna) (test) (test-runner) (test-user) (layout) (layout-split) (views) (buffers) (document) (commands)
         (layout-test parts) (layout-test boxes))
 
 (define notes (buffers:make "notes" "one\ntwo\nthree\n"))
@@ -32,11 +32,12 @@
   (let-values ([(a b c echo) (start-with-echo!)])
     (layout:select! echo)
     (check-equal? '((layout:delete-view "a locked part"))
-                  (layout-test/parts:refusals-during (lambda () (commands:run layout:delete-view))))
-    (check-raises (layout-test/parts:raised-with 'layout:delete-part! "the root") (layout:delete-part! (node-at 0)))
-    (check-raises (layout-test/parts:raised-with 'layout:delete-part! "not a node") (layout:delete-part! 'node))
-    (check-equal? '(#t #t #t #t) (map (lambda (v) (layout:deletable? (layout:view-node v))) (list a b c echo)))
-    (check-equal? #f (layout:deletable? (node-at 0)))))
+                  (test-runner:shown-reports-during (lambda () (commands:run layout:delete-view))))
+    (check-raises (test-runner:raised-with 'layout:delete-part! "the root") (layout:delete-part! (node-at 0)))
+    (check-raises (test-runner:raised-with 'layout:delete-part! "not a node") (layout:delete-part! 'node))
+    (check-equal? '(#f #f #f #f) (map (lambda (v) (layout:deletion-refusal (layout:view-node v))) (list a b c echo)))
+    (check-equal? "the root" (layout:deletion-refusal (node-at 0)))
+    (check-raises (test-runner:raised-with 'layout:deletion-refusal "not a node") (layout:deletion-refusal 'node))))
 
 (test "deleting the selected view selects its level's view selected most recently, and a container left empty goes"
   (let-values ([(a b c echo) (start-with-echo!)])
@@ -55,11 +56,11 @@
     (layout:delete-part! (layout:view-node b))
     (layout:delete-part! (layout:view-node c))
     (layout:select! a)
-    (check-equal? #f (layout:deletable? (layout:view-node a)))
-    (check-raises (layout-test/parts:raised-with 'layout:delete-part! "the last view of its level")
+    (check-equal? "the last view of its level" (layout:deletion-refusal (layout:view-node a)))
+    (check-raises (test-runner:raised-with 'layout:delete-part! "the last view of its level")
                   (layout:delete-part! (layout:view-node a)))
-    (check-equal? '((layout:delete-part! "the last view of its level"))
-                  (layout-test/parts:refusals-during (lambda () (commands:run layout:delete-view))))))
+    (check-equal? '((layout:delete-view "the last view of its level"))
+                  (test-runner:shown-reports-during (lambda () (commands:run layout:delete-view))))))
 
 (test "removing a placed part collapses its split, the root gives up the level left inside it, and views whose atoms left are dropped when the batch ends"
   (let*-values ([(a b c echo) (start-with-echo!)] [(ids) (map views:id (list a b c echo))])
@@ -118,7 +119,7 @@
   (let ([a (fresh notes)] [d (fresh mail)])
     (layout-test/parts:set-parts!
       (layout-split:container '((direction . row)) (layout-test/parts:atom a) (layout-test/boxes:stray '() (layout-test/parts:atom d))))
-    (check-raises (layout-test/parts:raised-with 'layout:neighbour "a kind's neighbour is not a child of its container")
+    (check-raises (test-runner:raised-with 'layout:neighbour "a kind's neighbour is not a child of its container")
                   (layout:neighbour d (layout:direction left)))))
 
 (test "a part removed by one edit and put back by another in the same batch keeps its view"
@@ -160,18 +161,18 @@
     (check-equal? '((weight . 2)) (cddr (layout-test/parts:attributes-of a)))
     (layout:set-part-attribute! (node-at 1) 'title "split")
     (check-equal? "split" (layout:part-title (node-at 1)))
-    (check-raises (layout-test/parts:raised-with 'layout:set-part-attribute! "not a symbol")
+    (check-raises (test-runner:raised-with 'layout:set-part-attribute! "not a symbol")
                   (layout:set-part-attribute! (layout:view-node a) "title" "x"))
     (check-raises (lambda (e) (and (who-condition? e) (eq? 'layout:set-part-attribute! (condition-who e))))
                   (layout:set-part-attribute! 'node 'title "x"))
-    (check-raises (layout-test/parts:raised-with 'layout:set-part-attribute! "not plain data")
+    (check-raises (test-runner:raised-with 'layout:set-part-attribute! "not plain data")
                   (layout:set-part-attribute! (layout:view-node a) 'title (lambda () 1)))))
 
 (test "level-of gives a view's level, and takes a view"
   (let ([a (fresh notes)])
     (layout-test/parts:set-parts! (layout-test/parts:atom a))
     (check-equal? 0 (document:node-start (layout:level-of a)))
-    (check-raises (layout-test/parts:raised-with 'layout:level-of "not a view") (layout:level-of 'notes))))
+    (check-raises (test-runner:raised-with 'layout:level-of "not a view") (layout:level-of 'notes))))
 
 (test "layout's procedures run on the main thread only"
   (check-equal? '(layout:selected-view "not on the main thread") (on-thread layout:selected-view))

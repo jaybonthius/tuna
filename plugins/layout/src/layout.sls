@@ -18,12 +18,12 @@
   (check-main-thread check-view check-direction register-container! check-parts check-popup-parts check-level
    open-layout! opened-popups current-index index-atom index-of-id atom-of part-of
    view-of atom-id selected-id shown-views select-id! set-zoom! current-zoom current-order zoom-level children root-node
-   locked-node? locked-in? title-of shown-buffer-name draw-layout draw-popups neighbour-of remove-part! removed-part removal-refusal node-datum
+   locked-node? locked-in? title-of shown-buffer-name draw-layout draw-popups neighbour-of remove-part! check-removable removed-part removal-refusal node-datum
    note-batch save-now! selected-keymaps enclosing-keymaps most-recent-atom atoms-in order-views
    enclosing-level reference-atom level-units unit-placed? other-view-in? deselect-id! same-node? same-level? visible-atoms index-atoms
    in-part-mode? enter-part-mode! leave-part-mode! selection-in choose-part! drawn-part-class
    choose-datum! parent-part child-part sibling-part end-part shift-part! lift-part! lower-part! raise-part!
-   splice-part! wrap-part! deletion-successor check-unlocked check-holds-no-locked mode-key?
+   splice-part! wrap-part! deletion-successor check-unlocked check-holds-no-locked mode-key? beside-in! part-datum? container-entry
    note-before! note-after! history-step! parent-in holds-range? popups-index index-atom-list datum-attributes with-attributes)
 
   (define main-thread (get-thread-id))
@@ -43,25 +43,27 @@
   ;; Entries made by the configuration outlive a reload of this module,
   ;; so the record type stays the same.
   (define-record-type container
-    (nongenerative layout:container/draw/neighbour/child-attributes/collapse/show-focused/adopt)
+    (nongenerative layout:container/draw/neighbour/child-attributes/collapse/show-focused/adopt/beside)
     (sealed #t)
-    (fields draw neighbour child-attributes collapse? show-focused? adopt))
+    (fields draw neighbour child-attributes collapse? show-focused? adopt beside))
 
   (tables:define-table containers)
 
   (define (container-entry kind) (tables:ref containers kind #f))
 
-  (define (register-container! kind draw neighbour child-attributes collapse? show-focused? adopt)
+  (define (register-container! kind draw neighbour child-attributes collapse? show-focused? adopt beside)
     (unless (procedure? draw)
       (assertion-violation 'layout:define-container "not a procedure" draw))
     (unless (or (not neighbour) (procedure? neighbour))
       (assertion-violation 'layout:define-container "not a procedure or #f" neighbour))
     (unless (or (not adopt) (procedure? adopt))
       (assertion-violation 'layout:define-container "not a procedure or #f" adopt))
+    (unless (or (not beside) (procedure? beside))
+      (assertion-violation 'layout:define-container "not a procedure or #f" beside))
     (let ([keymap (buffers:kind-keymap (buffers:kind kind))])
       (unless (or (not keymap) (tables:table? keymap))
         (assertion-violation 'layout:define-container "not a keymap or #f" keymap)))
-    (tables:set! containers kind (make-container draw neighbour child-attributes collapse? show-focused? adopt)))
+    (tables:set! containers kind (make-container draw neighbour child-attributes collapse? show-focused? adopt beside)))
 
   (define (attributes? a)
     (and (list? a) (for-all (lambda (p) (and (pair? p) (symbol? (car p)))) a)))
@@ -488,14 +490,22 @@
                       order)])
       (set! restoring? #f)
       (set-order! order)
-      (fix-zoom! ix px)))
+      (fix-zoom! old ix px)))
 
-  (define (fix-zoom! ix px)
+  ;; A view added to the zoomed level would be hidden by the zoom, so the
+  ;; zoom ends, as tmux's split-window ends one.
+  (define (fix-zoom! old ix px)
     (let ([z zoom-state] [id (and (pair? view-order) (car view-order))])
       (when (and z (not (and (index-atom ix (car z))
                              (or (index-atom px id)
-                                 (exists (lambda (a) (eqv? (atom-id a) id)) (atoms-under ix (zoom-place ix z) #f))))))
+                                 (exists (lambda (a) (eqv? (atom-id a) id)) (atoms-under ix (zoom-place ix z) #f)))
+                             (not (added-to-zoom? old ix z)))))
         (set-zoom! #f))))
+
+  (define (added-to-zoom? old ix z)
+    (and old
+         (exists (lambda (a) (not (index-atom old (atom-id a))))
+                 (atoms-in ix (zoom-level ix (index-atom ix (car z)) (cdr z))))))
 
   (define (hand-over old ix r-id order select?)
     (let ([s (successor old ix r-id order)])
@@ -600,7 +610,7 @@
                [next (if (eqv? (atom-id r) id) (successor ix ix id order) r)])
           (when (and next (not (eqv? (atom-id next) id)))
             (set-order! (with-first (atom-id next) order))
-            (fix-zoom! ix px))))))
+            (fix-zoom! #f ix px))))))
 
   (define (title-of ix n)
     (let ([title (document:node-attribute n 'title #f)])
@@ -754,6 +764,11 @@
         [(and layout? (not (unlocked-atoms-outside (document:node-start removed) (document:node-end removed))))
          "the last view that is not locked"]
         [else #f])))
+
+  (define (check-removable who ix node)
+    (let ([refusal (removal-refusal ix (removed-part ix node))])
+      (when refusal
+        (error who refusal))))
 
   ;; Removing and collapsing are one edit, for the same reason.
   (define (remove-part! ix node)
@@ -1126,9 +1141,27 @@
     (let* ([p (parent-in ix child)] [ks (kids-of ix p)] [old (datums ix ks)])
       (set-children! ix p old (replacing old (position-in child ks) new))))
 
+  ;; The parts outside the view's level persist for it, so the walk
+  ;; stops there.
+  (define (beside-in! ix atom part direction make)
+    (let up ([n atom])
+      (let* ([p (parent-in ix n)] [entry (kind-entry p)]
+             [r (and entry (container-beside entry) ((container-beside entry) p n part direction))])
+        (unless (or (not r) (and (pair? r) (list? r) (for-all (lambda (d) (part-datum? d container-entry)) r)))
+          (assertion-violation 'layout:define-container "a beside clause returned what is not a list of one or more parts or #f" r))
+        (cond
+          [r (replace-child! ix n r)]
+          [(not (level? p)) (up p)]
+          [else
+           (wrap-part! 'layout:add-beside! ix atom
+             (lambda (parts)
+               (make (if (memq direction '(right down)) (list (car parts) part) (list part (car parts))))))]))))
+
+  ;; A lock binds only the user's commands, so a locked part is a
+  ;; refusal the user is told, not a caller's mistake.
   (define (check-unlocked who ix n)
     (when (locked-in? ix n)
-      (assertion-violation who "a locked part" n)))
+      (error who "a locked part")))
 
   (define (holds-locked? ix n)
     (or (locked-in? ix n)
@@ -1137,7 +1170,7 @@
 
   (define (check-holds-no-locked who ix n)
     (when (holds-locked? ix n)
-      (assertion-violation who "a locked part" n)))
+      (error who "a locked part")))
 
   ;; A lock keeps a part from being destroyed or replaced, and keeps the
   ;; parts inside it as they are; the part may still move.
@@ -1236,7 +1269,7 @@
                            (check-holds-no-locked who ix x)))
                        (kids-of ix c))
              (unless (or (unlocked-view-in? ix n) (unlocked-atoms-outside (document:node-start c) (document:node-end c)))
-               (assertion-violation who "the last view that is not locked" n))
+               (error who "the last view that is not locked"))
              (let ([moved (take-place ix c (node-datum ix n))])
                (replace-child! ix c (list moved))
                moved)))))
@@ -1499,7 +1532,9 @@
           [else (cons* (car d) (cadr d) (map fresh (cddr d)))]))))
 
   ;; An atom's buffer is the one its view showed when it was recorded, so
-  ;; its point is a position in that buffer and nowhere else.
+  ;; its point is a position in that buffer and nowhere else. A view whose
+  ;; buffer was killed since would wait for a buffer of its name, so it
+  ;; shows another, as Emacs's set-window-configuration does.
   (define (show-recorded! d points)
     (let walk ([d d])
       (if (vector? d)
@@ -1507,11 +1542,13 @@
                  [v (view-of (index-atom (current-index) id))]
                  [b (let ([p (assq 'buffer (vector-ref d 1))]) (and p (buffers:find (cdr p))))]
                  [p (let ([p (assv id points)]) (and p (cdr p)))])
-            (when b
-              (unless (eq? (views:buffer v) b)
-                (views:set-buffer! v b))
-              (when p
-                (views:set-point! v (fxmin p (fx- (document:length (buffers:document b)) 1))))))
+            (cond
+              [b
+               (unless (eq? (views:buffer v) b)
+                 (views:set-buffer! v b))
+               (when p
+                 (views:set-point! v (fxmin p (fx- (document:length (buffers:document b)) 1))))]
+              [(not (views:buffer v)) (views:replace-buffer! v)]))
           (for-each walk (cddr d)))))
 
   ;; A cancel between the replace and the lists' update would lose an
@@ -1571,7 +1608,7 @@
       [(_ id clause ...)
        (identifier? #'id)
        (let loop ([clauses #'(clause ...)] [seen '()] [draw #f] [neighbour #'#f] [keymap #'#f]
-                  [attributes '()] [collapse #'#f] [show-focused #'#f] [adopt #'#f])
+                  [attributes '()] [collapse #'#f] [show-focused #'#f] [adopt #'#f] [beside #'#f])
          (if (null? clauses)
              (begin
                (unless draw
@@ -1581,7 +1618,7 @@
                    (define-values ()
                      (begin
                        (register-container! (buffers:kind-name (buffers:constructor-kind id)) #,draw #,neighbour '#,(datum->syntax #'id attributes)
-                                            #,collapse #,show-focused #,adopt)
+                                            #,collapse #,show-focused #,adopt #,beside)
                        (values)))))
              (let* ([c (car clauses)]
                     [name (syntax-case c () [(k . _) (identifier? #'k) (syntax->datum #'k)] [_ (invalid c)])])
@@ -1593,17 +1630,18 @@
                  (define (flag)
                    (syntax-case c () [(_) #'#t] [_ (invalid c)]))
                  (case name
-                   [(draw) (loop rest seen (expression) neighbour keymap attributes collapse show-focused adopt)]
-                   [(neighbour) (loop rest seen draw (expression) keymap attributes collapse show-focused adopt)]
-                   [(keymap) (loop rest seen draw neighbour (expression) attributes collapse show-focused adopt)]
+                   [(draw) (loop rest seen (expression) neighbour keymap attributes collapse show-focused adopt beside)]
+                   [(neighbour) (loop rest seen draw (expression) keymap attributes collapse show-focused adopt beside)]
+                   [(keymap) (loop rest seen draw neighbour (expression) attributes collapse show-focused adopt beside)]
                    [(child-attributes)
                     (syntax-case c ()
                       [(_ a ...) (for-all identifier? #'(a ...))
-                       (loop rest seen draw neighbour keymap (syntax->datum #'(a ...)) collapse show-focused adopt)]
+                       (loop rest seen draw neighbour keymap (syntax->datum #'(a ...)) collapse show-focused adopt beside)]
                       [_ (invalid c)])]
-                   [(collapse) (loop rest seen draw neighbour keymap attributes (flag) show-focused adopt)]
-                   [(show-focused) (loop rest seen draw neighbour keymap attributes collapse (flag) adopt)]
-                   [(adopt) (loop rest seen draw neighbour keymap attributes collapse show-focused (expression))]
+                   [(collapse) (loop rest seen draw neighbour keymap attributes (flag) show-focused adopt beside)]
+                   [(show-focused) (loop rest seen draw neighbour keymap attributes collapse (flag) adopt beside)]
+                   [(adopt) (loop rest seen draw neighbour keymap attributes collapse show-focused (expression) beside)]
+                   [(beside) (loop rest seen draw neighbour keymap attributes collapse show-focused adopt (expression))]
                    [else (invalid c)])))))]
       [_ (syntax-violation 'layout:define-container "expected (layout:define-container id clause ...)" x)])))
 
@@ -1652,6 +1690,22 @@
       (assertion-violation 'layout:neighbour "not a view in the layout" view))
     (neighbour-of ix (index-atom ix id) direction)))
 
+(define (add-beside! view part direction make)
+  (check-view 'layout:add-beside! view)
+  (check-direction 'layout:add-beside! direction)
+  (check-main-thread 'layout:add-beside!)
+  (unless (part-datum? part container-entry)
+    (assertion-violation 'layout:add-beside! "not a part" part))
+  (unless (procedure? make)
+    (assertion-violation 'layout:add-beside! "not a procedure" make))
+  (let* ([ix (current-index)] [a (index-atom ix (views:id view))])
+    (unless a
+      (assertion-violation 'layout:add-beside! "not a view in the layout" view))
+    (when (locked-in? ix a)
+      (assertion-violation 'layout:add-beside! "a locked view" view))
+    (beside-in! ix a part direction make)
+    (void)))
+
 (define (selection-order)
   (check-main-thread 'layout:selection-order)
   (order-views))
@@ -1664,7 +1718,7 @@
 (buffers:define-kind level (content nodes) (consent check-level))
 
 (define-values ()
-  (begin (register-container! (buffers:kind-name (buffers:constructor-kind level)) %draw-level #f '() #f #f #f) (values)))
+  (begin (register-container! (buffers:kind-name (buffers:constructor-kind level)) %draw-level #f '() #f #f #f #f) (values)))
 
 (define (%draw-popups node shown focused draw-child client)
   (haml (:div.layout-popups (map draw-child shown))))
@@ -1673,7 +1727,7 @@
 (buffers:define-kind popups-root (content nodes) (consent check-popup-parts))
 
 (define-values ()
-  (begin (register-container! (buffers:kind-name (buffers:constructor-kind popups-root)) %draw-popups #f '() #f #f #f) (values)))
+  (begin (register-container! (buffers:kind-name (buffers:constructor-kind popups-root)) %draw-popups #f '() #f #f #f #f) (values)))
 
 (define buffer (open-layout! (popups-root '())))
 
@@ -1722,10 +1776,10 @@
     (remove-part! ix n)
     (void)))
 
-(define (deletable? node)
-  (check-main-thread 'layout:deletable?)
-  (let-values ([(ix n) (part-of 'layout:deletable? node)])
-    (not (removal-refusal ix (removed-part ix n)))))
+(define (deletion-refusal node)
+  (check-main-thread 'layout:deletion-refusal)
+  (let-values ([(ix n) (part-of 'layout:deletion-refusal node)])
+    (removal-refusal ix (removed-part ix n))))
 
 (define (set-part-attribute! node key value)
   (check-main-thread 'layout:set-part-attribute!)
@@ -1999,7 +2053,9 @@
   (let* ([v (selected-view)] [id (views:id v)] [ix (index-of-id id)])
     (check-unlocked 'layout:kill-buffer-and-view ix (index-atom ix id))
     (when (buffers:kill! (views:buffer v))
-      (delete-part! (view-node v)))))
+      (let* ([ix (index-of-id id)] [a (index-atom ix id)])
+        (check-removable 'layout:kill-buffer-and-view ix a)
+        (remove-part! ix a)))))
 
 (define (%after-other-view ix)
   (let ([b (reference-atom ix)] [selected (selected-id)])
@@ -2082,10 +2138,12 @@
         (let* ([n (selection-in ix)] [next (and n (deletion-successor ix n))])
           (when n
             (check-holds-no-locked 'layout:delete-view ix n)
+            (check-removable 'layout:delete-view ix n)
             (remove-part! ix n)
             (choose-datum! next)))
         (let* ([id (selected-id)] [ix (index-of-id id)] [a (index-atom ix id)])
           (check-unlocked 'layout:delete-view ix a)
+          (check-removable 'layout:delete-view ix a)
           (remove-part! ix a)))))
 
 (define (%other-unlocked-view? ix a)

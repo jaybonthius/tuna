@@ -104,7 +104,7 @@
       (lock! (cadr two) #t)
       (click! (cadr two) 3)
       (check-equal? (list 2 #t) (list (length (layout:views)) (eq? (view) (car two))))
-      (check-equal? #f (layout:deletable? (layout:view-node (car two))))
+      (check-equal? "the last view that is not locked" (layout:deletion-refusal (layout:view-node (car two))))
       (click! (car two) 3)
       (check-equal? (list 2 #t) (list (length (layout:views)) (eq? (view) (car two)))))))
 

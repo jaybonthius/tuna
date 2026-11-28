@@ -1,9 +1,4 @@
-(import (tuna) (test) (views) (buffers) (document) (options) (tables) (views-test md))
-
-(define (raised-with who message)
-  (lambda (e)
-    (and (who-condition? e) (eq? who (condition-who e))
-         (message-condition? e) (string=? message (condition-message e)))))
+(import (tuna) (test) (test-runner) (views) (buffers) (document) (options) (tables) (views-test md))
 
 (define (root-of v) (document:token (buffers:document (views:buffer v)) 0))
 
@@ -68,5 +63,5 @@
   (let* ([holder (make-buffer "holder" (views-test/md:doc '() (views:view '((buffer . "nowhere")))))]
          [empty (views:atom-view (document:token (buffers:document holder) 1))])
     (check-equal? #f (views:describe-at-point empty))
-    (check-raises (raised-with 'views:describe-line "not a view")
+    (check-raises (test-runner:raised-with 'views:describe-line "not a view")
       (views:describe-line (document:token (buffers:document holder) 0) 'v))))

@@ -1,12 +1,9 @@
-(import (tuna) (test) (test-user) (web) (views) (buffers) (layout) (layout-split) (tables) (commands) (keys) (transient)
+(import (tuna) (test) (test-runner) (test-user) (web) (views) (buffers) (layout) (layout-split) (tables) (commands) (keys) (transient)
         (transient-test) (transient-test magit) (transient-test plain))
 
 (define merge-menu-drawn
   '("Merge" ("Arguments" ("- f" "Fast-forward only" "--ff-only") ("- n" "No fast-forward" "--no-ff") ("- s" "Strategy" "--strategy="))
     ("Actions" ("m" "Merge"))))
-
-(define (raised-by who message)
-  (lambda (c) (and (who-condition? c) (eq? who (condition-who c)) (message-condition? c) (string=? message (condition-message c)))))
 
 (test-user:show! "|one\ntwo\n")
 
@@ -79,9 +76,9 @@
                 (map load-failure '(bad-1 bad-2 bad-3 bad-4 bad-5 bad-6 bad-7 bad-8 bad-9 bad-10))))
 
 (test "the procedures check what they are given"
-  (check-raises (raised-by 'transient:show! "not a table") (transient:show! 'menu))
-  (check-raises (raised-by 'transient:buffer? "not a buffer") (transient:buffer? "notes"))
-  (check-raises (raised-by 'transient:arguments "not a table") (transient:arguments 'menu))
+  (check-raises (test-runner:raised-with 'transient:show! "not a table") (transient:show! 'menu))
+  (check-raises (test-runner:raised-with 'transient:buffer? "not a buffer") (transient:buffer? "notes"))
+  (check-raises (test-runner:raised-with 'transient:arguments "not a table") (transient:arguments 'menu))
   (let ([result #f])
     (join-task (fork-task (lambda (restore)
                             (set! result (guard (c [(message-condition? c) (condition-message c)])

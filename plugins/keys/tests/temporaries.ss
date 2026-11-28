@@ -101,13 +101,13 @@
 (test "push-keymap! checks its arguments"
   (tables:define-table checked-temporary "checked")
   (let ([one (test-user:client)])
-    (check-raises (keys-test:raised-by 'keys:push-keymap! "not a keymap") (keys:push-keymap! one 'x (lambda (f c) #t)))
-    (check-raises (keys-test:raised-by 'keys:push-keymap! "not a procedure") (keys:push-keymap! one checked-temporary 'keep))
-    (check-raises (keys-test:raised-by 'keys:push-keymap! "not a procedure")
+    (check-raises (test-runner:raised-with 'keys:push-keymap! "not a keymap") (keys:push-keymap! one 'x (lambda (f c) #t)))
+    (check-raises (test-runner:raised-with 'keys:push-keymap! "not a procedure") (keys:push-keymap! one checked-temporary 'keep))
+    (check-raises (test-runner:raised-with 'keys:push-keymap! "not a procedure")
       (keys:push-keymap! one checked-temporary (lambda (f c) #t) 'exit))
     (for-each
       (lambda (prompt)
-        (check-raises (keys-test:raised-by 'keys:push-keymap! "not a prompt, a procedure or #f")
+        (check-raises (test-runner:raised-with 'keys:push-keymap! "not a prompt, a procedure or #f")
           (keys:push-keymap! one checked-temporary (lambda (f c) #t) void prompt)))
       (list 'x '() '(("x" . #f)) (list 7)))))
 

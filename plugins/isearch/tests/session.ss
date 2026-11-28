@@ -51,7 +51,7 @@
 
 (test "another client's search runs apart: each client has its own keymap and search"
   (let ([other (test-user:open-client)] [b (isearch-test:show! "s" "alpha beta gamma beta\n")] [first (isearch-test:view)])
-    (layout-split:split-below)
+    (layout-split:split-below #f)
     (let ([second (find (lambda (v) (not (eq? v first))) (layout:views))])
       (views:set-point! second 1)
       (layout:select! second)

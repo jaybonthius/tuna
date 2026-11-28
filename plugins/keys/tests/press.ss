@@ -207,4 +207,4 @@
     (check-equal? '(("C-c r" #\r #f #f) (visit (4))) (take-seen!))))
 
 (test "press! takes a client"
-  (check-raises (keys-test:raised-by 'keys:press! "not a client") (keys:press! 'one "C-g")))
+  (check-raises (test-runner:raised-with 'keys:press! "not a client") (keys:press! 'one "C-g")))

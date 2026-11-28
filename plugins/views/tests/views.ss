@@ -6,11 +6,6 @@
 (define (raised-by who)
   (lambda (e) (and (who-condition? e) (eq? who (condition-who e)))))
 
-(define (raised-with who message)
-  (lambda (e)
-    (and (who-condition? e) (eq? who (condition-who e))
-         (message-condition? e) (string=? message (condition-message e)))))
-
 (define (text-of b) (document:text (buffers:document b)))
 
 (define (bounds v) (call-with-values (lambda () (views:bounds v)) list))
@@ -28,9 +23,9 @@
     (check-equal? #f (views:find (+ (views:id w) 1000)))
     (check-equal? notes (views:buffer v))
     (check-equal? (list v w) (list-sort (lambda (a b) (< (views:id a) (views:id b))) (views:showing notes)))
-    (check-raises (raised-with 'views:make "not a live buffer") (views:make 'notes))
-    (check-raises (raised-with 'views:find "not a view number") (views:find 0))
-    (check-raises (raised-with 'views:showing "not a buffer") (views:showing 'notes))))
+    (check-raises (test-runner:raised-with 'views:make "not a live buffer") (views:make 'notes))
+    (check-raises (test-runner:raised-with 'views:find "not a view number") (views:find 0))
+    (check-raises (test-runner:raised-with 'views:showing "not a buffer") (views:showing 'notes))))
 
 (test "a view has cursors, the primary first, and moving one does not edit the buffer"
   (let* ([notes (buffers:make (buffers:free-name "notes") "one two three\nfour five six\nseven\n")]
@@ -54,7 +49,7 @@
   (let ([v (views:make (buffers:make (buffers:free-name "notes") "one two\n"))])
     (views:set-point! v 0)
     (check-equal? 1 (views:point v))
-    (check-raises (raised-with 'views:set-point! "not a position in the view's buffer") (views:set-point! v 1000))))
+    (check-raises (test-runner:raised-with 'views:set-point! "not a position in the view's buffer") (views:set-point! v 1000))))
 
 (test "a cursor whose point meets another's after an edit goes, and each view keeps its own cursors"
   (let* ([notes (buffers:make (buffers:free-name "notes") "one two three\nfour five six\nseven\n")]
@@ -68,8 +63,8 @@
       (test-user:settle)
       (check-equal? '(5 6) (map views:cursor-point (views:cursors v)))
       (views:remove-cursor! v (car (views:cursors v)))
-      (check-raises (raised-with 'views:remove-cursor! "not a cursor of the view") (views:remove-cursor! v c3))
-      (check-raises (raised-with 'views:remove-cursor! "not a cursor of the view") (views:remove-cursor! w c2))
+      (check-raises (test-runner:raised-with 'views:remove-cursor! "not a cursor of the view") (views:remove-cursor! v c3))
+      (check-raises (test-runner:raised-with 'views:remove-cursor! "not a cursor of the view") (views:remove-cursor! w c2))
       (check-equal? '(6 1) (list (views:point v) (views:point w))))))
 
 (test "the last cursor cannot be removed"
@@ -87,7 +82,7 @@
     (check-equal? 72 (views:with-view v (buffers:with-buffer notes (options:set-local! views-test/fill:column 50)) (views-test/fill:column)))
     (check-equal? 50 (views:with-view w (views-test/fill:column)))
     (check-raises (raised-by 'views:set-option!) (views:set-option! v views-test/fill:column 'wide))
-    (check-raises (raised-with 'views:set-option! "not an option") (views:set-option! v 'fill:column 1))
+    (check-raises (test-runner:raised-with 'views:set-option! "not an option") (views:set-option! v 'fill:column 1))
     (views:remove-option! v views-test/fill:column)
     (check-equal? 50 (views:with-view v (views-test/fill:column)))))
 
@@ -97,7 +92,7 @@
     (check (views:with-view v (eq? (views:current) v)))
     (check (views:with-view v (eq? (buffers:current) notes)))
     (check (views:call-with-view v (lambda () (eq? (views:current) v))))
-    (check-raises (raised-with 'views:call-with-view "not a procedure") (views:call-with-view v 5))))
+    (check-raises (test-runner:raised-with 'views:call-with-view "not a procedure") (views:call-with-view v 5))))
 
 (test "the values a module sets for a view go when it unloads"
   (let ([v (views:make (buffers:make (buffers:free-name "notes") "one\n"))])
@@ -121,7 +116,7 @@
     (check-equal? 'shut (views:node-state mv (para 1) 'gone))
     (buffers:splice! m 1 5 (document:from-datum (views-test/md:para '() "c\n")))
     (check-equal? 'gone (views:node-state mv (para 1) 'gone))
-    (check-raises (raised-with 'views:node-state "not a node") (views:node-state mv 'x #f))))
+    (check-raises (test-runner:raised-with 'views:node-state "not a node") (views:node-state mv 'x #f))))
 
 (test "the keymaps at the primary cursor are its layers' by priority, a span's own first, then its nodes' kinds, innermost first"
   (let* ([k (buffers:make (buffers:free-name "k")
@@ -156,17 +151,55 @@
     (buffers:kill! k)
     (check-equal? notes (views:buffer w))))
 
+(test "copy-state! gives a view of the same buffer another's cursors, marks, narrowing, folds and options, but not its buffer history, and each view keeps its own"
+  (let* ([notes (buffers:make (buffers:free-name "notes") (apply string-append (map (lambda (i) "a line of text\n") (iota 20))))]
+         [k (buffers:make (buffers:free-name "k") "abcdef\n")]
+         [v (views:make k)]
+         [w (views:make notes)])
+    (views:set-buffer! v notes)
+    (views:narrow! v 10 200)
+    (views:fold! v 50 70)
+    (views:set-point! v 30)
+    (views:set-mark! v 20)
+    (views:set-cursor! (views:add-cursor! v 40) 45 42)
+    (views:set-option! v views:wrap-lines #f)
+    (views:copy-state! v w)
+    (check-equal? '((30 . 20) (45 . 42)) (map (lambda (c) (cons (views:cursor-point c) (views:cursor-mark c))) (views:cursors w)))
+    (check-equal? '(10 200) (bounds w))
+    (check (views:folded? w 60))
+    (check-equal? #f (views:with-view w (views:wrap-lines)))
+    (check-equal? '() (views:previous-buffers w))
+    (check-equal? (list k) (views:previous-buffers v))
+    (views:set-point! w 100)
+    (views:widen! w)
+    (views:unfold! w 60)
+    (check-equal? '(30 (10 200) #t) (list (views:point v) (bounds v) (views:folded? v 60)))
+    (check-raises (test-runner:raised-with 'views:copy-state! "the views show different buffers") (views:copy-state! v (views:make k)))
+    (check-raises (test-runner:raised-with 'views:copy-state! "not a view") (views:copy-state! v notes))))
+
+(test "copy-state! gives the copy the state the view keeps per node, which each then changes apart"
+  (let* ([m (buffers:make (buffers:free-name "m")
+              (views-test/md:doc '() (views-test/md:para '() "a\n") (views-test/md:para '() "b\n")))]
+         [mv (views:make m)]
+         [mw (views:make m)]
+         [para (document:token (buffers:document m) 5)])
+    (views:set-node-state! mv para 'open)
+    (views:copy-state! mv mw)
+    (check-equal? 'open (views:node-state mw para 'closed))
+    (views:set-node-state! mw para 'shut)
+    (check-equal? '(open shut) (list (views:node-state mv para #f) (views:node-state mw para #f)))))
+
 (test "views are used on the main thread only"
   (let* ([v (views:make (buffers:make (buffers:free-name "notes") "one\n"))]
          [reported '()]
          [keep (lambda (next c) (set! reported (cons c reported)))])
     (advice-add! report keep)
     (let ([t (fork-task (lambda (restore) (views:set-point! v 1)))])
-      (check-raises (raised-with 'views:set-point! "not on the main thread") (test-runner:join t)))
+      (check-raises (test-runner:raised-with 'views:set-point! "not on the main thread") (test-runner:join t)))
     (test-runner:wait-until (lambda () (pair? reported)))
     (advice-remove! report keep)
     (check-equal? 1 (length reported))
-    (check ((raised-with 'views:set-point! "not on the main thread") (car reported)))))
+    (check ((test-runner:raised-with 'views:set-point! "not on the main thread") (car reported)))))
 
 (test "a cursor whose node an edit deletes moves to a stop, and one from before set-buffer! is no cursor of the view"
   (let* ([three (buffers:make (buffers:free-name "three")
@@ -180,7 +213,7 @@
     (check-equal? 7 (buffers:stop three (views:point tv)))
     (let ([old (car (views:cursors tv))])
       (views:set-buffer! tv (buffers:make (buffers:free-name "notes") "x\n"))
-      (check-raises (raised-with 'views:set-cursor! "not a cursor of the view") (views:set-cursor! old 1 #f)))))
+      (check-raises (test-runner:raised-with 'views:set-cursor! "not a cursor of the view") (views:set-cursor! old 1 #f)))))
 
 (test "drawn-screens takes only finite numbers, and a huge one still draws"
   (let ([v (views:make (buffers:make (buffers:free-name "notes") "one\n"))])
@@ -196,8 +229,8 @@
     (check-equal? #f (views:find id))
     (check (views:view? gone))
     (check-equal? #f (memq gone (views:showing notes)))
-    (check-raises (raised-with 'views:point "a dropped view") (views:point gone))
-    (check-raises (raised-with 'views:drop! "a dropped view") (views:drop! gone))))
+    (check-raises (test-runner:raised-with 'views:point "a dropped view") (views:point gone))
+    (check-raises (test-runner:raised-with 'views:drop! "a dropped view") (views:drop! gone))))
 
 (test "killing a buffer drops the views its atoms drew, and a view showing it shows another buffer"
   (let* ([notes (buffers:make (buffers:free-name "notes") "one\n")]

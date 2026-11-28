@@ -26,9 +26,6 @@
 
 (define (places) (map (lambda (p) (cons (buffers:name (car p)) (cdr p))) (jump-history:places)))
 
-(define (raised-by? who message)
-  (lambda (c) (and (who-condition? c) (eq? who (condition-who c)) (string=? message (condition-message c)))))
-
 (define back-error '((jump-history:go-back "At start of jump history")))
 
 (define forward-error '((jump-history:go-forward "At end of jump history")))
@@ -133,7 +130,7 @@
   (let ([other (find (lambda (v) (not (eq? v (jump-history-test:view)))) (layout:views))])
     (layout:select! other)
     (check-equal? '() (places))
-    (check-raises (raised-by? 'jump-history:push! "not a buffer") (jump-history:push! "first" 1))))
+    (check-raises (test-runner:raised-with 'jump-history:push! "not a buffer") (jump-history:push! "first" 1))))
 
 (test "push! given a view records in that view's history, and raises for what is no view; a place in an internal buffer is never pushed"
   (let ([other (find (lambda (v) (not (eq? v (jump-history-test:view)))) (layout:views))])
@@ -141,8 +138,8 @@
     (check-equal? '() (places))
     (layout:select! other)
     (check-equal? '(("first" . 3) ("first" . 5)) (places))
-    (check-raises (raised-by? 'jump-history:push! "not a view") (jump-history:push! first 3 'v))
-    (check-raises (raised-by? 'jump-history:push! "not a position") (jump-history:push! first -1))
+    (check-raises (test-runner:raised-with 'jump-history:push! "not a view") (jump-history:push! first 3 'v))
+    (check-raises (test-runner:raised-with 'jump-history:push! "not a position") (jump-history:push! first -1))
     (jump-history:push! (buffers:make " *hidden*" "x") 1)
     (check-equal? '(("first" . 3) ("first" . 5)) (places)))
   (options:unset! jump-history:history-key))

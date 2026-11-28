@@ -1,10 +1,9 @@
-(import (tuna) (test) (test-user) (layout) (layout-split) (layout-tabs) (views) (buffers) (tables)
+(import (tuna) (test) (test-runner) (test-user) (layout) (layout-split) (layout-tabs) (views) (buffers) (tables)
         (layout-split-test parts))
 
 (define atom layout-split-test/parts:atom)
 (define named layout-split-test/parts:named)
 (define outline layout-split-test/parts:outline)
-(define raised-with layout-split-test/parts:raised-with)
 (define set-parts! layout-split-test/parts:set-parts!)
 
 (define (name-of d) (if (vector? d) (cdr (assq 'buffer (vector-ref d 1))) (cons (car d) (map name-of (cddr d)))))
@@ -107,15 +106,15 @@
   (tables:remove! layout:display-rules explorer?))
 
 (test "display-at-side checks its arguments"
-  (check-raises (raised-with 'layout-split:display-at-side "not a direction") (layout-split:display-at-side 'north 50 'content))
-  (check-raises (raised-with 'layout-split:display-at-side "not a real number") (layout-split:display-at-side (layout:direction left) 'deep 'content))
-  (check-raises (raised-with 'layout-split:display-at-side "not a fraction, (columns n), (lines n) or content")
+  (check-raises (test-runner:raised-with 'layout-split:display-at-side "not a direction") (layout-split:display-at-side 'north 50 'content))
+  (check-raises (test-runner:raised-with 'layout-split:display-at-side "not a real number") (layout-split:display-at-side (layout:direction left) 'deep 'content))
+  (check-raises (test-runner:raised-with 'layout-split:display-at-side "not a fraction, (columns n), (lines n) or content")
                 (layout-split:display-at-side (layout:direction left) 50 'big))
-  (check-raises (raised-with 'layout-split:display-at-side "an attribute the action sets itself")
+  (check-raises (test-runner:raised-with 'layout-split:display-at-side "an attribute the action sets itself")
                 (layout-split:display-at-side (layout:direction left) 50 'content '((depth . 3))))
-  (check-raises (raised-with 'layout-split:display-at-side "not an association list of attributes")
+  (check-raises (test-runner:raised-with 'layout-split:display-at-side "not an association list of attributes")
                 (layout-split:display-at-side (layout:direction left) 50 'content '(locked)))
-  (check-raises (raised-with 'layout-split:display-at-side "not a buffer")
+  (check-raises (test-runner:raised-with 'layout-split:display-at-side "not a buffer")
                 ((layout-split:display-at-side (layout:direction left) 50 'content) "mail")))
 
 (test "the action runs on the main thread only"

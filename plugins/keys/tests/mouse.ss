@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (views) (layout) (hooks) (tables) (commands) (keys) (keys-test))
+(import (tuna) (test) (test-runner) (test-user) (views) (layout) (hooks) (tables) (commands) (keys) (keys-test))
 
 (define (mouse-item action button clicks modifiers)
   (list (cons "type" "mouse") (cons "action" action) (cons "button" button) (cons "clicks" clicks)
@@ -28,7 +28,7 @@
                                             (cons "modifiers" modifiers))))
                      '("up" "down" "left" "right")
                      '(#() #("control") #("alt") #("shift"))))
-  (check-raises (keys-test:raised-by 'keys:item-key "a wheel item without a direction")
+  (check-raises (test-runner:raised-with 'keys:item-key "a wheel item without a direction")
     (keys:item-key '(("type" . "mouse") ("action" . "wheel") ("direction" . "in") ("modifiers" . #())))))
 
 (test "a key item with a name names that key, which must be one key and no mouse key"
@@ -36,15 +36,15 @@
                 (map (lambda (name) (keys:item-key (list (cons "type" "key") (cons "name" name)))) '("C-f" "RET" "<f1>" "x")))
   (for-each
     (lambda (name)
-      (check-raises (keys-test:raised-by 'keys:item-key "not a key's name") (keys:item-key (list (cons "type" "key") (cons "name" name)))))
+      (check-raises (test-runner:raised-with 'keys:item-key "not a key's name") (keys:item-key (list (cons "type" "key") (cons "name" name)))))
     '("C-x C-f" "<mouse-1>" "<wheel-up>" 7)))
 
 (test "a mouse item without an action, a button, a click count or a known modifier is refused"
-  (check-raises (keys-test:raised-by 'keys:item-key "a mouse item without an action") (keys:item-key (mouse-item "hover" 1 1 '())))
-  (check-raises (keys-test:raised-by 'keys:item-key "a mouse item without a button")
+  (check-raises (test-runner:raised-with 'keys:item-key "a mouse item without an action") (keys:item-key (mouse-item "hover" 1 1 '())))
+  (check-raises (test-runner:raised-with 'keys:item-key "a mouse item without a button")
     (keys:item-key '(("type" . "mouse") ("action" . "down") ("clicks" . 1) ("modifiers" . #()))))
-  (check-raises (keys-test:raised-by 'keys:item-key "a mouse item without a click count") (keys:item-key (mouse-item "down" 1 -1 '())))
-  (check-raises (keys-test:raised-by 'keys:item-key "not a modifier name") (keys:item-key (mouse-item "down" 1 1 '("left-option")))))
+  (check-raises (test-runner:raised-with 'keys:item-key "a mouse item without a click count") (keys:item-key (mouse-item "down" 1 -1 '())))
+  (check-raises (test-runner:raised-with 'keys:item-key "not a modifier name") (keys:item-key (mouse-item "down" 1 1 '("left-option")))))
 
 (test "an event is a mouse key and a posn, or for a drag two; any value but #f is a posn"
   (let ([press '("S-<double-down-mouse-1>" #(3 1205))] [drag '("<drag-mouse-1>" #(3 10) #(3 20))])
@@ -57,7 +57,7 @@
                   (list (keys:event-start drag) (keys:event-end drag) (keys:event-clicks drag)
                         (keys:event-clicks '("<triple-mouse-1>" #(1 1))) (keys:event-clicks '("<mouse-movement>" #(1 1)))))
     (for-each
-      (lambda (read who) (check-raises (keys-test:raised-by who "not an event") (read "<mouse-1>")))
+      (lambda (read who) (check-raises (test-runner:raised-with who "not an event") (read "<mouse-1>")))
       (list keys:event-key keys:event-start keys:event-end keys:event-clicks keys:event-basic-type keys:event-modifiers)
       '(keys:event-key keys:event-start keys:event-end keys:event-clicks keys:event-basic-type keys:event-modifiers))))
 

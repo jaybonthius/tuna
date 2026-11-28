@@ -35,14 +35,3 @@
         (and (eqv? (views:id view) (cdr (assq 'view (vector-ref d 1)))) (cddr (vector-ref d 1)))
         (exists find-in (cddr d)))))
 
-(define (raised-with who message)
-  (lambda (e)
-    (and (who-condition? e) (eq? who (condition-who e))
-         (message-condition? e) (string=? message (condition-message e)))))
-
-(define (refusals-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (map (lambda (c) (list (and (who-condition? c) (condition-who c)) (condition-message c))) (reverse reported))))

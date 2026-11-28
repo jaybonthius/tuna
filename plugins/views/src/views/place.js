@@ -414,8 +414,12 @@
     if (kind === "top" || kind === "center" || kind === "bottom") {
       const b = extentOf(view, ".view-place", number(view, "data-place-at"));
       if (b !== null) {
-        setScroll(view, kind === "top" ? b.top
-          : kind === "center" ? b.top + b.height / 2 - view.clientHeight / 2
+        // Rows asked for are counted from the other edge once the rows
+        // between it and the box are in view.
+        const counted = view.hasAttribute("data-place-rows");
+        const atTop = kind === "top" ? !counted : kind === "bottom" && counted;
+        setScroll(view, kind === "center" ? b.top + b.height / 2 - view.clientHeight / 2
+          : atTop ? b.top
           : b.top + b.height - view.clientHeight);
       }
       return kind;
@@ -433,7 +437,7 @@
   // A classic script cannot import a module, so the views module takes
   // what it shares with the first screen from this global.
   window.tunaViews = { number, box, viewItems, contentTop, extent, own, lineHeight, setScroll, byHand, forgetWrite,
-                       sideways, textLeft, textRight, pieces, longLines, textBox, pointExtent, margin, follow, keepAt,
+                       sideways, textLeft, textRight, pieces, longLines, textBox, pointExtent, extentOf, margin, follow, keepAt,
                        charWidth, contentSize, charsPerRow, px, setBlock, setGap, rowGaps, sizeSpacers, placeView,
                        firstEdge };
 

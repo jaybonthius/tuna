@@ -1,5 +1,5 @@
 #!tuna
-(import (layout) (buffers) (document) (views) (keys) (commands) (web) (haml) (tables))
+(import (layout) (layout-split) (buffers) (document) (views) (keys) (commands) (web) (haml) (tables))
 
 (define %self (current-owner))
 
@@ -326,32 +326,68 @@
     (let-values ([(f child) (if atom (holding-float atom (%kind)) (values #f #f))])
       (values atom f child))))
 
+;; The view itself moves, so it keeps all its state. Layout removes its
+;; atom, so the part it leaves collapses as its kind declares; the view
+;; outlives the removal only because its atom comes back in the same
+;; batch. A cancel between the two edits would lose it, and Tuna's
+;; dynamic-wind holds cancels off while its in runs.
+(define (%float! v atom f)
+  (let ([d (view-datum v '(place box 1/2 1/2) '(width . 1/2) '(height . 1/2))]
+        [around (document:node-start (or f (layout:level-of v)))])
+    (dynamic-wind
+      (lambda ()
+        (layout:delete-part! atom)
+        (let ([n (document:token (buffers:document layout:buffer) around)])
+          (if f
+              (let ([at (fx- (document:node-end n) 1)]) (buffers:replace! layout:buffer at at d))
+              (let ([main (car (parts n))])
+                (buffers:replace! layout:buffer (document:node-start main) (document:node-end main)
+                  (container '() (car (document:datums (document:slice (buffers:document layout:buffer)
+                                                                       (document:node-start main) (document:node-end main))))
+                             d))))))
+      void void)
+    (layout:select! v)))
+
+;; The view goes back beside the base's view the user was in last, on
+;; its right, as Niri puts a window it tiles again beside the focused
+;; column; in a container with no base it becomes the base.
+(define (%unfloat! v atom f)
+  (let* ([d (view-datum v)] [base (base-of (parts f))] [target (and base (%unlocked-view-in base))])
+    (when (and base (not target))
+      (error 'layout-float:toggle "every view of the base is locked"))
+    (if target
+        (dynamic-wind
+          (lambda ()
+            (layout:delete-part! atom)
+            (layout:add-beside! target d (layout:direction right)
+              (lambda (parts) (apply layout-split:container '((direction . row)) parts))))
+          void void)
+        (buffers:replace! layout:buffer (document:node-start atom) (document:node-end atom) d))
+    (layout:select! v)))
+
+;; A locked view is passed over, as the moves between views pass over it.
+(define (%unlocked-view-in part)
+  (let ([in? (lambda (v)
+               (let ([a (layout:view-node v)])
+                 (and a (fx<= (document:node-start part) (document:node-start a))
+                      (fx<= (document:node-end a) (document:node-end part))
+                      (not (layout:locked? a)))))])
+    (or (find in? (layout:selection-order)) (find in? (layout:views)))))
+
 (commands:define-command (toggle)
-  "Floats the selected view in the middle of the float container around it, or around its level's part; on a float, puts its buffer where layout:display-buffer shows it."
+  "Floats the selected view in the middle of the float container around it, or around its level's part; on a float, puts the view back beside the view of the base selected last, or makes it the base of a container that has none."
   (let ([v (layout:selected-view)])
     (let-values ([(atom f child) (%selected-float)])
-      (unless atom
-        (assertion-violation 'layout-float:toggle "the selected view is a popup"))
-      (when (layout:locked? atom)
-        (assertion-violation 'layout-float:toggle "a locked view" v))
-      (if (and child (not (base-child? (parts f) child)))
-          (let ([b (views:buffer v)] [p (views:point v)])
-            (layout:delete-part! atom)
-            (let ([shown (layout:display-buffer b)])
-              (views:set-point! shown p)
-              (layout:select! shown)))
-          (let* ([new (views:make (views:buffer v))]
-                 [d (view-datum new '(place box 1/2 1/2) '(width . 1/2) '(height . 1/2))])
-            (views:set-point! new (views:point v))
-            (if f
-                (let ([at (fx- (document:node-end f) 1)]) (buffers:replace! layout:buffer at at d))
-                (let* ([doc (buffers:document layout:buffer)]
-                       [main (car (parts (layout:level-of v)))])
-                  (buffers:replace! layout:buffer (document:node-start main) (document:node-end main)
-                    (container '() (car (document:datums (document:slice doc (document:node-start main) (document:node-end main))))
-                               d))))
-            (layout:delete-part! (layout:view-node v))
-            (layout:select! new))))))
+      (unless (and atom (not (layout:locked? atom)))
+        (error 'layout-float:toggle "a locked part"))
+      (unless (views:buffer v)
+        (error 'layout-float:toggle "the view shows no buffer"))
+      (cond
+        [(and child (not (base-child? (parts f) child))) (%unfloat! v atom f)]
+        [(layout:deletion-refusal atom)
+         (error 'layout-float:toggle "no other view to float over")]
+        ;; A container whose only part is the view's atom goes with it.
+        [else (%float! v atom (and f (not (and (null? (cdr (parts f))) (fx= (document:node-start child) (document:node-start atom)))) f))]))))
 
 (commands:define-command (cycle)
   "Selects the most recently used view of the float drawn on top, or, from a float, of the base, unless it is locked."

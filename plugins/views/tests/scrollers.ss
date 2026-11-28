@@ -1,14 +1,9 @@
-(import (tuna) (test) (views) (haml) (web) (test-user) (views-test page))
+(import (tuna) (test) (test-runner) (views) (haml) (web) (test-user) (views-test page))
 
 (define desktop (views-test/page:open 400))
 (define phone (views-test/page:open 200))
 
 (define (client page) (views-test/page:client page))
-
-(define (raised-with who message)
-  (lambda (e)
-    (and (who-condition? e) (eq? who (condition-who e))
-         (message-condition? e) (string=? message (condition-message e)))))
 
 (define rested '())
 
@@ -50,8 +45,8 @@
   (let ([e (strip desktop)])
     (check-equal? "row" (test-user:element-attribute e "data-axis"))
     (check-equal? "items" (test-user:element-text e)))
-  (check-raises (raised-with 'views:place-scroller! "not a scroller alignment") (views:place-scroller! s 4 'left 4))
-  (check-raises (raised-with 'views:draw-scroller "not an axis") (views:draw-scroller s (client desktop) 'diagonal "strip" "")))
+  (check-raises (test-runner:raised-with 'views:place-scroller! "not a scroller alignment") (views:place-scroller! s 4 'left 4))
+  (check-raises (test-runner:raised-with 'views:draw-scroller "not an axis") (views:draw-scroller s (client desktop) 'diagonal "strip" "")))
 
 (test "a report while scrolling tells only what is in view, and which items wholly, on that client"
   (scrolled! desktop '(4 5) '(4 5))
@@ -60,7 +55,7 @@
   (check-equal? #f (views:scroller-wholly-in-view s (client phone)))
   (scrolled! desktop '(4 5) '(4))
   (check-equal? '((4 5) (4)) (list (views:scroller-in-view s (client desktop)) (views:scroller-wholly-in-view s (client desktop))))
-  (check-raises (raised-with 'views:scroller-wholly-in-view "not a client") (views:scroller-wholly-in-view s 'desktop)))
+  (check-raises (test-runner:raised-with 'views:scroller-wholly-in-view "not a client") (views:scroller-wholly-in-view s 'desktop)))
 
 (test "at rest the scroller takes the client's place: every other client is placed there, the one that scrolled is not, and the maker hears"
   (scrolled! desktop '(5 6) '(5 6) 5 "start" 6)
@@ -93,4 +88,4 @@
   (web:close-client! (client desktop))
   (check-equal? #f (views:scroller-in-view s (client desktop)))
   (views:drop-scroller! s)
-  (check-raises (raised-with 'views:scroller-focus "a dropped scroller") (views:scroller-focus s)))
+  (check-raises (test-runner:raised-with 'views:scroller-focus "a dropped scroller") (views:scroller-focus s)))

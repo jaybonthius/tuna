@@ -5,7 +5,7 @@
 
 (module %internals
   (parts weight flex-text column? split-node? with-weight without node-datum replace-node!
-   holding-split balanced transposed check-size check-attributes place!)
+   holding-split balanced transposed check-size check-attributes place! axis-of)
 
   (define (parts node)
     (let ([acc '()])
@@ -70,13 +70,13 @@
 
   ;; Resizing takes from the other parts of a split, so it stays in the
   ;; view's level, as the other commands that mean the other views do.
-  (define (holding-split atom kind)
+  (define (holding-split atom kind direction)
     (let ([doc (buffers:document layout:buffer)] [level (buffers:kind-name (buffers:constructor-kind layout:level))])
       (let loop ([n atom])
         (let ([p (document:enclosing doc (document:node-start n))])
           (cond
             [(or (not p) (eq? (document:node-kind p) level)) (values #f #f)]
-            [(split-node? p kind) (values p n)]
+            [(and (split-node? p kind) (eq? (if (column? p) 'column 'row) direction)) (values p n)]
             [else (loop p)])))))
 
   (define (balanced d kind level)
@@ -240,9 +240,20 @@
            [else #f])]
         [else (loop (cdr cs) (car cs))]))))
 
+;; As Emacs's split-window joins the parent's combination only when it
+;; runs along the split, a split takes a part beside the view itself, and
+;; leaves a view inside a split of its own to the containers around.
+(define (%split-beside node child part direction)
+  (and (document:atom? child) (eq? (axis-of direction) (if (column? node) 'column 'row))
+       (let ([w (/ (weight child) 2)] [d (node-datum child)])
+         (if (memq direction '(right down))
+             (list (with-weight d w) (with-weight part w))
+             (list (with-weight part w) (with-weight d w))))))
+
 (layout:define-container container
   (draw %draw-split)
   (neighbour %split-neighbour)
+  (beside %split-beside)
   (child-attributes weight size)
   (collapse))
 
@@ -260,51 +271,41 @@
     (assertion-violation 'layout-split:split-view! "not a buffer" shown))
   (unless (enum-set-member? direction (enum-set-universe (directions)))
     (assertion-violation 'layout-split:split-view! "not a split direction" direction))
-  (let ([atom (layout:view-node view)] [b (views:buffer view)] [kind (%kind)])
+  (let ([atom (layout:view-node view)] [b (views:buffer view)])
     (unless atom
       (assertion-violation 'layout-split:split-view! "not a view in the layout" view))
     (when (layout:locked? atom)
       (assertion-violation 'layout-split:split-view! "a locked view" view))
     (unless (or shown b)
       (assertion-violation 'layout-split:split-view! "the view shows no buffer" view))
-    (let* ([new (views:make (or shown b))]
-           [new-datum (vector 'views:view (list (cons 'view (views:id new)) (cons 'buffer (buffers:name (or shown b)))))]
-           [d (node-datum atom)]
-           [parent (document:enclosing (buffers:document layout:buffer) (document:node-start atom))])
-      (unless shown (views:set-point! new (views:point view)))
-      (if (and (split-node? parent kind) (eq? (if (column? parent) 'column 'row) direction))
-          (let ([w (/ (weight atom) 2)])
-            (replace-node! atom (document:from-datum (with-weight d w) (with-weight new-datum w))))
-          ;; The new split takes the view's place, so what placed the view
-          ;; in its parent goes to the split. A strip's size has the same
-          ;; meaning as a split's, so it moves from any parent.
-          (let ([place (filter (lambda (a) (memq (car a) (if (split-node? parent kind) '(weight size) '(size))))
-                               (vector-ref d 1))])
-            (replace-node! atom
-              (container (cons (cons 'direction direction) place) (without d (map car place)) new-datum))))
+    (let ([new (views:make (or shown b))])
+      (unless shown (views:copy-state! view new))
+      (layout:add-beside! view (vector 'views:view (list (cons 'view (views:id new)) (cons 'buffer (buffers:name (or shown b)))))
+                          (if (eq? direction 'column) (layout:direction down) (layout:direction right))
+                          (lambda (parts) (apply container (list (cons 'direction direction)) parts)))
       new)))
 
-(define (%resize! who n sign)
+(define (%resize! who axis n sign)
   (unless (and (integer? n) (exact? n))
     (assertion-violation who "not an exact integer" n))
   (let ([atom (layout:view-node (layout:selected-view))] [kind (%kind)])
-    (let-values ([(split part) (if atom (holding-split atom kind) (values #f #f))])
+    (let-values ([(split part) (if atom (holding-split atom kind axis) (values #f #f))])
       (unless split
-        (assertion-violation who "the selected view is in no split"))
+        (error who (if (eq? axis 'row) "the selected view is in no row split" "the selected view is in no column split")))
       (when (layout:locked? split)
-        (assertion-violation who "a locked part" split))
+        (error who "a locked part"))
       (let* ([cs (parts split)] [k (length cs)]
              [total (fold-left + 0 (map weight cs))]
              [delta (* sign n total 1/10)])
         (when (fx= k 1)
-          (assertion-violation who "the selected view has no sibling in its split"))
+          (error who "the selected view has no sibling in its split"))
         (let ([weights (map (lambda (c)
                               (if (fx= (document:node-start c) (document:node-start part))
                                   (+ (weight c) delta)
                                   (- (weight c) (/ delta (- k 1)))))
                             cs)])
           (unless (for-all positive? weights)
-            (assertion-violation who "the split cannot change that much" n))
+            (error who "the split cannot change that much"))
           (let ([d (node-datum split)])
             (replace-node! split (cons* (car d) (cadr d) (map with-weight (cddr d) weights)))
             (void)))))))
@@ -379,23 +380,58 @@
                made)))
       (layout:use-other-view b)))
 
-(commands:define-command (split-below)
-  "Splits the selected view with a new view below it."
-  (split-view! (layout:selected-view) (direction column))
-  (void))
+(define (%prefix-size) (and (commands:prefix-argument) (commands:prefix-number)))
 
-(commands:define-command (split-right)
-  "Splits the selected view with a new view to its right."
-  (split-view! (layout:selected-view) (direction row))
-  (void))
+;; As Emacs's split-window-below sizes its windows, a positive size is the
+;; selected view's and a negative one the new view's.
+(define (%split-selected! who direction size unit zero-message)
+  (unless (or (not size) (and (integer? size) (exact? size)))
+    (assertion-violation who "not an exact integer or #f" size))
+  (when (eqv? size 0)
+    (error who zero-message))
+  (let ([v (layout:selected-view)])
+    (let ([a (layout:view-node v)])
+      (unless (and a (not (layout:locked? a)))
+        (error who "a locked part")))
+    (unless (views:buffer v)
+      (error who "the view shows no buffer"))
+    (let ([new (split-view! v direction)])
+      (when size
+        (layout:set-part-attribute! (if (> size 0) (%part-beside v new) (layout:view-node new)) 'size (list unit (abs size))))
+      (void))))
+
+;; The new view may have gone beside a part around the view, such as a
+;; strip's column, and the size is that part's.
+(define (%part-beside view new)
+  (let* ([doc (buffers:document layout:buffer)]
+         [beside (document:enclosing doc (document:node-start (layout:view-node new)))])
+    (let loop ([n (layout:view-node view)])
+      (let ([p (document:enclosing doc (document:node-start n))])
+        (if (fx= (document:node-start p) (document:node-start beside)) n (loop p))))))
+
+(commands:define-command (split-below [lines (%prefix-size)])
+  "Splits the selected view with a new view below it; with LINES, the prefix argument, the selected view is that many lines high, or the new view when it is negative."
+  (%split-selected! 'layout-split:split-below (direction column) lines 'lines "a view cannot be 0 lines high"))
+
+(commands:define-command (split-right [columns (%prefix-size)])
+  "Splits the selected view with a new view to its right; with COLUMNS, the prefix argument, the selected view is that many columns wide, or the new view when it is negative."
+  (%split-selected! 'layout-split:split-right (direction row) columns 'columns "a view cannot be 0 columns wide"))
 
 (commands:define-command (enlarge [n (commands:prefix-number)])
-  "Adds n tenths of its split's total weight to the part holding the selected view, taken evenly from its siblings."
-  (%resize! 'layout-split:enlarge n 1))
+  "Adds n tenths of its row split's total weight to the part holding the selected view in the innermost row split around it, taken evenly from its siblings."
+  (%resize! 'layout-split:enlarge (direction row) n 1))
 
 (commands:define-command (shrink [n (commands:prefix-number)])
-  "Takes n tenths of its split's total weight from the part holding the selected view, given evenly to its siblings."
-  (%resize! 'layout-split:shrink n -1))
+  "Takes n tenths of its row split's total weight from the part holding the selected view in the innermost row split around it, given evenly to its siblings."
+  (%resize! 'layout-split:shrink (direction row) n -1))
+
+(commands:define-command (enlarge-vertically [n (commands:prefix-number)])
+  "Adds n tenths of its column split's total weight to the part holding the selected view in the innermost column split around it, taken evenly from its siblings."
+  (%resize! 'layout-split:enlarge-vertically (direction column) n 1))
+
+(commands:define-command (shrink-vertically [n (commands:prefix-number)])
+  "Takes n tenths of its column split's total weight from the part holding the selected view in the innermost column split around it, given evenly to its siblings."
+  (%resize! 'layout-split:shrink-vertically (direction column) n -1))
 
 (commands:define-command (balance)
   "Sets the weight of every child of every split in the selected view's level to 1, but sized and locked children and the levels inside it."
@@ -442,12 +478,13 @@
          (assertion-violation 'layout-split:display-at-side "not a buffer" b))
        (or (layout:find-view b) (place! b side depth size attributes)))]))
 
-(tables:define-table resize-keymap "Keys that go on resizing after C-x { or C-x }.")
+(tables:define-table resize-keymap "Keys that go on resizing after C-x {, C-x } or C-x ^.")
 
 (keys:bind! keys:global "C-x 2" split-below)
 (keys:bind! keys:global "C-x 3" split-right)
 (keys:bind! keys:global "C-x }" enlarge)
 (keys:bind! keys:global "C-x {" shrink)
+(keys:bind! keys:global "C-x ^" enlarge-vertically)
 (keys:bind! keys:global "C-x +" balance)
 (keys:bind! keys:global "C-x w t" transpose)
 
@@ -455,6 +492,8 @@
 (keys:bind! layout:part-mode-keymap "w c" wrap-in-column)
 (keys:bind! resize-keymap "}" enlarge)
 (keys:bind! resize-keymap "{" shrink)
+(keys:bind! resize-keymap "^" enlarge-vertically)
+(keys:bind! resize-keymap "v" shrink-vertically)
 (tables:set! keys:repeat-keymaps resize-keymap)
 (options:set! layout:display-action display-pop-up)
 (tables:set! web:stylesheets 'layout-split "layout-split/layout-split.css")

@@ -16,7 +16,7 @@
 (module %internals
   (check-main-thread registry register! command-entry entry-procedure entry-reader
    command-name-of call-outermost call-inner running-command running-previous running-outermost
-   outermost-kept?-set! prefix?)
+   outermost-kept?-set!)
 
   (define main-thread (get-thread-id))
 
@@ -97,10 +97,6 @@
   (define (running-previous)
     (let ([o (running-outermost)])
       (if o (outermost-previous o) last)))
-
-  (define (prefix? v)
-    (define (count? v) (and (integer? v) (exact? v)))
-    (or (not v) (count? v) (eq? v '-) (and (pair? v) (count? (car v)) (null? (cdr v)))))
 
   (define (warning-only? c)
     (and (warning? c) (not (serious-condition? c))))
@@ -269,10 +265,14 @@
       (assertion-violation 'commands:keep-last-command! "no command is running"))
     (outermost-kept?-set! o #t)))
 
+(define (prefix-argument? v)
+  (define (count? v) (and (integer? v) (exact? v)))
+  (or (not v) (count? v) (eq? v '-) (and (pair? v) (count? (car v)) (null? (cdr v)))))
+
 (define prefix-argument
   (make-thread-parameter #f
     (lambda (v)
-      (unless (prefix? v)
+      (unless (prefix-argument? v)
         (assertion-violation 'commands:prefix-argument "not a prefix argument" v))
       v)))
 

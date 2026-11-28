@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (layout) (layout-split) (views) (buffers) (document) (keys) (commands) (web) (options) (ask)
+(import (tuna) (test) (test-runner) (test-user) (layout) (layout-split) (views) (buffers) (document) (keys) (commands) (web) (options) (ask)
         (layout-test parts) (layout-test boxes))
 
 (define notes (buffers:make "notes" "one\ntwo\nthree\n"))
@@ -47,9 +47,9 @@
 (test "select! takes a view in the layout"
   (let ([gone (fresh notes)])
     (views:drop! gone)
-    (check-raises (layout-test/parts:raised-with 'views:id "a dropped view") (layout:select! gone))
-    (check-raises (layout-test/parts:raised-with 'layout:select! "not a view") (layout:select! 'nothing))
-    (check-raises (layout-test/parts:raised-with 'layout:select! "not a view in the layout") (layout:select! (fresh notes)))))
+    (check-raises (test-runner:raised-with 'views:id "a dropped view") (layout:select! gone))
+    (check-raises (test-runner:raised-with 'layout:select! "not a view") (layout:select! 'nothing))
+    (check-raises (test-runner:raised-with 'layout:select! "not a view in the layout") (layout:select! (fresh notes)))))
 
 (test "a move toward a direction asks each container up the path, passes through a kind with no neighbour clause, and goes into a sibling's focused child"
   (let-values ([(a b c) (start-boxes!)])
@@ -59,7 +59,7 @@
     (check-equal? '(#f #f) (list (layout:neighbour a (layout:direction left)) (layout:neighbour a (layout:direction up))))
     (check-equal? (id-of a) (id-of (layout:neighbour b (layout:direction left))))
     (check-equal? #f (layout:neighbour c (layout:direction right)))
-    (check-raises (layout-test/parts:raised-with 'layout:neighbour "not a direction") (layout:neighbour a 'north))
+    (check-raises (test-runner:raised-with 'layout:neighbour "not a direction") (layout:neighbour a 'north))
     (check-equal? '(left up) (enum-set->list (layout:directions up left)))))
 
 (test "the focus path gives the selected view's keymaps, then each enclosing container's kind's, then the layout's"
@@ -110,8 +110,8 @@
     (commands:run layout:mouse-select-view
       (list "<mouse-1>" (views:%make-posn layout:screen-view (document:node-start (layout:view-node c)))))
     (check (eq? c (layout:selected-view)))
-    (check-equal? '((layout:mouse-select-view "not an event"))
-                  (layout-test/parts:refusals-during (lambda () (commands:run layout:mouse-select-view 999))))
+    (check-equal? '((layout:mouse-select-view "not an event" 999))
+                  (test-runner:shown-reports-during (lambda () (commands:run layout:mouse-select-view 999))))
     (commands:run layout:select-left)
     (check (eq? a (layout:selected-view)))
     (commands:run layout:select-right)

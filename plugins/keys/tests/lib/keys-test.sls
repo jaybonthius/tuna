@@ -1,11 +1,6 @@
 #!tuna
 (import (test-runner) (layout) (keys) (commands) (hooks) (tables) (test-user))
 
-(define (raised-by who message)
-  (lambda (c)
-    (and (who-condition? c) (eq? who (condition-who c))
-         (message-condition? c) (string=? message (condition-message c)))))
-
 (define (on-thread thunk)
   (let ([result #f])
     (join-task

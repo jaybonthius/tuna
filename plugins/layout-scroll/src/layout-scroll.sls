@@ -222,23 +222,31 @@
 (define (%adopt node d)
   (if (assq 'size (if (vector? d) (vector-ref d 1) (cadr d))) d (with-size d (default-size))))
 
+;; As Niri adds a window beside a column, not into it, whatever the
+;; column holds.
+(define (%strip-beside node child part direction)
+  (and (memq direction (if (row? node) '(left right) '(up down)))
+       (let ([column (with-size part (default-size))])
+         (if (memq direction '(right down)) (list (datum-of child) column) (list column (datum-of child))))))
+
 (layout:define-container container
   (draw %draw-strip)
   (neighbour %strip-neighbour)
   (keymap keymap)
   (child-attributes size)
-  (adopt %adopt))
+  (adopt %adopt)
+  (beside %strip-beside))
 
 (define (%selected-strip who)
   (let ([atom (layout:view-node (layout:selected-view))])
     (let-values ([(strip column) (if atom (holding-strip atom (%kind)) (values #f #f))])
       (unless strip
-        (assertion-violation who "the selected view is in no strip"))
+        (error who "the selected view is in no strip"))
       (values strip column))))
 
 (define (%check-unlocked who node)
   (when (layout:locked? node)
-    (assertion-violation who "a locked part" node)))
+    (error who "a locked part")))
 
 (define (%unlocked-column who)
   (let-values ([(strip column) (%selected-strip who)])

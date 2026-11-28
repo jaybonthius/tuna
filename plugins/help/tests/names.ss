@@ -1,9 +1,6 @@
 (import (tuna) (test) (test-runner) (test-user) (completion) (views) (buffers) (layout) (modes) (hooks) (options) (tables) (saved) (commands) (keys)
         (editing) (help) (help-test) (help-test harpo))
 
-(define (raised-by who message)
-  (lambda (c) (and (who-condition? c) (eq? who (condition-who c)) (string=? message (condition-message c)))))
-
 (define (cancels-during thunk)
   (let* ([reported '()] [keep (lambda (next c) (set! reported (cons (if (cancelled? c) 'cancelled c) reported)))])
     (advice-add! report keep)
@@ -93,15 +90,15 @@
     (override-remove! help-test/harpo:squeeze)))
 
 (test "arguments are checked, and a name no loaded module exports is refused"
-  (check-raises (raised-by 'help:describe-name "not an exported name") (help:describe-name 'nothere:x (view)))
-  (check-raises (raised-by 'help:describe-name "not an exported name") (help:describe-name 'use-plugin (view)))
-  (check-raises (raised-by 'help:describe-name "not an exported name") (help:describe-name (commands:command-name bonk) (view)))
-  (check-raises (raised-by 'help:describe-name "not a symbol") (help:describe-name "help-test/harpo:honk" (view)))
-  (check-raises (raised-by 'help:describe-name "not a view") (help:describe-name 'help-test/harpo:honk 'x))
-  (check-raises (raised-by 'help:describe-command "not a command") (help:describe-command 'x (view)))
-  (check-raises (raised-by 'help:describe-command "not a view") (help:describe-command help-test/harpo:honk 'x))
-  (check-raises (raised-by 'help:apropos-command "not a command") (help:apropos-command 'x (view)))
-  (check-raises (raised-by 'help:apropos-command "not a view") (help:apropos-command help-test/harpo:honk 'x)))
+  (check-raises (test-runner:raised-with 'help:describe-name "not an exported name") (help:describe-name 'nothere:x (view)))
+  (check-raises (test-runner:raised-with 'help:describe-name "not an exported name") (help:describe-name 'use-plugin (view)))
+  (check-raises (test-runner:raised-with 'help:describe-name "not an exported name") (help:describe-name (commands:command-name bonk) (view)))
+  (check-raises (test-runner:raised-with 'help:describe-name "not a symbol") (help:describe-name "help-test/harpo:honk" (view)))
+  (check-raises (test-runner:raised-with 'help:describe-name "not a view") (help:describe-name 'help-test/harpo:honk 'x))
+  (check-raises (test-runner:raised-with 'help:describe-command "not a command") (help:describe-command 'x (view)))
+  (check-raises (test-runner:raised-with 'help:describe-command "not a view") (help:describe-command help-test/harpo:honk 'x))
+  (check-raises (test-runner:raised-with 'help:apropos-command "not a command") (help:apropos-command 'x (view)))
+  (check-raises (test-runner:raised-with 'help:apropos-command "not a view") (help:apropos-command help-test/harpo:honk 'x)))
 
 ;; Completion matches on a job, so RET waits for the matches of what was
 ;; typed, as a user waits for the list to change.

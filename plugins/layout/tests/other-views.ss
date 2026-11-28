@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (layout) (layout-split) (views) (buffers) (commands)
+(import (tuna) (test) (test-runner) (test-user) (layout) (layout-split) (views) (buffers) (commands)
         (layout-test parts))
 
 (define atom layout-test/parts:atom)
@@ -88,7 +88,7 @@
         (atom prompt '(depth . 100) '(locked . #t) '(other-view . #t))))
     (layout:select! one)
     (check-equal? (list prompt) (layout:other-views))
-    (check-raises (layout-test/parts:raised-with 'layout:other-view-for-scrolling "no other view")
+    (check-raises (test-runner:raised-with 'layout:other-view-for-scrolling "no other view")
                   (layout:other-view-for-scrolling))))
 
 (define scrolled '())

@@ -87,10 +87,10 @@
     (web:close-client! two)))
 
 (test "set-prefix-argument! needs a command a key ran, a prefix argument and the main thread"
-  (check-raises (keys-test:raised-by 'keys:set-prefix-argument! "no command a key ran is running") (keys:set-prefix-argument! 3))
+  (check-raises (test-runner:raised-with 'keys:set-prefix-argument! "no command a key ran is running") (keys:set-prefix-argument! 3))
   (check-equal? '("no command a key ran is running") (keys-test:report-messages (lambda () (commands:run count-three))))
   (for-each
-    (lambda (v) (check-raises (keys-test:raised-by 'keys:set-prefix-argument! "not a prefix argument") (keys:set-prefix-argument! v)))
+    (lambda (v) (check-raises (test-runner:raised-with 'keys:set-prefix-argument! "not a prefix argument") (keys:set-prefix-argument! v)))
     '(x 1.5 (4 4) ("4") +))
   (check-equal? '(keys:set-prefix-argument! "not on the main thread") (keys-test:on-thread (lambda () (keys:set-prefix-argument! 3)))))
 
@@ -125,9 +125,9 @@
                       (keys:prefix-after keys:negative-argument "M--" #f) (keys:prefix-after keys:negative-argument "-" '-)
                       (keys:prefix-after keys:digit-argument "5" #f) (keys:prefix-after keys:digit-argument "5" '-)
                       (keys:prefix-after keys:digit-argument "0" '-)))
-  (check-raises (keys-test:raised-by 'keys:prefix-after "not a prefix command for the key") (keys:prefix-after keys:digit-argument "M-x" 4))
-  (check-raises (keys-test:raised-by 'keys:prefix-after "not a prefix command for the key") (keys:prefix-after note "C-u" #f))
-  (check-raises (keys-test:raised-by 'keys:prefix-after "not a prefix argument") (keys:prefix-after keys:universal-argument "C-u" 'x)))
+  (check-raises (test-runner:raised-with 'keys:prefix-after "not a prefix command for the key") (keys:prefix-after keys:digit-argument "M-x" 4))
+  (check-raises (test-runner:raised-with 'keys:prefix-after "not a prefix command for the key") (keys:prefix-after note "C-u" #f))
+  (check-raises (test-runner:raised-with 'keys:prefix-after "not a prefix argument") (keys:prefix-after keys:universal-argument "C-u" 'x)))
 
 (test "a wrapper runs the next command a key runs inside it, the newest innermost, and goes"
   (test-user:press! "C-c x C-c a C-c n C-c n")
@@ -169,6 +169,6 @@
     (check-equal? 'quit waited)))
 
 (test "wrap-next-command! needs a key or click being handled and a procedure"
-  (check-raises (keys-test:raised-by 'keys:wrap-next-command! "no key or click is being handled")
+  (check-raises (test-runner:raised-with 'keys:wrap-next-command! "no key or click is being handled")
     (keys:wrap-next-command! (marking 'c) "C-c c"))
-  (check-raises (keys-test:raised-by 'keys:wrap-next-command! "not a procedure") (keys:wrap-next-command! 'c "C-c c")))
+  (check-raises (test-runner:raised-with 'keys:wrap-next-command! "not a procedure") (keys:wrap-next-command! 'c "C-c c")))

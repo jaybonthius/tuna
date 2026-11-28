@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (layout) (layout-split) (views) (buffers) (document) (keys) (commands)
+(import (tuna) (test) (test-runner) (test-user) (layout) (layout-split) (views) (buffers) (document) (keys) (commands)
         (layout-test parts) (layout-test boxes))
 
 (define atom layout-test/parts:atom)
@@ -70,5 +70,5 @@
   (let ([drawn (layout-test/parts:view-element b)])
     (layout:delete-part! (layout:view-node b))
     (check-equal? '((#f "Stale click: what was clicked is gone"))
-                  (layout-test/parts:refusals-during (lambda () (test-user:click-element! drawn))))
+                  (test-runner:shown-reports-during (lambda () (test-user:click-element! drawn))))
     (check (eq? a (layout:selected-view)))))

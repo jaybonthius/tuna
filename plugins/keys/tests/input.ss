@@ -81,8 +81,8 @@
     (check-equal? '((quit)) (take-seen!))))
 
 (test "run-as-input takes a client and a command on the main thread"
-  (check-raises (keys-test:raised-by 'keys:run-as-input "not a command") (keys:run-as-input (test-user:client) 'insert-text "f"))
-  (check-raises (keys-test:raised-by 'keys:run-as-input "not a client") (keys:run-as-input 'one insert-text "f"))
+  (check-raises (test-runner:raised-with 'keys:run-as-input "not a command") (keys:run-as-input (test-user:client) 'insert-text "f"))
+  (check-raises (test-runner:raised-with 'keys:run-as-input "not a client") (keys:run-as-input 'one insert-text "f"))
   (check-equal? '(keys:run-as-input "not on the main thread")
                 (keys-test:on-thread (lambda () (keys:run-as-input (test-user:client) insert-text "g")))))
 

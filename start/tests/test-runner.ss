@@ -94,6 +94,23 @@
   (check-raises assertion-violation? (test-runner:reports-during 'thunk))
   (check-raises assertion-violation? (test-runner:reports-during void -1)))
 
+(test "raised-with is a predicate on conditions with that who and message, whatever their irritants"
+  (check-raises (test-runner:raised-with 'here "refused") (error 'here "refused"))
+  (check-raises (test-runner:raised-with 'here "refused") (assertion-violation 'here "refused" 1 2))
+  (check (not ((test-runner:raised-with 'here "refused") (make-message-condition "refused"))))
+  (check (not ((test-runner:raised-with 'here "refused") (condition (make-who-condition 'there) (make-message-condition "refused")))))
+  (check (not ((test-runner:raised-with 'here "refused") 'refused)))
+  (check-raises assertion-violation? (test-runner:raised-with "here" "refused"))
+  (check-raises assertion-violation? (test-runner:raised-with 'here 'refused)))
+
+(test "shown-reports-during gives each report as the echo area shows it: its who, its message, then its irritants"
+  (check-equal? '((here "refused") (there "refused" 1 2) (#f "no who"))
+    (test-runner:shown-reports-during
+      (lambda ()
+        (report (guard (c [#t c]) (error 'here "refused")))
+        (report (guard (c [#t c]) (assertion-violation 'there "refused" 1 2)))
+        (report (make-message-condition "no who"))))))
+
 (test "wait-for-batch returns once the tasks queued before it have run"
   (let ([ran #f])
     (spawn-task (lambda (restore) (set! ran #t)))

@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (layout) (layout-split) (layout-tabs) (echo-area) (minibuffer) (views) (buffers)
+(import (tuna) (test) (test-runner) (test-user) (layout) (layout-split) (layout-tabs) (echo-area) (minibuffer) (views) (buffers)
         (layout-test parts) (layout-test focus))
 
 (define atom layout-test/parts:atom)
@@ -25,7 +25,7 @@
       (test-user:press! "C-x 0")
       (check-equal? "b" (selected))
       (check-equal? before (layout-test/focus:front 3)))
-    (check-raises (layout-test/parts:raised-with 'layout:delete-part! "the last view of its level")
+    (check-raises (test-runner:raised-with 'layout:delete-view "the last view of its level")
                   (layout-test/focus:in-client layout:delete-view))))
 
 (test "after a prompt answered with RET, the successor below is chosen the same way"

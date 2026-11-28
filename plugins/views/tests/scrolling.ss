@@ -3,11 +3,6 @@
 
 (options:set! views:scroll-margin 2 views:wrap-lines #f)
 
-(define (raised-with who message)
-  (lambda (e)
-    (and (who-condition? e) (eq? who (condition-who e))
-         (message-condition? e) (string=? message (condition-message e)))))
-
 (define desktop (views-test/page:open 400))
 (define phone (views-test/page:open 200))
 
@@ -95,7 +90,7 @@
   (report! phone v 68 0 #f)
   (report! desktop v 61 0 #f)
   (check-equal? '(61 68) (list (line-of v (views:top v (client desktop))) (line-of v (views:top v (client phone)))))
-  (check-raises (raised-with 'views:top "not a client or #f") (views:top v 'nobody)))
+  (check-raises (test-runner:raised-with 'views:top "not a client or #f") (views:top v 'nobody)))
 
 (test "a page that scrolled past every drawn line while following point names the place in the spacer, and leaves following"
   (report! desktop v 250 0 #f)
@@ -152,13 +147,13 @@
 
 (define (mark-number keymap) (read (open-input-string (views:keymap-mark keymap))))
 
-(define (press-bar! page part)
+(define (press-bar! page part keymap)
   (for-each
     (lambda (action)
       (web:post-input! (client page)
         `(("type" . "mouse") ("action" . ,action) ("button" . 1) ("clicks" . 1) ("modifiers" . #())
           ("view" . ,(views:id v)) ("version" . ,(buffers:version b)) ("showing" . ,(views:shown-count v))
-          ("line" . 100) ("chars" . 3) ("keymaps" . ,(vector (mark-number views:scroll-bar-keymap)))
+          ("line" . 100) ("chars" . 3) ("keymaps" . ,(vector (mark-number keymap)))
           ,@(if part `(("part" . ,part)) '())))
       (test-user:settle))
     '("down" "click")))
@@ -169,17 +164,28 @@
       (lambda (name value)
         (set! steps (cons (map (lambda (key) (cdr (assoc key value))) '("forward" "by")) steps))
         (report-answer name value)))
-    (press-bar! desktop "below-handle")
-    (press-bar! desktop "above-handle")
-    (press-bar! desktop #f)
+    (press-bar! desktop "below-handle" views:scroll-bar-keymap)
+    (press-bar! desktop "above-handle" views:scroll-bar-keymap)
+    (press-bar! desktop #f views:scroll-bar-keymap)
     (check-equal? '((#t null) (#f null)) (reverse steps))))
+
+(test "a press on the horizontal bar off its thumb scrolls the lines sideways toward its part, as C-x < and C-x > do; a press with no part does nothing"
+  (let* ([steps '()] [report-answer (page-report-answer desktop v 268 270 285)])
+    (views-test/page:set-answer! desktop
+      (lambda (name value)
+        (set! steps (cons (map (lambda (key) (cdr (assoc key value))) '("sideways" "forward" "context" "by")) steps))
+        (report-answer name value)))
+    (press-bar! desktop "after-handle" views:horizontal-scroll-bar-keymap)
+    (press-bar! desktop "before-handle" views:horizontal-scroll-bar-keymap)
+    (press-bar! desktop #f views:horizontal-scroll-bar-keymap)
+    (check-equal? '((#t #t 2 null) (#t #f 2 null)) (reverse steps))))
 
 (test "a mouse key on the bar names the part the page drew it in"
   (let* ([parts '()]
          [note (lambda (next event) (set! parts (cons (views:posn-part (keys:event-start event)) parts)) (next event))])
     (views-test/page:set-answer! desktop (page-report-answer desktop v 268 270 285))
     (advice-add! views:scroll-bar-scroll note)
-    (press-bar! desktop "above-handle")
+    (press-bar! desktop "above-handle" views:scroll-bar-keymap)
     (advice-remove! views:scroll-bar-scroll note)
     (check-equal? (list (views:bar-part above-handle)) parts)))
 
@@ -211,6 +217,21 @@
   (check-equal? '(new top 70) (placement desktop v))
   (test-user:press! (client desktop) "C-l")
   (check-equal? '(new bottom 70) (placement desktop v)))
+
+(test "with a number C-l puts point on that row, counted from 0 at the top or from -1 at the bottom, and with C-u alone at the centre"
+  (define (placed)
+    (append (placement desktop v)
+            (list (test-user:element-attribute (views-test/page:view-element desktop v) "data-place-rows"))))
+  (go-to-line! desktop 70)
+  (test-user:press! (client desktop) "C-u 2 C-l")
+  (check-equal? '(new top 70 "2") (placed))
+  (test-user:press! (client desktop) "C-u - 2 C-l")
+  (check-equal? '(new bottom 70 "1") (placed))
+  (test-user:press! (client desktop) "M-- C-l")
+  (check-equal? '(new bottom 70 "0") (placed))
+  (test-user:press! (client desktop) "C-u C-l")
+  (check-equal? '(new center 70 #f) (placed))
+  (check-raises (test-runner:raised-with 'views:recenter-top-bottom "not a prefix argument") (views:recenter-top-bottom 'top)))
 
 (test "work no client did places every client"
   (views:scroll-to! v (line-start v 10) (views:align top))
@@ -257,7 +278,7 @@
     (check-equal? before (views:top v (client phone)))))
 
 (test "an alignment is one of views:align's"
-  (check-raises (raised-with 'views:scroll-to! "not an alignment") (views:scroll-to! v 1 'middle)))
+  (check-raises (test-runner:raised-with 'views:scroll-to! "not an alignment") (views:scroll-to! v 1 'middle)))
 
 (test "where lines do not wrap, the column at the left edge is counted on the line the page names, long lines are drawn around their edges, and set-hscroll! places every client"
   (let* ([wide (make-buffer "wide" (string-append (make-string 3000 #\a) "\n" (make-string 3000 #\x4E00) "\nshort\n"))]
@@ -278,7 +299,7 @@
       (check-equal? '((0 1) (0 1)) (list (placed-column desktop) (placed-column phone)))
       (views:set-hscroll! s 10 3500)
       (check-equal? '((10 3002) (10 3002)) (list (placed-column desktop) (placed-column phone))))
-    (check-raises (raised-with 'views:set-hscroll! "not a position in the view's buffer") (views:set-hscroll! s 10 40000))))
+    (check-raises (test-runner:raised-with 'views:set-hscroll! "not a position in the view's buffer") (views:set-hscroll! s 10 40000))))
 
 (test "C-x < asks the commanding client's page to scroll sideways by its width less two columns, or by a prefix, and takes its report"
   (let* ([wide (make-buffer "wide" (string-append (make-string 3000 #\a) "\n" (make-string 3000 #\x4E00) "\nshort\n"))]
@@ -318,7 +339,7 @@
     (views:set-buffer! v b)))
 
 (test "a view draws for a client or for none"
-  (check-raises (raised-with 'views:draw "not a client or #f") (views:draw v 'nobody)))
+  (check-raises (test-runner:raised-with 'views:draw "not a client or #f") (views:draw v 'nobody)))
 
 (test "a run's edges fall only between items, so a whole node is drawn all or not at all, and a run after it starts with it"
   (let* ([long (make-buffer "long-page"

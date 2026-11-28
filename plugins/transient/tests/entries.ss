@@ -11,9 +11,6 @@
 
 (keys:bind! keys:global "C-c t" show-m)
 
-(define (raised-by who message)
-  (lambda (c) (and (who-condition? c) (eq? who (condition-who c)) (message-condition? c) (string=? message (condition-message c)))))
-
 (define (report-messages thunk)
   (map (lambda (c) (if (irritants-condition? c) (cons (condition-message c) (condition-irritants c)) (condition-message c)))
        (test-runner:reports-during thunk)))
@@ -144,16 +141,16 @@
   (test-user:press! "C-g"))
 
 (test "the procedures check what they are given"
-  (check-raises (raised-by 'transient:add! "not a table") (transient:add! 'menu #f))
-  (check-raises (raised-by 'transient:add! "neither a string, a procedure nor #f") (transient:add! m 'heading))
-  (check-raises (raised-by 'transient:add! "not an entry") (transient:add! m #f 'entry))
-  (check-raises (raised-by 'keys:bind! "not a valid key sequence") (transient:add! m #f (transient:command "C-" "Bad" note)))
-  (check-raises (raised-by 'transient:add-computed! "not a procedure") (transient:add-computed! m #f 'entries))
-  (check-raises (raised-by 'transient:remove! "not a string") (transient:remove! m 'x))
-  (check-raises (raised-by 'transient:command "not a string") (transient:command 'k "K" note))
-  (check-raises (raised-by 'transient:command "neither a string nor a procedure") (transient:command "k" 'k note))
-  (check-raises (raised-by 'transient:command "not a command") (transient:command "k" "K" 'note))
-  (check-raises (raised-by 'transient:staying-command "not a command") (transient:staying-command "k" "K" 'note))
-  (check-raises (raised-by 'transient:switch "not a string") (transient:switch "k" "K" 'arg))
-  (check-raises (raised-by 'transient:valued-switch "not a procedure") (transient:valued-switch "k" "K" "--k=" "reader"))
+  (check-raises (test-runner:raised-with 'transient:add! "not a table") (transient:add! 'menu #f))
+  (check-raises (test-runner:raised-with 'transient:add! "neither a string, a procedure nor #f") (transient:add! m 'heading))
+  (check-raises (test-runner:raised-with 'transient:add! "not an entry") (transient:add! m #f 'entry))
+  (check-raises (test-runner:raised-with 'keys:bind! "not a valid key sequence") (transient:add! m #f (transient:command "C-" "Bad" note)))
+  (check-raises (test-runner:raised-with 'transient:add-computed! "not a procedure") (transient:add-computed! m #f 'entries))
+  (check-raises (test-runner:raised-with 'transient:remove! "not a string") (transient:remove! m 'x))
+  (check-raises (test-runner:raised-with 'transient:command "not a string") (transient:command 'k "K" note))
+  (check-raises (test-runner:raised-with 'transient:command "neither a string nor a procedure") (transient:command "k" 'k note))
+  (check-raises (test-runner:raised-with 'transient:command "not a command") (transient:command "k" "K" 'note))
+  (check-raises (test-runner:raised-with 'transient:staying-command "not a command") (transient:staying-command "k" "K" 'note))
+  (check-raises (test-runner:raised-with 'transient:switch "not a string") (transient:switch "k" "K" 'arg))
+  (check-raises (test-runner:raised-with 'transient:valued-switch "not a procedure") (transient:valued-switch "k" "K" "--k=" "reader"))
   (check-equal? '(#t #f) (map transient:entry? (list (transient:switch "k" "K" "--k") 'entry))))

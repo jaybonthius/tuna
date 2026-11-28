@@ -16,7 +16,9 @@
 
 (define (pick ls k) (list-ref ls (mod k (length ls))))
 
-(define (attempt thunk) (guard (c [(not (cancelled? c)) #f]) (thunk)))
+;; A step may be refused, as a user's command is, but any other raise is
+;; a fault the stress found.
+(define (attempt thunk) (guard (c [(error? c) #f]) (thunk)))
 
 ;; While the main thread itself waits busily, it keeps its own deadline.
 (define (spin-until done?)
@@ -81,22 +83,28 @@
   (test-user:settle)
   (= 1 (length (test-user:elements (test-user:screen) "layout-screen"))))
 
+;; A plugin asks before it deletes or splits a part, as the API's
+;; refusals are faults of its caller.
+(define (delete! node) (unless (layout:deletion-refusal node) (layout:delete-part! node)))
+
+(define (split! view direction) (unless (layout:locked? (layout:view-node view)) (layout-split:split-view! view direction)))
+
 (define (window-step k)
   (let* ([shown (layout:views)] [selected (layout:selected-view)] [many? (> (length (atom-ids (tree))) 10)])
     (case (mod k 14)
-      [(0) (if many? (layout:delete-part! (layout:view-node (pick shown k))) (layout-split:split-view! selected (layout-split:direction row)))]
-      [(1) (if many? (layout:delete-part! (layout:view-node (pick shown k))) (layout-split:split-view! selected (layout-split:direction column)))]
-      [(2) (layout:delete-part! (layout:view-node (pick shown (* k 31))))]
+      [(0) (if many? (delete! (layout:view-node (pick shown k))) (split! selected (layout-split:direction row)))]
+      [(1) (if many? (delete! (layout:view-node (pick shown k))) (split! selected (layout-split:direction column)))]
+      [(2) (delete! (layout:view-node (pick shown (* k 31))))]
       [(3) (layout:select! (pick shown (* k 7)))]
       [(4) (layout:zoom (if (even? (div k 13)) #f '(4)))]
       [(5) (layout:screen (test-user:client))]
       [(6) (layout-split:enlarge (- (mod k 5) 2))]
       [(7) (layout:display-buffer notes)]
-      [(8) (layout:other-view)]
+      [(8) (when (pair? (layout:other-views)) (layout:other-view 1))]
       [(9) (layout-split:balance)]
       [(10) (let ([v (layout:find-view side)])
               (if v
-                  (layout:delete-part! (layout:view-node v))
+                  (delete! (layout:view-node v))
                   ((layout-split:display-at-side (pick (list (layout:direction left) (layout:direction right) (layout:direction up) (layout:direction down)) k)
                      50 'content '((locked . #t)))
                    side)))]
@@ -130,7 +138,7 @@
     [(5) (layout:shift-forward)]
     [(6) (layout:lift)]
     [(7) (layout:lower)]
-    [(8) (if (> (length (atom-ids (tree))) 3) (layout:raise) (layout-split:split-right))]
+    [(8) (if (> (length (atom-ids (tree))) 3) (layout:raise) (layout-split:split-right #f))]
     [(9) (layout:splice)]
     [(10) (if (> (length (atom-ids (tree))) 3) (layout:delete-view) (layout-scroll:display-in-new-column notes))]
     [(11) (case (mod k 4)
@@ -141,12 +149,12 @@
     [(12) (layout:wrap-in-level)]
     [(13) (case (mod k 4)
             [(0) (layout:zoom (if (even? (div k 4)) #f '(4)))]
-            [(1) (layout:other-view)]
+            [(1) (when (pair? (layout:other-views)) (layout:other-view 1))]
             [(2) ((layout-split:display-at-side (layout:direction left) 50 '(columns 20)) side)]
             [else (let ([v (layout:find-view side)]) (when v (layout:delete-part! (layout:view-node v))))])]
     [(14) (layout:screen (test-user:client))]
     [(15) (layout:part-mode-leave) (layout:part-mode)]
-    [(16) (layout-split:split-below)]
+    [(16) (layout-split:split-below #f)]
     [(17) (layout:select-first)]
     [(18) (layout:select-last)]
     [else (batch-ended)]))

@@ -197,6 +197,7 @@
       (check-raises (raised? 'commands:prefix-argument "not a prefix argument")
         (parameterize ([commands:prefix-argument v]) 'never)))
     '("4" (4 4) 1.5))
+  (check-equal? '(#t #t #t #t #t #f #f #f #f) (map commands:prefix-argument? '(#f 7 -3 (4) -  "4" (4 4) 1.5 +)))
   (check-equal? '(4 (4)) (parameterize ([commands:prefix-argument '(4)]) (commands:run prefixed)))
   (check-equal? '(-1 -) (parameterize ([commands:prefix-argument '-]) (commands:run execute prefixed)))
   (join-task (fork-task (lambda (restore) (commands:prefix-argument 9))))

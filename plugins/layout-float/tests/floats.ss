@@ -1,11 +1,6 @@
 (import (tuna) (test) (test-runner) (layout) (layout-split) (layout-float) (views) (buffers) (document) (commands) (tables) (undo)
         (keys) (web) (test-user) (layout-float-test popper) (layout-float-test asker))
 
-(define (raised-with who message)
-  (lambda (e)
-    (and (who-condition? e) (eq? who (condition-who e))
-         (message-condition? e) (string=? message (condition-message e)))))
-
 (define desktop (test-user:client))
 (define phone (test-user:open-client))
 
@@ -45,9 +40,6 @@
 (define (selected) (name-of (views:id (layout:selected-view))))
 
 (define (press! keys) (test-user:press! desktop keys))
-
-(define (reports-during thunk)
-  (map (lambda (c) (list (condition-who c) (condition-message c))) (reverse (test-runner:reports-during thunk))))
 
 (define (described floats)
   (map (lambda (f) (list (test-user:element-attribute f "class") (test-user:element-attribute f "style"))) floats))
@@ -101,37 +93,72 @@
   (press! "s-V")
   (check-equal? 'va (selected)))
 
-(test "s-v floats the selected view in the middle of the float container around it, as a new view at its point, and on a float puts it back"
+(test "s-v floats the selected view itself in the middle of the float container around it, and on a float in a container with no base makes it the base"
   (views:set-point! va 40)
   (press! "s-v")
-  (named 'floated (layout:selected-view))
   (check-equal? '((layout:level () (layout-float:container () (vb (place box 1/4 3/4)) (vc (place box 1 0) (width columns 30) (height lines 8))
-                    (floated (place box 1/2 1/2) (width . 1/2) (height . 1/2))))
-                  floated 40)
+                    (va (place box 1/2 1/2) (width . 1/2) (height . 1/2))))
+                  va 40)
                 (list (shape) (selected) (views:point (layout:selected-view))))
   (press! "s-v")
-  (check-equal? '(layout:level () (layout-float:container () (vb (place box 1/4 3/4)) (vc (place box 1 0) (width columns 30) (height lines 8))))
-                (shape))
-  (check-equal? 40 (views:point (layout:selected-view)))
-  (check-equal? a (views:buffer (layout:selected-view))))
+  (check-equal? '((layout:level () (layout-float:container () (vb (place box 1/4 3/4)) (vc (place box 1 0) (width columns 30) (height lines 8))
+                    (va)))
+                  va 40)
+                (list (shape) (selected) (views:point (layout:selected-view)))))
 
 (test "with no float container around the selected view, s-v makes one around its level's part, and window changes keep no undo history"
   (let ([vd (named 'vd (views:make a))] [other (named 'other (views:make b))])
     (set-parts! (layout-split:container '() (atom vd) (atom other)))
     (layout:select! vd)
     (press! "s-v")
-    (named 'floated-d (layout:selected-view))
-    (check-equal? '(layout:level () (layout-float:container () (other) (floated-d (place box 1/2 1/2) (width . 1/2) (height . 1/2))))
+    (check-equal? '(layout:level () (layout-float:container () (other) (vd (place box 1/2 1/2) (width . 1/2) (height . 1/2))))
                   (shape))
+    (check (eq? vd (layout:selected-view)))
     (check (buffers:silent? layout:buffer)))
   (let ([inner (named 'inner (views:make a))] [left (named 'left (views:make b))] [right (named 'right (views:make b))])
     (set-parts! (layout-split:container '() (atom left) (layout:level '() (layout-split:container '() (atom inner) (atom right)))))
     (layout:select! inner)
     (press! "s-v")
-    (named 'floated-e (layout:selected-view))
     (check-equal? '(layout:level () (layout-split:container () (left)
-                     (layout:level () (layout-float:container () (right) (floated-e (place box 1/2 1/2) (width . 1/2) (height . 1/2))))))
+                     (layout:level () (layout-float:container () (right) (inner (place box 1/2 1/2) (width . 1/2) (height . 1/2))))))
                   (shape))))
+
+(test "s-v in a float container holding only the selected view floats it over its level's part, since that container goes with it"
+  (let ([vd (named 'vd (views:make a))] [other (named 'other (views:make b))])
+    (set-parts! (layout-split:container '() (layout-float:container '() (atom vd)) (atom other)))
+    (layout:select! vd)
+    (press! "s-v")
+    (check-equal? '(layout:level () (layout-float:container () (other) (vd (place box 1/2 1/2) (width . 1/2) (height . 1/2))))
+                  (shape))))
+
+(test "the view s-v floats keeps its cursors, mark, narrowing, folds, options and buffer history"
+  (let ([vd (named 'vd (views:make b))] [other (named 'other (views:make b))])
+    (set-parts! (layout-split:container '() (atom vd) (atom other)))
+    (layout:select! vd)
+    (views:set-buffer! vd a)
+    (views:narrow! vd 10 100)
+    (views:fold! vd 50 70)
+    (views:set-point! vd 30)
+    (views:set-mark! vd 20)
+    (views:add-cursor! vd 40)
+    (views:set-option! vd views:wrap-lines #f)
+    (press! "s-v")
+    (check (eq? vd (layout:selected-view)))
+    (check-equal? '(layout:level () (layout-float:container () (other) (vd (place box 1/2 1/2) (width . 1/2) (height . 1/2))))
+                  (shape))
+    (let-values ([(lo hi) (views:bounds vd)])
+      (check-equal? (list 30 20 2 10 100 #t #f (list b))
+                    (list (views:point vd) (views:mark vd) (length (views:cursors vd)) lo hi (views:folded? vd 60)
+                          (views:call-with-view vd views:wrap-lines) (views:previous-buffers vd))))))
+
+(test "s-v on the only view of its level says there is no other view to float over, and changes nothing"
+  (let ([alone (named 'alone (views:make a))])
+    (set-parts! (atom alone))
+    (layout:select! alone)
+    (let ([before (shape)])
+      (check-equal? '((layout-float:toggle "no other view to float over")) (test-runner:shown-reports-during (lambda () (press! "s-v"))))
+      (check-equal? before (shape))
+      (check (eq? alone (layout:selected-view))))))
 
 (define vd (named 'vd (views:make a)))
 (define completions (buffers:make (buffers:free-name "*completions*") "one\ntwo\n"))
@@ -179,14 +206,14 @@
   (test-user:settle)
   (check-equal? (list 'p (list vd) #f) (list (selected) (layout:views) (layout:view-node p)))
   (press! "C-x 1")
-  (check-equal? '((layout:delete-view "a locked part")) (reports-during (lambda () (press! "C-x 0"))))
+  (check-equal? '((layout:delete-view "a locked part")) (test-runner:shown-reports-during (lambda () (press! "C-x 0"))))
   (press! "C-x o")
   (check-equal? 'vd (selected)))
 
 (test "show-at! takes a view in the layout or a popup, a position in its buffer and a size"
-  (check-raises (raised-with 'layout-float:show-at! "not a view in the layout or a popup") (layout-float:show-at! (views:make b) 0 b 1/2 1/2))
-  (check-raises (raised-with 'layout-float:show-at! "not a position in the view's buffer") (layout-float:show-at! vd 100000 b 1/2 1/2))
-  (check-raises (raised-with 'layout-float:show-at! "not a fraction, (columns n), (lines n) or content") (layout-float:show-at! vd 0 b 2 1/2)))
+  (check-raises (test-runner:raised-with 'layout-float:show-at! "not a view in the layout or a popup") (layout-float:show-at! (views:make b) 0 b 1/2 1/2))
+  (check-raises (test-runner:raised-with 'layout-float:show-at! "not a position in the view's buffer") (layout-float:show-at! vd 100000 b 1/2 1/2))
+  (check-raises (test-runner:raised-with 'layout-float:show-at! "not a fraction, (columns n), (lines n) or content") (layout-float:show-at! vd 0 b 2 1/2)))
 
 (test "close! removes a popup and its anchor, and the float container holding popups goes with the last"
   (let ([n (anchor-number)])
@@ -194,7 +221,7 @@
     (test-user:settle)
     (check-equal? '(layout:popups-root ()) (popups))
     (check-equal? #f (views:find-anchor n))
-    (check-raises (raised-with 'views:id "a dropped view") (layout-float:close! p))))
+    (check-raises (test-runner:raised-with 'views:id "a dropped view") (layout-float:close! p))))
 
 (define ve (named 've (views:make b)))
 
@@ -223,7 +250,7 @@
   (test-user:settle)
   (check-equal? b (car (buffers:all)))
   (check-equal? pal (layout:selected-view))
-  (check-raises (raised-with 'layout:previous-buffer "Cannot switch buffers in a popup") (layout:previous-buffer 1)))
+  (check-raises (test-runner:raised-with 'layout:previous-buffer "Cannot switch buffers in a popup") (layout:previous-buffer 1)))
 
 (test "from a popup, the views C-x o visits start at the view of the layout selected last"
   (check-equal? ve (car (layout:other-views)))
@@ -262,7 +289,9 @@
     (set-parts! (layout-float:container '() (atom ve) (layout-split:container '((place box 1/2 1/2)) (atom vf) (atom vg))))
     (layout:select! vf)
     (press! "s-v")
-    (check-equal? '((layout:level () (layout-float:container () (ve) (vg (place box 1/2 1/2)))) ve) (list (shape) (selected)))))
+    (check-equal? '((layout:level () (layout-float:container () (layout-split:container ((direction . row)) (ve) (vf)) (vg (place box 1/2 1/2))))
+                    vf)
+                  (list (shape) (selected)))))
 
 (define vh (named 'vh (views:make a)))
 
@@ -292,7 +321,7 @@
     (check-equal? '(("float-child float-content-block-size" "--layout-float-inline-size:50.0%;--layout-float-block-size:auto;--layout-float-x:0.0;--layout-float-y:1.0;--layout-float-z:2")
                     ("float-child float-content-inline-size" "--layout-float-inline-size:fit-content;--layout-float-block-size:50.0%;--layout-float-x:1.0;--layout-float-y:0.0;--layout-float-z:1"))
                   (layout-floats desktop))
-    (check-raises (raised-with 'layout-float:display-palette "not a fraction, (columns n), (lines n) or content")
+    (check-raises (test-runner:raised-with 'layout-float:display-palette "not a fraction, (columns n), (lines n) or content")
                   (layout-float:display-palette tall '(lines 0)))))
 
 (test "when layout-float unloads its popups go, and a module that showed one through a display rule unloads later quietly"
@@ -303,7 +332,7 @@
   (test-user:settle)
   (check-equal? '(layout:popups-root ()) (popups))
   (load-module! '(layout-float))
-  (check-equal? '() (reports-during (lambda () (unload-owner! (module-owner '(layout-float-test asker))) (test-user:settle))))
+  (check-equal? '() (test-runner:shown-reports-during (lambda () (unload-owner! (module-owner '(layout-float-test asker))) (test-user:settle))))
   (check-equal? '(layout:popups-root ()) (popups)))
 
 (test "every page links the floats' stylesheet"
@@ -318,3 +347,81 @@
     (test-user:settle)
     (check-equal? '(layout:level () (layout-float:container () (vw))) (shape))
     (check-equal? layout-float:wrap-in-float (keys:lookup-in (list layout:part-mode-keymap) "w f"))))
+
+(test "s-v on a float puts the view itself back beside the base's view selected last, with its cursors, mark, narrowing, folds, options and buffer history"
+  (let ([vx (named 'vx (views:make b))] [vy (named 'vy (views:make b))] [vz (named 'vz (views:make b))])
+    (set-parts! (layout-float:container '() (layout-split:container '((direction . row)) (atom vx) (atom vy)) (atom vz '(place box 1/2 1/2))))
+    (layout:select! vy)
+    (layout:select! vz)
+    (views:set-buffer! vz a)
+    (views:narrow! vz 10 100)
+    (views:fold! vz 50 70)
+    (views:set-point! vz 30)
+    (views:set-mark! vz 20)
+    (views:add-cursor! vz 40)
+    (views:set-option! vz views:wrap-lines #f)
+    (press! "s-v")
+    (check (eq? vz (layout:selected-view)))
+    (check-equal? '(layout:level () (layout-float:container () (layout-split:container ((direction . row)) (vx) (vy (weight . 1/2)) (vz (weight . 1/2)))))
+                  (shape))
+    (let-values ([(lo hi) (views:bounds vz)])
+      (check-equal? (list 30 20 2 10 100 #t #f (list b))
+                    (list (views:point vz) (views:mark vz) (length (views:cursors vz)) lo hi (views:folded? vz 60)
+                          (views:call-with-view vz views:wrap-lines) (views:previous-buffers vz))))))
+
+(test "C-x 3 in a float wraps it in a split that takes its place and size, so the split floats where the view did"
+  (let ([vx (named 'vx (views:make b))] [vy (named 'vy (views:make a))])
+    (set-parts! (layout-float:container '() (atom vx) (atom vy '(place box 1/4 3/4) '(width . 1/3))))
+    (layout:select! vy)
+    (press! "C-x 3")
+    (named 'vy-right (find (lambda (v) (not (assv (views:id v) names))) (layout:views)))
+    (check-equal? '(layout:level () (layout-float:container () (vx)
+                     (layout-split:container ((direction . row) (place box 1/4 3/4) (width . 1/3)) (vy) (vy-right))))
+                  (shape))))
+
+(test "floating a view, putting it back and floating another leaves one float container, so s-V from the base finds the float"
+  (let ([vx (named 'vx (views:make b))] [vy (named 'vy (views:make a))])
+    (set-parts! (layout-split:container '((direction . row)) (atom vx) (atom vy)))
+    (layout:select! vx)
+    (press! "s-v")
+    (press! "s-v")
+    (layout:select! vy)
+    (press! "s-v")
+    (check-equal? '(layout:level () (layout-float:container () (vx) (vy (place box 1/2 1/2) (width . 1/2) (height . 1/2))))
+                  (shape))
+    (layout:select! vx)
+    (press! "s-V")
+    (check-equal? 'vy (selected))))
+
+(test "s-v on a float passes over a locked view of the base, and refuses when every view of the base is locked"
+  (let ([vx (named 'vx (views:make b))] [vl (named 'vl (views:make b))] [vz (named 'vz (views:make a))])
+    (set-parts! (layout-float:container '() (layout-split:container '((direction . row)) (atom vx) (atom vl '(locked . #t)))
+                  (atom vz '(place box 1/2 1/2))))
+    (layout:select! vx)
+    (layout:select! vl)
+    (layout:select! vz)
+    (press! "s-v")
+    (check-equal? '(layout:level () (layout-float:container ()
+                     (layout-split:container ((direction . row)) (vx (weight . 1/2)) (vz (weight . 1/2)) (vl (locked . #t)))))
+                  (shape))
+    (set-parts! (layout-float:container '() (atom vl '(locked . #t)) (atom vz '(place box 1/2 1/2))))
+    (layout:select! vz)
+    (check-equal? '((layout-float:toggle "every view of the base is locked")) (test-runner:shown-reports-during (lambda () (press! "s-v"))))))
+
+(test "s-v on a locked view or a popup refuses as the other window commands do, a locked part"
+  (let ([vx (named 'vx (views:make b))] [vl (named 'vl (views:make b))])
+    (set-parts! (layout-split:container '((direction . row)) (atom vx) (atom vl '(locked . #t))))
+    (layout:select! vl)
+    (check-equal? '((layout-float:toggle "a locked part")) (test-runner:shown-reports-during (lambda () (press! "s-v"))))
+    (layout:select! (layout-float:display-palette (buffers:make (buffers:free-name "*palette*") "p\n")))
+    (check-equal? '((layout-float:toggle "a locked part")) (test-runner:shown-reports-during (lambda () (press! "s-v"))))))
+
+(test "s-v in a view that shows no buffer refuses in a sentence and changes nothing"
+  (let ([vx (named 'vx (views:make b))] [ve (named 've (views:make a))])
+    (set-parts! (layout-split:container '((direction . row)) (atom vx) (atom ve)))
+    (layout:select! ve)
+    (for-each buffers:kill! (remp (lambda (x) (buffers:internal-name? (buffers:name x))) (buffers:all)))
+    (check-equal? #f (views:buffer ve))
+    (let ([before (shape)])
+      (check-equal? '((layout-float:toggle "the view shows no buffer")) (test-runner:shown-reports-during (lambda () (press! "s-v"))))
+      (check-equal? before (shape)))))

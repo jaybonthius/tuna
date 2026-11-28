@@ -3,9 +3,6 @@
 (web-test/http:use-url! (lambda () (web:url)))
 (test-runner:wait-until (lambda () (web:url)))
 
-(define (raised-by who message)
-  (lambda (c) (and (who-condition? c) (eq? who (condition-who c)) (equal? message (condition-message c)))))
-
 (define p (web-test/http:page))
 
 (test "a client is connected while its stream is open"
@@ -70,14 +67,14 @@
   (tables:remove! web:input-handlers "noop"))
 
 (test "web:send-screen! and web:call-page! check their arguments; a name of 64 letters, digits and hyphens is a name"
-  (check-raises (raised-by 'web:send-screen! "not a client") (web:send-screen! 'nobody (haml (:p "x")) "Tuna"))
-  (check-raises (raised-by 'web:send-screen! "not html or a bytevector") (web:send-screen! c "<p>x</p>" "Tuna"))
-  (check-raises (raised-by 'web:call-page! "not a client") (web:call-page! 'nobody "copy" 1))
+  (check-raises (test-runner:raised-with 'web:send-screen! "not a client") (web:send-screen! 'nobody (haml (:p "x")) "Tuna"))
+  (check-raises (test-runner:raised-with 'web:send-screen! "not html or a bytevector") (web:send-screen! c "<p>x</p>" "Tuna"))
+  (check-raises (test-runner:raised-with 'web:call-page! "not a client") (web:call-page! 'nobody "copy" 1))
   (for-each
     (lambda (name)
-      (check-raises (raised-by 'web:call-page! "not 1 to 64 letters, digits and hyphens") (web:call-page! c name 1)))
+      (check-raises (test-runner:raised-with 'web:call-page! "not 1 to 64 letters, digits and hyphens") (web:call-page! c name 1)))
     (list "copy text" "" (make-string 65 #\a)))
-  (check-raises (raised-by 'web:call-page! "(json) cannot write it") (web:call-page! c "copy" car))
+  (check-raises (test-runner:raised-with 'web:call-page! "(json) cannot write it") (web:call-page! c "copy" car))
   (web:call-page! c (make-string 64 #\a) 1)
   (check-equal? (list 'script (format "tuna.call(~s, 1)" (make-string 64 #\a))) (next)))
 

@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (web) (options) (tables) (commands) (keys) (keys-test))
+(import (tuna) (test) (test-runner) (test-user) (web) (options) (tables) (commands) (keys) (keys-test))
 
 (define (key k code . modifiers)
   (keys:item-key (list (cons "type" "key") (cons "key" k) (cons "code" code) (cons "modifiers" (list->vector modifiers)))))
@@ -49,14 +49,14 @@
   (options:unset! keys:left-option-meta? keys:right-option-meta?))
 
 (test "items the page script would not send are refused"
-  (check-raises (keys-test:raised-by 'keys:item-key "not a modifier name") (key "x" "KeyX" "meta"))
-  (check-raises (keys-test:raised-by 'keys:item-key "not a modifier name")
+  (check-raises (test-runner:raised-with 'keys:item-key "not a modifier name") (key "x" "KeyX" "meta"))
+  (check-raises (test-runner:raised-with 'keys:item-key "not a modifier name")
     (keys:item-key '(("type" . "key") ("key" . "x") ("code" . "KeyX") ("modifiers" . #(control)))))
-  (check-raises (keys-test:raised-by 'keys:item-key "an item without a key") (keys:item-key '(("type" . "key") ("code" . "KeyX") ("modifiers" . #()))))
-  (check-raises (keys-test:raised-by 'keys:item-key "an item without a list of modifiers")
+  (check-raises (test-runner:raised-with 'keys:item-key "an item without a key") (keys:item-key '(("type" . "key") ("code" . "KeyX") ("modifiers" . #()))))
+  (check-raises (test-runner:raised-with 'keys:item-key "an item without a list of modifiers")
     (keys:item-key '(("type" . "key") ("key" . "x") ("code" . "KeyX") ("modifiers" . ("control")))))
-  (for-each (lambda (item) (check-raises (keys-test:raised-by 'keys:item-key "not an item") (keys:item-key item))) '("x" (1 2)))
-  (for-each (lambda (k) (check-raises (keys-test:raised-by 'keys:item-key "not a key") (key k ""))) '("" "ab cd" "a-b" "👍🏽"))
+  (for-each (lambda (item) (check-raises (test-runner:raised-with 'keys:item-key "not an item") (keys:item-key item))) '("x" (1 2)))
+  (for-each (lambda (k) (check-raises (test-runner:raised-with 'keys:item-key "not a key") (key k ""))) '("" "ab cd" "a-b" "👍🏽"))
   (check-equal? "👍" (key "👍" "")))
 
 (test "every key item-key gives is one valid key"

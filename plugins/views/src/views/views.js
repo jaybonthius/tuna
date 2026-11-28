@@ -2,7 +2,7 @@ import { send, define } from "tuna";
 
 const { number, box, viewItems, contentTop, extent, own, lineHeight, setScroll, byHand, forgetWrite, sideways,
         textLeft, textRight, pieces, longLines, textBox, pointExtent, margin, follow, keepAt, charWidth, contentSize,
-        charsPerRow, px, setBlock, setGap, rowGaps, sizeSpacers, placeView, firstEdge } = window.tunaViews;
+        charsPerRow, px, setBlock, setGap, rowGaps, sizeSpacers, placeView, firstEdge, extentOf } = window.tunaViews;
 
 // Kept by element, so a view element the morph makes anew is placed
 // again.
@@ -354,6 +354,7 @@ function afterChange(view, st, fresh) {
     // A placement the first screen's script carried out is carried out
     // again, since a web font may have loaded since and moved the text.
     const placed = placeView(view, fresh);
+    placeRows(view);
     st.placed = placement;
     st.pointShown = false;
     st.hand = false;
@@ -591,6 +592,25 @@ function rowsShown(view) {
     y = Math.max(y + 1, row.bottom + 1);
   }
   return rows;
+}
+
+// As Emacs's recenter counts screen lines, the rows a placement asks for
+// are the rows M-r counts, wherever their heights differ, and stay
+// outside the scroll margin, at most a quarter of them.
+function placeRows(view) {
+  const asked = number(view, "data-place-rows");
+  const kind = view.getAttribute("data-place-kind");
+  const b = asked === null ? null : extentOf(view, ".view-place", number(view, "data-place-at"));
+  if (b === null || (kind !== "top" && kind !== "bottom")) return;
+  const rows = rowsShown(view);
+  const top = contentTop(view);
+  const y = b.top - view.scrollTop + top + 0.5;
+  const at = rows.findIndex((row) => row.top <= y && y < row.bottom);
+  if (at < 0) return;
+  const m = Math.min(number(view, "data-scroll-margin") ?? 0, Math.floor(rows.length / 4));
+  const n = Math.max(m, Math.min(asked, rows.length - 1 - m));
+  if (kind === "top") setScroll(view, view.scrollTop + rows[Math.max(0, at - n)].top - top);
+  else setScroll(view, view.scrollTop + rows[Math.min(rows.length - 1, at + n)].bottom - (top + view.clientHeight));
 }
 
 function inViewRows(view, element) {

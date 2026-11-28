@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (layout) (layout-split) (views) (buffers) (commands) (hooks) (options) (tables) (keys)
+(import (tuna) (test) (test-runner) (test-user) (layout) (layout-split) (views) (buffers) (commands) (hooks) (options) (tables) (keys)
         (layout-test parts))
 
 (define named layout-test/parts:named)
@@ -49,11 +49,11 @@
     (check (eq? first (layout:display-buffer mail (declining 'caller))))
     (check-equal? '(newer older caller option) (reverse tried))
     (check-equal? (buffers:name mail) (name-of first))
-    (check-raises (layout-test/parts:raised-with 'layout:display-buffer "an action returned what is not a view or #f")
+    (check-raises (test-runner:raised-with 'layout:display-buffer "an action returned what is not a view or #f")
                   (layout:display-buffer mail (lambda (b) 'nonsense)))
-    (check-raises (layout-test/parts:raised-with 'layout:display-buffer "an action returned a view not in the layout")
+    (check-raises (test-runner:raised-with 'layout:display-buffer "an action returned a view not in the layout")
                   (layout:display-buffer mail (lambda (b) (views:make b))))
-    (check-raises (layout-test/parts:raised-with 'layout:display-buffer "not a buffer") (layout:display-buffer 'mail))
+    (check-raises (test-runner:raised-with 'layout:display-buffer "not a buffer") (layout:display-buffer 'mail))
     (tables:remove! layout:display-rules always)
     (tables:remove! layout:display-rules also-always)
     (options:set! layout:display-action layout-split:display-right)))
@@ -131,10 +131,10 @@
           (check (eq? second (layout:selected-view))))))))
 
 (test "the display procedures take buffers"
-  (check-raises (layout-test/parts:raised-with 'layout:use-other-view "not a buffer") (layout:use-other-view "mail"))
-  (check-raises (layout-test/parts:raised-with 'layout:reuse-view "not a buffer") (layout:reuse-view "mail"))
-  (check-raises (layout-test/parts:raised-with 'layout:find-view "not a buffer") (layout:find-view "mail"))
-  (check-raises (layout-test/parts:raised-with 'layout:switch-to-buffer "not a buffer") (layout:switch-to-buffer "mail")))
+  (check-raises (test-runner:raised-with 'layout:use-other-view "not a buffer") (layout:use-other-view "mail"))
+  (check-raises (test-runner:raised-with 'layout:reuse-view "not a buffer") (layout:reuse-view "mail"))
+  (check-raises (test-runner:raised-with 'layout:find-view "not a buffer") (layout:find-view "mail"))
+  (check-raises (test-runner:raised-with 'layout:switch-to-buffer "not a buffer") (layout:switch-to-buffer "mail")))
 
 (test "display-in-other-view never shows in the selected view, display-in-selected-view declines in a locked view"
   (let-values ([(a b) (apply values (start! "a" "b"))])
@@ -246,10 +246,10 @@
         (check-equal? 1 (length (layout:views)))))))
 
 (test "call-with-display-view takes a procedure, and its view procedure a buffer"
-  (check-raises (layout-test/parts:raised-with 'layout:call-with-display-view "not a procedure") (layout:call-with-display-view 5))
+  (check-raises (test-runner:raised-with 'layout:call-with-display-view "not a procedure") (layout:call-with-display-view 5))
   (layout:call-with-display-view
     (lambda (view)
-      (check-raises (layout-test/parts:raised-with 'layout:call-with-display-view "not a buffer") (view "mail")))))
+      (check-raises (test-runner:raised-with 'layout:call-with-display-view "not a buffer") (view "mail")))))
 
 (test "the view an overriding action finds for a read begins with the buffer of the view the read started from, not the buffer asked for"
   (let ([a (car (start! "a"))] [mail (fresh-name "mail")])

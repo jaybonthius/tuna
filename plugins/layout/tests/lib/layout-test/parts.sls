@@ -80,12 +80,3 @@
   (let* ([n (layout:selected-part)] [doc (buffers:document layout:buffer)])
     (outline-of (car (document:datums (document:slice doc (document:node-start n) (document:node-end n)))))))
 
-(define (refusals-during thunk)
-  (map (lambda (c)
-         (list (and (who-condition? c) (condition-who c)) (if (message-condition? c) (condition-message c) c)))
-       (test-runner:reports-during thunk)))
-
-(define (raised-with who message)
-  (lambda (e)
-    (and (who-condition? e) (eq? who (condition-who e))
-         (message-condition? e) (string=? message (condition-message e)))))

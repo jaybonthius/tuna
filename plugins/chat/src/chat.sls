@@ -983,7 +983,7 @@
          [v (and last (layout:find-view (%buffer-of (car last) (cdr last))))])
     (cond
       [(not v) (show! (if last (cdr last) (%start! (%default-source-name) (folder-for b))))]
-      [(not (layout:deletable? (layout:view-node v)))
+      [(layout:deletion-refusal (layout:view-node v))
        (let ([skip? (views:skipped-buffer-predicate)])
          (options:with ([views:skipped-buffer-predicate (lambda (view o reason) (or (skip? view o reason) (conversation-of o)))])
            (views:replace-buffer! v)

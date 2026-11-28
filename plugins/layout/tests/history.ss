@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (layout) (layout-split) (layout-tabs) (views) (buffers) (commands) (options)
+(import (tuna) (test) (test-runner) (test-user) (layout) (layout-split) (layout-tabs) (views) (buffers) (commands) (options)
         (layout-test parts))
 
 (define atom layout-test/parts:atom)
@@ -8,8 +8,6 @@
 
 (define (back!) (test-user:press! "C-c <left>"))
 (define (forward!) (test-user:press! "C-c <right>"))
-
-(define (refused thunk) (layout-test/parts:refusals-during thunk))
 
 (define no-back '((layout:history-back "no more back history in this level")))
 (define no-forward '((layout:history-forward "no more forward history in this level")))
@@ -40,15 +38,27 @@
   (check-equal? (user-level-with '(layout-split:container (layout-split:container "notes.org" "notes.org") "*pi*")) (outline))
   (back!)
   (check-equal? (user-level-with '(layout-split:container "notes.org" "*pi*")) (outline))
-  (check-equal? no-back (refused back!))
+  (check-equal? no-back (test-runner:shown-reports-during back!))
   (forward!)
   (check-equal? (user-level-with '(layout-split:container (layout-split:container "notes.org" "notes.org") "*pi*")) (outline))
   (forward!)
   (check-equal? (user-level-with '(layout-split:container (layout-split:container (layout-split:container "notes.org" "notes.org") "notes.org") "*pi*"))
                 (outline))
-  (check-equal? no-forward (refused forward!))
-  (check-raises (layout-test/parts:raised-with 'layout:history-forward "no more forward history in this level")
+  (check-equal? no-forward (test-runner:shown-reports-during forward!))
+  (check-raises (test-runner:raised-with 'layout:history-forward "no more forward history in this level")
                 (layout:history-forward)))
+
+(test "a step back to a view whose buffer was killed since shows another buffer in it"
+  (start!)
+  (layout:select! pi)
+  (layout:switch-to-buffer (named "doomed"))
+  (test-user:press! "C-x 0")
+  (buffers:kill! (buffers:find "doomed"))
+  (back!)
+  (let ([restored (find (lambda (v) (not (memq v (list notes echo explorer)))) (layout:views))])
+    (check (buffers:buffer? (views:buffer restored)))
+    (check (buffers:live? (views:buffer restored)))
+    (check-equal? (user-level-with (list 'layout-split:container "notes.org" (name-of restored))) (outline))))
 
 (test "a step restores only the level's interior: parts placed or removed outside it between steps stay as they are"
   (start!)
@@ -68,7 +78,7 @@
                       " *Echo Area*"))
                   (outline))
     (layout:select! side)
-    (check-equal? no-back (refused back!))))
+    (check-equal? no-back (test-runner:shown-reports-during back!))))
 
 (test "a command repeated in sequence is one step, and another command between two of the same ends their sequence"
   (start!)
@@ -168,12 +178,12 @@
     (test-user:press! "C-x 0")
     (back!)
     (back!)
-    (check-equal? no-back (refused back!))
+    (check-equal? no-back (test-runner:shown-reports-during back!))
     (check-equal? '(layout:level (layout-split:container "one" "one")) (outline))
     (options:set! layout:history-limit 0)
     (test-user:press! "C-x 2")
-    (check-equal? no-back (refused back!))
-    (check-raises (layout-test/parts:raised-with 'layout:history-back "no more back history in this level") (layout:history-back))
+    (check-equal? no-back (test-runner:shown-reports-during back!))
+    (check-raises (test-runner:raised-with 'layout:history-back "no more back history in this level") (layout:history-back))
     (options:set! layout:history-limit 50)
     (check-equal? 50 (layout:history-limit))
     (options:unset! layout:history-limit)))
@@ -205,7 +215,7 @@
     (unload-owner! (module-owner '(layout-tabs)))
     (back!)
     (check-equal? '(layout:level (layout-split:container "one" "two")) (outline))
-    (check-equal? '((buffers:replace! "the node refuses the edit")) (refused back!))
+    (check-equal? '((buffers:replace! "the node refuses the edit" layout:level)) (test-runner:shown-reports-during back!))
     (check-equal? '(layout:level (layout-split:container "one" "two")) (outline))
     (forward!)
     (check-equal? '(layout:level (layout-split:container "one" "one" "two")) (outline))))

@@ -26,19 +26,19 @@
       "<f1>" "<left>" "S-<left>" "C-S-<right>" "M-S-RET" "<printing-char>" "C-x C-f" "C-c p f" "C-x 4 C-f" "C-<"))
   (for-each
     (lambda (keys)
-      (check-raises (keys-test:raised-by 'keys:bind! "not a valid key sequence") (keys:bind! syntax-keymap keys first-command)))
+      (check-raises (test-runner:raised-with 'keys:bind! "not a valid key sequence") (keys:bind! syntax-keymap keys first-command)))
     '("" " " "C-" "M-C-x" "S-a" "C-S-a" "S-1" "s-C-a" "C-x  C-f" " C-x" "C-x " "ret" "<>" "<a b>" "<f1" "f1>"
       "ab" "C-ab" "x\x7;" "\x7;" "S-" "C-M-" C-x)))
 
 (test "bind! takes a keymap and a command or keymap, and the other procedures check their keys"
   (tables:define-table checked-keymap)
-  (check-raises (keys-test:raised-by 'keys:bind! "neither a command nor a keymap") (keys:bind! checked-keymap "C-x" 'first-command))
-  (check-raises (keys-test:raised-by 'keys:bind! "not a keymap") (keys:bind! 'km "C-x" first-command))
-  (check-raises (keys-test:raised-by 'keys:press! "neither one valid key nor an event") (keys:press! (test-user:client) "C-x C-f"))
-  (check-raises (keys-test:raised-by 'keys:press! "neither one valid key nor an event") (keys:press! (test-user:client) '("<mouse-1>")))
-  (check-raises (keys-test:raised-by 'keys:lookup "not a valid key sequence") (keys:lookup client "C-x  C-f"))
-  (check-raises (keys-test:raised-by 'keys:lookup "not a valid key sequence") (keys:lookup client 'C-x))
-  (check-raises (keys-test:raised-by 'keys:unbind! "not a valid key sequence") (keys:unbind! checked-keymap "C-")))
+  (check-raises (test-runner:raised-with 'keys:bind! "neither a command nor a keymap") (keys:bind! checked-keymap "C-x" 'first-command))
+  (check-raises (test-runner:raised-with 'keys:bind! "not a keymap") (keys:bind! 'km "C-x" first-command))
+  (check-raises (test-runner:raised-with 'keys:press! "neither one valid key nor an event") (keys:press! (test-user:client) "C-x C-f"))
+  (check-raises (test-runner:raised-with 'keys:press! "neither one valid key nor an event") (keys:press! (test-user:client) '("<mouse-1>")))
+  (check-raises (test-runner:raised-with 'keys:lookup "not a valid key sequence") (keys:lookup client "C-x  C-f"))
+  (check-raises (test-runner:raised-with 'keys:lookup "not a valid key sequence") (keys:lookup client 'C-x))
+  (check-raises (test-runner:raised-with 'keys:unbind! "not a valid key sequence") (keys:unbind! checked-keymap "C-")))
 
 (test "binding marks each leading part as a prefix, and bindings lists the bindings in the order first bound, without the marks"
   (tables:define-table marked-keymap)
@@ -47,7 +47,7 @@
   (check-equal? (list (cons "C-x" #t) (cons "C-x 4" #t) (cons "C-x 4 C-f" first-command) (cons "C-x o" second-command))
                 (tables:entries marked-keymap))
   (check-equal? (list (cons "C-x 4 C-f" first-command) (cons "C-x o" second-command)) (keys:bindings marked-keymap))
-  (check-raises (keys-test:raised-by 'keys:bindings "not a keymap") (keys:bindings 'km)))
+  (check-raises (test-runner:raised-with 'keys:bindings "not a keymap") (keys:bindings 'km)))
 
 (test "the binding in effect is the last change: a prefix bound to a command hides the longer bindings, and binding a longer one marks it again"
   (tables:define-table changed-keymap)
@@ -231,8 +231,8 @@
     (keys:remap! remap-a first-command third-command)
     (check-equal? third-command (keys:lookup-in both "<right>")))
   (check-equal? (list (cons "q" second-command)) (keys:bindings remap-a))
-  (check-raises (keys-test:raised-by 'keys:remap! "not a command") (keys:remap! remap-a first-command 'x))
-  (check-raises (keys-test:raised-by 'keys:remap! "not a command") (keys:remap! remap-a 'x first-command)))
+  (check-raises (test-runner:raised-with 'keys:remap! "not a command") (keys:remap! remap-a first-command 'x))
+  (check-raises (test-runner:raised-with 'keys:remap! "not a command") (keys:remap! remap-a 'x first-command)))
 
 (test "command-remapping gives the command the client's keymaps remap a command to, or #f"
   (tables:define-table remapping-keymap)
@@ -241,7 +241,7 @@
     (lambda ()
       (check-equal? second-command (keys:command-remapping client first-command))
       (check-equal? #f (keys:command-remapping client second-command))))
-  (check-raises (keys-test:raised-by 'keys:command-remapping "not a command") (keys:command-remapping client 'x)))
+  (check-raises (test-runner:raised-with 'keys:command-remapping "not a command") (keys:command-remapping client 'x)))
 
 (test "where-is lists the sequences that run a command now, remapping included, shortest first, walking a keymap bound inside itself once"
   (tables:define-table where-a)
@@ -260,7 +260,7 @@
       (check-equal? '("C-c P f") (keys:where-is client keys-test/completions:file))
       (keys:bind! where-a "C-z" where-a)
       (check-equal? '("C-c P d") (keys:where-is client keys-test/completions:dabbrev))))
-  (check-raises (keys-test:raised-by 'keys:where-is "not a command") (keys:where-is client 'x)))
+  (check-raises (test-runner:raised-with 'keys:where-is "not a command") (keys:where-is client 'x)))
 
 (test "active-bindings gives each active keymap with the bindings it decides, through prefix keymaps, remapped, and a posn gives the keymaps at it"
   (tables:define-table decided-d)
@@ -315,8 +315,8 @@
     (check (eq? in-inner (keys:lookup-in both "C-c")))
     (keys:remap! in-second first-command second-command)
     (check-equal? second-command (keys:lookup-in both "k"))
-    (check-raises (keys-test:raised-by 'keys:lookup-in "not a list of keymaps") (keys:lookup-in 'x "k"))
-    (check-raises (keys-test:raised-by 'keys:lookup-in "not a valid key sequence") (keys:lookup-in both "C-"))))
+    (check-raises (test-runner:raised-with 'keys:lookup-in "not a list of keymaps") (keys:lookup-in 'x "k"))
+    (check-raises (test-runner:raised-with 'keys:lookup-in "not a valid key sequence") (keys:lookup-in both "C-"))))
 
 (test "lookup takes an event, looked up in the keymaps at its position with press!'s fallbacks, for any client"
   (tables:define-table near-keymap)

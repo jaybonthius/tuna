@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (layout) (layout-split) (layout-tabs) (layout-scroll) (layout-float)
+(import (tuna) (test) (test-runner) (test-user) (layout) (layout-split) (layout-tabs) (layout-scroll) (layout-float)
         (views) (buffers) (document) (haml)
         (layout-test parts))
 
@@ -33,8 +33,6 @@
 (define (main) (cadr (outline)))
 (define (main-datum) (caddr (layout-test/parts:tree)))
 
-(define (refusal thunk) (layout-test/parts:refusals-during thunk))
-
 (test "J and L swap the selected part with the part before or after it, with its place attributes; from an end, nothing changes"
   (start! 4 (lambda () (row (v 3 '(weight . 2)) (v 4 '(weight . 3)) (v 5))))
   (test-user:press! "L")
@@ -55,7 +53,7 @@
   (test-user:press! "j J")
   (check-equal? '((layout-split:container "n5" "n3" "n4") "n5" "n4") (list (main) (part) (selected)))
   (start! 4 (lambda () (row (v 3) (layout-split:container '((direction . column) (locked . #t)) (v 4) (v 5)))))
-  (check-equal? '((layout:shift-forward "a locked part")) (refusal (lambda () (test-user:press! "k L"))))
+  (check-equal? '((layout:shift-forward "a locked part")) (test-runner:shown-reports-during (lambda () (test-user:press! "k L"))))
   (check-equal? '(layout-split:container "n3" (layout-split:container "n4" "n5")) (main)))
 
 (define (strip-placement)
@@ -114,11 +112,11 @@
   (test-user:press! "r")
   (check-equal? (row (v 3) (v 5 '(title . "three") '(weight . 3))) (main-datum))
   (start! 4 (lambda () (row (v 3 '(locked . #t)) (v 4))))
-  (check-equal? '((layout:raise "a locked part")) (refusal (lambda () (test-user:press! "r"))))
+  (check-equal? '((layout:raise "a locked part")) (test-runner:shown-reports-during (lambda () (test-user:press! "r"))))
   (start! 3 (lambda () (row (v 3) (column (v 4) (v 5 '(locked . #t))))))
-  (check-equal? '((layout:raise "a locked part")) (refusal (lambda () (test-user:press! "r"))))
+  (check-equal? '((layout:raise "a locked part")) (test-runner:shown-reports-during (lambda () (test-user:press! "r"))))
   (start! 4 (lambda () (row (v 3) (column (v 4) (layout-tabs:container '() (v 5 '(locked . #t)))) (v 6))))
-  (check-equal? '((layout:delete-view "a locked part")) (refusal (lambda () (test-user:press! "i x"))))
+  (check-equal? '((layout:delete-view "a locked part")) (test-runner:shown-reports-during (lambda () (test-user:press! "i x"))))
   (check-equal? '(layout-split:container "n3" (layout-split:container "n4" (layout-tabs:container "n5")) "n6") (main))
   (start! 4 (lambda () (row (v 3) (v 4))))
   (test-user:press! "r")
@@ -141,14 +139,14 @@
   (test-user:press! "i x")
   (check-equal? '((layout-split:container "n3" "n6") "n3" "n3") (list (main) (part) (selected)))
   (start! 3 (lambda () (row (v 3))))
-  (check-equal? '((layout:delete-part! "the last view of its level")) (refusal (lambda () (test-user:press! "x")))))
+  (check-equal? '((layout:delete-view "the last view of its level")) (test-runner:shown-reports-during (lambda () (test-user:press! "x")))))
 
 (test "w and a kind's letter wrap the selected part in a container of that kind, which takes the part's place attributes"
   (start! 4 (lambda () (row (v 3) (v 4 '(weight . 2)))))
   (test-user:press! "w c")
   (check-equal? (row (v 3) (layout-split:container '((direction . column) (weight . 2)) (v 4))) (main-datum))
   (check-equal? '(layout-split:container "n4") (part))
-  (check-raises (layout-test/parts:raised-with 'layout:wrap! "not the datum of a container")
+  (check-raises (test-runner:raised-with 'layout:wrap! "not the datum of a container")
                 (layout:wrap! (lambda (parts) (list 'nonsense '() (car parts)))))
   (test-user:press! "w t w s w f w r")
   (check-equal? '(layout-split:container "n3"
@@ -177,7 +175,8 @@
   (test-user:press! "K")
   (check-equal? (pile '() (v 3 '(share . 1)) (v 4)) (main-datum))
   (start! 3 (lambda () (row (v 3) (stray '() (v 4)))))
-  (check-equal? '((layout:define-container "an adopt clause returned another part")) (refusal (lambda () (test-user:press! "K"))))
+  (check-equal? (list (list 'layout:define-container "an adopt clause returned another part" (v 4)))
+                (test-runner:shown-reports-during (lambda () (test-user:press! "K"))))
   (check-equal? (row (v 3) (stray '() (v 4))) (main-datum)))
 
 (test "focus and the selected part follow each other after changes the mode did not make"
@@ -295,7 +294,7 @@
   (let ([moved (list 'layout:level (list 'layout-split:container "*Echo*" (list 'layout-split:container "*explorer*" user-level)))])
     (check-equal? moved (outline))
     (check-equal? "notes.org" (selected))
-    (check-equal? '((layout:delete-view "a locked part")) (refusal (lambda () (test-user:press! "x"))))
-    (check-equal? '((layout:raise "a locked part")) (refusal (lambda () (test-user:press! "l r"))))
+    (check-equal? '((layout:delete-view "a locked part")) (test-runner:shown-reports-during (lambda () (test-user:press! "x"))))
+    (check-equal? '((layout:raise "a locked part")) (test-runner:shown-reports-during (lambda () (test-user:press! "l r"))))
     (check-equal? moved (outline)))
   (test-user:press! "RET"))

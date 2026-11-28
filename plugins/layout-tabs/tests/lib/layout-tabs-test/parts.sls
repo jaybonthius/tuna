@@ -38,14 +38,3 @@
   (find (lambda (e) (equal? (number->string at) (test-user:element-attribute e "data-at")))
         (test-user:elements (test-user:screen) "layout-view")))
 
-(define (raised-with who message)
-  (lambda (e)
-    (and (who-condition? e) (eq? who (condition-who e))
-         (message-condition? e) (string=? message (condition-message e)))))
-
-(define (refusals-during thunk)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (thunk)
-    (advice-remove! report keep)
-    (map (lambda (c) (list (and (who-condition? c) (condition-who c)) (condition-message c))) (reverse reported))))

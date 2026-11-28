@@ -3,11 +3,6 @@
 
 (options:set! views:scroll-margin 2 views:wrap-lines #f)
 
-(define (raised-with who message)
-  (lambda (e)
-    (and (who-condition? e) (eq? who (condition-who e))
-         (message-condition? e) (string=? message (condition-message e)))))
-
 (define (bounds v) (call-with-values (lambda () (views:bounds v)) list))
 
 (define (drawn-lines v)
@@ -76,7 +71,7 @@
     (check-equal? '(15 28) (bounds v))
     (views:widen! v)
     (check-equal? '(0 32) (bounds v))
-    (check-raises (raised-with 'views:narrow! "the start is after the end") (views:narrow! v 10 5))))
+    (check-raises (test-runner:raised-with 'views:narrow! "the start is after the end") (views:narrow! v 10 5))))
 
 (test "a fold that ends inside a node's text joins the lines around it"
   (let ([t (views:make (make-text "one\ntwo\nthree\n"))])

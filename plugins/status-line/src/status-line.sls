@@ -165,9 +165,9 @@
     (and v node (eq? (views:buffer v) layout:buffer) (layout:part-view node))))
 
 (commands:define-command (mouse-delete-view [event (keys:command-event)])
-  "Deletes the view whose status line was clicked, as layout:delete-view deletes the selected one, unless it is locked or layout:deletable? refuses its part."
+  "Deletes the view whose status line was clicked, as layout:delete-view deletes the selected one, unless it is locked or layout:deletion-refusal refuses its part."
   (let* ([window (%clicked-window 'status-line:mouse-delete-view event)] [node (and window (layout:view-node window))])
-    (when (and node (not (layout:locked? node)) (layout:deletable? node))
+    (when (and node (not (layout:locked? node)) (not (layout:deletion-refusal node)))
       (layout:select! window)
       (layout:delete-view))))
 

@@ -72,7 +72,7 @@
    bounds-of live-folds folds-holding open-folds! tell-opened! add-fold! narrow-view! widen-view! stop-after stop-before
    set-view-option! remove-view-option! state-entry view-record-states view-record-states-set!
    scroll-to-place! draw-view current-context context-view context-client in-line? make-context children-html drawing?
-   atom-view-of keymaps-at note-edit note-kill after-batch scroll-report mouse-item posn-keymaps forget-client!
+   atom-view-of copy-state-in! keymaps-at note-edit note-kill after-batch scroll-report mouse-item posn-keymaps forget-client!
    posn-record? make-posn-record posn-record-view posn-record-point posn-record-node posn-record-keymaps
    posn-record-x posn-record-y posn-record-column posn-record-row posn-record-part keymap-id marked-keymaps click-state
    view-client scroll-page! recenter! follows-point? leader-of region-ranges-of
@@ -112,12 +112,17 @@
   ;; position, the item holding SPOT at the top with FRACTION of its
   ;; height above the edge and, where lines do not wrap, COLUMN positions
   ;; of the line starting at LINE left of the view; the box of SPOT at
-  ;; the top, centre or bottom; or following point. A client's own
-  ;; placement is hand once its page has been scrolled by hand from it,
-  ;; at what that page reported.
+  ;; the top, centre or bottom, or ROWS rows in from the top or bottom
+  ;; edge; or following point. A client's own placement is hand once its
+  ;; page has been scrolled by hand from it, at what that page reported.
   (define-record-type place
     (sealed #t)
-    (fields kind spot fraction column line))
+    (fields kind spot fraction column line rows)
+    (protocol
+      (lambda (new)
+        (case-lambda
+          [(kind spot fraction column line) (new kind spot fraction column line #f)]
+          [(kind spot fraction column line rows) (new kind spot fraction column line rows)]))))
 
   (define (follow-place) (make-place 'follow #f 0.0 0 #f))
 
@@ -531,10 +536,10 @@
         (for-each-client-view (lambda (c cs) (send-placement! cs place)) v)
         (set! dirty? #t))))
 
-  (define (align-view! v p align)
+  (define (align-view! v p align rows)
     (lead! v)
     (view-record-edge-set! v align)
-    (place-all! v (make-place align (make-spot (view-record-buffer v) p #f) 0.0 0 #f)))
+    (place-all! v (make-place align (make-spot (view-record-buffer v) p #f) 0.0 0 #f rows)))
 
   (define (same-position? a b)
     (and (eq? (place-kind a) 'position) (eq? (place-kind b) 'position)
@@ -650,7 +655,7 @@
 
   (define (map-place pl f)
     (make-place (place-kind pl) (and (place-spot pl) (f (place-spot pl))) (place-fraction pl) (place-column pl)
-                (and (place-line pl) (f (place-line pl)))))
+                (and (place-line pl) (f (place-line pl))) (place-rows pl)))
 
   ;; Read from saved data, a kept state's positions are numbers until a
   ;; buffer of the name is made, as a restored view's are.
@@ -1520,7 +1525,7 @@
   (define (follows-point? v) (eq? (place-kind (view-record-place v)) 'follow))
 
   (define (scroll-to-place! v p align)
-    (align-view! v p align)
+    (align-view! v p align #f)
     (view-record-moved?-set! v #f))
 
   (define-record-type measured
@@ -1677,10 +1682,20 @@
   (define (next-position again?)
     (if again? (case last-alignment [(center) 'top] [(top) 'bottom] [else 'center]) 'center))
 
-  (define (recenter! v b again?)
-    (let ([align (next-position again?)])
-      (align-view! v (point-of (car (view-record-cursors v))) align)
-      (set! last-alignment align)
+  ;; As in Emacs's recenter-top-bottom, a prefix takes no turn in the
+  ;; cycle, and the cycle's top and bottom are rows 0, kept outside the
+  ;; scroll margin as a number's rows are.
+  (define (recenter! v b again? prefix)
+    (let ([p (point-of (car (view-record-cursors v)))]
+          [row (cond [(or (not prefix) (pair? prefix)) #f] [(eq? prefix '-) -1] [else prefix])])
+      (cond
+        [(not prefix)
+         (let ([align (next-position again?)])
+           (align-view! v p align (and (memq align '(top bottom)) 0))
+           (set! last-alignment align))]
+        [(not row) (align-view! v p 'center #f)]
+        [(< row 0) (align-view! v p 'bottom (- -1 row))]
+        [else (align-view! v p 'top row)])
       (view-record-moved?-set! v #f)))
 
   (define current-context (make-thread-parameter #f))
@@ -2118,6 +2133,7 @@
                       [data-place-edge (and (eq? kind 'follow) (symbol->string (view-record-edge v)))]
                       [data-lead (eq? (context-client ctx) (leader-of v))]
                       [data-place-at (and (memq kind '(top center bottom)) (spot-position (place-spot pl)))]
+                      [data-place-rows (and (memq kind '(top bottom)) (place-rows pl))]
                       [data-place-item item]
                       [data-place-line (and item (line-number-at item))]
                       [data-place-fraction (and position (number-text (place-fraction position)))]
@@ -3040,6 +3056,22 @@
                   (map-place (facts-place 'position f) (lambda (s) (make-spot b (spot-position s) #f)))))))
           from))))
 
+  (define (copy-state-in! from to)
+    (let* ([b (view-record-buffer from)] [fresh (lambda (s after?) (make-spot b (spot-position s) after?))])
+      (call-with-cancellation-masked
+        (lambda (restore)
+          (view-record-narrowing-set! to (let ([r (view-record-narrowing from)]) (and r (cons (fresh (car r) #f) (fresh (cdr r) #t)))))
+          (view-record-folds-set! to (map (lambda (f) (cons (fresh (car f) #t) (fresh (cdr f) #f))) (live-folds from)))
+          (view-record-options-set! to (view-record-options from))
+          (view-record-states-set! to
+            (map (lambda (e) (cons (buffers:anchor b (buffers:anchor-position (car e))) (cdr e)))
+                 (filter (lambda (e) (not (buffers:anchor-deleted? (car e)))) (view-record-states from))))
+          (view-record-moved?-set! to (view-record-moved? from))
+          (view-record-edge-set! to (view-record-edge from))))
+      (forget-items! to)
+      (copy-place! from to)
+      (mark-dirty!)))
+
   (define (span-keymap value)
     (let ([entry (and (list? value) (assq 'keymap value))])
       (and entry (tables:table? (cdr entry)) (cdr entry))))
@@ -3927,10 +3959,12 @@
       (assertion-violation who "no current view"))
     v))
 
-(commands:define-command (recenter-top-bottom)
-  "Puts point at the centre of the current view; repeated, at the top, then the bottom."
+(commands:define-command (recenter-top-bottom [prefix (commands:prefix-argument)])
+  "Puts point at the centre of the current view; repeated, at the top, then the bottom. With a number, the prefix argument, puts point on that row, counted from 0 at the top, or from -1 at the bottom when negative, outside the scroll margin; with C-u alone, at the centre."
+  (unless (commands:prefix-argument? prefix)
+    (assertion-violation 'views:recenter-top-bottom "not a prefix argument" prefix))
   (let ([v (%current 'views:recenter-top-bottom)])
-    (recenter! v (shown-buffer 'views:recenter-top-bottom v) (eq? (commands:last-command) recenter-top-bottom))))
+    (recenter! v (shown-buffer 'views:recenter-top-bottom v) (eq? (commands:last-command) recenter-top-bottom) prefix)))
 
 (commands:define-command (move-to-window-line-top-bottom [row (and (commands:prefix-argument) (commands:prefix-number))])
   "Moves point to the start of row ROW of the current view, counted from 0 at the top or from -1 at the bottom; without ROW, of the row at the centre, and repeated, at the top, then the bottom."
@@ -4031,6 +4065,14 @@
   (check-view 'views:remove-option! view)
   (check-option 'views:remove-option! option)
   (remove-view-option! view option))
+
+(define (copy-state! from to)
+  (check-view 'views:copy-state! from)
+  (check-view 'views:copy-state! to)
+  (let ([b (bound-buffer from)])
+    (unless (and b (eq? b (bound-buffer to)))
+      (assertion-violation 'views:copy-state! "the views show different buffers" from to))
+    (copy-state-in! from to)))
 
 (define (node-state view node default)
   (check-view 'views:node-state view)

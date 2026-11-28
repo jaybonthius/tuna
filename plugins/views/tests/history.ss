@@ -1,11 +1,6 @@
-(import (tuna) (test) (views) (buffers) (options) (test-user) (views-test page) (views-test text))
+(import (tuna) (test) (test-runner) (views) (buffers) (options) (test-user) (views-test page) (views-test text))
 
 (options:set! views:scroll-margin 2 views:wrap-lines #f)
-
-(define (raised-with who message)
-  (lambda (e)
-    (and (who-condition? e) (eq? who (condition-who e))
-         (message-condition? e) (string=? message (condition-message e)))))
 
 (define (names bs) (map buffers:name bs))
 
@@ -66,7 +61,7 @@
     (let ([x (views:make b)])
       (views:set-buffer! x a)
       (check-equal? 70 (views:point x)))
-    (check-raises (raised-with 'views:set-last-point! "not a position in the buffer") (views:set-last-point! a 100000))))
+    (check-raises (test-runner:raised-with 'views:set-last-point! "not a position in the buffer") (views:set-last-point! a 100000))))
 
 (test "an internal buffer has no last point and is never in a history"
   (let* ([a (make-buffer "a" "a\n")]

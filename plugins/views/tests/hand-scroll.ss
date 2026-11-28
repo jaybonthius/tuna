@@ -1,4 +1,4 @@
-(import (tuna) (test) (views) (buffers) (options) (commands) (keys) (layout) (test-user)
+(import (tuna) (test) (views) (buffers) (options) (commands) (keys) (layout) (web) (test-user)
         (views-test page) (views-test text))
 
 (options:set! views:scroll-margin 2 views:wrap-lines #f)
@@ -71,3 +71,12 @@
 (test "point the leading page lost by anything but the hand makes the view follow point, as Emacs's redisplay keeps point in view"
   (report! desktop v 100 0 #f (cons "pointVisible" #f) (cons "hand" #f) (cons "lost" #t))
   (check-equal? '(new follow) (list-head (views-test/page:placement desktop v) 2)))
+
+(test "when the leading page closes, the next page drawn leads the view"
+  (let* ([first (views-test/page:open 300)] [second (views-test/page:open 200)]
+         [leads? (lambda (page) (and (test-user:element-attribute (views-test/page:view-element page v) "data-lead") #t))])
+    (set! target (line-start v 40))
+    (test-user:press! (client first) "C-c g")
+    (check-equal? '(#t #f) (list (leads? first) (leads? second)))
+    (web:close-client! (client first))
+    (check-equal? #t (leads? second))))

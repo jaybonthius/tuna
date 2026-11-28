@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (layout) (layout-split) (layout-tabs) (views) (buffers) (document) (commands)
+(import (tuna) (test) (test-runner) (test-user) (layout) (layout-split) (layout-tabs) (views) (buffers) (document) (commands)
         (keys) (options) (ask) (tables) (web)
         (layout-tabs-test parts))
 
@@ -6,8 +6,6 @@
 (define outline layout-tabs-test/parts:outline)
 (define set-parts! layout-tabs-test/parts:set-parts!)
 (define tabs-children layout-tabs-test/parts:tabs-children)
-(define raised-with layout-tabs-test/parts:raised-with)
-(define refusals-during layout-tabs-test/parts:refusals-during)
 (define name-of layout-tabs-test/parts:name-of)
 
 (define (named name) (or (buffers:find name) (buffers:make name (string-append name "\n"))))
@@ -17,6 +15,8 @@
 (define (selected) (name-of (layout:selected-view)))
 
 (define (start-of n) (document:node-start n))
+
+(define (refusals-on keys) (test-runner:shown-reports-during (lambda () (test-user:press! keys))))
 
 (define click-tab!
   (case-lambda
@@ -42,6 +42,25 @@
     (check (not (eq? v (layout:selected-view))))
     (check-equal? 5 (views:point (layout:selected-view)))))
 
+(test "the view C-x t 2 makes takes the selected view's cursors, marks, narrowing, folds and options, but no buffer history"
+  (let ([v (fresh "short")] [long (buffers:make (buffers:free-name "long") (apply string-append (map (lambda (i) "a line of text\n") (iota 20))))])
+    (set-parts! (atom v))
+    (layout:select! v)
+    (views:set-buffer! v long)
+    (views:narrow! v 10 200)
+    (views:fold! v 50 70)
+    (views:set-point! v 30)
+    (views:set-mark! v 20)
+    (views:add-cursor! v 40)
+    (views:set-option! v views:wrap-lines #f)
+    (test-user:press! "C-x t 2")
+    (let ([new (layout:selected-view)])
+      (check (not (eq? v new)))
+      (let-values ([(lo hi) (views:bounds new)])
+        (check-equal? (list 30 20 2 10 200 #t #f '())
+                      (list (views:point new) (views:mark new) (length (views:cursors new)) lo hi (views:folded? new 60)
+                            (views:call-with-view new views:wrap-lines) (views:previous-buffers new)))))))
+
 (test "add-tab! adds a tab after the tab holding the view without selecting it, and checks its arguments"
   (let ([a (fresh "a")] [b (fresh "b")])
     (set-parts! (layout-tabs:container '() (atom a) (atom b)))
@@ -50,9 +69,9 @@
       (check-equal? '(layout:level (layout-tabs:container "a" "other" "b")) (outline))
       (check (eq? b (layout:selected-view)))
       (check (views:view? new)))
-    (check-raises (raised-with 'layout-tabs:add-tab! "not a view") (layout-tabs:add-tab! 'view (named "other")))
-    (check-raises (raised-with 'layout-tabs:add-tab! "not a buffer") (layout-tabs:add-tab! a "other"))
-    (check-raises (raised-with 'layout-tabs:add-tab! "not a view in the layout") (layout-tabs:add-tab! (fresh "x") (named "other")))))
+    (check-raises (test-runner:raised-with 'layout-tabs:add-tab! "not a view") (layout-tabs:add-tab! 'view (named "other")))
+    (check-raises (test-runner:raised-with 'layout-tabs:add-tab! "not a buffer") (layout-tabs:add-tab! a "other"))
+    (check-raises (test-runner:raised-with 'layout-tabs:add-tab! "not a view in the layout") (layout-tabs:add-tab! (fresh "x") (named "other")))))
 
 (test "only the focused tab is drawn, under a strip with a tab per child, each marking its child's range and labelled with its title"
   (let ([a (fresh "a")] [b (fresh "b")])
@@ -114,8 +133,8 @@
   (check-equal? "c" (selected))
   (commands:run layout-tabs:previous-tab 4)
   (check-equal? "b" (selected))
-  (check-raises (raised-with 'layout-tabs:next-tab "not an exact integer") (layout-tabs:next-tab 'x))
-  (check-raises (raised-with 'layout-tabs:previous-tab "not an exact integer") (layout-tabs:previous-tab 'x)))
+  (check-raises (test-runner:raised-with 'layout-tabs:next-tab "not an exact integer") (layout-tabs:next-tab 'x))
+  (check-raises (test-runner:raised-with 'layout-tabs:previous-tab "not an exact integer") (layout-tabs:previous-tab 'x)))
 
 (define (split-tab!)
   (let ([a (fresh "a")] [b (fresh "b")] [c (fresh "c")] [d (fresh "d")])
@@ -129,7 +148,7 @@
     (check-equal? (list a b c d) (map (lambda (v) (layout:part-view (layout:view-node v))) (list a b c d)))
     (check (eq? c (layout:part-view (cadr (tabs-children)))))
     (check (eq? a (layout:part-view (document:token (buffers:document layout:buffer) 0))))
-    (check-raises (raised-with 'layout:part-view "not a node") (layout:part-view 'node))
+    (check-raises (test-runner:raised-with 'layout:part-view "not a node") (layout:part-view 'node))
     (test-user:press! "C-x t o")
     (check-equal? "c" (selected))
     (test-user:press! "C-x t o")
@@ -167,7 +186,7 @@
     (let ([label (layout-tabs-test/parts:tab-part "layout-tabs-label" (start-of (layout:view-node a)))])
       (layout:delete-part! (layout:view-node a))
       (check-equal? '((#f "Stale click: what was clicked is gone"))
-                    (refusals-during (lambda () (test-user:click-element! label))))
+                    (test-runner:shown-reports-during (lambda () (test-user:click-element! label))))
       (check-equal? "c" (selected)))))
 
 (test "C-x t 0 closes the tab holding the selected view, with every part in it, and selects the view selected last before"
@@ -185,12 +204,14 @@
     (test-user:press! "C-x t 0")
     (check-equal? '(layout:level "e") (outline))
     (check-equal? "e" (selected))
-    (check-equal? '((layout-tabs:close-tab "the selected view is in no tabs")) (refusals-during (lambda () (test-user:press! "C-x t 0"))))
-    (check-raises (raised-with 'layout-tabs:next-tab "the selected view is in no tabs") (layout-tabs:next-tab 1))
+    (check-equal? '((layout-tabs:close-tab "the selected view is in no tabs")) (refusals-on "C-x t 0"))
+    (check-equal? '((layout-tabs:next-tab "the selected view is in no tabs")) (refusals-on "C-x t o"))
+    (check-raises (test-runner:raised-with 'layout-tabs:next-tab "the selected view is in no tabs") (layout-tabs:next-tab 1))
     (layout:select! (layout-tabs:add-tab! e (named "e2")))
     (test-user:press! "C-x t 0")
     (check-equal? '(layout:level (layout-tabs:container "e")) (outline))
-    (check-raises (raised-with 'layout:delete-part! "the last view of its level") (layout-tabs:close-tab))))
+    (check-equal? '((layout-tabs:close-tab "the last view of its level")) (refusals-on "C-x t 0"))
+    (check-equal? '(layout:level (layout-tabs:container "e")) (outline))))
 
 (test "wrapping a view gives the new tabs container the view's place, its weight and depth; its title stays with it"
   (let ([e (fresh "e")] [g (fresh "g")])
@@ -209,7 +230,7 @@
   (let ([g (fresh "g")] [h (fresh "h")] [k (fresh "k")])
     (set-parts! (with-echo (layout-tabs:container '() (atom g) (atom h '(locked . #t)) (atom k))))
     (let ([echo (layout:find-view (named "*Echo*"))])
-      (check-raises (raised-with 'layout-tabs:add-tab! "a locked view") (layout-tabs:add-tab! echo (named "other")))
+      (check-raises (test-runner:raised-with 'layout-tabs:add-tab! "a locked view") (layout-tabs:add-tab! echo (named "other")))
       (layout:select! echo)
       (check-equal? #f (layout-tabs:display-in-new-tab (named "other"))))
     (layout:select! g)
@@ -283,9 +304,9 @@
     (check-equal? "t2" (selected))
     (commands:run layout-tabs:recent-tab 2)
     (check-equal? "t1" (selected))
-    (check-raises (raised-with 'layout-tabs:recent-tab "no more recent tabs") (layout-tabs:recent-tab 3))
-    (check-raises (raised-with 'layout-tabs:recent-tab "not a positive exact integer") (layout-tabs:recent-tab 0))
-    (check-raises (raised-with 'layout-tabs:recent-tab "not a positive exact integer") (layout-tabs:recent-tab 'x))))
+    (check-raises (test-runner:raised-with 'layout-tabs:recent-tab "no more recent tabs") (layout-tabs:recent-tab 3))
+    (check-raises (test-runner:raised-with 'layout-tabs:recent-tab "not a positive exact integer") (layout-tabs:recent-tab 0))
+    (check-raises (test-runner:raised-with 'layout-tabs:recent-tab "not a positive exact integer") (layout-tabs:recent-tab 'x))))
 
 (test "a tab is as recent as the view selected last in it, which it leads to, and a tab leading to a locked view is passed over"
   (let ([t1 (fresh "t1")] [t2 (fresh "t2")] [t5 (fresh "t5")] [t6 (fresh "t6")] [t7 (fresh "t7")])
@@ -332,21 +353,20 @@
     (test-user:press! "C-c <left>")
     (check-equal? '(layout:level (layout-split:container (layout:level (layout-tabs:container "v1" "v2")) "v3")) (outline))
     (check-equal? "v2" (selected))
-    (check-equal? '((layout:history-back "no more back history in this level")) (refusals-during (lambda () (test-user:press! "C-c <left>"))))))
+    (check-equal? '((layout:history-back "no more back history in this level")) (test-runner:shown-reports-during (lambda () (test-user:press! "C-c <left>"))))))
 
 (test "close-other-tabs and recent-tab need the selected view in tabs, and C-x t 1 tabs inside its level"
   (set-parts! (atom (fresh "alone")))
   (layout:select! (car (layout:views)))
-  (check-raises (raised-with 'layout-tabs:close-other-tabs "the selected view is in no tabs") (layout-tabs:close-other-tabs))
-  (check-raises (raised-with 'layout-tabs:recent-tab "the selected view is in no tabs") (layout-tabs:recent-tab 1))
+  (check-raises (test-runner:raised-with 'layout-tabs:close-other-tabs "the selected view is in no tabs") (layout-tabs:close-other-tabs))
+  (check-raises (test-runner:raised-with 'layout-tabs:recent-tab "the selected view is in no tabs") (layout-tabs:recent-tab 1))
   (let ([w1 (fresh "w1")] [w2 (fresh "w2")] [w3 (fresh "w3")])
     (set-parts! (layout-tabs:container '() (atom w1) (layout:level '() (layout-split:container '((direction . row)) (atom w2) (atom w3)))))
     (layout:select! w1)
     (layout:select! w3)
     (let ([before (outline)])
-      (check-equal? '((layout-tabs:close-other-tabs "the selected view is in no tabs inside its level"))
-                    (refusals-during (lambda () (test-user:press! "C-x t 1"))))
-      (check-raises (raised-with 'layout-tabs:close-other-tabs "the selected view is in no tabs inside its level") (layout-tabs:close-other-tabs))
+      (check-equal? '((layout-tabs:close-other-tabs "the selected view is in no tabs inside its level")) (refusals-on "C-x t 1"))
+      (check-raises (test-runner:raised-with 'layout-tabs:close-other-tabs "the selected view is in no tabs inside its level") (layout-tabs:close-other-tabs))
       (check-equal? before (outline)))))
 
 (test "tabs a history step brings back are new parts, none of whose views has been selected since"
@@ -357,7 +377,7 @@
     (test-user:press! "C-x t 1")
     (test-user:press! "C-c <left>")
     (check-equal? '(layout:level (layout-tabs:container "w1" "w2")) (outline))
-    (check-raises (raised-with 'layout-tabs:recent-tab "no more recent tabs") (layout-tabs:recent-tab 1))))
+    (check-raises (test-runner:raised-with 'layout-tabs:recent-tab "no more recent tabs") (layout-tabs:recent-tab 1))))
 
 (test "the close button closes the tab clicked, with every part in it, without selecting it; the middle button closes a tab, on it or on its button"
   (let ([r1 (fresh "r1")] [r2 (fresh "r2")] [r3 (fresh "r3")])
@@ -396,3 +416,20 @@
 
 (test "the kind's stylesheet is in web's table of stylesheets"
   (check-equal? "layout-tabs/layout-tabs.css" (tables:ref web:stylesheets 'layout-tabs #f)))
+
+(test "C-x t 2 in a locked view, such as a waiting prompt's, refuses in a sentence and changes nothing"
+  (let ([a (fresh "a")] [locked (fresh "locked")])
+    (set-parts! (layout-split:container '((direction . row)) (atom a) (atom locked '(locked . #t))))
+    (layout:select! locked)
+    (let ([before (outline)])
+      (check-equal? '((layout-tabs:new-tab "a locked part")) (refusals-on "C-x t 2"))
+      (check-equal? before (outline)))))
+
+(test "C-x t 2 in a view that shows no buffer refuses in a sentence and changes nothing"
+  (let ([e (fresh "empty")])
+    (set-parts! (atom e))
+    (layout:select! e)
+    (for-each buffers:kill! (remp (lambda (b) (buffers:internal-name? (buffers:name b))) (buffers:all)))
+    (let ([before (layout-tabs-test/parts:tree)])
+      (check-equal? '((layout-tabs:new-tab "the view shows no buffer")) (refusals-on "C-x t 2"))
+      (check-equal? before (layout-tabs-test/parts:tree)))))

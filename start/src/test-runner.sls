@@ -290,6 +290,21 @@
        (advice-remove! report keep)
        (caught))]))
 
+(define (raised-with who message)
+  (unless (symbol? who) (assertion-violation 'test-runner:raised-with "not a symbol" who))
+  (unless (string? message) (assertion-violation 'test-runner:raised-with "not a string" message))
+  (lambda (c)
+    (and (who-condition? c) (eq? who (condition-who c))
+         (message-condition? c) (string=? message (condition-message c)))))
+
+;; The echo area shows a report's message, then its irritants, so a
+;; refusal the user is told in a sentence has none.
+(define (shown-reports-during thunk)
+  (map (lambda (c)
+         (cons* (and (who-condition? c) (condition-who c)) (if (message-condition? c) (condition-message c) c)
+                (if (irritants-condition? c) (condition-irritants c) '())))
+       (reports-during thunk)))
+
 ;; A task spawned now runs after the tasks queued before it, and the
 ;; resume it queues while the caller is paused runs only once their batch
 ;; has ended.
