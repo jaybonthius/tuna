@@ -1,6 +1,7 @@
 #!tuna
 (import (projects) (markdown) (ask) (buffers) (document) (views) (layout) (keys) (commands) (modes)
-        (status-line) (ui) (kill-ring) (files) (editing) (faces) (web) (haml) (hooks) (options) (tables) (saved))
+        (status-line) (ui) (kill-ring) (files) (editing) (jump-history) (faces) (web) (haml) (hooks) (options) (tables)
+        (saved))
 
 (define %self (current-owner))
 
@@ -977,18 +978,27 @@
      (let* ([b (%current-buffer)] [last (and (not new?) (%last-in b name))])
        (show! (if last (cdr last) (%start! name (folder-for b)))))]))
 
+(define (%stop-showing! v)
+  (if (layout:deletion-refusal (layout:view-node v))
+      (let ([skip? (views:skipped-buffer-predicate)])
+        (options:with ([views:skipped-buffer-predicate (lambda (view o reason) (or (skip? view o reason) (conversation-of o)))])
+          (views:replace-buffer! v)
+          (void)))
+      (layout:delete-part! (layout:view-node v))))
+
+;; The selected view goes last, so it is kept when it is the last view
+;; its level has.
 (commands:define-command (toggle)
-  "Shows the chat used last in the current buffer's project, or removes the view showing it."
+  "Shows the chat used last in the current buffer's project, or stops showing it in every view that shows it."
   (let* ([b (%current-buffer)] [last (%last-in b #f)]
-         [v (and last (layout:find-view (%buffer-of (car last) (cdr last))))])
-    (cond
-      [(not v) (show! (if last (cdr last) (%start! (%default-source-name) (folder-for b))))]
-      [(layout:deletion-refusal (layout:view-node v))
-       (let ([skip? (views:skipped-buffer-predicate)])
-         (options:with ([views:skipped-buffer-predicate (lambda (view o reason) (or (skip? view o reason) (conversation-of o)))])
-           (views:replace-buffer! v)
-           (void)))]
-      [else (layout:delete-part! (layout:view-node v))])))
+         [shown (if last
+                    (let ([chat-buffer (%buffer-of (car last) (cdr last))])
+                      (filter (lambda (v) (eq? (views:buffer v) chat-buffer)) (layout:views)))
+                    '())]
+         [selected (layout:selected-view)])
+    (if (null? shown)
+        (show! (if last (cdr last) (%start! (%default-source-name) (folder-for b))))
+        (for-each %stop-showing! (append (remq selected shown) (if (memq selected shown) (list selected) '()))))))
 
 (define (%relative dir path)
   (let ([d (string-append (%without-slash dir) "/")])
@@ -1030,6 +1040,7 @@
                        (%start! name folder)))])])
       (when c
         (add-to-prompt! c (%region-text (%entry-of c) c b (fxmin mark (views:point v)) (fxmax mark (views:point v))))
+        (views:set-mark! v #f)
         (show! c)))))
 
 (define (%waiting-questions)
@@ -1238,13 +1249,19 @@
       path
       (string-append (%without-slash dir) "/" path)))
 
-(define (%visit! entry c path line)
+(define (%visit! entry c path line same-view?)
   (let ([b (files:visit (%absolute (%directory entry c) path))])
-    (layout:switch-to-buffer b)
-    (views:set-point! (layout:selected-view) (editing:line-position b line))))
+    (if same-view?
+        (begin
+          (layout:switch-to-buffer b)
+          (let ([v (layout:selected-view)])
+            (views:set-point! v (editing:line-position b line))
+            (jump-history:after-jump v)))
+        (layout:call-with-overriding-action layout:display-in-other-view
+          (lambda () (jump-history:jump-to b (editing:line-position b line)))))))
 
-(commands:define-command (visit)
-  "Opens the file of the tool call at point at its line, or the path:line at point."
+(commands:define-command (visit [same-view? (and (commands:prefix-argument) #t)])
+  "Opens the file of the tool call at point at its line, or the path:line at point, in another view, the chat kept; with C-u, in the chat's view."
   (let*-values ([(c) (%current-conversation 'chat:visit)] [(entry) (%entry-of c)] [(v position) (%place)]
                 [(b) (views:buffer v)])
     (let ([location (%source-location (cdr entry))] [block (%enclosing-of b position (%block-kind-names))])
@@ -1252,8 +1269,8 @@
         [(and location block
               (let ([item (%item-at entry c b position)])
                 (and item (location c item (%attribute block 'key)))))
-         => (lambda (place) (%visit! entry c (car place) (cdr place)))]
-        [(%path-line-at b position) => (lambda (p) (%visit! entry c (car p) (cdr p)))]
+         => (lambda (place) (%visit! entry c (car place) (cdr place) same-view?))]
+        [(%path-line-at b position) => (lambda (p) (%visit! entry c (car p) (cdr p) same-view?))]
         [else (error 'chat:visit "no file is at point")]))))
 
 ;; The status line asks on every draw, and reading every item back from
@@ -1282,27 +1299,36 @@
 (define (%describe-nothing node view) #f)
 
 (commands:define-command (next-message)
-  "Moves point to your next message."
+  "Moves point to your next message, and that message to the top of the view."
   (let* ([v (views:current)] [b (views:buffer v)] [p (views:point v)]
          [next (find (lambda (s) (fx> s p)) (%message-starts b (%part b 'chat:transcript)))])
     (unless next (error 'chat:next-message "no later message"))
-    (views:set-point! v (fx+ next 1))))
+    (views:set-point! v (fx+ next 1))
+    (views:scroll-to! v (views:point v) (views:align top))))
 
 (commands:define-command (previous-message)
-  "Moves point to your previous message."
+  "Moves point to your previous message, and that message to the top of the view."
   (let* ([v (views:current)] [b (views:buffer v)] [p (views:point v)]
          [here (%enclosing-of b p '(chat:user-message))]
          [before (filter (lambda (s) (fx< s (if here (document:node-start here) p))) (%message-starts b (%part b 'chat:transcript)))])
     (when (null? before) (error 'chat:previous-message "no earlier message"))
-    (views:set-point! v (fx+ (car (last-pair before)) 1))))
+    (views:set-point! v (fx+ (car (last-pair before)) 1))
+    (views:scroll-to! v (views:point v) (views:align top))))
+
+(define (%own-message-at entry c b position)
+  (let ([before (filter (lambda (s) (fx<= s position)) (%message-starts b (%part b 'chat:transcript)))])
+    (and (pair? before) (%item-at entry c b (car (last-pair before))))))
 
 (commands:define-command (fork)
-  "Goes on in a copy of the conversation, as the agent forks it, from the item at point."
+  "Goes on in a copy of the conversation, as the agent forks it, before your message at or before point."
   (let*-values ([(c) (%current-conversation 'chat:fork)] [(entry) (%entry-of c)] [(v position) (%place)])
     (let ([fork (%source-fork (cdr entry))])
       (unless fork
         (error 'chat:fork (string-append (%title entry c) " cannot fork")))
-      (fork c (%item-at entry c (views:buffer v) position)))))
+      (let ([message (%own-message-at entry c (views:buffer v) position)])
+        (unless message
+          (error 'chat:fork "no message of yours is at point"))
+        (fork c message)))))
 
 (commands:define-command (copy-message)
   "Copies the message at point, as Markdown, to the kill ring."

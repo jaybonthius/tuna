@@ -32,7 +32,7 @@
   (test-user:press! "RET")
   (check (eq? other (chat:conversation-of (views:buffer (chat-picker-test/picking:view))))))
 
-(test "chat-picker:add-region-to adds the region to a chosen chat's prompt, the region's project's chats first, and shows the chat"
+(test "chat-picker:add-region-to adds the region to a chosen chat's prompt, the region's project's chats first, shows the chat and leaves the region inactive"
   (layout:switch-to-buffer file-buffer)
   (views:set-mark! (chat-picker-test/picking:view) #f)
   (check-equal? '("the region is empty") (chat-picker-test/picking:press! "C-c a o"))
@@ -44,6 +44,8 @@
   (test-user:press! "RET")
   (check-equal? "*pi: tuna*" (buffers:name (views:buffer (chat-picker-test/picking:view))))
   (check-equal? "lib/a.txt:1-3" (chat-picker-test/picking:prompt-text chat))
+  (layout:switch-to-buffer file-buffer)
+  (check-equal? #f (views:mark (chat-picker-test/picking:view)))
   (chat:set-prompt! chat ""))
 
 (test "called with what is no chat, the commands raise not a chat"

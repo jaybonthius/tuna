@@ -96,7 +96,7 @@
   (tables:remove! pi-chat:slash-commands "/session")
   (chat:set-prompt! chat ""))
 
-(test "in the conversation RET opens the file of the tool call at point at its line, and f forks from your message at point"
+(test "in the conversation RET opens the file of the tool call at point at its line in another view, and f forks from your message at point"
   (test-pi:run-turn! f "u1" "a1" "First" '("Look."))
   (test-pi:append-entry! f (test-pi:entry "a2" "a1" (test-pi:assistant-message "toolUse" (test-pi:tool-block "t1" "read" '(("path" . "lib/a.txt") ("offset" . 2))))))
   (test-pi:append-entry! f (test-pi:entry "r1" "a2" (test-pi:tool-result "t1" "read" "two\nthree" #f)))
@@ -107,6 +107,8 @@
   (test-user:press! "RET")
   (check (eq? file-buffer (current-buffer)))
   (check-equal? 2 (document:line (buffers:document file-buffer) (views:point (pi-chat-test:view))))
+  (check (memq b (map views:buffer (layout:views))))
+  (layout:reset-layout)
   (chat:show! chat)
   (test-pi:answer! f "fork" (lambda (r) '(("text" . "Second") ("cancelled" . #f))))
   (pi-chat-test:at! chat "Second")
@@ -207,3 +209,57 @@
 (test "the commands that act on a Pi chat raise not in a Pi chat elsewhere"
   (layout:switch-to-buffer file-buffer)
   (check-equal? '("not in a Pi chat") (pi-chat-test:reports-during (lambda () (pi-chat-test:run! pi-chat:new-session)))))
+
+(define other (pi-chat-test:shown-chat project))
+
+(define g (pi-chat-test:fake other))
+
+(define (requests-of type) (length (filter (lambda (t) (equal? t type)) (test-pi:request-types g))))
+
+(define (typed! text)
+  (chat:show! other)
+  (chat:set-prompt! other text)
+  (views:set-point! (pi-chat-test:view) (chat:prompt-end other))
+  (test-user:press! "RET"))
+
+(test "C-c C-k while Pi is idle changes nothing the user sees"
+  (chat:show! other)
+  (chat:set-prompt! other "draft")
+  (views:set-point! (pi-chat-test:view) (chat:prompt-end other))
+  (check-equal? '() (pi-chat-test:press! "C-c C-k"))
+  (test-runner:wait-until (lambda () (test-pi:last-request g "abort")))
+  (check-equal? '("draft" idle) (list (pi-chat-test:prompt-text other) (pi:chat-activity other)))
+  (chat:set-prompt! other ""))
+
+(test "cloning the session asks first while Pi works, as a new session does"
+  (test-pi:say! g (test-pi:event "agent_start"))
+  (test-runner:wait-until (lambda () (pi:chat-working? other)))
+  (let ([clones (requests-of "clone")])
+    (chat:show! other)
+    (pi-chat-test:run! pi-chat:clone)
+    (check-equal? "Pi is working; stop it and clone the session? (y or n) " (pi-chat-test:minibuffer-text))
+    (test-user:press! "n")
+    (check-equal? clones (requests-of "clone"))
+    (pi-chat-test:run! pi-chat:clone)
+    (test-user:press! "y")
+    (test-runner:wait-until (lambda () (= (+ clones 1) (requests-of "clone")))))
+  (test-pi:say! g (test-pi:event "agent_settled" '("aborted" . #f)))
+  (test-runner:wait-until (lambda () (not (pi:chat-working? other)))))
+
+(test "/name alone, /copy, /export, /clone and /new at the prompt run the chat's own commands"
+  (typed! "/name")
+  (check-equal? "The session has no name" (echo-area:current-message))
+  (test-pi:answer! g "get_last_assistant_text" (lambda (r) '(("text" . "Copied."))))
+  (typed! "/copy")
+  (test-runner:wait-until (lambda () (let ([k (kill-ring:current)]) (and k (equal? "Copied." (kill-ring:text k))))))
+  (test-pi:answer! g "export_html" (lambda (r) (list (cons "path" (or (ref r "outputPath") "/tmp/o.html")))))
+  (typed! "/export")
+  (test-runner:wait-until (lambda () (equal? "Exported the session to /tmp/o.html" (echo-area:current-message))))
+  (typed! "/export /tmp/p.html")
+  (test-runner:wait-until (lambda () (equal? "Exported the session to /tmp/p.html" (echo-area:current-message))))
+  (let ([clones (requests-of "clone")])
+    (typed! "/clone")
+    (test-runner:wait-until (lambda () (= (+ clones 1) (requests-of "clone")))))
+  (typed! "/new")
+  (test-runner:wait-until (lambda () (test-pi:last-request g "new_session")))
+  (check-equal? "" (pi-chat-test:prompt-text other)))

@@ -69,10 +69,11 @@
       #f)))
 
 (commands:define-command (add-region-to [c (%read-region-chat)])
-  "Adds the region to the prompt of C, as chat:add-region does, and shows the chat."
+  "Adds the region to the prompt of C, as chat:add-region does, clears the mark, and shows the chat."
   (%check-chat 'chat-picker:add-region-to c)
   (let-values ([(b start end) (%region 'chat-picker:add-region-to)])
     (chat:add-to-prompt! c (chat:region-text c b start end))
+    (views:set-mark! (views:current) #f)
     (chat:show! c)))
 
 (define (%word-start doc from point)

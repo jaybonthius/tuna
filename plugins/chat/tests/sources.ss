@@ -86,8 +86,9 @@
   (check-equal? '("no question waits") (chat-test:press! "C-c a d")))
 
 (test "without a fork clause f raises; without last-reply the last reply drawn is copied, as its item text"
+  (chat:show! p)
+  (check-equal? '("Parrot cannot fork") (chat-test:reports-during (lambda () (chat-test:run! chat:fork))))
   (chat:show! e)
-  (check-equal? '("Echo cannot fork") (chat-test:reports-during (lambda () (chat-test:run! chat:fork))))
   (check-equal? '("Echo has not replied yet") (chat-test:reports-during (lambda () (chat-test:run! chat:copy-last-reply))))
   (chat-test/fake-talks:reply! e "Done *now*")
   (test-user:settle)

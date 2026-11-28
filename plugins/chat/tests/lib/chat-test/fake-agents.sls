@@ -49,6 +49,9 @@
       [(string=? text "refuse") (chat:refuse "Echo refuses that")]
       [else (chat-test/fake-talks:talk-sent-set! t (cons (cons how text) (chat-test/fake-talks:talk-sent t)))])))
 
+(define (%fork t item)
+  (chat-test/fake-talks:talk-sent-set! t (cons (cons 'fork (vector-ref item 0)) (chat-test/fake-talks:talk-sent t))))
+
 (define (%answer t q value)
   (chat-test/fake-talks:talk-answered-set! t (cons (cons (car q) value) (chat-test/fake-talks:talk-answered t)))
   (%drop-question t q))
@@ -95,7 +98,8 @@
   (above chat-test/fake-talks:talk-above)
   (below chat-test/fake-talks:talk-below)
   (commands (lambda (t) '(("echo" . "Says it again") ("plain" . #f))))
-  (kill chat-test/fake-talks:end!))
+  (kill chat-test/fake-talks:end!)
+  (fork %fork))
 
 (chat:define-source parrot
   (conversation? (chat-test/fake-talks:of-kind 'parrot))

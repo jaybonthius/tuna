@@ -101,4 +101,6 @@
 
 (keys:bind! pi-chat:keymap "C-c C-p" show)
 
+(tables:set! chat:status-menus pi-chat:source show)
+
 (tables:set! commands:command-modes show (list pi-chat:mode))

@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (layout) (views) (buffers) (document) (keys) (commands) (modes) (editing) (ui) (ui-test))
+(import (tuna) (test) (test-user) (layout) (views) (buffers) (document) (keys) (commands) (modes) (hooks) (editing) (ui) (ui-test))
 
 (define view ui-test:view)
 
@@ -112,3 +112,12 @@
   (check-equal? '(1 "notes.org") (list (ui:selected-row (short) (view)) (document:node-attribute (live 'ui:%chosen) 'name)))
   (test-user:press! "q")
   (check (not (eq? (views:buffer (view)) (showcase)))))
+
+(test "ui:showcase-mode-hook runs when a buffer turns on ui:showcase-mode"
+  (let ([runs 0])
+    (define (count!) (set! runs (+ runs 1)))
+    (hooks:add! ui:showcase-mode-hook count!)
+    (buffers:kill! (showcase))
+    (run-showcase)
+    (hooks:remove! ui:showcase-mode-hook count!)
+    (check-equal? 1 runs)))

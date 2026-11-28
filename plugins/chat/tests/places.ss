@@ -1,5 +1,5 @@
-(import (tuna) (test) (test-user) (test-runner) (options) (buffers) (document) (views) (layout) (files) (projects)
-        (minibuffer) (file-picker) (jump-history) (kill-ring) (ask) (chat) (chat-test fake-talks) (chat-test fake-agents) (chat-test))
+(import (tuna) (test) (test-user) (test-runner) (options) (buffers) (document) (views) (layout) (layout-split) (files) (projects)
+        (minibuffer) (file-picker) (jump-history) (kill-ring) (ask) (echo-area) (hooks) (chat) (chat-test fake-talks) (chat-test fake-agents) (chat-test))
 
 (define home (getenv "HOME"))
 
@@ -26,6 +26,17 @@
 
 (define (where) (views:describe-at-point (chat-test:view)))
 
+(define (shown-buffers)
+  (filter (lambda (b) (not (buffers:internal-name? (buffers:name b)))) (map views:buffer (layout:views))))
+
+(define (split!) (layout-split:split-view! (chat-test:view) (layout-split:direction row)))
+
+(define jumped '())
+
+(define (note-jump! view) (set! jumped (cons (views:buffer view) jumped)))
+
+(hooks:add! jump-history:after-jump note-jump!)
+
 (test "in a chat the conversation counts your messages, the prompt has its own lines, and the rest shows no position"
   (chat:show! e)
   (chat-test/fake-talks:reply! e "Hello")
@@ -48,6 +59,13 @@
   (check-equal? '("no earlier message") (chat-test:press! "p"))
   (test-user:press! "n")
   (check-equal? '("no later message") (chat-test:press! "n")))
+
+(test "f forks before your message at or before point: on a reply, the message the reply answers; before your first, none"
+  (chat-test/fake-talks:talk-sent-set! e '())
+  (for-each (lambda (text) (chat-test:at! b text) (test-user:press! "f")) '("Answer one" "Second" "Answer two"))
+  (check-equal? '((fork . 3) (fork . 3) (fork . 1)) (chat-test/fake-talks:talk-sent e))
+  (chat-test:at! b "Hello")
+  (check-equal? '("no message of yours is at point") (chat-test:press! "f")))
 
 (test "w copies the message at point, as the source's item text"
   (chat-test:at! b "Answer one")
@@ -88,6 +106,36 @@
     (chat-test/fake-talks:end! second)
     (test-user:settle)))
 
+(test "C-c a t with the chat in the selected one of two views deletes that view and selects the other"
+  (layout:switch-to-buffer file-buffer)
+  (let ([other (chat-test:view)] [chat-view (split!)])
+    (layout:select! chat-view)
+    (layout:switch-to-buffer b)
+    (test-user:press! "C-c a t")
+    (check-equal? (list file-buffer) (shown-buffers))
+    (check (eq? other (chat-test:view)))
+    (check-equal? #f (echo-area:current-message))))
+
+(test "C-c a t with the chat in two views shows it in neither: the other goes, and the selected view shows what it showed before"
+  (layout:switch-to-buffer file-buffer)
+  (let ([selected (chat-test:view)] [other (split!)])
+    (layout:select! other)
+    (layout:switch-to-buffer b)
+    (layout:select! selected)
+    (layout:switch-to-buffer b)
+    (test-user:press! "C-c a t")
+    (check-equal? (list file-buffer) (shown-buffers))
+    (check (eq? selected (chat-test:view)))))
+
+(test "chat:open with the chat shown in another view shows it in the selected view as well, which stays selected"
+  (layout:switch-to-buffer file-buffer)
+  (let ([selected (chat-test:view)] [other (split!)])
+    (views:set-buffer! other b)
+    (views:call-with-view selected (lambda () (chat:open chat-test/fake-agents:echo)))
+    (check-equal? (list b b) (shown-buffers))
+    (check (eq? selected (chat-test:view)))
+    (layout:reset-layout)))
+
 (test "a chat started in a folder inside the project is in the project's group, before chats elsewhere"
   (let ([inside (chat-test/fake-talks:start 'echo (at "proj/lib"))] [elsewhere (chat-test/fake-talks:start 'echo home)])
     (test-user:settle)
@@ -111,6 +159,14 @@
   (views:set-mark! (chat-test:view) 6)
   (test-user:press! "C-c a r")
   (check-equal? "lib/a.txt:2-3\n```a.txt lines 1-1\nxone\n```" (chat-test:prompt-text e)))
+
+(test "C-c a r leaves the region it added inactive"
+  (layout:switch-to-buffer file-buffer)
+  (views:set-point! (chat-test:view) 1)
+  (views:set-mark! (chat-test:view) 4)
+  (test-user:press! "C-c a r")
+  (layout:switch-to-buffer file-buffer)
+  (check-equal? #f (views:mark (chat-test:view))))
 
 (test "an atom in the region goes as its text: a raw byte as U+FFFD"
   (buffers:splice! file-buffer 2 2 (document:from-utf8 #vu8(#xFF)))
@@ -141,27 +197,72 @@
       (check-equal? "c.txt:1" (chat-test:prompt-text started)))
     (options:unset! ask:y-or-n-reader)))
 
-(test "RET on a path:line in the conversation opens the file at that line, relative to the chat's folder, and M-, returns"
+(test "RET on a path:line in the conversation opens the file at that line in another view, the chat kept, relative to the chat's folder, and M-, returns"
   (chat:show! e)
   (chat-test/fake-talks:reply! e "See lib/a.txt:3 and lib/a.txt:99.")
   (test-user:settle)
   (chat-test:at! b "lib/a.txt:3")
-  (let ([link (views:point (chat-test:view))])
+  (let ([chat-view (chat-test:view)] [link (views:point (chat-test:view))])
+    (set! jumped '())
     (test-user:press! "RET")
     (let ([v (chat-test:view)])
-      (check (eq? file-buffer (views:buffer v)))
+      (check-equal? (list file-buffer) jumped)
+      (check-equal? (list b file-buffer) (shown-buffers))
+      (check (not (eq? chat-view v)))
       (check-equal? 3 (document:line (buffers:document file-buffer) (views:point v))))
     (test-user:press! "M-,")
     (check (eq? b (views:buffer (chat-test:view))))
-    (check-equal? link (views:point (chat-test:view)))))
+    (check-equal? link (views:point (chat-test:view)))
+    (layout:select! chat-view)
+    (layout:reset-layout)))
+
+(test "C-u RET opens the file in the selected view, in place of the chat"
+  (chat-test:at! b "lib/a.txt:3")
+  (set! jumped '())
+  (test-user:press! "C-u RET")
+  (check-equal? (list file-buffer) jumped)
+  (check-equal? (list file-buffer) (shown-buffers))
+  (check-equal? 3 (document:line (buffers:document file-buffer) (views:point (chat-test:view)))))
+
+(test "RET on a file another view shows selects that view, and M-, returns within it"
+  (chat:show! e)
+  (let ([chat-view (chat-test:view)] [file-view (split!)])
+    (views:set-buffer! file-view file-buffer)
+    (views:set-point! file-view 1)
+    (chat-test:at! b "lib/a.txt:3")
+    (test-user:press! "RET")
+    (check (eq? file-view (chat-test:view)))
+    (check-equal? (list b file-buffer) (shown-buffers))
+    (check-equal? 3 (document:line (buffers:document file-buffer) (views:point file-view)))
+    (test-user:press! "M-,")
+    (check (eq? file-view (chat-test:view)))
+    (check-equal? (list b file-buffer 1) (list (views:buffer chat-view) (views:buffer file-view) (views:point file-view)))
+    (layout:select! chat-view)
+    (layout:reset-layout)))
 
 (test "a line past the file's last goes to its end, and RET with no file at point raises"
+  (chat:show! e)
   (chat-test:at! b "lib/a.txt:99")
   (test-user:press! "RET")
   (check-equal? (- (document:length (buffers:document file-buffer)) 1) (views:point (chat-test:view)))
+  (layout:reset-layout)
   (chat:show! e)
   (chat-test:at! b "Hello")
   (check-equal? '("no file is at point") (chat-test:press! "RET")))
+
+(test "RET and a click on a link to an address in a reply open it in the browser, and the chat stays in its view"
+  (chat-test/fake-talks:reply! e "Read [the guide](https://tuna.example/guide).")
+  (test-user:settle)
+  (test-user:take-page-calls!)
+  (chat-test:at! b "the guide")
+  (test-user:press! "RET")
+  (let ([link (find (lambda (el) (equal? "the guide" (test-user:element-text el)))
+                    (test-user:elements-with (test-user:screen) "data-click"))])
+    (check-equal? "clickable" (test-user:element-attribute link "data-click"))
+    (test-user:click-element! link))
+  (check-equal? '("https://tuna.example/guide" "https://tuna.example/guide")
+    (map cdr (filter (lambda (call) (equal? "browse-url" (car call))) (test-user:take-page-calls!))))
+  (check-equal? (list b) (shown-buffers)))
 
 (test "chat:files-edited! reverts an unmodified buffer visiting the file, and leaves a modified one with a notice naming the source"
   (let ([fresh (files:visit (at "proj/lib/b.txt"))])

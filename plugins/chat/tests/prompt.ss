@@ -94,6 +94,30 @@
   (test-user:press! "C-c C-k")
   (check-equal? "c\na\nb" (chat-test:prompt-text e)))
 
+(test "C-c C-c in the prompt sends as RET does; in the conversation it is undefined"
+  (chat:set-prompt! e "by C-c C-c")
+  (views:set-point! (chat-test:view) (chat:prompt-end e))
+  (test-user:press! "C-c C-c")
+  (check-equal? '(send . "by C-c C-c") (car (sent)))
+  (chat-test:at! b "Hello")
+  (check-equal? '("C-c C-c is undefined") (chat-test:press! "C-c C-c")))
+
+(test "M-<up> with nothing queued changes nothing and says nothing"
+  (chat:set-prompt! e "kept")
+  (views:set-point! (chat-test:view) (chat:prompt-end e))
+  (let ([said (echo-area:current-message)])
+    (check-equal? '() (chat-test:press! "M-<up>"))
+    (check-equal? (list "kept" said) (list (chat-test:prompt-text e) (echo-area:current-message)))))
+
+(test "C-c C-k in the conversation cancels the agent's turn as in the prompt, the queue coming back to the prompt"
+  (chat:set-prompt! e "")
+  (chat-test/fake-talks:queue! e (list (cons (chat:delivery turn-end) "d")))
+  (test-user:settle)
+  (chat-test:at! b "Hello")
+  (test-user:press! "C-c C-k")
+  (check-equal? "d" (chat-test:prompt-text e))
+  (chat:set-prompt! e ""))
+
 (test "undo in the prompt keeps its history while the agent writes above it, and keys typed over several batches join"
   (chat:set-prompt! e "")
   (views:set-point! (chat-test:view) (chat:prompt-start e))

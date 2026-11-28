@@ -361,8 +361,6 @@
   (or (not (pi:chat-working? chat)) (ask:y-or-n? question)))
 
 (define (%fork chat item)
-  (unless (pi:user-message? item)
-    (error 'chat:fork "no message of yours is at point"))
   (unless (pi:item-entry-id item)
     (error 'chat:fork "Pi has not saved this message yet"))
   (when (%ask-while-working chat "Pi is working; stop it and fork? ")
@@ -372,6 +370,10 @@
 (define (%new-session chat)
   (when (%ask-while-working chat "Pi is working; stop it and start a new session? ")
     (pi:new-session! chat)))
+
+(define (%clone chat)
+  (when (%ask-while-working chat "Pi is working; stop it and clone the session? ")
+    (pi:clone! chat)))
 
 (chat:define-source source
   (conversation? pi:chat?)
@@ -422,8 +424,8 @@
   (pi:set-session-name! (%current-chat 'pi-chat:rename-session) name))
 
 (commands:define-command (clone)
-  "Goes on in a copy of the session."
-  (pi:clone! (%current-chat 'pi-chat:clone)))
+  "Goes on in a copy of the session; asks first while Pi works."
+  (%clone (%current-chat 'pi-chat:clone)))
 
 (commands:define-command (compact [instructions (ask:line "Compaction instructions (empty for none): ")])
   "Summarises the conversation, with INSTRUCTIONS for the summary."
@@ -522,7 +524,7 @@
         (ask:message (or (pi:chat-session-name chat) "The session has no name"))
         (pi:set-session-name! chat argument))))
 (tables:set! slash-commands "/compact" (lambda (chat argument) (pi:compact! chat argument)))
-(tables:set! slash-commands "/clone" (lambda (chat argument) (pi:clone! chat)))
+(tables:set! slash-commands "/clone" (lambda (chat argument) (%clone chat)))
 (tables:set! slash-commands "/copy" (lambda (chat argument) (chat:copy-last-reply)))
 (tables:set! slash-commands "/export"
   (lambda (chat argument) (%export chat (if (string=? argument "") #f argument))))

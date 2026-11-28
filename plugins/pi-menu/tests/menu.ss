@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-user) (test-runner) (tables) (commands) (buffers) (views) (layout) (completion) (completion-list) (echo-area) (pi) (chat)
-        (pi-chat) (pi-picker) (pi-menu) (test-pi) (pi-menu-test menus))
+        (transient) (pi-chat) (pi-picker) (pi-menu) (test-pi) (pi-menu-test menus))
 
 (define home (getenv "HOME"))
 
@@ -30,6 +30,16 @@
                       '("Model" ("m" "Model (Fake Model)") ("t" "Thinking level (medium)"))
                       '("Display" ("T" "Finished thinking (folded)") ("o" "Fold or unfold every block")))
                 (pi-menu-test/menus:menu))
+  (test-user:press! "C-g")
+  (check-equal? #f (pi-menu-test/menus:menu)))
+
+(test "a click on the chat's status segment, marked clickable, shows the menu"
+  (let ([segment (find (lambda (el) (equal? (test-user:element-text el) (chat:show-status (layout:selected-view))))
+                       (test-user:elements (test-user:screen) "status-line-segment"))])
+    (let ([mark (test-user:element-attribute segment "data-keymap")])
+      (check (string=? " clickable" (substring mark (- (string-length mark) 10) (string-length mark)))))
+    (test-user:click-element! segment))
+  (check-equal? (string-append "Pi in " home "/src") (car (pi-menu-test/menus:menu)))
   (test-user:press! "C-g")
   (check-equal? #f (pi-menu-test/menus:menu)))
 
@@ -91,6 +101,40 @@
   (test-user:type! "now")
   (test-user:press! "RET")
   (test-runner:wait-until (lambda () (equal? "/audit now" (ref (test-pi:last-request f "prompt") "message")))))
+
+(define (entry-node key)
+  (find (lambda (n)
+          (let ([entries (test-user:elements n "transient-entry")])
+            (and (= 1 (length entries)) (= 1 (length (test-user:elements n "node")))
+                 (equal? key (test-user:element-text (car (test-user:elements (car entries) "transient-key")))))))
+        (test-user:elements (test-user:screen) "node")))
+
+(test "a click on an entry, marked clickable, runs it as its key does"
+  (test-user:press! "C-c C-p")
+  (let ([entry (entry-node "T")])
+    (check-equal? "clickable" (test-user:element-attribute entry "data-click"))
+    (test-user:click-element! entry))
+  (check-equal? #t (chat:thinking-shown?))
+  (test-user:press! "T C-g")
+  (check-equal? '(#f #f) (list (chat:thinking-shown?) (pi-menu-test/menus:menu))))
+
+(test "an entry added with transient:add! shows in the menu"
+  (transient:add! pi-menu:menu "Mine" (transient:command "z" "Fold all" chat:toggle-all-blocks))
+  (test-user:press! "C-c C-p")
+  (check-equal? '("Mine" ("z" "Fold all")) (pi-menu-test/menus:group "Mine"))
+  (test-user:press! "C-g"))
+
+(test "past 61 commands of one kind the menu leaves the rest out"
+  (test-pi:answer! f "get_commands"
+    (lambda (r)
+      (list (cons "commands" (list->vector (map (lambda (i) (list (cons "name" (format "c~2,'0d" i)) '("description" . "C") '("source" . "extension")))
+                                                (iota 62)))))))
+  (test-pi:say! f (test-pi:event "agent_settled" '("aborted" . #f)))
+  (test-runner:wait-until (lambda () (= 62 (length (pi:chat-commands chat)))))
+  (test-user:press! "C-c C-p x")
+  (let ([entries (cadr (pi-menu-test/menus:menu))])
+    (check-equal? '(61 ("Z" "/c60")) (list (length entries) (car (last-pair entries)))))
+  (test-user:press! "C-g C-g"))
 
 (test "session entries run pi-chat's and pi-picker's commands"
   (test-user:press! "C-c C-p n")
