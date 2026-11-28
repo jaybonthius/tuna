@@ -3,3 +3,8 @@
   (commit "b430ba6d1df731ba1cbb2e9a820777cad4095350")
   (library-directories ("src" . "build/obj/src"))
   (build))
+(library chez-host
+  (git "https://github.com/jaybonthius/chez-host.git")
+  (commit "0126bc6b95435799853787f7e97974c3ab2439b0")
+  (library-directories ("src" . "build/obj/src"))
+  (build))

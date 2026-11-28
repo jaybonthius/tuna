@@ -4,7 +4,7 @@
           file-attributes-modified-nanoseconds
           file-attributes-mode file-attributes-links file-attributes-uid file-attributes-gid
           file-attributes-owner file-attributes-group file-attributes-target make-owner-names)
-  (import (chezscheme) (files system))
+  (import (chezscheme) (files system) (host))
 
   (define-enumeration file-type (file folder link other) file-types)
 
@@ -19,12 +19,9 @@
       (load-shared-object #f)
       (foreign-procedure __collect_safe __errno "lstat" (uptr uptr) int)))
   (define c-readlink (foreign-procedure __collect_safe __errno "readlink" (uptr uptr size_t) ssize_t))
-  (define c-statvfs (foreign-procedure __collect_safe __errno "statvfs" (uptr uptr) int))
-  (define c-getpwuid-r (foreign-procedure __collect_safe "getpwuid_r" (unsigned-32 uptr uptr size_t uptr) int))
-  (define c-getgrgid-r (foreign-procedure __collect_safe "getgrgid_r" (unsigned-32 uptr uptr size_t uptr) int))
 
-  ;; Offsets in x86-64 Linux's struct stat and struct statvfs, the only
-  ;; layout Tuna is built for.
+  ;; Offsets in x86-64 Linux's struct stat, the only layout Tuna is built
+  ;; for.
   (define stat-size 144)
   (define nlink-offset 16)
   (define mode-offset 24)
@@ -34,46 +31,11 @@
   (define blocks-offset 64)
   (define mtime-offset 88)
   (define mtime-nanoseconds-offset 96)
-  (define statvfs-size 112)
-  (define frsize-offset 8)
-  (define bavail-offset 32)
 
   (define type-mask #o170000)
   (define link-bits #o120000)
   (define folder-bits #o040000)
   (define file-bits #o100000)
-
-  (define erange 34)
-
-  (define-ftype passwd
-    (struct [name uptr] [password uptr] [uid unsigned-32] [gid unsigned-32] [gecos uptr] [home uptr] [shell uptr]))
-
-  (define-ftype group
-    (struct [name uptr] [password uptr] [gid unsigned-32] [members uptr]))
-
-  ;; getpwuid and getgrgid return one static entry that two jobs would
-  ;; share; a buffer too small for an entry asks for a larger one.
-  (define (entry-name lookup id entry-size name-of)
-    (let ([entry (foreign-alloc entry-size)] [found (foreign-alloc (foreign-sizeof 'uptr))])
-      (dynamic-wind
-        void
-        (lambda ()
-          (let retry ([size 1024])
-            (let ([buffer (foreign-alloc size)])
-              (let* ([errno (lookup id entry buffer size found)]
-                     [name (and (fx= errno 0) (not (fx= (foreign-ref 'uptr found 0) 0))
-                                (c-string->string (name-of entry)))])
-                (foreign-free buffer)
-                (if (fx= errno erange) (retry (fx* size 2)) name)))))
-        (lambda () (foreign-free entry) (foreign-free found)))))
-
-  (define (owner-name uid)
-    (entry-name c-getpwuid-r uid (ftype-sizeof passwd)
-                (lambda (entry) (ftype-ref passwd (name) (make-ftype-pointer passwd entry)))))
-
-  (define (group-name gid)
-    (entry-name c-getgrgid-r gid (ftype-sizeof group)
-                (lambda (entry) (ftype-ref group (name) (make-ftype-pointer group entry)))))
 
   ;; A lookup can read the whole user database, so a caller reading many
   ;; files looks each owner and group up once. The names are the caller's,
@@ -148,8 +110,8 @@
                           (fxand mode #o7777)
                           (foreign-ref 'unsigned-64 buffer nlink-offset)
                           uid gid
-                          (if names (cached (owner-names-users names) owner-name uid) (owner-name uid))
-                          (if names (cached (owner-names-groups names) group-name gid) (group-name gid))
+                          (if names (cached (owner-names-users names) host-user-name uid) (host-user-name uid))
+                          (if names (cached (owner-names-groups names) host-group-name gid) (host-group-name gid))
                           (and (eq? type (file-type link)) (read-link 'read-file-attributes path p))
                           (foreign-ref 'integer-64 buffer mtime-nanoseconds-offset)))))
             (lambda () (foreign-free buffer)))))))
@@ -181,14 +143,4 @@
   (define (file-system-space path)
     (unless (string? path)
       (assertion-violation 'file-system-space "not a string" path))
-    (call-with-c-string path
-      (lambda (p)
-        (let ([buffer (foreign-alloc statvfs-size)])
-          (dynamic-wind
-            void
-            (lambda ()
-              (let-values ([(result errno) (c-statvfs p buffer)])
-                (unless (fx= result 0)
-                  (raise-system-failure 'file-system-space path errno)))
-              (* (foreign-ref 'unsigned-64 buffer bavail-offset) (foreign-ref 'unsigned-64 buffer frsize-offset)))
-            (lambda () (foreign-free buffer))))))))
+    (file-system-space-available (host-file-system-space path))))

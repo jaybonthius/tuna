@@ -1,0 +1,5 @@
+(library chez-timeseries
+  (git "https://github.com/jaybonthius/chez-timeseries.git")
+  (commit "1425d64f58c0662560958f281c1434b4bbe06132")
+  (library-directories ("src" . "build/obj/src"))
+  (build))

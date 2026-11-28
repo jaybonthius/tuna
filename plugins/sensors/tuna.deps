@@ -1,0 +1,15 @@
+(library chez-sysfs
+  (git "https://github.com/jaybonthius/chez-sysfs.git")
+  (commit "ae60a9ea46301761ac075838a226298ea9365ed7")
+  (library-directories ("src" . "build/obj/src"))
+  (build))
+(library chez-host
+  (git "https://github.com/jaybonthius/chez-host.git")
+  (commit "0126bc6b95435799853787f7e97974c3ab2439b0")
+  (library-directories ("src" . "build/obj/src"))
+  (build))
+(library chez-timeseries
+  (git "https://github.com/jaybonthius/chez-timeseries.git")
+  (commit "1425d64f58c0662560958f281c1434b4bbe06132")
+  (library-directories ("src" . "build/obj/src"))
+  (build))

@@ -107,7 +107,9 @@
 
   ;; A .scm file under a queries folder is a tree-sitter query, not Scheme,
   ;; as Neovim tells them apart. A submodule is another project's, and
-  ;; nvim-treesitter's tests hold query files elsewhere.
+  ;; nvim-treesitter's tests hold query files elsewhere. A linked folder is
+  ;; not followed, since a link may lead back up, as the links of a tree
+  ;; copied from /sys do.
   (define (scheme-files folder)
     (let loop ([names (sort string<? (directory-list folder))] [found '()])
       (if (null? names)
@@ -115,7 +117,7 @@
           (let ([path (string-append folder "/" (car names))])
             (loop (cdr names)
                   (cond
-                    [(file-directory? path)
+                    [(file-directory? path #f)
                      (if (or (member (car names) '(".git" "queries")) (file-exists? (string-append path "/.git")))
                          found
                          (append (reverse (scheme-files path)) found))]

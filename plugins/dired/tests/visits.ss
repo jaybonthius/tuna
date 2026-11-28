@@ -78,8 +78,9 @@
     (check-equal? '("  ." "  .." "  f.txt" "  g.txt" "  sub") (dired-test:lines v))
     (options:unset! dired:refresh-when-revisited?)))
 
+;; A link is deleted, not followed, which would delete what it points to.
 (define (delete-tree! path)
-  (if (file-directory? path)
+  (if (file-directory? path #f)
       (begin (for-each (lambda (n) (delete-tree! (string-append path "/" n))) (directory-list path)) (delete-directory path))
       (delete-file path)))
 
