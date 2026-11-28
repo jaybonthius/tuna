@@ -57,8 +57,8 @@
 
 (test "shell-command-again raises in a buffer that holds no line"
   (layout:switch-to-buffer (buffers:make "plain" "text\n"))
-  (check-equal? '((shell-commands:shell-command-again "the buffer holds no command line" ()))
-                (shell-commands-test:reported (lambda () (run shell-commands:shell-command-again)))))
+  (check-equal? '((shell-commands:shell-command-again "the buffer holds no command line"))
+                (test-runner:shown-reports-during (lambda () (run shell-commands:shell-command-again)))))
 
 (test "shell-commands' entry in files:directory-finders answers only for a buffer whose root holds a line"
   (let ([file (files:visit "~/listed/a.txt")])

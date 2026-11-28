@@ -1,5 +1,5 @@
 #!tuna
-(import (web) (commands) (ask) (buffers) (document) (tables))
+(import (web) (commands) (ask) (buffers) (document) (views) (tables))
 
 (define %schemes '("http:" "https:" "mailto:"))
 
@@ -7,10 +7,24 @@
   (let ([n (string-length prefix)])
     (and (fx<= (fx+ start n) (string-length s)) (string-ci=? prefix (substring s start (fx+ start n))))))
 
-(commands:define-command (open [url (ask:line "URL: ")] [client (web:current-client)])
-  "Opens URL, an http, https or mailto address, in a new tab of CLIENT's browser."
-  (unless (and (string? url) (exists (lambda (scheme) (%prefix-ci-at? scheme url 0)) %schemes))
-    (assertion-violation 'browse-url:open "not an http, https or mailto address" url))
+(define (%offered-url)
+  (let* ([v (views:current)] [b (and v (views:buffer v))])
+    (and b
+         (let ([doc (buffers:document b)] [p (views:point v)] [m (views:mark v)])
+           (if (and m (not (fx= m p)))
+               (document:text doc (fxmin m p) (fxmax m p))
+               (let-values ([(start end) (url-at b p)])
+                 (and start (document:text doc start end))))))))
+
+(commands:define-command (open [url (ask:line "URL: " (%offered-url))] [client (web:current-client)])
+  "Opens URL, an http, https or mailto address, in a new tab of CLIENT's browser; asked for, it offers the region's text, else the address at point."
+  (unless (string? url)
+    (assertion-violation 'browse-url:open "not a string" url))
+  ;; The text may be anyone's, as a program's output in a terminal is, and
+  ;; a file: address would show the user's files, a javascript: one run
+  ;; script.
+  (unless (exists (lambda (scheme) (%prefix-ci-at? scheme url 0)) %schemes)
+    (error 'browse-url:open "Only http, https and mailto addresses open"))
   (unless client
     (assertion-violation 'browse-url:open "no browser to open it in" url))
   (unless (web:client? client)

@@ -1,0 +1,35 @@
+(import (tuna) (test) (test-runner) (test-user) (views) (layout) (buffers) (files) (undo) (editing) (undo-test edits) (files-test))
+
+(define (current-buffer) (views:buffer (layout:selected-view)))
+
+(define (refused-as b) (list (list 'buffers:check-writable (string-append (buffers:name b) " is read-only"))))
+
+(test "in a read-only buffer C-/ and C-? say it is read-only, by its name, and change nothing, as Emacs's undo refuses one"
+  (test-user:show! "x|y")
+  (test-user:type! "abc")
+  (test-user:press! "C-x C-q")
+  (let ([b (current-buffer)])
+    (check-equal? (refused-as b) (test-runner:shown-reports-during (lambda () (test-user:press! "C-/"))))
+    (check-equal? "xabc|y" (test-user:text))
+    (test-user:press! "C-x C-q C-/")
+    (check-equal? "x|y" (test-user:text))
+    (test-user:press! "C-x C-q")
+    (check-equal? (refused-as b) (test-runner:shown-reports-during (lambda () (test-user:press! "C-?"))))
+    (check-raises (test-runner:raised-with 'buffers:check-writable (string-append (buffers:name b) " is read-only"))
+                  (undo:go-to! b (car (undo:history b))))
+    (check-equal? "x|y" (test-user:text)))
+  (undo-test/edits:take-said!))
+
+(test "a revert of a write-protected file's read-only buffer is not taken back by C-/"
+  (files-test:write-text! "~/protected.txt" "first\n")
+  (files-test:set-mode! "~/protected.txt" #o444)
+  (let ([b (files:visit "~/protected.txt")])
+    (views:set-buffer! (layout:selected-view) b)
+    (files-test:set-mode! "~/protected.txt" #o644)
+    (files-test:write-text! "~/protected.txt" "second\n")
+    (files-test:set-mode! "~/protected.txt" #o444)
+    (files:revert-from-file b)
+    (check-equal? (list "second\n" #t) (list (files-test:text b) (buffers:read-only? b)))
+    (check-equal? (refused-as b) (test-runner:shown-reports-during (lambda () (test-user:press! "C-/"))))
+    (check-equal? "second\n" (files-test:text b)))
+  (undo-test/edits:take-said!))

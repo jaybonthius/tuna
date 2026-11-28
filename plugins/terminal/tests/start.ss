@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (test-user) (options) (hooks) (ask) (buffers) (modes) (commands) (processes)
+(import (tuna) (test) (test-runner) (test-user) (options) (hooks) (ask) (buffers) (views) (modes) (commands) (processes)
         (buffers-test) (terminal) (terminal-test))
 
 (test "a terminal runs a program on a pseudo-terminal and shows its screen in a buffer named after the program"
@@ -48,7 +48,7 @@
     (check-equal? '("xterm-ghostty truecolor tuna" "1") (terminal-test:screen-lines c))
     (buffers:kill! c)))
 
-(test "with kill-buffer-on-exit? off the buffer stays, the exited hook gets the status, and a key warns"
+(test "with kill-buffer-on-exit? off the buffer stays with a line saying how the program ended, the exited hook gets the status, and a key warns"
   (let ([statuses '()])
     (options:set! terminal:kill-buffer-on-exit? #f)
     (hooks:add! terminal:exited (lambda (t status) (set! statuses (cons (list t status) statuses))))
@@ -56,14 +56,26 @@
       (test-runner:wait-until (lambda () (pair? statuses)))
       (check-equal? (list (list d 3)) statuses)
       (check (buffers:live? d))
-      (check-equal? '("bye") (terminal-test:screen-lines d))
+      (check-equal? '("bye" "[The program exited with code 3.]") (terminal-test:screen-lines d))
       (terminal-test:show! d)
       (check-equal? '("the program has ended")
         (map condition-message (test-runner:reports-during (lambda () (test-user:press! "x")))))
       (check-raises (buffers-test:raised-with? 'terminal:send! "the program has ended" (list d))
                     (terminal:send! d "x"))
       (buffers:kill! d))
+    (let ([unfinished (terminal:start '("sh" "-c" "printf half; kill -9 $$"))])
+      (test-runner:wait-until (lambda () (= 2 (length statuses))))
+      (check-equal? '("half" "[The program ended by signal 9.]") (terminal-test:screen-lines unfinished))
+      (buffers:kill! unfinished))
     (options:unset! terminal:kill-buffer-on-exit?)))
+
+(test "when the program ends its buffer goes, and the view that showed it shows the buffer it showed before"
+  (let ([plain (buffers:make "before" "")] [t (terminal:start '("sh" "-c" "read x"))])
+    (terminal-test:show! plain)
+    (terminal-test:show! t)
+    (terminal:send! t "\r")
+    (test-runner:wait-until (lambda () (not (buffers:live? t))))
+    (check (eq? plain (views:buffer (terminal-test:view))))))
 
 (test "killing a terminal's buffer ends its program"
   (let* ([a (terminal:start '("sh" "-c" "sleep 30"))] [p (terminal:process a)])

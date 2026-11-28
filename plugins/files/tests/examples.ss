@@ -49,6 +49,8 @@
     (files-test:write-text! "~/locked.txt" "locked\n")
     (files-test:set-mode! "~/locked.txt" #o444)
     (let ([locked (files:visit "~/locked.txt")])
+      ;; The visit makes the buffer read-only; the user's C-x C-q lets it be edited.
+      (buffers:set-read-only! locked #f)
       (buffers:replace! notes 1 1 "+ ")
       (buffers:replace! other 1 1 "draft")
       (buffers:replace! locked 1 1 "un")

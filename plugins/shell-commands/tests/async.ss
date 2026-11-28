@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (test-user) (options) (buffers) (views) (layout) (ask) (runs)
+(import (tuna) (test) (test-runner) (test-user) (options) (buffers) (document) (views) (layout) (modes) (ask) (runs)
         (shell-commands) (shell-commands-test))
 
 (define run shell-commands-test:run)
@@ -24,6 +24,12 @@
   (check-equal? #f (eq? first (views:buffer (layout:selected-view))))
   (check-equal? 0 saved))
 
+(test "M-&'s buffer is in shell-command-mode, whose views follow the output, as Emacs's shell-command-mode does; a build's start at the top"
+  (check-equal? (list (- (document:length (buffers:document first)) 1)) (map views:point (views:showing first)))
+  (check-equal? shell-commands:shell-command-mode (modes:major-mode first))
+  (check (modes:derived? shell-commands:shell-command-mode runs:mode))
+  (check-equal? #f (runs:follow-output?)))
+
 (test "with a run going there, M-& asks before it runs in a new buffer"
   (run shell-commands:async-shell-command "echo second")
   (let ([second (buffers:find "*Async Shell Command*<2>")])
@@ -33,8 +39,8 @@
 
 (test "on no, M-& raises and starts nothing"
   (options:set! ask:yes-or-no-reader (lambda (q) #f))
-  (check-equal? '((shell-commands:async-shell-command "a command is running in the default buffer" ()))
-                (shell-commands-test:reported (lambda () (run shell-commands:async-shell-command "echo refused"))))
+  (check-equal? '((shell-commands:async-shell-command "a command is running in the default buffer"))
+                (test-runner:shown-reports-during (lambda () (run shell-commands:async-shell-command "echo refused"))))
   (check-equal? #f (buffers:find "*Async Shell Command*<3>"))
   (options:set! ask:yes-or-no-reader (lambda (q) (set! asked (cons q asked)) #t)))
 

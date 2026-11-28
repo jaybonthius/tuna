@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (options) (tables) (commands) (keys) (layout) (layout-split) (views)
+(import (tuna) (test) (test-user) (test-runner) (options) (tables) (commands) (keys) (layout) (layout-split) (views)
         (buffers) (document) (kill-ring) (editing) (editing-test scene) (editing-test md) (editing-test typed))
 
 (test "typing inserts at point, a count repeats the character, and the buffer becomes modified"
@@ -315,3 +315,24 @@
     (test-user:press! "a M-3 b SPC")
     (check-equal? 5 (- (editing-test/typed:typed) before))
     (check-equal? "one twoabbb | three" (test-user:text))))
+
+(test "C-x C-q makes the buffer read-only, so typing is refused by its name, and again makes it editable; a prefix of 1 or more turns it on, 0 or less off"
+  (let ([b (begin (test-user:show! "ab|c") (views:buffer (editing-test/scene:view)))])
+    (editing-test/scene:take-said!)
+    (check-equal? '() (test-runner:shown-reports-during (lambda () (test-user:press! "C-x C-q"))))
+    (check-equal? '(#t ("editing:read-only-mode enabled in current buffer")) (list (buffers:read-only? b) (editing-test/scene:take-said!)))
+    (check-equal? (list (list 'buffers:replace! (string-append (buffers:name b) " is read-only")))
+                  (test-runner:shown-reports-during (lambda () (test-user:press! "x"))))
+    (check-equal? "ab|c" (test-user:text))
+    (test-user:press! "C-x C-q")
+    (check-equal? '(#f ("editing:read-only-mode disabled in current buffer")) (list (buffers:read-only? b) (editing-test/scene:take-said!)))
+    (test-user:press! "x")
+    (check-equal? "abx|c" (test-user:text))
+    (test-user:press! "C-u 1 C-x C-q")
+    (test-user:press! "C-u 1 C-x C-q")
+    (check-equal? #t (buffers:read-only? b))
+    (test-user:press! "M-0 C-x C-q")
+    (check-equal? #f (buffers:read-only? b))
+    (editing-test/scene:take-said!)
+    (editing:read-only-mode b #t)
+    (check-equal? '(#t ()) (list (buffers:read-only? b) (editing-test/scene:take-said!)))))

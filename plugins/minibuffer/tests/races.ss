@@ -1,4 +1,4 @@
-(import (minibuffer-test quiet) (tuna) (test) (test-user) (test-runner) (options) (faces) (buffers) (document) (layout) (timers) (editing) (echo-area) (ask)
+(import (echo-area-test beneath) (tuna) (test) (test-user) (test-runner) (options) (faces) (buffers) (document) (layout) (timers) (editing) (echo-area) (ask)
         (minibuffer) (minibuffer-test reading) (minibuffer-test screen))
 
 (define (layout-datums) (document:datums (buffers:document layout:buffer)))
@@ -72,42 +72,42 @@
 (test "reports from four threads while a prompt waits are all logged, and the last shown is drawn after the input in its face"
   (options:set! echo-area:log-max 16384)
   (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:read "Name: ")))] [done 0] [done-mutex (make-mutex)])
-    (minibuffer-test/quiet:silence! #t)
-    (for-each
-      (lambda (i)
-        (fork-task
-          (lambda (restore)
-            (do ([k 0 (+ k 1)]) ((= k 100))
-              (report (condition (make-error) (make-message-condition (format "t~a-~a" i k)))))
-            (with-mutex done-mutex (set! done (+ done 1))))))
-      '(0 1 2 3))
-    (test-runner:wait-until (lambda () (with-mutex done-mutex (= done 4))))
-    (test-user:settle)
-    (check-equal? 400 (lines-logged-from-threads))
-    (check-equal? #t (echo-area:hidden?))
-    (check-equal? (list (string-append " [" (echo-area:current-message) "]")
-                        (let ([face (echo-area:current-face)]) (and face (symbol->string face))))
-      (list (minibuffer-test/screen:bracket) (minibuffer-test/screen:bracket-face)))
-    (let* ([reported #f]
-           [report-late
-            (lambda (p)
-              (fork-task (lambda (restore) (report (condition (make-error) (make-message-condition "late"))) (set! reported #t)))
-              ;; The main thread spins inside the prompt's end, so the
-              ;; thread's report lands in the batch of the key that ends
-              ;; the prompt, after that key cleared the echo area.
-              (let ([until (+ (real-time) 30000)])
-                (let spin ()
-                  (unless reported
-                    (when (> (real-time) until) (error 'report-late "the thread did not report within 30 s"))
-                    (spin)))))])
-      (hooks:add! minibuffer:prompt-ended report-late)
-      (test-user:press! "RET")
-      (hooks:remove! minibuffer:prompt-ended report-late)
-      (minibuffer-test/quiet:silence! #f)
-      (check-equal? "" (minibuffer-test/reading:result r))
-      (check-equal? (list #f #f #t "late" faces:error)
-        (list (minibuffer:current-prompt) (echo-area:hidden?) (minibuffer-test/screen:echo-drawn?) (echo-area:current-message)
-              (echo-area:current-face)))))
+    (echo-area-test/beneath:reports-during
+      (lambda ()
+        (for-each
+          (lambda (i)
+            (fork-task
+              (lambda (restore)
+                (do ([k 0 (+ k 1)]) ((= k 100))
+                  (report (condition (make-error) (make-message-condition (format "t~a-~a" i k)))))
+                (with-mutex done-mutex (set! done (+ done 1))))))
+          '(0 1 2 3))
+        (test-runner:wait-until (lambda () (with-mutex done-mutex (= done 4))))
+        (test-user:settle)
+        (check-equal? 400 (lines-logged-from-threads))
+        (check-equal? #t (echo-area:hidden?))
+        (check-equal? (list (string-append " [" (echo-area:current-message) "]")
+                            (let ([face (echo-area:current-face)]) (and face (symbol->string face))))
+          (list (minibuffer-test/screen:bracket) (minibuffer-test/screen:bracket-face)))
+        (let* ([reported #f]
+               [report-late
+                (lambda (p)
+                  (fork-task (lambda (restore) (report (condition (make-error) (make-message-condition "late"))) (set! reported #t)))
+                  ;; The main thread spins inside the prompt's end, so the
+                  ;; thread's report lands in the batch of the key that ends
+                  ;; the prompt, after that key cleared the echo area.
+                  (let ([until (+ (real-time) 30000)])
+                    (let spin ()
+                      (unless reported
+                        (when (> (real-time) until) (error 'report-late "the thread did not report within 30 s"))
+                        (spin)))))])
+          (hooks:add! minibuffer:prompt-ended report-late)
+          (test-user:press! "RET")
+          (hooks:remove! minibuffer:prompt-ended report-late)
+          (check-equal? "" (minibuffer-test/reading:result r))
+          (check-equal? (list #f #f #t "late" faces:error)
+            (list (minibuffer:current-prompt) (echo-area:hidden?) (minibuffer-test/screen:echo-drawn?) (echo-area:current-message)
+                  (echo-area:current-face)))))))
   (options:unset! echo-area:log-max))
 
 (test "reloading undo leaves the minibuffer, which does not import it"

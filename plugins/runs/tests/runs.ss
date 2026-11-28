@@ -1,5 +1,5 @@
-(import (tuna) (test) (test-runner) (hooks) (options) (buffers) (document) (views) (layout) (modes) (files)
-        (processes) (runs) (test-user) (runs-test))
+(import (tuna) (test) (test-runner) (hooks) (options) (keys) (buffers) (document) (views) (layout) (modes) (files)
+        (processes) (kill-ring) (editing) (runs) (test-user) (runs-test))
 
 (define home runs-test:home)
 
@@ -114,15 +114,16 @@
     (check-equal? '(stopped (("*long*" stopped stopped)) ("*long* stopped")) (list (runs:status long) (taken-ends) (runs-test:take-said!)))
     (check-equal? '("Run started at TIME in ~/" "" "echo going; sleep 30" "going" "" "Run stopped at TIME") (runs-test:lines long))
     (check-equal? '(("warning" "stopped")) (faced long))
-    (check-equal? '(runs:stop "the run has ended" ("*long*")) (runs-test:raised (lambda () (runs:stop long))))
+    (check-raises (test-runner:raised-with 'runs:stop "*long*'s run has ended") (runs:stop long))
     (check-equal? (string-append (getenv "HOME") "/") (files:directory long))))
 
-(test "C-c C-k stops the run of the buffer shown"
+(test "C-c C-k stops the run of the buffer shown; once it has ended, C-c C-k says so"
   (let ([long (runs:start-for-user "*long*" "echo going; sleep 30" home)])
     (test-runner:wait-until (lambda () (string=? (runs-test:output long) "going\n")))
     (layout:switch-to-buffer long)
     (test-user:press! "C-c C-k")
     (check-equal? 'stopped (runs:status long))
+    (check-equal? '((runs:stop "*long*'s run has ended")) (test-runner:shown-reports-during (lambda () (test-user:press! "C-c C-k"))))
     (taken-ends)
     (runs-test:take-said!)))
 
@@ -146,7 +147,9 @@
   (let ([long (runs:start-for-user "*long*" "echo first; sleep 30" home)] [asked #f])
     (test-runner:wait-until (lambda () (string=? (runs-test:output long) "first\n")))
     (options:set! ask:yes-or-no-reader (lambda (q) (set! asked q) #f))
-    (check-equal? 'runs:start-for-user (car (runs-test:raised (lambda () (runs:start-for-user "*long*" "echo second" home)))))
+    (layout:switch-to-buffer long)
+    (check-equal? '((runs:start-for-user "*long* still has a run going")) (test-runner:shown-reports-during (lambda () (test-user:press! "g"))))
+    (check-raises (test-runner:raised-with 'runs:start "*long* still has a run going") (runs:start "*long*" "echo second" home))
     (check-equal? '(#f "first\n") (list (runs:status long) (runs-test:output long)))
     (set! asked #f)
     (options:set! runs:always-stop? #t)
@@ -174,30 +177,57 @@
       (hooks:remove! runs:output-written mark)
       (check-equal? '("x\n!" #t #f) (list (runs-test:output quiet) (buffers:silent? quiet) (buffers:modified? quiet)))
       (check (member "x\n" written))
-      (check-equal? 'buffers:insert! (car (runs-test:raised (lambda () (buffers:insert! quiet 1 "typed")))))
+      (check-raises (test-runner:raised-with 'buffers:insert! "*quiet* is read-only") (buffers:insert! quiet 1 "typed"))
       (layout:switch-to-buffer quiet)
       (check-equal? '("a is undefined")
                     (map condition-message (test-runner:reports-during (lambda () (test-user:press! "a")))))))
   (taken-ends)
   (runs-test:take-said!))
 
+(test "a run's buffer is read-only: C-k and C-d say so by its name and leave it as it was; C-k copies its line, as a refused kill does"
+  (let ([b (runs:start-for-user "*compilation*" "echo done" home)])
+    (runs-test:ended b)
+    (layout:switch-to-buffer b)
+    (views:set-point! (layout:selected-view) 1)
+    (let ([before (runs-test:text b)])
+      (check-equal? '(#t ((buffers:replace! "*compilation* is read-only")) ((buffers:replace! "*compilation* is read-only")))
+                    (list (buffers:read-only? b)
+                          (test-runner:shown-reports-during (lambda () (test-user:press! "C-k")))
+                          (test-runner:shown-reports-during (lambda () (test-user:press! "C-d")))))
+      (check-equal? (list before (substring before 0 (string-length "Run started at YYYY-MM-DD HH:MM:SS in ~/")))
+                    (list (runs-test:text b) (kill-ring:text (kill-ring:current)))))
+    (buffers:kill! b))
+  (taken-ends)
+  (runs-test:take-said!))
+
+(test "a new run in a run's buffer made editable makes it read-only again, as Emacs's compile does"
+  (let ([b (runs:start-for-user "*again-ro*" "echo one" home)])
+    (runs-test:ended b)
+    (layout:switch-to-buffer b)
+    (test-user:press! "C-x C-q")
+    (check-equal? #f (buffers:read-only? b))
+    (test-user:press! "g")
+    (runs-test:ended b)
+    (check-equal? #t (buffers:read-only? b))
+    (buffers:kill! b))
+  (taken-ends)
+  (runs-test:take-said!))
+
 (test "a buffer that shows no run is never taken, and the arguments are checked"
   (buffers:make "*plain*" "keep\n")
-  (check-equal? '(runs:start-for-user "a live buffer that shows no run has the name" ("*plain*"))
-                (runs-test:raised (lambda () (runs:start-for-user "*plain*" "true"))))
-  (check-equal? '(runs:start "not a non-empty command line or list of strings" (""))
-                (runs-test:raised (lambda () (runs:start "*x*" ""))))
-  (check-equal? '(runs:start "not a mode derived from runs:mode" (modes:fundamental))
-                (runs-test:raised (lambda () (runs:start "*x*" "true" home modes:fundamental))))
-  (check-equal? '(runs:status "the buffer shows no run")
-                (list-head (runs-test:raised (lambda () (runs:status (buffers:find "*plain*")))) 2))
-  (check-equal? '(runs:stop "the buffer shows no run")
-                (list-head (runs-test:raised (lambda () (runs:stop (buffers:find "*plain*")))) 2))
+  (check-raises (test-runner:raised-with 'runs:start-for-user "a live buffer that shows no run has the name") (runs:start-for-user "*plain*" "true"))
+  (check-raises (test-runner:raised-with 'runs:start "not a non-empty command line or list of strings") (runs:start "*x*" ""))
+  (check-raises (test-runner:raised-with 'runs:start "not a mode derived from runs:mode") (runs:start "*x*" "true" home modes:fundamental))
+  (check-raises (test-runner:raised-with 'runs:status "the buffer shows no run") (runs:status (buffers:find "*plain*")))
+  (check-raises (test-runner:raised-with 'runs:stop "*plain* shows no run") (runs:stop (buffers:find "*plain*")))
   (check-equal? #f (buffers:find "*x*")))
 
 (test "runs:environment takes processes' rule for a variable and reaches the program over Tuna's environment"
-  (check-equal? 'options:set! (car (runs-test:raised (lambda () (options:set! runs:environment '(("A=B" . "x")))))))
-  (check-equal? 'options:set! (car (runs-test:raised (lambda () (options:set! runs:environment '(("" . "x")))))))
+  (for-each
+    (lambda (environment)
+      (check-raises (test-runner:raised-with 'options:set! (format "~s is not a valid value for runs:environment" environment))
+                    (options:set! runs:environment environment)))
+    '((("A=B" . "x")) (("" . "x"))))
   (let ([b (runs:start-for-user "*env*" "echo \"$TERM,$PAGER,$EXTRA\"" (processes:options [directory "~/"] [environment '(("EXTRA" . "yes"))]))])
     (runs-test:ended b)
     (check-equal? "dumb,,yes" (runs-test:output b)))
@@ -205,11 +235,11 @@
   (runs-test:take-said!))
 
 (test "a start processes refuses leaves no buffer, or the run's buffer as it was, and the name free"
-  (check-equal? 'processes:start-for-user (car (runs-test:raised (lambda () (runs:start-for-user "*r*" (list "printf" "a\x0;b") home)))))
+  (check-raises (test-runner:raised-with 'processes:start-for-user "not a list of strings free of NUL characters") (runs:start-for-user "*r*" (list "printf" "a\x0;b") home))
   (check-equal? #f (buffers:find "*r*"))
   (let ([b (runs:start-for-user "*r*" "echo kept" home)])
     (runs-test:ended b)
-    (check-equal? 'processes:start-for-user (car (runs-test:raised (lambda () (runs:start-for-user "*r*" (list "printf" "a\x0;b") home)))))
+    (check-raises (test-runner:raised-with 'processes:start-for-user "not a list of strings free of NUL characters") (runs:start-for-user "*r*" (list "printf" "a\x0;b") home))
     (check-equal? '("kept" 0 "echo kept") (list (runs-test:output b) (runs:status b) (runs:command b))))
   (let ([b (runs:start-for-user "*r*" "echo next" home)])
     (runs-test:ended b)
@@ -218,12 +248,12 @@
   (runs-test:take-said!))
 
 (test "options other than a directory and an environment are refused, leaving no buffer"
-  (check-equal? '(runs:start-for-user "options other than a directory and an environment")
-                (list-head (runs-test:raised (lambda () (runs:start-for-user "*c*" "true" (processes:options [separate-stderr #t])))) 2))
-  (check-equal? '(runs:start "options other than a directory and an environment")
-                (list-head (runs-test:raised (lambda () (runs:start "*c*" "true" (processes:options [terminal (cons 24 80)])))) 2))
-  (check-equal? '(runs:start "options other than a directory and an environment")
-                (list-head (runs-test:raised (lambda () (runs:start "*c*" "true" (processes:options [full-log (processes:full-log drop)])))) 2))
+  (check-raises (test-runner:raised-with 'runs:start-for-user "options other than a directory and an environment")
+                (runs:start-for-user "*c*" "true" (processes:options [separate-stderr #t])))
+  (check-raises (test-runner:raised-with 'runs:start "options other than a directory and an environment")
+                (runs:start "*c*" "true" (processes:options [terminal (cons 24 80)])))
+  (check-raises (test-runner:raised-with 'runs:start "options other than a directory and an environment")
+                (runs:start "*c*" "true" (processes:options [full-log (processes:full-log drop)])))
   (check-equal? #f (buffers:find "*c*")))
 
 (test "a file buffer's folder is its file's: runs' entry in files:directory-finders answers only for a run's buffer"
@@ -231,6 +261,46 @@
   (let ([file (files:visit "~/src/a.txt")])
     (check-equal? (list (runs-test:home-path "src/") #f) (map (lambda (entry) (entry file)) (hooks:entries files:directory-finders)))
     (check-equal? (runs-test:home-path "src/") (files:directory file))))
+
+(test "a run started by code shows its buffer in no view"
+  (let* ([v (layout:selected-view)] [before (views:buffer v)] [b (runs:start-for-user "*unseen*" "true" home)])
+    (runs-test:ended b)
+    (check-equal? '() (views:showing b))
+    (check (eq? before (views:buffer v))))
+  (taken-ends)
+  (runs-test:take-said!))
+
+(test "a view whose point is at the end of a run's buffer follows the output, and one whose point is elsewhere stays"
+  (let ([b (runs:start-for-user "*follow*" "echo one; until [ -e go1 ]; do sleep 0.05; done; echo two; until [ -e go2 ]; do sleep 0.05; done; echo three" home)]
+        [v (layout:selected-view)]
+        [end (lambda (b) (- (document:length (buffers:document b)) 1))])
+    (test-runner:wait-until (lambda () (string=? (runs-test:output b) "one\n")))
+    (layout:switch-to-buffer b)
+    (views:set-point! v (end b))
+    (runs-test:touch! "go1")
+    (test-runner:wait-until (lambda () (string=? (runs-test:output b) "one\ntwo\n")))
+    (check-equal? (end b) (views:point v))
+    (views:set-point! v 1)
+    (runs-test:touch! "go2")
+    (runs-test:ended b)
+    (check-equal? 1 (views:point v)))
+  (taken-ends)
+  (runs-test:take-said!))
+
+(test "q in a run's buffer shows the view's previous buffer and the run goes on; SPC, S-SPC, DEL, - and digits are the special mode's"
+  (let ([plain (buffers:make "plain" "text\n")] [b (runs:start-for-user "*quit*" "echo going; sleep 30" home)])
+    (test-runner:wait-until (lambda () (string=? (runs-test:output b) "going\n")))
+    (layout:switch-to-buffer plain)
+    (layout:switch-to-buffer b)
+    (check-equal? (list views:scroll-up views:scroll-down views:scroll-down keys:negative-argument keys:digit-argument)
+                  (views:call-with-view (layout:selected-view)
+                    (lambda () (map (lambda (k) (keys:lookup (test-user:client) k)) '("SPC" "S-SPC" "DEL" "-" "3")))))
+    (test-user:press! "q")
+    (check (eq? plain (views:buffer (layout:selected-view))))
+    (check-equal? #f (runs:status b))
+    (runs:stop b))
+  (taken-ends)
+  (runs-test:take-said!))
 
 (test "under runs:follow-output?, views showing the buffer when the run starts begin at the end and stay after the output"
   (let ([show-run (lambda (b) (layout:switch-to-buffer b))] [v (layout:selected-view)])

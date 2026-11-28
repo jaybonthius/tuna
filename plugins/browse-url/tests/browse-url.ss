@@ -1,4 +1,5 @@
-(import (tuna) (test) (test-runner) (test-user) (web) (keys) (options) (tables) (buffers) (document) (ask) (browse-url))
+(import (tuna) (test) (test-runner) (test-user) (web) (keys) (options) (tables) (buffers) (document) (ask) (editing) (minibuffer)
+        (browse-url) (minibuffer-test screen))
 
 (define laptop (test-user:client))
 
@@ -7,8 +8,6 @@
 (define (opened client)
   (map cdr (filter (lambda (call) (equal? "browse-url" (car call))) (test-user:take-page-calls! client))))
 
-(define (raised-by message)
-  (lambda (c) (and (who-condition? c) (eq? 'browse-url:open (condition-who c)) (equal? message (condition-message c)))))
 
 (keys:bind! keys:global "C-c u" browse-url:open)
 
@@ -29,12 +28,33 @@
   (check-equal? '("mailto:jay@example.org" "HTTP://TUNA.EXAMPLE") (opened laptop))
   (check-equal? '("https://tuna.example/a") (opened phone)))
 
+(test "with point on an address, browse-url:open offers it, so RET opens it"
+  (test-user:show! "see https://tuna.example/gu|ide here")
+  (test-user:press! "C-c u")
+  (check-equal? '("URL: ") (minibuffer-test/screen:questions))
+  (test-user:press! "RET")
+  (check-equal? '("https://tuna.example/guide") (opened laptop)))
+
+(test "with a region, browse-url:open offers the region's text over the address at point"
+  (test-user:show! "|https://tuna.example/a b")
+  (test-user:press! "C-SPC C-e C-c u RET")
+  (check-equal? '("https://tuna.example/a b") (opened laptop)))
+
+(test "an address that is not http, https or mailto is refused with a message saying which open, and nothing opens"
+  (test-user:show! "|")
+  (test-user:press! "C-c u")
+  (test-user:type! "ftp://x.example/f")
+  (check-equal? '((browse-url:open "Only http, https and mailto addresses open"))
+                (test-runner:shown-reports-during (lambda () (test-user:press! "RET"))))
+  (check-equal? '() (opened laptop)))
+
 (test "only http, https and mailto addresses open, only in a client's browser, and nothing opens when one is refused"
-  (check-raises (raised-by "not an http, https or mailto address") (browse-url:open "javascript:alert(1)" laptop))
-  (check-raises (raised-by "not an http, https or mailto address") (browse-url:open "file:///etc/passwd" laptop))
-  (check-raises (raised-by "not an http, https or mailto address") (browse-url:open 'tuna laptop))
-  (check-raises (raised-by "not a client") (browse-url:open "https://tuna.example" "laptop"))
-  (check-raises (raised-by "no browser to open it in") (browse-url:open "https://tuna.example" #f))
+  (check-raises (test-runner:raised-with 'browse-url:open "Only http, https and mailto addresses open") (browse-url:open "javascript:alert(1)" laptop))
+  (check-raises (test-runner:raised-with 'browse-url:open "Only http, https and mailto addresses open") (browse-url:open "file:///etc/passwd" laptop))
+  (check-raises (test-runner:raised-with 'browse-url:open "Only http, https and mailto addresses open") (browse-url:open "ftp://x.example/f" laptop))
+  (check-raises (test-runner:raised-with 'browse-url:open "not a string") (browse-url:open 'tuna laptop))
+  (check-raises (test-runner:raised-with 'browse-url:open "not a client") (browse-url:open "https://tuna.example" "laptop"))
+  (check-raises (test-runner:raised-with 'browse-url:open "no browser to open it in") (browse-url:open "https://tuna.example" #f))
   (check-equal? '() (opened laptop)))
 
 (test "a browser that blocks the new tab says so, and the plugin warns with the address"
@@ -67,6 +87,11 @@
     (check-equal? "https://tuna.example/a"
       (let-values ([(start end) (browse-url:url-at aside 10)])
         (document:text (buffers:document aside) start end)))))
+
+(test "www. and ftp: text is no address"
+  (let ([other (buffers:make "other" "www.foo.com ftp://x.example/f")])
+    (check-equal? '((#f #f) (#f #f))
+      (map (lambda (at) (call-with-values (lambda () (browse-url:url-at other at)) list)) '(4 16)))))
 
 (test "browse-url:url-at checks its arguments"
   (check-raises (lambda (c) (and (who-condition? c) (eq? 'browse-url:url-at (condition-who c)))) (browse-url:url-at 'notes 0))

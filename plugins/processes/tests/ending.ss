@@ -200,3 +200,10 @@
     (check-equal? #f (processes:buffer orphan))
     (check (memq orphan (processes:all)))
     (processes:stop! orphan)))
+
+(test "status-text says how a program ended, from the exit status on-exit gets, in the words a run's footer and a terminal's line use"
+  (let-values ([(status out err) (processes:run "sh" '("-c" "exit 3"))])
+    (check-equal? "exited with code 3" (processes:status-text status)))
+  (check-equal? '("finished" "exited with code 2" "ended by signal 9" "could not start")
+                (map processes:status-text (list 0 2 -9 (condition (make-error) (make-message-condition "cannot run x")))))
+  (check-raises (test-runner:raised-with 'processes:status-text "not an exit status") (processes:status-text #f)))

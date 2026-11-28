@@ -19,6 +19,12 @@
   (let ([shown (questions)])
     (and (pair? shown) (car (last-pair shown)))))
 
+(define (prompt-line client)
+  (let ([prompt (car (test-user:elements (test-user:screen client) "minibuffer-prompt"))])
+    (apply string-append
+      (map test-user:element-text
+           (append (test-user:elements prompt "minibuffer-question") (test-user:elements prompt "minibuffer-input"))))))
+
 (define (echo-drawn?) (and (first-element "echo-area-message") #t))
 
 (define (report-messages thunk)

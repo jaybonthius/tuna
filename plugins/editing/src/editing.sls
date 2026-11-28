@@ -1359,6 +1359,19 @@
   (let ([e (end-of-line doc line hi)])
     (values (fxmin e (first-stop b (fxmax 1 (document:line-start doc line)))) e)))
 
+(commands:define-command (read-only-mode [buffer (buffers:current)]
+                                         [on? (if (commands:prefix-argument)
+                                                  (>= (commands:prefix-number) 1)
+                                                  (not (buffers:read-only? (buffers:current))))])
+  "Makes BUFFER read-only when ON?, else editable again. Run by a key, ON? is the opposite of BUFFER's state; with a prefix argument, it is true when the argument's number is 1 or more."
+  (unless (buffers:buffer? buffer)
+    (assertion-violation 'editing:read-only-mode "not a buffer" buffer))
+  (unless (boolean? on?)
+    (assertion-violation 'editing:read-only-mode "not a boolean" on?))
+  (buffers:set-read-only! buffer on?)
+  (when (eq? (commands:this-command) read-only-mode)
+    (ask:message (format "editing:read-only-mode ~a in current buffer" (if on? "enabled" "disabled")))))
+
 (commands:define-command (transpose-lines)
   "Swaps each cursor's line with the line before it and moves to the next line."
   (let* ([view (views:command-view 'editing:transpose-lines)] [b (views:buffer view)])
@@ -2179,6 +2192,7 @@
 (keys:bind! keys:global "C-t" transpose-chars)
 (keys:bind! keys:global "M-t" transpose-words)
 (keys:bind! keys:global "C-x C-t" transpose-lines)
+(keys:bind! keys:global "C-x C-q" read-only-mode)
 (keys:bind! keys:global "M-u" upcase-word)
 (keys:bind! keys:global "M-l" downcase-word)
 (keys:bind! keys:global "M-c" capitalize-word)

@@ -1,0 +1,10 @@
+(import (tuna) (test-user) (editing) (minibuffer) (command-picker) (shell-commands) (shell-commands-test))
+
+(test-user:press! "M-!")
+(test-user:type! "echo kept")
+(test-user:press! "RET")
+(test-user:press! "M-x")
+(test-user:type! "shell-commands:compile")
+(test-user:press! "RET C-a C-k")
+(test-user:type! "echo built")
+(test-user:press! "RET")

@@ -1,6 +1,6 @@
 (import (tuna) (test) (test-user) (test-runner) (options) (tables) (keys) (commands) (buffers) (document) (views) (layout) (files)
         (kill-ring) (editing) (minibuffer) (completion) (completion-list) (echo-area) (buffer-picker) (file-picker)
-        (command-picker) (help) (actions) (actions-test acting))
+        (command-picker) (help) (actions) (actions-test acting) (minibuffer-test screen))
 
 (define (home-file name) (string-append (getenv "HOME") "/" name))
 
@@ -146,6 +146,27 @@
   (check-equal? "Quit" (echo-area:current-message))
   (check (actions-test/acting:prompt))
   (check-equal? '(quit) (actions-test/acting:press! "C-g")))
+
+(test "while C-. reads the action in a read, the prompt's line shows the action's prompt before its question, to the client reading only"
+  (let ([other (test-user:open-client)])
+    (buffers:make "bar.scm" "")
+    (switching-to "bar")
+    (test-user:press! "C-.")
+    (check-equal? "Act on bar.scm: " (actions-test/acting:action-prompt))
+    (check-equal? "Act on bar.scm: Switch to buffer: bar" (minibuffer-test/screen:prompt-line (test-user:client)))
+    (check-equal? "Switch to buffer: bar" (minibuffer-test/screen:prompt-line other))
+    (check-equal? '(quit) (actions-test/acting:press! "C-g"))
+    (check-equal? "Switch to buffer: bar [Quit]" (minibuffer-test/screen:prompt-line (test-user:client)))
+    (check-equal? '(quit) (actions-test/acting:press! "C-g"))))
+
+(test "a click while C-. reads the action is not an action, and the read stays"
+  (let ([v (actions-test/acting:view)])
+    (actions-test/acting:show! (buffers:make "clicked" "some text\n"))
+    (switching-to "")
+    (test-user:press! "C-.")
+    (check-equal? '("<mouse-1> is not an action") (actions-test/acting:reports-during (lambda () (test-user:click! v 3))))
+    (check (actions-test/acting:prompt))
+    (check-equal? '(quit) (actions-test/acting:press! "C-g"))))
 
 (test "outside a read, with nothing at point, there is no target"
   (actions-test/acting:show! (buffers:make "empty" ""))

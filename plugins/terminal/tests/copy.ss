@@ -5,11 +5,12 @@
 (define (refusals thunk)
   (map (lambda (c) (list (condition-who c) (condition-message c) (condition-irritants c))) (test-runner:reports-during thunk)))
 
-(test "the plugin writes the buffer and refuses the user's edits, in copy mode as in any other"
+(test "the plugin writes the buffer, which is read-only, so the user's edits are refused by its name, in copy mode as in any other"
   (terminal-test:show! t)
   (terminal:send! t "echo hello\r")
   (terminal-test:wait-for t "\nhello\n$ ")
-  (let ([before (terminal-test:text t)] [refused '(buffers:replace! "the node refuses the edit" (terminal:%screen))])
+  (check (buffers:read-only? t))
+  (let ([before (terminal-test:text t)] [refused '(buffers:replace! "*terminal* is read-only" ())])
     (test-user:press! "C-c C-t")
     (check-equal? 'copy (terminal-test:input-mode))
     (views:set-point! (terminal-test:view) 2)
@@ -34,3 +35,17 @@
   (check-equal? 'semi-char (terminal-test:input-mode))
   (terminal-test:wait-for t "$ a")
   (check-equal? "$ a" (car (reverse (terminal-test:screen-lines t)))))
+
+(test "C-x C-q enters copy mode, as ghostel's does, and the buffer stays read-only; made editable by name, its rows still refuse edits in words"
+  (test-user:press! "C-c C-j")
+  (check-equal? 'semi-char (terminal-test:input-mode))
+  (test-user:press! "C-x C-q")
+  (check-equal? '(copy #t) (list (terminal-test:input-mode) (buffers:read-only? t)))
+  (views:set-point! (terminal-test:view) 2)
+  (check-equal? '((buffers:replace! "*terminal* is read-only" ())) (refusals (lambda () (test-user:press! "C-k"))))
+  (editing:read-only-mode t #f)
+  (let ([before (terminal-test:text t)])
+    (check-equal? '((buffers:replace! "the text of *terminal* is read-only" ())) (refusals (lambda () (test-user:press! "C-k"))))
+    (check-equal? before (terminal-test:text t)))
+  (editing:read-only-mode t #t)
+  (test-user:press! "q"))

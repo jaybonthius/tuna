@@ -257,3 +257,49 @@
 (test "a worker's failure from a defect is a violation, not a disk error"
   (check-equal? '(#t #f #f)
     (map (lambda (c) (failure-violation? (failure c))) (list (make-assertion-violation) (make-i/o-write-error) 'raised))))
+
+(test "a visit of a file the user may not write makes its buffer read-only and says so, as Emacs's visit does; a writable file's stays editable"
+  (files-test:write-text! "~/protected.txt" "kept\n")
+  (files-test:set-mode! "~/protected.txt" #o444)
+  (files-test:write-text! "~/open.txt" "free\n")
+  (files-test:take-said!)
+  (let* ([b (files:visit "~/protected.txt")] [said (files-test:take-said!)] [open (files:visit "~/open.txt")])
+    (check-equal? '(#t ("Note: file is write protected")) (list (buffers:read-only? b) said))
+    (check-equal? '(#f ()) (list (buffers:read-only? open) (files-test:take-said!)))
+    (check-raises (test-runner:raised-with 'buffers:replace! "protected.txt is read-only") (buffers:replace! b 1 1 "x"))))
+
+(test "a read-only file buffer is still reverted from its file, and stays read-only"
+  (let ([b (files:visit "~/protected.txt")])
+    (files-test:set-mode! "~/protected.txt" #o644)
+    (files-test:write-text! "~/protected.txt" "changed\n")
+    (files-test:set-mode! "~/protected.txt" #o444)
+    (files:revert-from-file b)
+    (check-equal? '("changed\n" #t) (list (files-test:text b) (buffers:read-only? b)))))
+
+(test "a revert takes the read-only state from the file again, as Emacs's does: editable once the user may write it, read-only once not"
+  (let ([b (files:visit "~/protected.txt")])
+    (files-test:set-mode! "~/protected.txt" #o644)
+    (files-test:write-text! "~/protected.txt" "writable\n")
+    (files:revert-from-file b)
+    (check-equal? '("writable\n" #f) (list (files-test:text b) (buffers:read-only? b)))
+    (files-test:set-mode! "~/protected.txt" #o444)
+    (files:revert-from-file b)
+    (check-equal? #t (buffers:read-only? b))))
+
+(test "a save of a read-only buffer adds no final newline, as Emacs's does not"
+  (files-test:write-text! "~/frozen.txt" "a")
+  (let ([b (files:visit "~/frozen.txt")])
+    (buffers:replace! b 2 2 "b")
+    (buffers:set-read-only! b #t)
+    (files:save-buffer b)
+    (check-equal? '("ab" #f) (list (files-test:read-text "~/frozen.txt") (buffers:modified? b)))))
+
+(test "a visit of a missing file in a folder the user may not write makes its buffer read-only and says so, as Emacs's does"
+  (files-test:folder! "shut")
+  (files-test:set-mode! "~/shut" #o555)
+  (files-test:take-said!)
+  (let ([b (files:visit "~/shut/new.txt")])
+    (check-equal? '(#t ("File not found and directory write-protected")) (list (buffers:read-only? b) (files-test:take-said!))))
+  (let ([b (files:visit "~/free-folder-new.txt")])
+    (check-equal? '(#f ("(New file)")) (list (buffers:read-only? b) (files-test:take-said!))))
+  (files-test:set-mode! "~/shut" #o755))

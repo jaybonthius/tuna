@@ -61,8 +61,6 @@
 (define (%entry-directory e) (vector-ref e 3))
 (define (%entry-input-mode e) (vector-ref e 4))
 
-(define (%refuse-edits node edit) #f)
-
 (define-record-type (%terminal %make-terminal %terminal?)
   (sealed #t)
   (fields buffer (mutable process) (mutable emulator) (mutable render) (mutable key-encoder)
@@ -130,6 +128,11 @@
             (views:draw-children view node)))))
 
 (buffers:define-kind %root (content nodes) (draw %draw-root))
+;; The rows are the emulator's, which an edit would put out of step, so
+;; they refuse edits even where the buffer has been made editable.
+(define (%refuse-edits node edit)
+  (format "the text of ~a is read-only" (buffers:name (buffers:edit-buffer edit))))
+
 (buffers:define-kind %scrollback (consent %refuse-edits) (draw %draw-scrollback))
 (buffers:define-kind %screen (whole) (consent %refuse-edits) (draw %draw-screen))
 
@@ -677,14 +680,24 @@
       (unless (eof-object? bytes)
         (%apply-output! t bytes end)))))
 
+;; The line goes through the emulator, as the program's output would, so
+;; it follows what the screen shows and following views move to it.
+(define (%write-end-line! t status)
+  (let ([cursor (%terminal-cursor t)])
+    (%apply-output! t
+      (string->utf8 (format "~a[The program ~a.]\r\n" (if (and cursor (fx= (cdr cursor) 0)) "" "\r\n") (processes:status-text status)))
+      (%terminal-applied t))))
+
 (define (%on-exit t)
   (lambda (status)
     (%terminal-status-set! t status)
     (%forget-entry! t)
     (when (buffers:live? (%terminal-buffer t))
       (exited (%terminal-buffer t) status)
-      (when (and (kill-buffer-on-exit?) (buffers:live? (%terminal-buffer t)))
-        (buffers:kill! (%terminal-buffer t))))))
+      (when (buffers:live? (%terminal-buffer t))
+        (if (kill-buffer-on-exit?)
+            (buffers:kill! (%terminal-buffer t))
+            (%write-end-line! t status))))))
 
 (define (%local-path url)
   (let ([prefix (find (lambda (p) (%prefix-at? url 0 p)) '("file://" "kitty-shell-cwd://"))])
@@ -903,6 +916,7 @@
 (define (%make-buffer name)
   (let ([b (buffers:make name (%root-datum "" ""))])
     (buffers:set-silent! b #t)
+    (buffers:set-read-only! b #t)
     (modes:set-major-mode mode b)
     b))
 
@@ -1669,6 +1683,7 @@
   (keys:remap! keymap editing:paste paste)
   (keys:remap! keymap editing:self-insert self-insert)
   (keys:remap! keymap editing:mouse-yank-primary mouse-yank-primary)
+  (keys:remap! keymap editing:read-only-mode copy-mode)
   (for-each
     (lambda (modifiers)
       (for-each (lambda (key) (keys:bind! mouse-keymap (string-append modifiers key) send-mouse))

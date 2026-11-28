@@ -54,12 +54,6 @@
 
 (define (take-said!) (let ([said (reverse %said)]) (set! %said '()) said))
 
-(define (raised thunk)
-  (guard (c [(and (who-condition? c) (message-condition? c))
-             (list (condition-who c) (condition-message c) (if (irritants-condition? c) (condition-irritants c) '()))])
-    (thunk)
-    'none))
-
 ;; A run's result must not depend on the user's shell, which may not be POSIX.
 (options:set! runs:shell '("/bin/sh" "-c"))
 

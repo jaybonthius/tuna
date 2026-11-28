@@ -435,6 +435,14 @@
   (check-process 'processes:status process)
   (running:process-status process))
 
+(define (status-text status)
+  (cond
+    [(eqv? status 0) "finished"]
+    [(and (fixnum? status) (fx> status 0)) (format "exited with code ~a" status)]
+    [(fixnum? status) (format "ended by signal ~a" (fx- 0 status))]
+    [(condition? status) "could not start"]
+    [else (assertion-violation 'processes:status-text "not an exit status" status)]))
+
 (define (foreground-group process)
   (check-process 'processes:foreground-group process)
   (running:foreground-group process))

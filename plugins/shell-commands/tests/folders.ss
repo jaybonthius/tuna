@@ -56,8 +56,8 @@
     (check-equal? (string-append (current-directory) "/") (files:directory relative))))
 
 (test "a ~user folder is refused and leaves no buffer"
-  (check-equal? 'files:expanded-path
-                (car (shell-commands-test:raised (lambda () (runs:start-for-user "*user*" "true" (processes:options [directory "~root/"]))))))
+  (check-raises (test-runner:raised-with 'files:expanded-path "a path starting with ~user")
+                (runs:start-for-user "*user*" "true" (processes:options [directory "~root/"])))
   (check-equal? #f (buffers:find "*user*")))
 
 (test "M-s r in a run's buffer searches the run's folder"

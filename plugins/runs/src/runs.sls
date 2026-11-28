@@ -37,9 +37,7 @@
 
 (modes:define-major-mode mode (parent modes:special) (lighter "Run") (keymap keymap) (hook mode-hook) (plugin-only #t))
 
-(define (%refuse-edits node edit) #f)
-
-(buffers:define-kind %output (consent %refuse-edits))
+(buffers:define-kind %output)
 
 (buffers:define-layer %styles (priority 0))
 
@@ -116,18 +114,10 @@
             (files:abbreviated-path (run-directory r)) (quoted-line (run-command r))))
 
   (define (end-words end)
-    (cond
-      [(eqv? end 0) "finished"]
-      [(eq? end 'stopped) "stopped"]
-      [(and (fixnum? end) (fx> end 0)) (format "exited with code ~a" end)]
-      [(fixnum? end) (format "ended by signal ~a" (fx- 0 end))]
-      [else "could not start"]))
+    (if (eq? end 'stopped) "stopped" (processes:status-text end)))
 
   (define (end-message end)
-    (cond
-      [(string? end) end]
-      [(and (condition? end) (message-condition? end)) (condition-message end)]
-      [else "unknown failure"]))
+    (if (message-condition? end) (condition-message end) "unknown failure"))
 
   (define (footer r)
     (let* ([end (run-end r)] [words (end-words end)] [at (time-text (run-ended-at r))])
@@ -163,6 +153,7 @@
   (define (make-run-buffer! name r text)
     (let ([b (buffers:make name (%output (list (cons 'run (run-number r))) text))])
       (buffers:set-silent! b #t)
+      (buffers:set-read-only! b #t)
       b))
 
   ;; The current line's start is an anchor, so an output-written entry's
@@ -324,6 +315,7 @@
                           (buffers:splice! b 0 (document:length (buffers:document b))
                             (document:from-datum (%output (list (cons 'run (run-number r))) (header r))))
                           (buffers:set-spans! (buffers:layer b %styles) 0 (document:length (buffers:document b)) '())
+                          (buffers:set-read-only! b #t)
                           b)
                         (make-run-buffer! name r (header r)))])
             (unless (eq? (modes:major-mode b) major-mode)
@@ -378,7 +370,7 @@
         (let* ([p (and id (processes:find id))]
                [owner (and (list? owner-name) (pair? owner-name) (for-all symbol? owner-name) (module-owner owner-name))]
                [r (make-run number p command major-mode owner directory environment started
-                            offset end ended-at #f #f #f '() #f)])
+                            offset (if (string? end) (make-message-condition end) end) ended-at #f #f #f '() #f)])
           (cond
             [b
              (eq-hashtable-set! runs b r)
@@ -476,7 +468,7 @@
         (when (and r (going? r))
           (unless (or (buffers:with-buffer b (always-stop?))
                       (ask:yes-or-no? (format "A run is going in ~a; stop it? " name)))
-            (error who "the run goes on" name))
+            (error who (format "~a still has a run going" name)))
           (let ([r (run-of b)])
             (when (and r (going? r) (buffers:live? b))
               (stop-run! b r #t))))))
@@ -506,9 +498,13 @@
 (commands:define-command (stop [buffer (buffers:current)])
   "Stops the run in BUFFER, which ends stopped."
   (check-main-thread 'runs:stop)
-  (let ([r (check-run-buffer 'runs:stop buffer)])
+  (unless (buffers:buffer? buffer)
+    (assertion-violation 'runs:stop "not a buffer" buffer))
+  (let ([r (run-of buffer)])
+    (unless r
+      (error 'runs:stop (format "~a shows no run" (buffers:name buffer))))
     (unless (going? r)
-      (error 'runs:stop "the run has ended" (buffers:name buffer)))
+      (error 'runs:stop (format "~a's run has ended" (buffers:name buffer))))
     (stop-run! buffer r #t)))
 
 (define (status buffer)

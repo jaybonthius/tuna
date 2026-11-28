@@ -660,6 +660,22 @@
 (define (%hide-echo-area hidden?)
   (or (and (bottom-prompt) #t) (hidden?)))
 
+(define (%keys-prompt-text prompt)
+  (if (string? prompt)
+      prompt
+      (apply string-append (map (lambda (part) (if (string? part) part (cdr part))) prompt))))
+
+;; A key read's prompt is the reading client's, and the echo area that
+;; would show it is hidden while a prompt takes its place; Embark adds its
+;; indicator to the minibuffer's prompt for the same reason.
+(define (%keys-prompt-spans view client start end)
+  (let ([p (bottom-prompt)] [prompt (keys:reading-prompt client)])
+    (if (and p prompt (eq? view (shown-in p)) (echo-area:hidden?))
+        (let ([q (car (prompt-parts (prompt-node p)))])
+          (list (list (fx+ (document:node-start q) 1) (fx- (document:node-end q) 1)
+                      (list (cons 'before (%keys-prompt-text prompt))))))
+        '())))
+
 ;; Cleared before the key's command runs, as the echo area's message is,
 ;; so a message from that command shows.
 (define (%clear-on-key press client key)
@@ -707,6 +723,7 @@
 (options:set! ask:yes-or-no-reader ask-yes-or-no)
 (options:set! ask:y-or-n-reader ask-y-or-n)
 (tables:set! web:stylesheets 'minibuffer "minibuffer/minibuffer.css")
+(tables:set! views:span-sources %keys-prompt-spans 0)
 (hooks:add! buffers:after-edit %input-edited)
 (hooks:add! buffers:kill-queries %keep-buffer)
 (advice-add! echo-area:hidden? %hide-echo-area)

@@ -1,5 +1,5 @@
 (import (tuna) (test) (test-runner) (test-user) (hooks) (tables) (options) (buffers) (views) (layout) (modes) (commands)
-        (files) (processes) (runs) (command-picker) (shell-commands) (shell-commands-test))
+        (files) (processes) (runs) (command-picker) (shell-commands) (shell-commands-test) (minibuffer-test screen))
 
 (define run shell-commands-test:run)
 
@@ -26,7 +26,7 @@
 (buffers:with-buffer foo (options:set-local! shell-commands:compile-command "echo foo"))
 (buffers:with-buffer bar (options:set-local! shell-commands:compile-command "echo bar"))
 
-(test "compile reads a line from the current buffer's compile command, saves buffers, and runs it in *compilation*, in compilation-mode, which runs:started entries see"
+(test "compile reads a line from the current buffer's compile command, saves buffers, and runs it in *compilation*, in compilation-mode, which runs:started entries see, shown in another view at its start"
   (let* ([entered '()] [note (lambda (b) (set! entered (cons (modes:major-mode b) entered)))])
     (hooks:add! runs:started note)
     (layout:switch-to-buffer foo)
@@ -39,6 +39,8 @@
     (check-equal? '(shell-commands:compilation-mode (shell-commands:compilation-mode) "foo" "~/proj/" 1)
                   (list (modes:major-mode (compilation)) entered (output (compilation)) (shell-commands-test:header-folder (compilation)) saved))
     (check-equal? "echo foo" (car (shell-commands:compile-history)))
+    (check (eq? foo (views:buffer (layout:selected-view))))
+    (check-equal? '(1) (map views:point (views:showing (compilation))))
     (hooks:remove! runs:started note)))
 
 (test "g in compile's buffer runs the build again through recompile, which saves buffers, also after a reload of runs"
@@ -93,7 +95,7 @@
     (layout:switch-to-buffer async)
     (run shell-commands:recompile #f)
     (ended (compilation))
-    (check-equal? '("built" "async" runs:mode #t)
+    (check-equal? '("built" "async" shell-commands:shell-command-mode #t)
                   (list (output (compilation)) (output async) (modes:major-mode async)
                         (eq? (buffers:with-buffer async (buffers:revert-function)) runs:run-again)))))
 
@@ -170,3 +172,18 @@
     (test-user:press! "g")
     (ended build)
     (check-equal? 1 (- saved before))))
+
+(test "compile first asks to save each modified file buffer"
+  (advice-remove! shell-commands:save-buffers count-save)
+  (let ([notes (files:visit "~/proj/notes.txt")])
+    (buffers:insert! notes 1 "draft\n")
+    (layout:switch-to-buffer notes)
+    (test-user:press! "M-x")
+    (test-user:type! "shell-commands:compile")
+    (test-user:press! "RET")
+    (test-user:press! "RET")
+    (check-equal? '("Save file ~/proj/notes.txt? (y or n) ") (minibuffer-test/screen:questions))
+    (test-user:press! "n")
+    (ended (compilation))
+    (check (buffers:modified? notes)))
+  (advice-add! shell-commands:save-buffers count-save))

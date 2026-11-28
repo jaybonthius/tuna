@@ -7,20 +7,23 @@
   (let ([shown (test-user:elements (test-user:screen) "minibuffer-question")])
     (and (pair? shown) (test-user:element-text (car shown)))))
 
-(test "M-! reads a line and runs it; one line of output goes to the echo area and into *Shell Command Output*, unmodified"
+(test "M-! reads a line and runs it; one line of output goes to the echo area and into *Shell Command Output*, unmodified, shown in no view"
   (test-user:press! "M-!")
   (check-equal? "Shell command: " (minibuffer-question))
   (test-user:type! "echo hi")
   (test-user:press! "RET")
   (test-runner:wait-until (lambda () (equal? "hi" (shell-commands-test:message))))
   (let ([out (buffers:find "*Shell Command Output*")])
-    (check-equal? '("hi\n" #f) (list (shell-commands-test:text out) (buffers:modified? out))))
+    (check-equal? '("hi\n" #f ()) (list (shell-commands-test:text out) (buffers:modified? out) (views:showing out))))
   (check-equal? "echo hi" (car (shell-commands:shell-command-history))))
 
-(test "more than one line of output shows the buffer"
-  (run shell-commands:shell-command "seq 3" #f)
-  (check (member "*Shell Command Output*" (shell-commands-test:shown)))
-  (check-equal? "1\n2\n3\n" (shell-commands-test:output-text)))
+(test "more than one line of output shows the buffer in another view, not selected, at its start"
+  (let ([before (views:buffer (shell-commands-test:view))])
+    (run shell-commands:shell-command "seq 3" #f)
+    (check (member "*Shell Command Output*" (shell-commands-test:shown)))
+    (check-equal? "1\n2\n3\n" (shell-commands-test:output-text))
+    (check (eq? before (views:buffer (shell-commands-test:view))))
+    (check-equal? '(1) (map views:point (views:showing (buffers:find "*Shell Command Output*"))))))
 
 (test "no output tells how the program ended, and standard error joins the output"
   (run shell-commands:shell-command "false" #f)
@@ -43,8 +46,8 @@
   (options:set! runs:shell '("/bin/sh" "-c")))
 
 (test "an empty line is refused"
-  (check-equal? '((shell-commands:shell-command "no command line" ()))
-                (shell-commands-test:reported (lambda () (run shell-commands:shell-command "  " #f)))))
+  (check-equal? '((shell-commands:shell-command "no command line"))
+                (test-runner:shown-reports-during (lambda () (run shell-commands:shell-command "  " #f)))))
 
 (test "with a prefix argument the output goes in at each cursor, from one run, with point before it and no mark"
   (let ([notes (buffers:make "notes" "a\nb\nc\n")] [v (shell-commands-test:view)])
@@ -60,8 +63,8 @@
   (let ([ended-run (runs:start-for-user "*ended*" "true")])
     (shell-commands-test:ended ended-run)
     (layout:switch-to-buffer ended-run)
-    (check-equal? '((shell-commands:shell-command "the buffer refuses the output" ("*ended*")))
-                  (shell-commands-test:reported (lambda () (run shell-commands:shell-command "touch $HOME/ran; echo out" '(4)))))
+    (check-equal? '((buffers:check-writable "*ended* is read-only"))
+                  (test-runner:shown-reports-during (lambda () (run shell-commands:shell-command "touch $HOME/ran; echo out" '(4)))))
     (check-equal? #f (file-exists? (shell-commands-test:home-path "ran")))))
 
 (test "a line ending in & runs as M-&"

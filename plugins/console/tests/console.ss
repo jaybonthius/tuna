@@ -15,11 +15,14 @@
 (define (options home)
   (processes:options [directory home] [environment (test-runner:home-environment home)] [separate-stderr #t]))
 
-(define (console-run name input)
-  (let ([home (home-of name)])
-    (test-runner:make-home! home "console/init.ss")
-    (let-values ([(status output errors) (processes:run (car (command-line)) '() input (options home))])
-      (values status (utf8->string output) (utf8->string errors) home))))
+(define console-run
+  (case-lambda
+    [(name input) (console-run name input "console/init.ss")]
+    [(name input configuration)
+     (let ([home (home-of name)])
+       (test-runner:make-home! home configuration)
+       (let-values ([(status output errors) (processes:run (car (command-line)) '() input (options home))])
+         (values status (utf8->string output) (utf8->string errors) home)))]))
 
 (test "each value is written on a line of its own, after a fresh line, and the void value writes nothing"
   (let-values ([(status output errors home)
@@ -41,6 +44,13 @@
     (check-equal? "" errors)
     (check-equal? '(next) (data-in output))
     (check-equal? '((check "bad value" (7))) (recorded home "reports"))))
+
+(test "a raise is written to standard error as its who, message and irritants"
+  (let-values ([(status output errors home)
+                (console-run "printed" "(error 'check \"bad value\" 7)\n(car (quote ()))\n'next\n" "console/plain.ss")])
+    (check-equal? 0 status)
+    (check-equal? "! check: bad value with irritant 7\n! car: () is not a pair\n" errors)
+    (check-equal? '(next) (data-in output))))
 
 (test "a form written over several lines is read whole"
   (let-values ([(status output errors home) (console-run "lines" "(string-append \"multi\"\n  \"line\")\n")])

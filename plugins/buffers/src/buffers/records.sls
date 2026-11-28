@@ -3,7 +3,7 @@
           buffer-frozen? buffer-frozen?-set! buffer-version buffer-version-set! buffer-save-stamp
           buffer-save-stamp-set! buffer-log buffer-log-set!
           buffer-logged buffer-logged-set! buffer-scope buffer-scope-set! buffer-layers buffer-layers-set!
-          buffer-anchors buffer-bare buffer-bare-set! buffer-silent? buffer-silent?-set!
+          buffer-anchors buffer-bare buffer-bare-set! buffer-silent? buffer-silent?-set! buffer-read-only? buffer-read-only?-set!
           make-edit-record edit-record? edit-record-buffer edit-record-version edit-record-start edit-record-removed
           edit-record-inserted edit-record-removed-length edit-record-inserted-length edit-record-moves?
           edit-record-silent?
@@ -30,11 +30,11 @@
     (sealed #t)
     (fields (mutable name) (mutable doc) (mutable frozen?) (mutable version) (mutable save-stamp)
             (mutable log) (mutable logged) (mutable scope) (mutable layers) anchors (mutable bare)
-            (mutable silent?))
+            (mutable silent?) (mutable read-only?))
     (protocol
       (lambda (new)
         (lambda (name doc scope silent?)
-          (new name doc #f 0 0 (make-vector 16 #f) 0 scope '() (make-weak-eq-hashtable) '(#f . #f) silent?)))))
+          (new name doc #f 0 0 (make-vector 16 #f) 0 scope '() (make-weak-eq-hashtable) '(#f . #f) silent? #f)))))
 
   ;; Anchors and the log's trim map positions through thousands of edits,
   ;; so an edit keeps its lengths and whether it moves positions at all.

@@ -52,6 +52,15 @@
     (buffers:set-modified! b #f)
     (check-equal? "" (text status-line:modified))))
 
+(test "a read-only buffer shows %, and %* when it is modified too, as Emacs's mode line does"
+  (let ([b (show! "one\n")])
+    (buffers:set-read-only! b #t)
+    (check-equal? "%" (text status-line:modified))
+    (buffers:set-modified! b #t)
+    (check-equal? "%*" (text status-line:modified))
+    (buffers:set-read-only! b #f)
+    (check-equal? "*" (text status-line:modified))))
+
 (test "segments show the left side's, then the right side's, each in order; equal numbers keep the order first placed"
   (status-line:define-segment seg-a (show (lambda (view) "a")))
   (status-line:define-segment seg-b (show (lambda (view) "b")))

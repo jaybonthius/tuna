@@ -58,19 +58,5 @@
   (for-each (lambda (r) (views:set-cursor! (views:add-cursor! (view) (cadr r)) (cadr r) (car r))) (cdr ranges))
   (regions))
 
-(define (%described c)
-  (if (and (who-condition? c) (message-condition? c))
-      (list (condition-who c) (condition-message c) (if (irritants-condition? c) (condition-irritants c) '()))
-      c))
-
-;; A command's raise goes to report, not to the caller of commands:run.
-(define (reported thunk) (map %described (test-runner:reports-during thunk)))
-
-(define (raised thunk)
-  (guard (c [(and (who-condition? c) (message-condition? c))
-             (list (condition-who c) (condition-message c) (if (irritants-condition? c) (condition-irritants c) '()))])
-    (thunk)
-    'none))
-
 ;; A run's result must not depend on the user's shell, which may not be POSIX.
 (options:set! runs:shell '("/bin/sh" "-c"))

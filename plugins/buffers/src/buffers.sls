@@ -4,6 +4,8 @@
 (hooks:define-hook kill-queries)
 (hooks:define-hook killed)
 (hooks:define-hook after-edit)
+(hooks:define-hook read-only-changed
+  "Called with a buffer, current, after buffers:set-read-only! turns its read-only state, as Emacs runs read-only-mode-hook.")
 
 (options:define-option stop-inside-clusters #f boolean?
   "Whether point also stops between the code points of a grapheme cluster, so that one of its marks can be edited alone.")
@@ -17,7 +19,7 @@
   (check-main-thread check-buffer check-change check-position check-range check-layer check-anchor
    check-edit check-spans check-version check-kind check-layer-change check-layer-read
    make-buffer! find-buffer live-buffers buffer-live? rename-buffer! forget-buffer! with-current move-buffer!
-   current-buffer frozen-document internal? with-silent check-piece
+   current-buffer frozen-document internal? with-silent without-read-only refuse-read-only-buffer! check-piece
    replace-content! fitted-deletion refuses-typing-probe? splice-content! reconcile-node! edits-after map-position-through
    map-position-by map-after-through
    define-kind! note-constructor! find-kind find-constructor-kind stop-at next-stop-after previous-stop-before range-text range-atom-texts
@@ -100,6 +102,14 @@
     (if (memq b (silenced))
         (thunk)
         (parameterize ([silenced (cons b (silenced))])
+          (thunk))))
+
+  (define read-only-inhibited (make-thread-parameter '()))
+
+  (define (without-read-only b thunk)
+    (if (memq b (read-only-inhibited))
+        (thunk)
+        (parameterize ([read-only-inhibited (cons b (read-only-inhibited))])
           (thunk))))
 
   (define (silent-now? b)
@@ -1195,7 +1205,16 @@
     (when (or (fx= lo 0) (fx= hi-old old-length))
       (unless (one-node? doc) (does-not-fit who))))
 
+  (define (refuse-read-only-buffer! who b)
+    (when (and (buffer-read-only? b) (not (memq b (read-only-inhibited))))
+      (refuse who (format "~a is read-only" (buffer-name b)))))
+
   (define (refuse-read-only! who b s e inserting?)
+    (refuse-read-only-buffer! who b)
+    (unless (memq b (read-only-inhibited))
+      (refuse-read-only-text! who b s e inserting?)))
+
+  (define (refuse-read-only-text! who b s e inserting?)
     (for-each
       (lambda (l)
         (let ([t (layer-clauses l)] [store (buffer-layer-store l)])
@@ -1862,6 +1881,32 @@
 (define (set-silent! buffer flag)
   (check-change 'buffers:set-silent! buffer)
   (buffer-silent?-set! buffer (and flag #t)))
+
+(define (read-only? buffer)
+  (check-buffer 'buffers:read-only? buffer)
+  (buffer-read-only? buffer))
+
+(define (set-read-only! buffer flag)
+  (check-change 'buffers:set-read-only! buffer)
+  (let ([on? (and flag #t)])
+    (unless (eq? on? (buffer-read-only? buffer))
+      (buffer-read-only?-set! buffer on?)
+      (with-current buffer (lambda () (read-only-changed buffer))))))
+
+(define (check-writable buffer)
+  (check-buffer 'buffers:check-writable buffer)
+  (check-main-thread 'buffers:check-writable)
+  (refuse-read-only-buffer! 'buffers:check-writable buffer))
+
+(define-syntax with-read-only-inhibited
+  (syntax-rules ()
+    [(_ buffer-expr body1 body2 ...) (call-with-read-only-inhibited buffer-expr (lambda () body1 body2 ...))]))
+
+(define (call-with-read-only-inhibited buffer thunk)
+  (check-buffer 'buffers:call-with-read-only-inhibited buffer)
+  (unless (procedure? thunk)
+    (assertion-violation 'buffers:call-with-read-only-inhibited "not a procedure" thunk))
+  (without-read-only buffer thunk))
 
 (define-syntax with-silent-edits
   (syntax-rules ()

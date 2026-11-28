@@ -1,4 +1,4 @@
-(import (minibuffer-test quiet) (tuna) (test) (test-user) (test-runner) (options) (tables) (keys) (commands) (faces) (buffers) (views) (layout) (layout-float)
+(import (echo-area-test beneath) (tuna) (test) (test-user) (test-runner) (options) (tables) (keys) (commands) (faces) (buffers) (views) (layout) (layout-float)
         (timers) (editing) (echo-area) (minibuffer) (minibuffer-test reading) (minibuffer-test screen))
 
 (define (logged)
@@ -37,9 +37,7 @@
 
 (test "a command's error shows after the input in the error face"
   (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:read "Name: " #f)))])
-    (minibuffer-test/quiet:silence! #t)
-    (test-user:press! "M-p")
-    (minibuffer-test/quiet:silence! #f)
+    (echo-area-test/beneath:reports-during (lambda () (test-user:press! "M-p")))
     (check-equal? (list " [beginning of history]" "error") (list (minibuffer-test/screen:bracket) (minibuffer-test/screen:bracket-face)))
     (minibuffer-test/reading:quit! r)))
 
@@ -143,3 +141,20 @@
   (check-equal? (list #f #f) (list (minibuffer:current-prompt) (echo-area:keys-text (test-user:client))))
   (keys:unbind! keys:global "C-x r")
   (options:unset! echo-area:echo-keystrokes))
+
+(define key-read #f)
+
+(commands:define-command (read-a-key)
+  "Reads a key with a prompt, as an action is read in a prompt."
+  (set! key-read (keys:read-key "Act on notes: ")))
+
+(test "a key read's prompt, which the hidden echo area would show, shows before the prompt's question while it waits, to the client reading only"
+  (keys:bind! keys:global "C-c k" read-a-key)
+  (let ([r (minibuffer-test/reading:start! (lambda () (minibuffer:read "Name: ")))] [other (test-user:open-client)])
+    (test-user:type! "ab")
+    (test-user:press! "C-c k")
+    (check-equal? (list "Act on notes: Name: ab" "Name: ab") (list (minibuffer-test/screen:prompt-line (test-user:client)) (minibuffer-test/screen:prompt-line other)))
+    (test-user:press! "x")
+    (check-equal? (list "x" "Name: ab") (list key-read (minibuffer-test/screen:prompt-line (test-user:client))))
+    (minibuffer-test/reading:quit! r))
+  (keys:unbind! keys:global "C-c k"))

@@ -26,6 +26,18 @@
   (hook compilation-mode-hook)
   (plugin-only #t))
 
+(tables:define-table shell-command-keymap "Keys in the buffers shell-commands:async-shell-command runs in.")
+
+(hooks:define-hook shell-command-mode-hook
+  "Called in each buffer that turns on shell-commands:shell-command-mode or a mode derived from it.")
+
+(modes:define-major-mode shell-command-mode
+  (parent runs:mode)
+  (lighter "Shell")
+  (keymap shell-command-keymap)
+  (hook shell-command-mode-hook)
+  (plugin-only #t))
+
 (define %output-buffer-name "*Shell Command Output*")
 
 (define %async-buffer-name "*Async Shell Command*")
@@ -153,10 +165,11 @@
       [else #f])))
 
 (define (%check-takes-text who b ranges)
+  (buffers:check-writable b)
   (for-each
     (lambda (range)
       (when (buffers:refuses-text? b (car range) (cdr range))
-        (error who "the buffer refuses the output" (buffers:name b))))
+        (error who (format "~a refuses the output" (buffers:name b)))))
     ranges))
 
 (define (%cursor-ranges view c)
@@ -233,7 +246,8 @@
                                  (substring text 0 (fx- (string-length text) 1))
                                  text)])
                   (for-each (lambda (r) (buffers:replace! b (car r) (cdr r) "")) (reverse bounds))
-                  (editing:place-cursor! view (car region) (editing:insert-region! view (car region) start (%lines text)) #f)))
+                  (editing:insert-region! view (car region) start (%lines text))
+                  (editing:place-cursor! view (car region) start #f)))
               anchored results)
             (let ([text (apply string-append (map cadr results))]
                   [failure (find (lambda (result) (not (eqv? (car result) 0))) results)])
@@ -250,7 +264,7 @@
 (commands:define-command (async-shell-command [line (%read-line "Async shell command: " #f shell-command-history)])
   "Runs LINE through the shell as the user's run, in the buffer shell-commands:async-shell-command-buffer names."
   (%check-line 'shell-commands:async-shell-command line)
-  (%show-run (runs:start-for-user (async-shell-command-buffer) line (%here))))
+  (%show-run (runs:start-for-user (async-shell-command-buffer) line (%here) shell-command-mode)))
 
 (commands:define-command (shell-command-again)
   "Runs the command line the current buffer's root holds again, as shell-commands:shell-command does."
@@ -261,7 +275,12 @@
 
 (define (%set-recompile) (options:set-local! buffers:revert-function recompile))
 
+;; A command run with M-& is watched as its output arrives, where a
+;; build's errors are read from the top.
+(define (%follow-output) (options:set-local! runs:follow-output? #t))
+
 (hooks:add! compilation-mode-hook %set-recompile)
+(hooks:add! shell-command-mode-hook %follow-output)
 (hooks:add! files:directory-finders %output-directory)
 (tables:set! commands:command-modes shell-command-again '())
 (keys:bind! keys:global "M-!" shell-command)

@@ -18,11 +18,17 @@
     (run shell-commands:shell-command-on-region "sort" '(4))
     (check-equal? "a\nb\nc\n" (text notes))))
 
-(test "M-| runs once per cursor's region; with a prefix argument each region gets its own output, point after it and no mark, in one undo group"
+(test "with a prefix argument point is at the start of the replaced text, as C-u M-! leaves it before its output"
+  (let ([b (buffers:make "alpha" "alphaINS\n beta")])
+    (shell-commands-test:regions! b '(1 9))
+    (run shell-commands:shell-command-on-region "tr a A" '(4))
+    (check-equal? '("AlphAINS\n beta" ((#f 1))) (list (text b) (shell-commands-test:regions)))))
+
+(test "M-| runs once per cursor's region; with a prefix argument each region gets its own output, point before it and no mark, in one undo group"
   (let ([words (buffers:make "words" "one two three\n")])
     (check-equal? '((1 4) (5 8) (9 14)) (shell-commands-test:regions! words '(1 4) '(5 8) '(9 14)))
     (run shell-commands:shell-command-on-region "tr a-z A-Z" '(4))
-    (check-equal? '("ONE TWO THREE\n" ((#f 4) (#f 8) (#f 14))) (list (text words) (shell-commands-test:regions)))
+    (check-equal? '("ONE TWO THREE\n" ((#f 1) (#f 5) (#f 9))) (list (text words) (shell-commands-test:regions)))
     (test-user:press! "C-/")
     (check-equal? "one two three\n" (text words))))
 
@@ -34,16 +40,16 @@
 
 (test "a cursor with no mark stops the command before any program runs"
   (layout:switch-to-buffer (buffers:make "unmarked" "text\n"))
-  (check-equal? '((shell-commands:shell-command-on-region "the mark is not set, so there is no region" ()))
-                (shell-commands-test:reported (lambda () (run shell-commands:shell-command-on-region "touch ran" #f))))
+  (check-equal? '((shell-commands:shell-command-on-region "the mark is not set, so there is no region"))
+                (test-runner:shown-reports-during (lambda () (run shell-commands:shell-command-on-region "touch ran" #f))))
   (check-equal? #f (file-exists? (shell-commands-test:home-path "ran"))))
 
 (test "with a prefix argument every region is asked first whether it takes text, so in a buffer that refuses the programs never run"
   (let ([ended-run (runs:start-for-user "*ended*" "echo some output")])
     (shell-commands-test:ended ended-run)
     (check-equal? '((1 5)) (shell-commands-test:regions! ended-run '(1 5)))
-    (check-equal? '((shell-commands:shell-command-on-region "the buffer refuses the output" ("*ended*")))
-                  (shell-commands-test:reported
+    (check-equal? '((buffers:check-writable "*ended* is read-only"))
+                  (test-runner:shown-reports-during
                     (lambda () (run shell-commands:shell-command-on-region "touch $HOME/ran; tr a-z A-Z" '(4)))))
     (check-equal? #f (file-exists? (shell-commands-test:home-path "ran")))))
 
@@ -83,7 +89,7 @@
     (check-equal? "c\nb\na\n" (shell-commands-test:output-text))
     (shell-commands-test:regions! column '(2 11))
     (run shell-commands:shell-command-on-region "sort -r" '(4))
-    (check-equal? '("xc1\nxb2\nxa3\n" ((#f 11))) (list (text column) (shell-commands-test:regions)))
+    (check-equal? '("xc1\nxb2\nxa3\n" ((#f 2))) (list (text column) (shell-commands-test:regions)))
     (test-user:press! "C-/")
     (check-equal? "xa1\nxb2\nxc3\n" (text column)))
   (advice-remove! views:region-ranges editing-test/column-region:ranges)

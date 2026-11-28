@@ -181,7 +181,8 @@
 (define (show-modified view)
   (check-view 'status-line:show-modified view)
   (let ([b (views:buffer view)])
-    (and b (buffers:modified? b) "*")))
+    (and b (or (buffers:read-only? b) (buffers:modified? b))
+         (string-append (if (buffers:read-only? b) "%" "") (if (buffers:modified? b) "*" "")))))
 
 (define (show-buffer-name view)
   (check-view 'status-line:show-buffer-name view)

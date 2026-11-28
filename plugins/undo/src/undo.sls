@@ -1163,6 +1163,7 @@
   "Undoes the current buffer's last N edit groups and puts the view's cursors back where they were before them."
   (check-count 'undo:undo "undo" n)
   (let* ([b (current-buffer 'undo:undo)] [h (history-of 'undo:undo b)])
+    (buffers:check-writable b)
     (close-group! h)
     (let loop ([k n] [c (history-current h)] [moves '()])
       (if (and (fx> k 0) (state-parent c))
@@ -1177,6 +1178,7 @@
   "Redoes N edit groups, following the branch undo last left, and puts the view's cursors back where they were after the last one."
   (check-count 'undo:redo "redo" n)
   (let* ([b (current-buffer 'undo:redo)] [h (history-of 'undo:redo b)])
+    (buffers:check-writable b)
     (close-group! h)
     (let loop ([k n] [c (history-current h)] [moves '()])
       (let ([child (and (fx> k 0) (redo-child c))])
@@ -1205,6 +1207,7 @@
   (let* ([h (history-of 'undo:go-to! buffer)] [target (and (fixnum? id) (state-of h id))])
     (unless target
       (assertion-violation 'undo:go-to! "not a state of the buffer's history" id))
+    (buffers:check-writable buffer)
     (close-group! h)
     (move! h buffer (path-moves (history-current h) target) 'undo:go-to!)))
 

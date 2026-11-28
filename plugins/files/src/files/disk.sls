@@ -4,7 +4,7 @@
           failure-already-exists?
           rename-path copy-path delete-path trash-path make-new-folder
           contents-document contents-length contents-hash contents-bom? contents-crlf? contents-missing?
-          contents-folder-missing?
+          contents-folder-missing? contents-write-protected?
           disk-fingerprint)
   (import (chezscheme) (document) (sequence-diff) (files attributes) (files system) (files paths))
 
@@ -132,8 +132,8 @@
     (document:replace (document:from-datum '(buffers:text ())) 1 1 (document:from-utf8 bytes)))
 
   ;; A file's contents as read, a vector since a job sends plain data only.
-  (define (make-contents doc length hash bom crlf missing folder-missing)
-    (vector doc length hash bom crlf missing folder-missing))
+  (define (make-contents doc length hash bom crlf missing folder-missing write-protected)
+    (vector doc length hash bom crlf missing folder-missing write-protected))
   (define (contents-document c) (vector-ref c 0))
   (define (contents-length c) (vector-ref c 1))
   (define (contents-hash c) (vector-ref c 2))
@@ -141,8 +141,9 @@
   (define (contents-crlf? c) (vector-ref c 4))
   (define (contents-missing? c) (vector-ref c 5))
   (define (contents-folder-missing? c) (vector-ref c 6))
+  (define (contents-write-protected? c) (vector-ref c 7))
 
-  (define (decode bytes)
+  (define (decode bytes write-protected)
     (let* ([bom (bom? bytes)]
            [start (if bom 3 0)]
            [crlf (crlf? bytes start)])
@@ -152,13 +153,16 @@
                      bom
                      crlf
                      #f
-                     #f)))
+                     #f
+                     write-protected)))
 
   (define (read-file path)
     (check-not-folder path)
     (if (file-exists? path)
-        (decode (read-bytes path))
-        (make-contents (text-document (make-bytevector 0)) 0 fnv-basis #f #f #t (not (file-directory? (path-parent path))))))
+        (decode (read-bytes path) (not (writable? path)))
+        (let ([folder (path-parent path)])
+          (make-contents (text-document (make-bytevector 0)) 0 fnv-basis #f #f #t (not (file-directory? folder))
+                         (and (file-directory? folder) (not (writable? folder)))))))
 
   (define (char-token doc i)
     (let loop ([p (document:position doc i (document:unit characters))])
@@ -234,7 +238,7 @@
     (unless (file-exists? path)
       (raise (condition (make-i/o-file-does-not-exist-error path) (make-message-condition "no such file")
                         (make-irritants-condition (list path)))))
-    (let ([contents (decode (read-bytes path))])
+    (let ([contents (decode (read-bytes path) (not (writable? path)))])
       (cons contents (changed-hunks old (contents-document contents)))))
 
   (define (encode doc bom crlf)

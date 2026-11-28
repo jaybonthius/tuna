@@ -397,6 +397,8 @@
                     (and read (contents-bom? read)) (and read (contents-crlf? read)) #f #f '() #f)])
           (unless (and read (eq? doc (contents-document read)))
             (buffers:set-modified! b #t))
+          (when (and read (contents-write-protected? read))
+            (buffers:set-read-only! b #t))
           (add-entry! e)
           (set! pending (filter (lambda (v) (not (string=? (visit-path v) path))) pending))
           (save-visits!)
@@ -475,7 +477,7 @@
 
   (define (add-final-newline! b)
     (let* ([doc (buffers:document b)] [n (document:length doc)])
-      (when (and (fx> n 2) (not (eqv? (document:token doc (fx- n 2)) #\newline)))
+      (when (and (fx> n 2) (not (buffers:read-only? b)) (not (eqv? (document:token doc (fx- n 2)) #\newline)))
         (buffers:replace! b (fx- n 1) (fx- n 1) "\n"))))
 
   ;; Unloading this module stops its jobs without ending them, and the
@@ -714,10 +716,15 @@
                [(buffer-at path) => %completed]
                [else
                 (let ([b (open-buffer! path doc length hash read)])
-                  (when (and read (contents-missing? read))
-                    (ask:message (if (contents-folder-missing? read)
-                                     (format "(New file; folder ~a does not exist)" (abbreviated-path (path-parent path)))
-                                     "(New file)")))
+                  (cond
+                    [(and read (contents-missing? read))
+                     (ask:message (cond
+                                    [(contents-folder-missing? read)
+                                     (format "(New file; folder ~a does not exist)" (abbreviated-path (path-parent path)))]
+                                    [(contents-write-protected? read) "File not found and directory write-protected"]
+                                    [else "(New file)"]))]
+                    [(and read (contents-write-protected? read))
+                     (ask:message "Note: file is write protected")])
                   (buffers:with-buffer b (after-visit b))
                   b)]))))])))
 
@@ -912,13 +919,15 @@
 
 ;; The hunks go in last first, so each one's positions are still those of
 ;; the text they were found in; with no pause between them they are one
-;; group to undo.
+;; group to undo. The text is the file's, not the user's edit, so a
+;; read-only buffer takes it too.
 (define (%apply-hunks! buffer new hunks)
-  (for-each (lambda (hunk)
-              (apply (lambda (start end new-start new-end)
-                       (buffers:replace! buffer start end (document:slice new new-start new-end)))
-                     hunk))
-            (reverse hunks)))
+  (buffers:with-read-only-inhibited buffer
+    (for-each (lambda (hunk)
+                (apply (lambda (start end new-start new-end)
+                         (buffers:replace! buffer start end (document:slice new new-start new-end)))
+                       hunk))
+              (reverse hunks))))
 
 ;; Typing goes on while a job reads the file, so the new text goes in only
 ;; if the buffer still has the text it was read against.
@@ -942,6 +951,7 @@
                 (record-read! e (car read))
                 (%apply-hunks! buffer (contents-document (car read)) (cdr read))
                 (buffers:set-modified! buffer #f)
+                (buffers:set-read-only! buffer (contents-write-protected? (car read)))
                 (buffers:with-buffer buffer (after-revert buffer))
                 'reloaded]
                [else (entry-left-alone-set! e fingerprint) 'left]))])))))
@@ -995,9 +1005,11 @@
                  (record-read! e (car read))
                  (if (= version (buffers:version buffer))
                      (%apply-hunks! buffer new (cdr read))
-                     (buffers:replace! buffer 1 (fx- (document:length (buffers:document buffer)) 1)
-                       (document:slice new 1 (fx- (document:length new) 1))))
+                     (buffers:with-read-only-inhibited buffer
+                       (buffers:replace! buffer 1 (fx- (document:length (buffers:document buffer)) 1)
+                         (document:slice new 1 (fx- (document:length new) 1)))))
                  (buffers:set-modified! buffer #f)
+                 (buffers:set-read-only! buffer (contents-write-protected? (car read)))
                  (buffers:with-buffer buffer (after-revert buffer))
                  (when (eq? (commands:this-command) revert-from-file)
                    (ask:message "Reverted buffer")))])))))))
