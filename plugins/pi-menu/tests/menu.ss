@@ -51,10 +51,14 @@
   (test-user:press! "a")
   (test-runner:wait-until (lambda () (equal? "Pi no longer compacts on its own" (echo-area:current-message))))
   (check-equal? #f (ref (test-pi:last-request f "set_auto_compaction") "enabled"))
-  (check-equal? '("Context" ("c" "Compact") ("a" "Pi's own compaction (off)")) (pi-menu-test/menus:group "Context"))
+  ;; The menu shows the new state at a redraw that may come in a batch
+  ;; after the one that said the message.
+  (test-runner:wait-until
+    (lambda () (equal? '("Context" ("c" "Compact") ("a" "Pi's own compaction (off)")) (pi-menu-test/menus:group "Context"))))
   (test-user:press! "T")
   (check-equal? '(#t "Finished thinking is shown") (list (chat:thinking-shown?) (echo-area:current-message)))
-  (check-equal? '("Display" ("T" "Finished thinking (shown)") ("o" "Fold or unfold every block")) (pi-menu-test/menus:group "Display"))
+  (test-runner:wait-until
+    (lambda () (equal? '("Display" ("T" "Finished thinking (shown)") ("o" "Fold or unfold every block")) (pi-menu-test/menus:group "Display"))))
   (test-user:press! "T")
   (check-equal? "Finished thinking is folded" (echo-area:current-message))
   (test-user:press! "C-g"))

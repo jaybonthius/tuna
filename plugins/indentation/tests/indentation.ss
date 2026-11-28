@@ -23,6 +23,12 @@
     (check-equal? 2 (indentation:blanks-end doc 1 2))
     (check-raises (raised? 'indentation:blanks-end "not a range in the document") (indentation:blanks-end doc 3 99))))
 
+(test "blanks-start gives the position before the blanks that end at an end, at least a start"
+  (let ([doc (buffers:document (buffers:make "trailing" "x \t \ny"))])
+    (check-equal? 2 (indentation:blanks-start doc 1 5))
+    (check-equal? 4 (indentation:blanks-start doc 4 5))
+    (check-raises (raised? 'indentation:blanks-start "not a range in the document") (indentation:blanks-start doc 5 3))))
+
 (test "indenter looks a mode's indenter up along its ancestry, or gives #f; it takes a mode"
   (check (eq? indentation-test/nesting:indenter (indentation:indenter indentation-test/nesting:mode)))
   (check (eq? indentation-test/nesting:indenter (indentation:indenter derived)))

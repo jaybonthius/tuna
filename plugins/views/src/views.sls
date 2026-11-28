@@ -3743,6 +3743,15 @@
 
 (define (current) (current-view))
 
+(define (command-view who)
+  (unless (symbol? who)
+    (assertion-violation 'views:command-view "not a symbol" who))
+  (let ([v (current-view)])
+    (unless v
+      (assertion-violation who "no view is current"))
+    (shown-buffer who v)
+    v))
+
 (define (point view)
   (check-view 'views:point view)
   (bound-buffer view)

@@ -1,5 +1,5 @@
 #!tuna
-(import (completion) (minibuffer) (keys) (commands) (views) (layout) (editing) (kill-ring) (web) (ask)
+(import (completion) (minibuffer) (keys) (commands) (views) (layout) (editing) (sexp) (comment) (kill-ring) (web) (ask)
         (buffers) (browse-url) (hooks) (options) (tables))
 
 (options:define-option quit-after-action? #t boolean?
@@ -261,3 +261,14 @@
 (keys:bind! completion:region-action-keymap "l" editing:downcase-region)
 (keys:bind! completion:region-action-keymap "c" editing:capitalize-region)
 (keys:bind! completion:expression-action-keymap "k" editing:kill-region)
+(keys:bind! completion:region-action-keymap "TAB" editing:indent-region)
+(keys:bind! completion:region-action-keymap "<left>" editing:indent-rigidly-left)
+(keys:bind! completion:region-action-keymap "<right>" editing:indent-rigidly-right)
+(keys:bind! completion:region-action-keymap ";" comment:dwim)
+(keys:bind! completion:expression-action-keymap "TAB" editing:indent-region)
+(keys:bind! completion:expression-action-keymap ";" comment:dwim)
+(keys:bind! completion:expression-action-keymap "r" sexp:raise)
+(keys:bind! completion:expression-action-keymap "t" sexp:transpose)
+(keys:bind! completion:expression-action-keymap "u" sexp:backward-up-list)
+(keys:bind! completion:expression-action-keymap "n" sexp:forward-list)
+(keys:bind! completion:expression-action-keymap "p" sexp:backward-list)

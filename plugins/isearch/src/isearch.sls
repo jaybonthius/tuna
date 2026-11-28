@@ -468,20 +468,9 @@
     (unless c (assertion-violation 'isearch:printing-char "no character was typed"))
     (%add-repeated! (%current 'isearch:printing-char) (string c) n)))
 
-(define (%key-char key)
-  (cond
-    [(and (string? key) (= (string-length key) 1)) (string-ref key 0)]
-    [(equal? key "SPC") #\space]
-    [(equal? key "TAB") #\tab]
-    [(equal? key "RET") #\return]
-    [(and (string? key) (= (string-length key) 3) (string=? (substring key 0 2) "C-")
-          (char<=? #\@ (char-upcase (string-ref key 2)) #\_))
-     (integer->char (- (char->integer (char-upcase (string-ref key 2))) 64))]
-    [else #f]))
-
 (commands:define-command (quote-char [n (commands:prefix-number)])
   "Reads a key and adds its character, n times."
-  (let* ([s (%current 'isearch:quote-char)] [c (%key-char (keys:read-key))])
+  (let* ([s (%current 'isearch:quote-char)] [c (keys:key-char (keys:read-key))])
     (unless c (error 'isearch:quote-char "not a character"))
     (%add-repeated! s (string c) n)))
 
@@ -633,7 +622,7 @@
   (let ([s (%current 'isearch:yank-char)])
     (%yank-to! s (min (+ (%after-match s) (max n 1)) (document:length (buffers:document (%buffer s)))))))
 
-(commands:define-command (yank-until-char [char (%key-char (keys:read-key))] [n (commands:prefix-number)])
+(commands:define-command (yank-until-char [char (keys:key-char (keys:read-key))] [n (commands:prefix-number)])
   "Reads a character and adds the text after the match up to the nth following one, inclusive."
   (let* ([s (%current 'isearch:yank-until-char)] [doc (buffers:document (%buffer s))] [len (document:length doc)])
     (let loop ([p (%after-match s)] [k (max n 1)])

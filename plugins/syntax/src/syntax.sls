@@ -10,6 +10,12 @@
 (tables:define-table symbol-characters
   "Maps a major mode to the characters besides letters, digits and its word characters that are part of its symbols, as a string.")
 
+(tables:define-table bracket-pairs
+  "Maps a major mode to the opening and closing characters of its brackets, as a list of pairs of characters.")
+
+(tables:define-table escapes
+  "Maps a major mode to the character that escapes the next character, in its code and inside its strings.")
+
 (define-enumeration class (open close prefix atom string comment) %classes)
 
 (define-enumeration %lexeme-mark (open-ended mismatched) lexeme-marks)
@@ -23,7 +29,8 @@
   (check-main-thread make-lexeme-record lexeme-record? lexeme-record-class lexeme-record-start
    lexeme-record-end lexeme-record-depth lexeme-record-open-ended? lexeme-record-mismatched?
    check-lexeme all-marks lexer-of buffer-mode lexed-of local-lexed-of follow-edit! lexed-lexeme-at lexed-lexemes-between lexed-openings
-   lexed-sexp-before lexed-sexp-after lexed-top-level-form comment-sexp-before)
+   lexed-sexp-before lexed-sexp-after lexed-top-level-form lexed-top-level-forms comment-sexp-before
+   partners-touched? seam-balanced? check-question lex-range entry-of lexed-inserted-lexeme lexed-lexeme-starting lexed-lexeme-ending lexed-match)
 
   (define main-thread (get-thread-id))
 
@@ -41,12 +48,14 @@
 
   (define all-marks (lexeme-marks open-ended mismatched))
 
-  (define (lexer-of mode)
+  (define (entry-of table mode otherwise)
     (let loop ([modes (modes:ancestry mode)])
       (cond
-        [(null? modes) #f]
-        [(tables:ref lexers (car modes) #f)]
+        [(null? modes) otherwise]
+        [(tables:ref table (car modes) #f)]
         [else (loop (cdr modes))])))
+
+  (define (lexer-of mode) (entry-of lexers mode #f))
 
   ;; A list with no match ends with the last lexeme, so the end of that
   ;; one is kept beside the matches.
@@ -574,6 +583,168 @@
          => (lambda (f) (values (car f) (cdr f)))]
         [else (values #f #f)])))
 
+  (define (lexed-lexeme-starting lexed position)
+    (let* ([v (lexed-lexemes lexed)] [i (fx+ (last-before v position) 1)])
+      (and (fx< i (vector-length v))
+           (fx= (lexeme-record-start (vector-ref v i)) position)
+           (vector-ref v i))))
+
+  (define (lexed-lexeme-ending lexed position)
+    (let* ([v (lexed-lexemes lexed)] [i (last-before v position)])
+      (and (fx>= i 0)
+           (fx= (lexeme-record-end (vector-ref v i)) position)
+           (vector-ref v i))))
+
+  ;; The lexeme is found again by its start, since each answer makes its
+  ;; own lexeme records.
+  (define (lexed-match who lexed lexeme)
+    (let* ([v (lexed-lexemes lexed)] [i (fx+ (last-before v (lexeme-record-start lexeme)) 1)])
+      (unless (and (fx< i (vector-length v))
+                   (let ([l (vector-ref v i)])
+                     (and (fx= (lexeme-record-start l) (lexeme-record-start lexeme))
+                          (fx= (lexeme-record-end l) (lexeme-record-end lexeme))
+                          (eq? (lexeme-record-class l) (lexeme-record-class lexeme))
+                          (memq (lexeme-record-class l) '(open close)))))
+        (assertion-violation who "not a bracket of the buffer's text" lexeme))
+      (let ([m (if (open? (vector-ref v i)) (fxvector-ref (lexed-matches lexed) i) (fxvector-ref (lexed-openers lexed) i))])
+        (and (fx>= m 0) (vector-ref v m)))))
+
+  ;; Read from the start of the lexeme the position touches, so text that
+  ;; joins it, as ( after # does, is read as joined.
+  (define (lexed-inserted-lexeme who mode lexed position text)
+    (let* ([doc (lexed-document lexed)]
+           [v (lexed-lexemes lexed)]
+           [from (let ([i (last-before v position)])
+                   (if (and (fx>= i 0) (fx>= (lexeme-record-end (vector-ref v i)) position))
+                       (lexeme-record-start (vector-ref v i))
+                       position))]
+           [line (document:line doc position)]
+           [to (if (fx< line (document:line doc (fx- (document:length doc) 1)))
+                   (fx- (document:line-start doc (fx+ line 1)) 1)
+                   (fxmax position (fx- (document:length doc) 1)))]
+           [at (fx- position from)]
+           [read (run-lexer who mode (lexer-of mode)
+                   (document:replace (document:slice doc from to) at at (document:from-datum text)))]
+           [i (last-before read (fx+ at 1))])
+      (and (fx>= i 0)
+           (let ([l (vector-ref read i)])
+             (and (fx< at (lexeme-record-end l))
+                  (make-lexeme-record (lexeme-record-class l) (fx+ (lexeme-record-start l) from)
+                    (fx+ (lexeme-record-end l) from) (fx+ (lexeme-record-depth l) (length (openings-of lexed from)))
+                    (lexeme-record-open-ended? l) (lexeme-record-mismatched? l)))))))
+
+  (define (lexed-top-level-forms lexed start end)
+    (map (lambda (f) (cons (car f) (cdr f)))
+         (filter (lambda (f)
+                   (if (fx= start end)
+                       (fx<= (car f) start (cdr f))
+                       (and (fx< (car f) end) (fx> (cdr f) start))))
+                 (forms-of lexed))))
+
+  ;; A bracket lexeme the range cuts, as #( cut after its #, is taken
+  ;; with the range, so its partner must be taken too.
+  (define (partners-touched? lexed from to)
+    (let* ([v (lexed-lexemes lexed)] [n (vector-length v)]
+           [touched? (lambda (l) (and (fx< (lexeme-record-start l) to) (fx> (lexeme-record-end l) from)))])
+      (let loop ([i (fxmax 0 (last-before v from))])
+        (or (fx>= i n)
+            (let ([l (vector-ref v i)])
+              (or (fx>= (lexeme-record-start l) to)
+                  (and (or (not (touched? l))
+                           (not (memq (lexeme-record-class l) '(open close)))
+                           (let ([m (if (open? l) (fxvector-ref (lexed-matches lexed) i) (fxvector-ref (lexed-openers lexed) i))])
+                             (or (fx< m 0) (touched? (vector-ref v m)))))
+                       (loop (fx+ i 1)))))))))
+
+  ;; Brackets the inserted text makes or touches are its own, so each must
+  ;; have its partner in it too; a stray one would close or open a list
+  ;; outside.
+  (define (inserted-partnered? lexed from to)
+    (or (fx= from to)
+        (let* ([v (lexed-lexemes lexed)] [n (vector-length v)]
+               [touched? (lambda (l) (and (fx< (lexeme-record-start l) to) (fx> (lexeme-record-end l) from)))])
+          (let loop ([i (fxmax 0 (last-before v from))])
+            (or (fx>= i n)
+                (let ([l (vector-ref v i)])
+                  (or (fx>= (lexeme-record-start l) to)
+                      (and (or (not (touched? l))
+                               (not (memq (lexeme-record-class l) '(open close)))
+                               (let ([m (if (open? l) (fxvector-ref (lexed-matches lexed) i) (fxvector-ref (lexed-openers lexed) i))])
+                                 (and (fx>= m 0) (touched? (vector-ref v m)))))
+                           (loop (fx+ i 1))))))))))
+
+  ;; A comment the end of its line closes is open-ended by nature; any
+  ;; other lexeme left open, a string or a comment that runs over a line
+  ;; break, has lost its end.
+  (define (alone-balanced? doc v)
+    (let loop ([i 0] [depth 0])
+      (if (fx= i (vector-length v))
+          (fx= depth 0)
+          (let ([l (vector-ref v i)])
+            (cond
+              [(open? l) (loop (fx+ i 1) (fx+ depth 1))]
+              [(close? l) (and (fx> depth 0) (not (lexeme-record-mismatched? l)) (loop (fx+ i 1) (fx- depth 1)))]
+              [(and (lexeme-record-open-ended? l)
+                    (or (not (eq? (lexeme-record-class l) 'comment))
+                        (let ([text (document:text doc (lexeme-record-start l) (lexeme-record-end l))])
+                          (exists (lambda (c) (char=? c #\newline)) (string->list text)))))
+               #f]
+              [else (loop (fx+ i 1) depth)])))))
+
+  ;; Each position's lexeme, as its class and its ends, the ends moved as
+  ;; the edit moves them, so a string or comment whose edge moved differs
+  ;; everywhere in it.
+  (define (lexeme-places v n move-start move-end)
+    (let ([places (make-vector n #f)])
+      (vector-for-each
+        (lambda (l)
+          (let ([place (list (lexeme-record-class l) (move-start (lexeme-record-start l)) (move-end (lexeme-record-end l)))])
+            (do ([i (lexeme-record-start l) (fx+ i 1)]) ((fx>= i (fxmin n (lexeme-record-end l))))
+              (vector-set! places i place))))
+        v)
+      places))
+
+  ;; An edit changes how the text after it reads only through the lexemes
+  ;; it touches, as when it moves a comment's edge or starts a lexeme that
+  ;; runs on, so the lines around the seam are enough; text read on to
+  ;; their end could run to the end of the buffer, so it is refused.
+  ;; Paredit checks the same at a line comment's edge.
+  (define (seam-balanced? who mode lexer lexed doc start end text)
+    (let* ([last (fx- (document:length doc) 1)]
+           [line-start (document:line-start doc (document:line doc start))]
+           [near (lexed-lexemes-between lexed line-start (fxmin last (fx+ end 1)))]
+           [from (fold-left (lambda (q l) (fxmin q (lexeme-record-start l))) line-start near)]
+           [reach (fold-left (lambda (q l) (fxmax q (lexeme-record-end l))) end near)]
+           [to (let ([line (document:line doc (fxmin reach last))])
+                 (if (fx< line (document:line doc last))
+                     (fxmin last (line-end doc (fx+ line 1) (document:line doc last)))
+                     last))]
+           [old (document:slice doc from to)]
+           [at (fx- start from)] [gone (fx- end start)] [added (string-length text)]
+           [new (document:replace old at (fx+ at gone) (document:from-datum text))]
+           [n (document:length new)]
+           [moved (lambda (q) (fx+ q (fx- added gone)))]
+           [new-start (lambda (q) (cond [(fx< q at) q] [(fx>= q (fx+ at gone)) (moved q)] [else (fx+ at added)]))]
+           [new-end (lambda (q) (cond [(fx<= q at) q] [(fx> q (fx+ at gone)) (moved q)] [else at]))]
+           [old-places (lexeme-places (run-lexer who mode lexer old) (document:length old) new-start new-end)]
+           [new-lexed (make-lexed new (run-lexer who mode lexer new))]
+           [new-places (lexeme-places (lexed-lexemes new-lexed) n values values)]
+           [old-position (lambda (q) (if (fx< q at) q (fx+ q (fx- gone added))))]
+           [old-end (lambda (q) (if (fx<= q at) q (fx+ q (fx- gone added))))]
+           [crossing? (lambda (q)
+                        (and (not (and (fx<= at q) (fx< q (fx+ at added))))
+                             (not (equal? (vector-ref new-places q) (vector-ref old-places (old-position q))))))])
+      (let loop ([q 0])
+        (cond
+          [(fx>= q n) (inserted-partnered? new-lexed at (fx+ at added))]
+          [(crossing? q)
+           (let ([run-end (let run ([k q]) (if (and (fx< k n) (crossing? k)) (run (fx+ k 1)) k))])
+             (and (or (fx< run-end n) (fx= to last))
+                  (let ([run (document:slice new q run-end)]) (alone-balanced? run (run-lexer who mode lexer run)))
+                  (let ([run (document:slice old (old-position q) (old-end run-end))]) (alone-balanced? run (run-lexer who mode lexer run)))
+                  (loop run-end)))]
+          [else (loop (fx+ q 1))]))))
+
   ;; Inside a comment, its text reads as code from its first whitespace or
   ;; opening bracket, so an example call in a comment is the sexp before
   ;; point, as in Emacs.
@@ -659,6 +830,54 @@
     [(buffer position mode)
      (lexed-lexeme-at (local-lexed-of 'syntax:lexeme-at buffer position position mode) position)]))
 
+(define lexeme-starting-at
+  (case-lambda
+    [(buffer position) (lexeme-starting-at buffer position (buffer-mode 'syntax:lexeme-starting-at buffer))]
+    [(buffer position mode)
+     (unless (buffers:buffer? buffer)
+       (assertion-violation 'syntax:lexeme-starting-at "not a buffer" buffer))
+     ;; From the position to the next, so a bracket at the start of a line
+     ;; that starts a form is read with that form.
+     (let ([high (if (and (fixnum? position) (fx< position (document:length (buffers:document buffer)))) (fx+ position 1) position)])
+       (lexed-lexeme-starting (local-lexed-of 'syntax:lexeme-starting-at buffer position high mode) position))]))
+
+(define lexeme-ending-at
+  (case-lambda
+    [(buffer position) (lexeme-ending-at buffer position (buffer-mode 'syntax:lexeme-ending-at buffer))]
+    [(buffer position mode)
+     (let ([low (if (and (fixnum? position) (fx> position 0)) (fx- position 1) position)])
+       (lexed-lexeme-ending (local-lexed-of 'syntax:lexeme-ending-at buffer low position mode) position))]))
+
+(define inserted-lexeme
+  (case-lambda
+    [(buffer position text) (inserted-lexeme buffer position text (buffer-mode 'syntax:inserted-lexeme buffer))]
+    [(buffer position text mode)
+     (unless (and (string? text) (fx> (string-length text) 0))
+       (assertion-violation 'syntax:inserted-lexeme "not a non-empty string" text))
+     (lexed-inserted-lexeme 'syntax:inserted-lexeme mode
+       (local-lexed-of 'syntax:inserted-lexeme buffer position position mode) position text)]))
+
+(define match
+  (case-lambda
+    [(buffer lexeme) (match buffer lexeme (buffer-mode 'syntax:match buffer))]
+    [(buffer lexeme mode)
+     (check-lexeme 'syntax:match lexeme)
+     (unless (buffers:buffer? buffer)
+       (assertion-violation 'syntax:match "not a buffer" buffer))
+     ;; The forms around the bracket, as the questions that return brackets
+     ;; read them, so a bracket they return is always found here.
+     (let ([start (lexeme-record-start lexeme)])
+       (lexed-match 'syntax:match
+         (local-lexed-of 'syntax:match buffer start (fxmin (fx+ start 1) (document:length (buffers:document buffer))) mode)
+         lexeme))]))
+
+(define string-or-comment-at
+  (case-lambda
+    [(buffer position) (string-or-comment-at buffer position (buffer-mode 'syntax:string-or-comment-at buffer))]
+    [(buffer position mode)
+     (let ([l (lexed-lexeme-at (local-lexed-of 'syntax:string-or-comment-at buffer position position mode) position)])
+       (and l (memq (lexeme-record-class l) '(string comment)) l))]))
+
 (define openings
   (case-lambda
     [(buffer position) (openings buffer position (buffer-mode 'syntax:openings buffer))]
@@ -687,14 +906,51 @@
     [(buffer position mode)
      (lexed-top-level-form (lexed-of 'syntax:top-level-form buffer position mode) position)]))
 
+(define top-level-forms
+  (case-lambda
+    [(buffer start end) (top-level-forms buffer start end (buffer-mode 'syntax:top-level-forms buffer))]
+    [(buffer start end mode)
+     (unless (and (fixnum? start) (fixnum? end) (fx<= 0 start end))
+       (assertion-violation 'syntax:top-level-forms "not a range" start end))
+     (let ([lexed (lexed-of 'syntax:top-level-forms buffer start mode)])
+       (unless (fx<= end (document:length (buffers:document buffer)))
+         (assertion-violation 'syntax:top-level-forms "not a position in the buffer" end))
+       (lexed-top-level-forms lexed start end))]))
+
+(define balanced?
+  (case-lambda
+    [(buffer start end text) (balanced? buffer start end text (buffer-mode 'syntax:balanced? buffer))]
+    [(buffer start end text mode)
+     (unless (and (fixnum? start) (fixnum? end) (fx<= 0 start end))
+       (assertion-violation 'syntax:balanced? "not a range" start end))
+     (unless (string? text)
+       (assertion-violation 'syntax:balanced? "not a string" text))
+     (let-values ([(doc lexer) (check-question 'syntax:balanced? buffer end mode)])
+       (or (and (fx= start end) (string=? text ""))
+           (let ([lexed (local-lexed-of 'syntax:balanced? buffer start end mode)])
+             (and (partners-touched? lexed start end)
+                  (seam-balanced? 'syntax:balanced? mode lexer lexed doc start end text)))))]))
+
+(define (mode-escape mode)
+  (unless (symbol? mode)
+    (assertion-violation 'syntax:mode-escape "not a mode" mode))
+  (let ([escape (entry-of escapes mode #f)])
+    (unless (or (not escape) (char? escape))
+      (assertion-violation 'syntax:mode-escape "the mode's entry is not a character" mode escape))
+    escape))
+
+(define (mode-bracket-pairs mode)
+  (unless (symbol? mode)
+    (assertion-violation 'syntax:mode-bracket-pairs "not a mode" mode))
+  (let ([pairs (entry-of bracket-pairs mode '())])
+    (unless (and (list? pairs) (for-all (lambda (p) (and (pair? p) (char? (car p)) (char? (cdr p)))) pairs))
+      (assertion-violation 'syntax:mode-bracket-pairs "the mode's entry is not a list of pairs of characters" mode pairs))
+    pairs))
+
 (define (%characters-of who table mode)
   (unless (symbol? mode)
     (assertion-violation who "not a mode" mode))
-  (let ([characters (let loop ([modes (modes:ancestry mode)])
-                      (cond
-                        [(null? modes) (tables:ref table modes:fundamental "")]
-                        [(tables:ref table (car modes) #f)]
-                        [else (loop (cdr modes))]))])
+  (let ([characters (entry-of table mode (tables:ref table modes:fundamental ""))])
     (unless (string? characters)
       (assertion-violation who "the mode's entry is not a string" mode characters))
     characters))

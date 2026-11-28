@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-user) (test-runner) (options) (hooks) (timers) (keys) (buffers) (document) (views) (layout) (minibuffer)
+(import (tuna) (test) (test-user) (test-runner) (options) (hooks) (timers) (keys) (tables) (commands) (modes) (buffers) (document) (views) (layout) (minibuffer)
         (completion) (completion-popup) (editing) (web) (completion-test sessions) (minibuffer-test reading))
 
 (define (session) (completion-test/sessions:session))
@@ -214,3 +214,23 @@
         (test-user:press! "M-n")
         (check-equal? "alpha" (selected))
         (web:close-client! other)))))
+
+(commands:define-command (typed-through [n (commands:prefix-number)] [char (keys:typed-char)])
+  "Types CHAR as editing:self-insert does, as a minor mode's own typing command may."
+  (editing:self-insert n char))
+
+(tables:define-table remapping-keymap "Remaps typing to typed-through.")
+
+(keys:remap! remapping-keymap editing:self-insert typed-through)
+
+(modes:define-minor-mode remapping-mode
+  "Whether typing runs typed-through."
+  (keymap remapping-keymap))
+
+(test "a command a minor mode remaps one of completion-popup:auto-commands to starts it too"
+  (auto! 0.05
+    (lambda ()
+      (buffers:with-buffer (views:buffer (layout:selected-view)) (options:set-local! remapping-mode #t))
+      (test-user:type! "alp")
+      (wait-for-session)
+      (check-equal? '("alpha" "alpine" "alphabet") (popup-rows)))))

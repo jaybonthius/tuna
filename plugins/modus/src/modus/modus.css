@@ -317,6 +317,7 @@
     --rainbow-delimiters-depth-7-color: var(--modus-green-intense);
     --rainbow-delimiters-depth-8-color: var(--modus-blue-warmer);
     --rainbow-delimiters-depth-9-color: var(--modus-magenta-warmer);
+    --show-paren-match-background: var(--modus-bg-paren-match);
     --which-key-key-color: var(--modus-keybind);
     --which-key-label-color: var(--modus-type);
   }

@@ -16,6 +16,14 @@
   (let loop ([p start])
     (if (and (fx< p end) (blank? (document:token doc p))) (loop (fx+ p 1)) p)))
 
+(define (blanks-start doc start end)
+  (unless (document? doc)
+    (assertion-violation 'indentation:blanks-start "not a document" doc))
+  (unless (and (fixnum? start) (fixnum? end) (fx<= 0 start end (document:length doc)))
+    (assertion-violation 'indentation:blanks-start "not a range in the document" start end))
+  (let loop ([p end])
+    (if (and (fx> p start) (blank? (document:token doc (fx- p 1)))) (loop (fx- p 1)) p)))
+
 (module %internals
   (check-main-thread check-buffer check-position indenter-of text-start indentation-end line-end? fallback-column
    indent-line!)

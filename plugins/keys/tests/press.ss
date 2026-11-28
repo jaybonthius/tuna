@@ -208,3 +208,7 @@
 
 (test "press! takes a client"
   (check-raises (test-runner:raised-with 'keys:press! "not a client") (keys:press! 'one "C-g")))
+
+(test "key-char gives the character a key types as C-q inserts it, or #f for a key or event that types none"
+  (check-equal? '(#\a #\space #\tab #\return #\x18 #\delete #f #f)
+                (map keys:key-char (list "a" "SPC" "TAB" "RET" "C-x" "DEL" "<f1>" 'event))))

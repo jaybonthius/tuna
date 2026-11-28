@@ -1,6 +1,6 @@
 #!tuna
 (import (prog) (modes) (auto-mode) (buffers) (document) (files) (jobs) (faces) (syntax)
-        (syntax-highlighting) (indentation) (outline) (chez-scheme highlight) (hooks) (options) (tables))
+        (syntax-highlighting) (indentation) (outline) (comment-syntax) (chez-scheme highlight) (hooks) (options) (tables))
 
 (define %self (current-owner))
 
@@ -450,10 +450,6 @@
       (when (drop-stale-names!)
         (syntax-highlighting:update!)))))
 
-;; Emacs's Scheme mode puts a line holding only a one-semicolon comment
-;; at this column.
-(define %comment-column 40)
-
 (define (%class? lexeme class) (eq? (syntax:lexeme-class lexeme) class))
 
 (define-record-type (%sexp %make-sexp %sexp?)
@@ -568,7 +564,7 @@
                  [semicolons (if (and first (%class? first (syntax:class comment))) (%semicolons doc first) 0)])
             (cond
               [(fx>= semicolons 3) #f]
-              [(fx= semicolons 1) %comment-column]
+              [(fx= semicolons 1) (buffers:with-buffer buffer (comment-syntax:column))]
               [else
                (let ([openings (syntax:openings buffer position)])
                  (if (null? openings)
@@ -587,6 +583,15 @@
     (if (and (pair? ls) (pair? (cdr ls)) (%class? (cadr ls) (syntax:class atom))) 2 1)))
 
 (tables:set! syntax:lexers mode lexer)
+(tables:set! syntax:bracket-pairs mode (list (cons #\( #\)) (cons #\[ #\])))
+(tables:set! syntax:escapes mode #\\)
+;; Emacs's Scheme mode puts a comment after code, and a line holding
+;; only a one-semicolon comment, at column 40.
+(hooks:add! mode-hook
+  (lambda ()
+    (options:set-local! comment-syntax:start ";")
+    (options:set-local! comment-syntax:add 1)
+    (options:set-local! comment-syntax:column 40)))
 (tables:set! syntax:symbol-characters mode "!$%&*/:<=>?^_~+-.@")
 (for-each (lambda (name) (tables:set! auto-mode:file-names name mode))
           '("sls" "ss" "sps" "scm" "sch" "sld"))

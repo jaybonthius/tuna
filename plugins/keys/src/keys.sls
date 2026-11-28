@@ -1097,15 +1097,34 @@
   (check-event 'keys:event-modifiers event)
   (event-modifiers-of (car event)))
 
+(define %named-key-chars
+  '(("SPC" . #\space) ("TAB" . #\tab) ("RET" . #\return) ("ESC" . #\esc) ("DEL" . #\delete)
+    ("C-SPC" . #\nul) ("C-?" . #\delete)))
+
+;; char-upcase takes ı to I, so a control key's own character must be
+;; ASCII.
+(define (key-char key)
+  (and (string? key)
+       (let ([n (string-length key)])
+         (cond
+           [(fx= n 1) (string-ref key 0)]
+           [(assoc key %named-key-chars) => cdr]
+           [(and (fx= n 3) (char=? (string-ref key 0) #\C) (char=? (string-ref key 1) #\-)
+                 (char<? (string-ref key 2) #\x80))
+            (let ([c (char-upcase (string-ref key 2))])
+              (and (char<=? #\@ c #\_) (integer->char (fx- (char->integer c) 64))))]
+           [else #f]))))
+
+;; A key that ran a command types text only as a character, SPC, TAB or
+;; RET, and RET's text is a line break, where C-q RET inserts a carriage
+;; return and C-q C-a its control character.
 (define (typed-char)
   (let ([keys (current-keys)])
     (and keys
          (let ([key (last-key keys)])
            (cond
-             [(fx= (string-length key) 1) (string-ref key 0)]
-             [(string=? key "SPC") #\space]
-             [(string=? key "TAB") #\tab]
              [(string=? key "RET") #\newline]
+             [(or (fx= (string-length key) 1) (member key '("SPC" "TAB"))) (key-char key)]
              [else #f])))))
 
 (define (shift-translated?) (current-shifted))

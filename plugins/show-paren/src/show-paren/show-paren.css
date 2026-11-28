@@ -1,0 +1,32 @@
+@layer defaults, themes, preferences;
+
+@layer defaults.faces {
+  [data-face="show-paren.match"] {
+    color: var(--show-paren-match-color, revert-layer);
+    background-color: var(--show-paren-match-background, var(--tuna-match));
+    font-weight: var(--show-paren-match-font-weight, revert-layer);
+    font-style: var(--show-paren-match-font-style, revert-layer);
+    font-family: var(--show-paren-match-font-family, revert-layer);
+    font-size: var(--show-paren-match-font-size, revert-layer);
+    text-decoration: var(--show-paren-match-text-decoration, revert-layer);
+  }
+
+  [data-face="show-paren.mismatch"] {
+    color: var(--show-paren-mismatch-color, var(--tuna-error));
+    background-color: var(--show-paren-mismatch-background, var(--tuna-error-surface));
+    font-weight: var(--show-paren-mismatch-font-weight, var(--tuna-font-weight-bold));
+    font-style: var(--show-paren-mismatch-font-style, revert-layer);
+    font-family: var(--show-paren-mismatch-font-family, revert-layer);
+    font-size: var(--show-paren-mismatch-font-size, revert-layer);
+    text-decoration: var(--show-paren-mismatch-text-decoration, revert-layer);
+  }
+}
+
+@layer preferences {
+  @media (forced-colors: active) {
+    [data-face="show-paren.match"],
+    [data-face="show-paren.mismatch"] {
+      outline: 1px solid CanvasText;
+    }
+  }
+}

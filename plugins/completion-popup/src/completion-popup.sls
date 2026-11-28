@@ -94,12 +94,17 @@
 
 (define %timer #f)
 
+;; A minor mode that remaps one of these commands, as strict balance
+;; remaps self-insert, runs its own command for the same keys.
+(define (%auto-command? client command)
+  (exists (lambda (auto) (or (eq? auto command) (eq? (keys:command-remapping client auto) command))) (auto-commands)))
+
 (define (%maybe-start command)
   (when %timer
     (timers:cancel! %timer)
     (set! %timer #f))
   (let ([view (views:current)] [client (web:current-client)])
-    (when (and view client (memq command (auto-commands)) (not (completion:current-session)))
+    (when (and view client (%auto-command? client command) (not (completion:current-session)))
       (let ([delay (auto-delay)] [minimum (auto-prefix)] [id (views:id view)])
         (when delay
           (call-as-owner %self
