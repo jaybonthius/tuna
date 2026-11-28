@@ -4,6 +4,8 @@
 
 (tables:define-table keymap "Keys in outline lists.")
 
+(tables:define-table name-keymap "Keys on an entry's name, for clicks.")
+
 (hooks:define-hook mode-hook "Called in each outline list as its mode is set.")
 
 (modes:define-major-mode mode
@@ -19,7 +21,8 @@
 (buffers:define-kind %contents (content nodes))
 
 (define (%draw-name node view)
-  (haml (:span ([data-kind (document:node-attribute node 'kind)] [data-face (document:node-attribute node 'face #f)])
+  (haml (:span ([data-kind (document:node-attribute node 'kind)] [data-face (document:node-attribute node 'face #f)]
+                [data-keymap (views:keymap-mark name-keymap)])
           (views:draw-children view node))))
 
 (buffers:define-kind %name (inline) (draw %draw-name))
@@ -196,11 +199,14 @@
       (hashtable-keys %lists))))
 
 (keys:bind! keymap "RET" go-to-entry)
-(keys:bind! keymap "<mouse-1>" mouse-go-to-entry)
 (keys:bind! keymap "SPC" show-entry)
 (keys:bind! keymap "M-RET" visit-and-quit)
 (keys:bind! keymap "n" next-entry)
 (keys:bind! keymap "p" previous-entry)
 (keys:bind! keymap "g" refresh)
+(keys:bind! name-keymap "<mouse-1>" mouse-go-to-entry)
+(keys:bind! name-keymap "<mouse-2>" mouse-go-to-entry)
+(keys:bind! name-keymap "<down-mouse-1>" keys:ignore)
+(keys:bind! name-keymap "<drag-mouse-1>" keys:ignore)
 (hooks:add! outline:updated %updated)
 (hooks:add! commands:after-command %after-command)

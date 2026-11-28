@@ -1,5 +1,5 @@
-(import (tuna) (test) (test-browser) (test-user) (test-runner) (web) (keys) (commands) (cdp) (cdp page) (layout) (editing)
-        (echo-area) (minibuffer) (command-picker) (completion))
+(import (tuna) (test) (test-browser) (test-user) (test-runner) (web) (keys) (commands) (buffers) (ui) (cdp) (cdp page)
+        (layout) (editing) (echo-area) (minibuffer) (command-picker) (completion))
 
 (define page (test-browser:open))
 
@@ -57,7 +57,21 @@
   (test-browser:wait-for-applied page)
   (check-equal? '("Drawn") (texts ".echo-area-message")))
 
-(test "a key no keyboard has, and a page test-browser did not open, raise"
+(define clicked 0)
+
+(commands:define-command (note-click) "Counts a click." (set! clicked (+ clicked 1)))
+
+;; A button's press runs nothing, so only the release can count.
+(ui:define-button counter note-click)
+
+(test "a click on an element reaches Tuna as a mouse's, and has run its command by the time click! returns"
+  (layout:switch-to-buffer (buffers:make "buttons" (buffers:text '() "Press " (counter '() "here") "\n")))
+  (test-browser:wait-for-applied page)
+  (test-browser:click! page (car (test-browser:call (lambda () (page-query page ".ui-button")))))
+  (check-equal? 1 clicked))
+
+(test "a key no keyboard has, a click on what is no element of the page, and a page test-browser did not open, raise"
   (check-raises assertion-violation? (test-browser:press! page "<mouse-1>"))
+  (check-raises assertion-violation? (test-browser:click! page 'element))
   (check-raises assertion-violation? (test-browser:press! 'page "a"))
   (check-raises assertion-violation? (test-browser:type! page 'text)))

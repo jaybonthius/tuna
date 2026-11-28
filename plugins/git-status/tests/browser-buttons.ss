@@ -97,8 +97,6 @@
 
 (define (hover! element) (test-browser:call (lambda () (element-hover! element))))
 
-(define (click! element) (test-browser:call (lambda () (element-click! element))))
-
 (current!)
 
 (test "a row's buttons are hidden away from the pointer and shown under it"
@@ -113,11 +111,11 @@
 (test "+ stages its row whatever point is, and point and the selected view stay; − unstages it"
   (let ([before (list (views:point (status-view)) (eq? (layout:selected-view) (status-view)))])
     (hover! (heading "modified   a.py"))
-    (click! (button "modified   a.py" "+"))
+    (test-browser:click! page (button "modified   a.py" "+"))
     (becomes! "M  a.py\nM  b.txt\n")
     (check-equal? before (list (views:point (status-view)) (eq? (layout:selected-view) (status-view)))))
   (hover! (heading "modified   a.py"))
-  (click! (button "modified   a.py" "−"))
+  (test-browser:click! page (button "modified   a.py" "−"))
   (becomes! " M a.py\nM  b.txt\n"))
 
 (test "a hunk's heading carries the buttons, shown under the pointer"
@@ -137,7 +135,7 @@
 
 (test "⟲ asks first, and y discards the row"
   (hover! (heading "modified   a.py"))
-  (click! (button "modified   a.py" "⟲"))
+  (test-browser:click! page (button "modified   a.py" "⟲"))
   (let ([question (test-browser:call (lambda () (page-wait-for page ".minibuffer-question" (element-state visible))))])
     (check (contains? (test-browser:call (lambda () (element-text question))) "Discard unstaged changes")))
   (test-browser:press! page "y")

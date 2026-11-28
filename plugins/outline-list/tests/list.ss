@@ -64,9 +64,11 @@
   (check-equal? '(4 6) (place (view)))
   (finish!))
 
-(test "a click on a row goes to its entry"
+(test "the middle button on an entry's name goes to its entry, as the left does"
   (start!)
-  (test-user:click! (list-view) (+ 2 (ui:section-heading-start (section "helper"))))
+  (test-user:click-element!
+    (find (lambda (e) (equal? "helper" (test-user:element-text e))) (test-user:elements-with (test-user:screen) "data-kind"))
+    "<mouse-2>")
   (check (eq? (view) (cart-view)))
   (check-equal? '(7 9) (place (view)))
   (finish!))

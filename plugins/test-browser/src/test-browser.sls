@@ -110,15 +110,15 @@
 
 (define (%field alist name) (cdr (assoc name alist)))
 
-;; A page posts its views' scroll reports to /input too, so the key's
-;; request is told by the item it carries.
-(define (%key-sent? event)
+;; A page posts its views' scroll reports to /input too, so the request
+;; awaited is told by the item it carries.
+(define (%input-item event)
   (and (string=? (event-method event) "Network.requestWillBeSent")
        (let* ([request (%field (event-params event) "request")] [url (%field request "url")] [data (assoc "postData" request)])
          (and (fx>= (string-length url) 6)
               (string=? "/input" (substring url (fx- (string-length url) 6) (string-length url)))
               data
-              (equal? "key" (let ([item (string->json (cdr data))]) (and (pair? item) (%field item "type"))))))))
+              (let ([item (string->json (cdr data))]) (and (pair? item) item))))))
 
 ;; The page reads no answer to an item, so Chromium ends each request
 ;; as cancelled once its answer has come.
@@ -127,18 +127,31 @@
     (and (member (event-method event) '("Network.responseReceived" "Network.loadingFailed"))
          (equal? id (%field (event-params event) "requestId")))))
 
-;; A user presses a key once the screen shows what the one before did, so
-;; the quit mark the page gives it is the one Tuna's state asks for.
-(define (%press-key! page key)
+;; A page sends its items at once, and Tuna answers an item that came
+;; before one sent earlier while holding it unrun, so the item awaited
+;; has run only once every item sent up to it has been answered.
+(define (%send! who page act! sent? what)
   (call (lambda ()
           (with-events (events (page-session page) "Network.requestWillBeSent" "Network.responseReceived"
                                "Network.loadingFailed")
-            (page-press! page (%browser-key-name key) (%browser-key-held key))
-            (let* ([id (%field (event-params (events-wait events %key-sent?)) "requestId")]
-                   [ended (events-wait events (%answered-or-failed id))])
-              (when (string=? (event-method ended) "Network.loadingFailed")
-                (errorf 'test-browser:press! "the page could not send ~a to Tuna" (%browser-key-key key)))))))
+            (act!)
+            (let loop ([ids '()])
+              (let* ([event (events-wait events %input-item)] [ids (cons (%field (event-params event) "requestId") ids)])
+                (if (sent? (%input-item event))
+                    (for-each (lambda (id)
+                                (when (string=? "Network.loadingFailed" (event-method (events-wait events (%answered-or-failed id))))
+                                  (errorf who "the page could not send ~a to Tuna" what)))
+                              ids)
+                    (loop ids)))))))
   (wait-for-applied page))
+
+;; A user presses a key once the screen shows what the one before did, so
+;; the quit mark the page gives it is the one Tuna's state asks for.
+(define (%press-key! page key)
+  (%send! 'test-browser:press! page
+          (lambda () (page-press! page (%browser-key-name key) (%browser-key-held key)))
+          (lambda (item) (equal? "key" (%field item "type")))
+          (%browser-key-key key)))
 
 (define (press! page keys)
   (%client-of 'test-browser:press! page)
@@ -156,6 +169,17 @@
   (unless (string? text)
     (assertion-violation 'test-browser:type! "not a string" text))
   (for-each (lambda (key) (%press-key! page key)) (map (lambda (c) (%key->browser-key (%char-key c))) (string->list text))))
+
+;; A page posts a press and a release, and a click runs its command at
+;; the release.
+(define (click! page element)
+  (%client-of 'test-browser:click! page)
+  (unless (and (element? element) (eq? page (element-page element)))
+    (assertion-violation 'test-browser:click! "not an element of the page" element))
+  (%send! 'test-browser:click! page
+          (lambda () (element-click! element))
+          (lambda (item) (and (equal? "mouse" (%field item "type")) (equal? "click" (%field item "action"))))
+          "the click"))
 
 (define (close! page)
   (%client-of 'test-browser:close! page)
