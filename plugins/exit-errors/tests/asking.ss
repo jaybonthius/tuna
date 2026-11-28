@@ -33,7 +33,7 @@
 (test "n, or C-g, keeps Tuna running and drops the exit that asked; a later exit exits as usual"
   (let-values ([(status events) (exit-run "no")])
     (check-equal? 0 status)
-    (check-equal? (list "reported car" question "reported car" question "reported &cancelled" "still running"
+    (check-equal? (list "reported car" question "reported car" question "still running"
                         "configuration unloading")
                   events)))
 

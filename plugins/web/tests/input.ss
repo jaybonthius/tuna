@@ -87,11 +87,11 @@
 (tables:set! web:input-handlers "keyboard-quit" (lambda (client item) (note! 'quit-ran)))
 
 (test "an item whose quit is true cancels the command running when it arrives, then runs in its turn"
-  (tables:set! web:input-handlers "spin" (lambda (client item) (set! spinning #t) (let loop () (loop))))
+  (tables:set! web:input-handlers "spin" (lambda (client item) (set! spinning (current-task)) (let loop () (loop))))
   (let ([reported (test-runner:reports-during
                     (lambda () (check-equal? '(204 204) (send-while-spinning! "spin" (list quit-item))) (test-runner:wait-for-batch)))])
-    (check-equal? '(#t) (map cancelled? reported))
-    (check-equal? '(quit) (map cancelled-reason reported)))
+    (check-equal? '() reported))
+  (check-equal? '(cancelled quit) (call-with-values (lambda () (join-task spinning)) list))
   (check-equal? '(quit-ran) (taken!)))
 
 (test "a command that holds cancels off is stopped by the second quit, as the first waits behind it"
@@ -99,7 +99,7 @@
     (tables:set! web:input-handlers "masked-spin"
       (lambda (client item)
         (set! spun (current-task))
-        (call-with-cancellation-masked (lambda (restore) (set! spinning #t) (let loop () (loop))))))
+        (call-with-cancellation-masked (lambda (restore) (set! spinning (current-task)) (let loop () (loop))))))
     (check-equal? '(204 204 204) (send-while-spinning! "masked-spin" (list quit-item quit-item)))
     (test-runner:wait-for-batch)
     (check-equal? 'stopped (let-values ([(how detail) (join-task spun)]) how))

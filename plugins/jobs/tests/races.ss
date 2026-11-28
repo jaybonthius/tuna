@@ -109,12 +109,14 @@
 (test "quits asked for as fast as a thread can, while the main thread delivers a job's values, lose no more than those deliveries"
   (let* ([delivered 0]
          [counting (jobs:start flood 0 (lambda (v) (set! delivered (+ delivered 1))))]
-         [reported 0]
-         [count-quits (lambda (next c) (if (cancelled? c) (set! reported (+ reported 1)) (next c)))])
-    (advice-add! report count-quits)
+         [asked (make-eq-hashtable)]
+         [landed? (lambda ()
+                    (exists (lambda (t)
+                              (and (eq? (task-state t) 'done)
+                                   (eq? 'cancelled (call-with-values (lambda () (join-task t)) (lambda (how detail) how)))))
+                            (vector->list (hashtable-keys asked))))])
     ;; The storm starts from a task spawned by this one, which runs only
-    ;; once this one has paused, so no quit lands in the test; it goes on
-    ;; until a quit has been reported.
+    ;; once this one has paused, so no quit lands in the test.
     (suspend
       (lambda (resume)
         (spawn-task
@@ -123,14 +125,13 @@
               (lambda (restore)
                 (let ([until (+ (real-time) 2000)] [deadline (+ (real-time) 30000)])
                   (let loop ()
-                    (when (and (< (real-time) deadline) (or (< (real-time) until) (= reported 0)))
-                      (request-quit!)
+                    (when (and (< (real-time) deadline) (or (< (real-time) until) (not (landed?))))
+                      (let ([t (request-quit!)]) (when t (hashtable-set! asked t #t)))
                       (loop))))
                 (resume void)))))))
     (let ([before delivered])
       (test-runner:wait-until (lambda () (> delivered before))))
-    (advice-remove! report count-quits)
-    (check (> reported 0))
+    (check (landed?))
     (jobs:stop! counting)))
 
 (jobs:define-worker (doubled x emit) (emit (* x 2)))

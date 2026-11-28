@@ -2,10 +2,6 @@
         (rename (only (chezscheme) sleep fork-thread) (sleep chez:sleep) (fork-thread chez:fork-thread))
         (only (tuna kernel) tuna-register-signal-handler call-reporting))
 
-;; The kernel reports the end of every task a cancel ends, and these tests
-;; cancel hundreds; any other report still fails the file.
-(advice-add! report (lambda (next c) (unless (cancelled? c) (next c))))
-
 (define (sleep-ms ms)
   (chez:sleep (make-time 'time-duration (* (mod ms 1000) 1000000) (quotient ms 1000))))
 
@@ -150,6 +146,64 @@
     (fork-task (lambda (restore) (sleep-ms 5) (stop-task t)))
     (check-equal? '(stopped #f) (ended t))
     (check-equal? '(winder) log)))
+
+(test "a stop drops a cancel still waiting, so it cuts no winder the stop runs"
+  (let* ([log (box '())] [spinning (box #f)]
+         [t (fork-task
+              (lambda (restore)
+                (call-with-cancellation-masked
+                  (lambda (restore)
+                    (dynamic-wind
+                      void
+                      (lambda () (set-box! spinning #t) (spin))
+                      (lambda () (sleep (make-time 'time-duration 5000000 0)) (set-box! log '(winder))))))))])
+    (test-runner:wait-until (lambda () (unbox spinning)))
+    (cancel-task t 'first)
+    (stop-task t)
+    (check-equal? '(stopped #f) (ended t))
+    (check-equal? '(winder) (unbox log))))
+
+(test "task-request tells whether a cancel or a stop still waits in a task"
+  (let ([t (spawn-task (lambda (restore) 'ran))])
+    (check-equal? #f (task-request t))
+    (cancel-task t 'first)
+    (check-equal? 'cancel (task-request t))
+    (stop-task t)
+    (cancel-task t 'second)
+    (check-equal? 'stop (task-request t))
+    (check-equal? '(stopped #f) (ended t))
+    (check-equal? #f (task-request t)))
+  (let* ([masked (box #f)] [release (box #f)] [caught (box #f)]
+         [t (fork-task
+              (lambda (restore)
+                (call-with-cancellation-masked
+                  (lambda (restore)
+                    (set-box! masked #t)
+                    (let wait () (unless (unbox release) (wait)))
+                    (guard (c [(cancelled? c) (set-box! caught #t)]) (restore void))
+                    (spin)))))])
+    (test-runner:wait-until (lambda () (unbox masked)))
+    (cancel-task t 'held)
+    (check-equal? 'cancel (task-request t))
+    (set-box! release #t)
+    (test-runner:wait-until (lambda () (unbox caught)))
+    (check-equal? #f (task-request t))
+    (stop-task t)
+    (check-equal? '(stopped #f) (ended t))))
+
+(test "a paused task is woken from its resume or a request until it continues"
+  (let* ([resume #f]
+         [t (spawn-task
+              (lambda (restore)
+                (suspend (lambda (r) (set! resume r)))
+                (suspend (lambda (r) (set! resume r)))))])
+    (test-runner:wait-until (lambda () (eq? (task-state t) 'paused)))
+    (resume void)
+    (check-equal? 'woken (task-state t))
+    (test-runner:wait-until (lambda () (eq? (task-state t) 'paused)))
+    (cancel-task t 'woken)
+    (check-equal? 'woken (task-state t))
+    (check-equal? '(cancelled woken) (ended t))))
 
 (test "a cancel and a stop reach a thread's task"
   (let ([c (fork-task (lambda (restore) (spin)))]
@@ -569,7 +623,7 @@
     (check (owner-live? (module-owner '(far))))))
 
 (test "an owner's changes are listed newest first, and an unload takes them all back"
-  (let ([o (make-owner '(ledger))] [f (begin (write-module! "ledger" "#!tuna\n(define (g) 1)\n") (load-named '(ledger)) (eval 'ledger:g (environment '(ledger))))])
+  (let ([o (make-owner '(ledger keeper))] [f (begin (write-module! "ledger" "#!tuna\n(define (g) 1)\n") (load-named '(ledger)) (eval 'ledger:g (environment '(ledger))))])
     (define (a1 next) (next))
     (define (a2 next) (next))
     (call-as-owner o (lambda () (advice-add! f a1) (on-unload void) (override-set! f (lambda () 2)) (advice-add! f a2)))
@@ -991,3 +1045,24 @@
     (stop-task t)
     (join-task t)
     (check-equal? '() (task-frames t))))
+
+(test "module-file names the file the kernel's lookup gives a module name, which import then loads"
+  (let* ([earlier (string-append (getenv "HOME") "/roots/earlier")]
+         [later (string-append (getenv "HOME") "/roots/later")]
+         [outer (library-directories)]
+         [write! (lambda (folder text)
+                   (call-with-output-file (string-append folder "/rootsmade.sls") (lambda (p) (put-string p text))))])
+    (for-each mkdir (list (path-parent earlier) earlier later))
+    (write! later "#!tuna\n(define (where) 'later)\n")
+    (library-directories (cons* (cons earlier (string-append earlier "-objects"))
+                                (cons later (string-append later "-objects"))
+                                outer))
+    (check-equal? (string-append later "/rootsmade.sls") (module-file '(rootsmade)))
+    (write! earlier "#!tuna\n(define (where) 'earlier)\n")
+    (check-equal? (string-append later "/rootsmade.sls") (module-file '(rootsmade)))
+    (load-module! '(rootsmade))
+    (check-equal? 'later ((eval 'rootsmade:where (interaction-environment))))
+    (check-equal? #f (module-file '(rootsmade nothing)))
+    (check-equal? #f (module-file '(r6rs)))
+    (check-raises assertion-violation? (module-file "rootsmade"))
+    (library-directories outer)))

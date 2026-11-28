@@ -1,9 +1,5 @@
 (import (tuna) (test) (options) (hooks) (scopes) (rename (only (chezscheme) sleep) (sleep chez:sleep)))
 
-;; The kernel reports the end of every task a cancel ends, and the stress
-;; test cancels hundreds; any other report still fails the file.
-(advice-add! report (lambda (next c) (unless (cancelled? c) (next c))))
-
 (define (sleep-ms ms)
   (chez:sleep (make-time 'time-duration (* (mod ms 1000) 1000000) (quotient ms 1000))))
 

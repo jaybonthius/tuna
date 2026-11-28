@@ -87,7 +87,7 @@
   (test-user:type! "buffers:ins")
   (test-user:press! "M-TAB")
   (check-equal? '("buffers:ins" #f) (list (eval-test:input) (eval-test:session)))
-  (check-equal? '(cancelled) (quit!)))
+  (check-equal? '() (quit!)))
 
 (tables:define-table own-keymap "Keys the test adds to the prompt.")
 
@@ -114,5 +114,5 @@
   (check-equal? '((#f "C-c C-c is undefined"))
     (map (lambda (r) (if (pair? r) r 'cancelled)) (eval-test:reports-during (lambda () (test-user:press! "C-c C-c")))))
   (check-equal? '(#t started key started) (reverse calls))
-  (check-equal? '(cancelled) (quit!))
+  (check-equal? '() (quit!))
   (hooks:remove! minibuffer:prompt-started note-started))

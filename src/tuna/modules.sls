@@ -5,6 +5,7 @@
     this-module-name
     check-import
     install-module-lookup!
+    module-file
     module-name?
     prefixed-symbol
     loaded-modules
@@ -100,7 +101,7 @@
   ;;; Lookup
 
   (define (refused-module-name? name)
-    (memq (car name) '(csv7 r6rs)))
+    (or (memq (car name) '(csv7 r6rs)) (made-owner-name? name)))
 
   (define (tuna-file? path)
     (and (file-exists? path)
@@ -163,17 +164,30 @@
               (assertion-violation who "a library is first loaded on the main thread" name)
               (values source object found?))))
       (library-directories (append own-directories start-roots))
+      (set! module-search
+        (lambda (who name extensions)
+          (if (memq (car name) '(tuna lang))
+              (search-own who name own-directories extensions)
+              (search who name extensions))))
       (library-search-handler
         (lambda (who name directories extensions)
           (cond
-            [(memq (car name) '(tuna lang)) (search-own who name own-directories extensions)]
+            [(memq (car name) '(tuna lang)) (module-search who name extensions)]
             [(refused-module-name? name) (errorf who "a module cannot be named ~s" name)]
             [(on-main-thread?)
-             (let-values ([(source object found?) (search who name extensions)])
+             (let-values ([(source object found?) (module-search who name extensions)])
                (when source (hashtable-set! found-libraries name source))
                (values source object found?))]
-            [(hashtable-ref found-libraries name #f) (search who name extensions)]
+            [(hashtable-ref found-libraries name #f) (module-search who name extensions)]
             [else (refuse-lookup who name extensions)])))))
+
+  (define module-search #f)
+
+  (define (module-file name)
+    (unless (module-name? name) (assertion-violation 'module-file "not a module name" name))
+    (and (not (refused-module-name? name))
+         (let-values ([(source object found?) (module-search 'module-file name (library-extensions))])
+           source)))
 
   (define (search-library who name)
     ((library-search-handler) who name (library-directories) (library-extensions)))
@@ -300,20 +314,25 @@
          (loop #'(rest ...) (append (reverse (syntax->datum #'(spec ...))) specs))]
         [(form rest ...) (loop #'(rest ...) specs)])))
 
+  ;; A macro, so that a module's top level, at expansion, and the top level,
+  ;; at run time, take one list.
+  (define-syntax chez-definition-keywords
+    (syntax-rules ()
+      [(_) (list #'define-syntax #'define-values #'define-record-type #'define-record #'define-enumeration
+                 #'define-condition-type #'define-ftype #'define-structure #'module #'alias
+                 #'trace-define #'trace-define-syntax)]))
+
   ;; Only Chez's own definition forms written at a module's top level are
   ;; exported here; define-public exports its own names, so a macro built on
   ;; it needs nothing, and a name a macro defines with Chez's forms stays
   ;; private, as in a Chez module.
-  (meta define chez-definition-keywords
-    (list #'define-syntax #'define-values #'define-record-type #'define-enumeration
-          #'define-condition-type #'define-ftype #'define-structure #'module #'alias
-          #'meta #'trace-define #'trace-define-syntax))
+  (meta define module-definition-keywords (cons #'meta (chez-definition-keywords)))
 
   (meta define (chez-definition? form)
     (syntax-case form ()
       [(head . rest)
        (and (identifier? #'head)
-            (exists (lambda (keyword) (free-identifier=? #'head keyword)) chez-definition-keywords))]
+            (exists (lambda (keyword) (free-identifier=? #'head keyword)) module-definition-keywords))]
       [_ #f]))
 
   (meta define (import-form? form)
@@ -774,7 +793,7 @@
       (for-each
         (lambda (t)
           (when (and (eq? (task-owner t) o) (not (task-cleanup? t))
-                     (memq (task-state t) '(running paused)))
+                     (memq (task-state t) '(running paused woken)))
             (unless (task-thread? t) (stop-task t))))
         (live-tasks))
       (mark-unloading-code! o)))
@@ -901,7 +920,7 @@
     (set-exit-runner!
       (lambda (arguments)
         (begin-exit-unloading!)
-        (stop-main-tasks! #f)
+        (stop-main-tasks!)
         (ask-op! (make-op 'exit arguments)))))
 
   ;;; Evaluating in a module
@@ -985,12 +1004,18 @@
       [(changeable? current) (override-set! current value)]
       [else (error 'define (refusal-message symbol))]))
 
+  (define (changeable-name? symbol)
+    (and (top-level-bound? symbol top-level) (changeable? (top-level-value symbol top-level))))
+
   (define (refusal-message symbol)
-    (format (if (and (top-level-bound? symbol top-level) (changeable? (top-level-value symbol top-level)))
+    (format (if (changeable-name? symbol)
                 "~s is ~s's changeable procedure; override it with define"
                 "~s is ~s's definition and cannot be defined again")
             symbol (hashtable-ref exporters symbol #f)))
 
+  ;; Only a define written at the top level overrides: one in a body expands
+  ;; through this macro too, and would change the procedure for every caller.
+  ;; Chez's own define-record-type asks $syntax-top-level? the same way.
   (define (top-level-define x)
     (syntax-case x ()
       [(k (name . formals) body1 body2 ...)
@@ -998,16 +1023,21 @@
        #'(k name (lambda formals body1 body2 ...))]
       [(k name expr)
        (and (identifier? #'name) (exported-name? (syntax->datum #'name)))
-       #'(top-level-define-value 'name name expr)]
+       (let ([symbol (syntax->datum #'name)])
+         (unless (($primitive $syntax-top-level?))
+           (syntax-violation 'define
+             (if (changeable-name? symbol)
+                 (format "~s is ~s's changeable procedure; only a define at the top level overrides it"
+                         symbol (hashtable-ref exporters symbol #f))
+                 (refusal-message symbol))
+             x #'name))
+         #'(top-level-define-value 'name name expr))]
       [(k . rest) #'(define . rest)]))
 
   ;; meta needs no keyword of its own: the definition it wraps expands
   ;; through these, and form-defined-names would not take the top level's
   ;; define for Chez's.
-  (define top-level-definers
-    (list #'define-syntax #'define-values #'define-record-type #'define-record #'define-enumeration
-          #'define-condition-type #'define-ftype #'define-structure #'module #'alias
-          #'trace-define #'trace-define-syntax))
+  (define top-level-definers (chez-definition-keywords))
 
   (define (top-level-definer keyword)
     (lambda (x)
@@ -1033,7 +1063,33 @@
                (syntax-violation 'import (format "~s is unloaded; load it with load-module!" name) x)))
            names)
          (with-syntax ([names (datum->syntax #'k names)] [form x])
-           #'(begin (import spec ...) (check-import form) (run-imported! 'names))))]))
+           (if (exists renaming-spec? (syntax->datum #'(spec ...)))
+               (with-syntax ([checker (datum->syntax #'k (module-names-checker #'k x))])
+                 #'(begin
+                     (module () (import spec ...) (define-syntax check 'checker) (check k))
+                     (import spec ...) (check-import form) (run-imported! 'names)))
+               #'(begin (import spec ...) (check-import form) (run-imported! 'names)))))]))
+
+  (define (renaming-spec? spec)
+    (and (pair? spec) (list? spec)
+         (or (memq (car spec) '(rename prefix alias add-prefix drop-prefix))
+             (and (memq (car spec) '(only except for)) (pair? (cdr spec)) (renaming-spec? (cadr spec))))))
+
+  ;; The import is tried first inside a module, so a refusal comes before
+  ;; it binds anything at the top level. Inside, a name the import left
+  ;; alone refers to what it refers to outside, and a module's own name
+  ;; imported again refers to the same export.
+  (define (module-names-checker outer form)
+    (lambda (x)
+      (syntax-case x ()
+        [(_ inner)
+         (begin
+           (vector-for-each
+             (lambda (symbol)
+               (unless (free-identifier=? (datum->syntax #'inner symbol) (datum->syntax outer symbol))
+                 (syntax-violation 'import (refusal-message symbol) form)))
+             (hashtable-keys exporters))
+           #'(begin))])))
 
   (define (run-imported! names)
     (run-modules! (filter (lambda (name) (hashtable-contains? found-libraries name)) names)))

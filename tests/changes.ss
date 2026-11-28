@@ -86,3 +86,14 @@
   (check-equal? "prog2" (spell:language))
   (load-module! '(prog))
   (check-equal? "prog2" (spell:language)))
+
+(test "changeable? tells a changeable procedure from any other value"
+  (check-equal? '(#t #t #f #f #f) (map changeable? (list spell:language report car (lambda () 1) 'spell:language))))
+
+(test "definition-changes names a procedure's definer after its unload, as an owner no longer live"
+  (install-local! "gone" "#!tuna\n(define (hello) \"hello\")\n")
+  (load-module! '(gone))
+  (let ([gone (module-owner '(gone))] [hello (eval 'gone:hello (interaction-environment))])
+    (unload-owner! gone)
+    (check-equal? (list (list gone 'define #f)) (definition-changes hello))
+    (check (not (owner-live? gone)))))

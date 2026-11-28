@@ -145,9 +145,10 @@
     (saved-test/files:write-text! x "1")
     (let ([t (spawn-task (lambda (restore) (load-module! '(saved-test looping))))])
       (fork-task (lambda (restore) (when (on-thread-wait (lambda () (getprop 'saved-test 'checking #f)) t) (cancel-task t))))
-      (let ([reported (test-runner:reports-during (lambda () (join-task t)) 1)])
-        (check-equal? 1 (length reported))
-        (check (cancelled? (car reported)))))
+      (let ([reported (test-runner:reports-during
+                        (lambda () (check-equal? 'cancelled (call-with-values (lambda () (join-task t)) (lambda (how detail) how))))
+                        0)])
+        (check-equal? '() reported)))
     (check (file-exists? x))))
 
 (test "a stored value is read with immutable strings and bytevectors, and #f is written as a value"

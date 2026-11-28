@@ -141,3 +141,42 @@
       (program:close-input! r)
       (let-values ([(status output errors) (program:wait r)])
         (check-equal? 7 status)))))
+
+;; The main thread of an idle Tuna waits for work, so the process reads as
+;; sleeping.
+(define (sleeping? pid)
+  (call-with-input-file (format "/proc/~a/stat" pid)
+    (lambda (p)
+      (let skip () (unless (char=? (read-char p) #\)) (skip)))
+      (read-char p)
+      (char=? (read-char p) #\S))))
+
+(define (note-file-form name)
+  (format "(call-with-output-file (string-append (getenv \"HOME\") \"/~a\") (lambda (p) (write '~a p)) 'replace)" name name))
+
+(test "Ctrl-C exits an idle Tuna, which unloads its modules first"
+  (let ([folder (home "interrupted-idle")])
+    (write-file! (string-append folder "/.config/tuna/init.ss")
+      (string-append "(import (tuna))\n(on-unload (lambda () " (note-file-form "unloaded") "))\n" (note-file-form "ready") "\n"))
+    (let ([r (program:start (program:tuna) folder '() '())])
+      (test-runner:wait-until (lambda () (file-exists? (string-append folder "/ready"))))
+      (test-runner:wait-until (lambda () (sleeping? (program:pid r))))
+      (program:signal! r (processes:signal int))
+      (let-values ([(status output errors) (program:wait r)])
+        (check-equal? 0 status)
+        (check-equal? "" errors)
+        (check-equal? 'unloaded (read-datum (string-append folder "/unloaded")))))))
+
+(test "a second Ctrl-C stops the clean-up that holds an exit up, and Tuna exits"
+  (let ([folder (home "interrupted-twice")])
+    (write-file! (string-append folder "/.config/tuna/init.ss")
+      (string-append "(import (tuna))\n(on-unload (lambda () " (note-file-form "unloading") " (let spin () (spin))))\n" (note-file-form "ready") "\n"))
+    (let ([r (program:start (program:tuna) folder '() '())])
+      (test-runner:wait-until (lambda () (file-exists? (string-append folder "/ready"))))
+      (test-runner:wait-until (lambda () (sleeping? (program:pid r))))
+      (program:signal! r (processes:signal int))
+      (test-runner:wait-until (lambda () (file-exists? (string-append folder "/unloading"))))
+      (program:signal! r (processes:signal int))
+      (let-values ([(status output errors) (program:wait r)])
+        (check-equal? 0 status)
+        (check-equal? "" errors)))))

@@ -194,7 +194,8 @@
 (test "load-module! and module-owner refuse what is not a module"
   (for-each
     (lambda (name) (check-equal? "not a module" (fixtures:raised-message (lambda () (load-module! name)))))
-    '((nothere) (tuna) (chezscheme) (init)))
+    '((nothere) (tuna) (chezscheme)))
+  (check-equal? "a module cannot be named (init)" (fixtures:raised-message (lambda () (load-module! '(init)))))
   (check-equal? "not a module name" (fixtures:raised-message (lambda () (module-owner 'spell)))))
 
 (test "unload actions run newest first, and one that raises is reported while the rest run"

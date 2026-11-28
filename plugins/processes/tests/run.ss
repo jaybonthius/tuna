@@ -54,18 +54,13 @@
     (error-message (lambda () (processes:run "no-such-program" '())))))
 
 (test "the program processes:run runs is the caller's own process, and a cancel that ends the task stops it"
-  (let* ([cancels '()]
-         [keep (lambda (next c) (if (cancelled? c) (set! cancels (cons c cancels)) (next c)))]
-         [running (spawn-task (lambda (restore) (processes:run "sleep" '("10"))))]
+  (let* ([running (spawn-task (lambda (restore) (processes:run "sleep" '("10"))))]
          [sleeper (lambda () (find (lambda (p) (equal? '("sleep" "10") (processes:command-line p))) (processes:all)))])
     (test-runner:wait-until sleeper)
     (let ([sleeper (sleeper)])
       (check-equal? (current-owner) (processes:owner sleeper))
-      (advice-add! report keep)
       (cancel-task running 'stop)
-      (test-runner:wait-until (lambda () (pair? cancels)))
-      (advice-remove! report keep)
-      (check-equal? 'stop (cancelled-reason (car cancels)))
+      (check-equal? '(cancelled stop) (call-with-values (lambda () (join-task running)) list))
       (test-runner:wait-until (lambda () (processes:status sleeper)))
       (check-equal? -1 (processes:status sleeper))
       (test-runner:wait-until (lambda () (not (memq sleeper (processes:all))))))))

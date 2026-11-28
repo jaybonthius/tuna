@@ -9,15 +9,9 @@
 
 (define-values (c c-record) (jsonrpc-test/servers:start! "fake" (jsonrpc:handlers [cancel note-cancel!])))
 
-;; Cancelling a waiting task makes the kernel report the cancel.
 (define (cancel-waiting! task)
-  (let* ([reported '()] [keep (lambda (next c) (set! reported (cons c reported)))])
-    (advice-add! report keep)
-    (cancel-task task)
-    (test-runner:wait-until (lambda () (eq? (task-state task) 'done)))
-    (test-runner:wait-until (lambda () (pair? reported)))
-    (advice-remove! report keep)
-    (check (for-all cancelled? reported))))
+  (cancel-task task)
+  (check-equal? 'cancelled (call-with-values (lambda () (join-task task)) (lambda (how detail) how))))
 
 (test "a request pauses its task until the program answers, and returns the result"
   (check-equal? '(("a" . 1)) (jsonrpc:request c "echo" '(("a" . 1))))

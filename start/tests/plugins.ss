@@ -193,7 +193,7 @@
       (cancel-task first)
       (check-equal? 'cancelled (car (ended first)))
       (advice-remove! report keep)
-      (check (and (= (length reported) 1) (cancelled? (car reported))))
+      (check-equal? '() reported)
       (check-equal? "git is running for the plugin" (raised-message (lambda () (plugins:install! slow-line))))
       (test-runner:wait-until
         (lambda () (not (equal? "git is running for the plugin" (raised-message (lambda () (plugins:install! slow-line))))))))))
@@ -212,7 +212,7 @@
       (cancel-task first)
       (check-equal? 'cancelled (car (ended first)))
       (advice-remove! report keep)
-      (check (and (= (length reported) 1) (cancelled? (car reported))))
+      (check-equal? '() reported)
       (check-equal? running (raised-message (lambda () (plugins:install! second-line))))
       (test-runner:wait-until
         (lambda () (not (equal? running (raised-message (lambda () (plugins:install! second-line))))))))))

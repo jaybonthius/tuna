@@ -104,3 +104,22 @@
   (check-equal? "-- again --" (owners/display:mode-line))
   (eval-in-module '(define mode-line (lambda () "-- once more --")) '(owners display))
   (check-equal? "-- once more --" (owners/display:mode-line)))
+
+(test "made-owner finds the live owner make-owner made under a name, until its unload ends"
+  (check-equal? #f (made-owner '(owners nobody)))
+  (check-equal? #f (made-owner '(owners spell)))
+  (let ([kept (make-owner '(owners kept))])
+    (check-equal? kept (made-owner '(owners kept)))
+    (unload-owner! kept)
+    (check-equal? #f (made-owner '(owners kept))))
+  (check-raises assertion-violation? (made-owner 'user)))
+
+(test "a name is a module's or a made owner's, never both"
+  (check-raises assertion-violation? (make-owner '(owners spell)))
+  (let ([clash (make-owner '(owners clash))])
+    (call-with-output-file (string-append (getenv "HOME") "/.config/tuna/lib/owners/clash.sls")
+      (lambda (p) (put-string p "#!tuna\n(define (hello) 'module)\n")))
+    (check-raises error? (load-module! '(owners clash)))
+    (check-raises error? (eval '(import (owners clash)) (interaction-environment)))
+    (check-equal? #f (module-file '(owners clash)))
+    (check-equal? clash (made-owner '(owners clash)))))

@@ -132,12 +132,12 @@
     (live-tasks-of (client-item-tasks c)))
 
   (define (reading-input? c t)
-    (and (eq? (task-state t) 'paused) (memq t (client-input-readers c)) #t))
+    (and (memq (task-state t) '(paused woken)) (memq t (client-input-readers c)) #t))
 
   (define (quit-item-task! c)
     (let ([tasks (live-item-tasks c)])
       (client-item-tasks-set! c tasks)
-      (let ([t (find (lambda (t) (memq (task-state t) '(running paused))) tasks)])
+      (let ([t (find (lambda (t) (memq (task-state t) '(running paused woken))) tasks)])
         (when (and t (not (reading-input? c t)))
           (if (eq? t (client-quit-cancelled c))
               (stop-task t)

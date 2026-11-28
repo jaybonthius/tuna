@@ -66,15 +66,14 @@
       (check-equal? #f (unbox ran))))
   (unload-owner! (module-owner '(main-thread poster))))
 
-(test "a quit ends runaway code, and the code after it goes on"
+(test "a quit ends runaway code unreported, and the code after it goes on"
   (let* ([started (box #f)] [t (spawn-task (lambda (restore) (set-box! started #t) (spin)))])
     (let ([reported (test-runner:reports-during
                       (lambda ()
                         (quit-when! (lambda () (unbox started)) t)
                         (check-equal? '(cancelled #f) (call-with-values (lambda () (join-task t)) list)))
-                      1)])
-      (check-equal? 1 (length reported))
-      (check (cancelled? (car reported))))
+                      0)])
+      (check-equal? '() reported))
     (check-equal? 3 (+ 1 2))))
 
 (test "&cancelled is serious and not an error, and a guard that catches every condition catches it"
@@ -100,9 +99,8 @@
                (with-exception-handler
                  (lambda (c) (if (cancelled? c) (begin (quit! (current-task)) (spin)) (raise c)))
                  (lambda () (quit! (current-task)) (spin)))))])
-    (let ([reported (test-runner:reports-during (lambda () (join-task t)) 1)])
-      (check-equal? 1 (length reported))
-      (check (cancelled? (car reported))))
+    (let ([reported (test-runner:reports-during (lambda () (join-task t)) 0)])
+      (check-equal? '() reported))
     (check-equal? 'done (task-state t))))
 
 (test "a cancel ends a module's body, and the module is unloaded"
@@ -202,9 +200,8 @@
 (test "another thread's cancel is delivered"
   (let ([signalled (spawn-task (lambda (restore) (suspend (lambda (resume) (void)))))])
     (test-runner:wait-until (lambda () (eq? (task-state signalled) 'paused)))
-    (let ([reported (test-runner:reports-during (lambda () (join-task (fork-task (lambda (restore) (cancel-task signalled 'from-thread)))) (join-task signalled)) 1)])
-      (check-equal? 1 (length reported))
-      (check (cancelled? (car reported))))
+    (let ([reported (test-runner:reports-during (lambda () (join-task (fork-task (lambda (restore) (cancel-task signalled 'from-thread)))) (join-task signalled)) 0)])
+      (check-equal? '() reported))
     (check-equal? 'from-thread (guard (c [(cancelled? c) (cancelled-reason c)]) (test-runner:join signalled)))))
 
 (test "unloading a module stops its paused tasks past their handlers, after running what it spawned before"

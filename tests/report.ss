@@ -82,3 +82,29 @@
         (write-module! "report/good" "#!tuna\n(define (hello) (let ((y)) y))\n")
         (check-raises syntax-violation? (reload-modules! '((report good)))))))
   (write-module! "report/good" "#!tuna\n(define (hello) \"hello\")\n"))
+
+(test "report-owner names the owner a report names, which advice on report cannot learn from current-owner"
+  (check-equal? #f (report-owner))
+  (load-module! '(report good))
+  (let* ([seen '()] [note (lambda (next c) (set! seen (cons (list (report-owner) (current-owner)) seen)))]
+         [good (module-owner '(report good))])
+    (advice-add! report note)
+    (join-task (call-as-owner good (lambda () (spawn-task (lambda (restore) (call-reporting (lambda () (car '()))))))))
+    (call-reporting (lambda () (load-module! '(report dict))))
+    (advice-remove! report note)
+    (check-equal? (list (list good (current-owner))) (list (cadr seen)))
+    (check-equal? '(report dict) (owner-name (car (car seen))))
+    (check-equal? (current-owner) (cadr (car seen)))))
+
+(test "a task a cancel ends is not reported, on the main thread or on another"
+  (let ([reported (reports-during 0
+                    (lambda ()
+                      (let ([t (spawn-task (lambda (restore) (suspend (lambda (resume) (void)))))])
+                        (join-task (spawn-task (lambda (restore) #t)))
+                        (cancel-task t 'main)
+                        (check-equal? 'cancelled (call-with-values (lambda () (join-task t)) (lambda (how detail) how))))
+                      (let ([t (fork-task (lambda (restore) (let spin () (spin))))])
+                        (cancel-task t 'thread)
+                        (check-equal? 'cancelled (call-with-values (lambda () (join-task t)) (lambda (how detail) how))))
+                      (join-task (spawn-task (lambda (restore) #t)))))])
+    (check-equal? '() reported)))

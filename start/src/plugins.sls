@@ -1580,7 +1580,7 @@
   (dynamic-wind
     void
     thunk
-    (lambda () (unless (eq? (task-state (current-task)) 'paused) (leave)))))
+    (lambda () (unless (memq (task-state (current-task)) '(paused woken)) (leave)))))
 
 (define (load-configuration!)
   (let ([me (current-task)])

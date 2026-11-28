@@ -247,7 +247,7 @@
 
 (test "a quit item cancels the code page's item that is running, not only one that pauses, at the first quit"
   (let ([c (open-noting 'a)])
-    (check-equal? '(cancelled quit (#t))
+    (check-equal? '(cancelled quit ())
       (spin-and-quit! c (lambda () (web:post-input! c '(("type" . "spin"))))))
     (check-equal? '(other) (taken!))
     (web:close-client! c)))
@@ -279,7 +279,7 @@
     (tables:set! web:input-handlers "ask" (lambda (client item) (web:ask-page client "size" 1)))
     (web:post-input! c '(("type" . "ask")))
     (test-runner:wait-for-batch)
-    (check-equal? '(cancelled quit (#t))
+    (check-equal? '(cancelled quit ())
       (spin-and-quit! c
         (lambda ()
           (web:post-input! c '(("type" . "spin")))

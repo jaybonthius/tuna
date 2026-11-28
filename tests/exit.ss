@@ -1,4 +1,4 @@
-(import (tuna) (test) (test-runner) (program))
+(import (tuna) (test) (test-runner) (program) (processes))
 
 (define (read-lines file)
   (if (file-exists? file)
@@ -83,3 +83,50 @@
   (let-values ([(status events) (exit-run "chez-winder")])
     (check-equal? 0 status)
     (check-equal? (append '("handler ran" "the task goes on" "after a pause") unloads) events)))
+
+(test "a cancel that cuts an after-thunk while exit leaves its task is not reported, and exit still asks about it"
+  (let-values ([(status events) (exit-run "cancel-winder")])
+    (check-equal? 0 status)
+    (check-equal? (cons "asked about a cancel" unloads) events)))
+
+(test "exit ends the batch it is called in before anything stops or unloads, so batch-ended sees the batch's changes"
+  (let-values ([(status events) (exit-run "batch")])
+    (check-equal? 0 status)
+    (check-equal? (cons "batch ended: changed in the exiting batch" unloads) events)))
+
+(test "exit goes on when a cancel ends its batch-ended task"
+  (let-values ([(status events) (exit-run "batch-cancelled")])
+    (check-equal? 0 status)
+    (check-equal? (cons "batch-ended cancels itself" unloads) events)))
+
+;; The configuration notes the first event once exit is held up; one
+;; SIGINT must then free it.
+(define (interrupted-run name held)
+  (let ([home (string-append (getenv "HOME") "/" name)])
+    (test-runner:make-home! home (string-append "exit/" name ".ss"))
+    (let ([r (program:start (program:tuna) home '() '())])
+      (test-runner:wait-until (lambda () (member held (read-lines (string-append home "/events")))))
+      (program:signal! r (processes:signal int))
+      (let-values ([(status output errors) (program:wait r)])
+        (check-equal? "" errors)
+        (values status (read-lines (string-append home "/events")))))))
+
+(test "a Ctrl-C stops a batch-ended that holds the exit up in a pause, and Tuna exits"
+  (let-values ([(status events) (interrupted-run "batch-stuck" "batch-ended waits")])
+    (check-equal? 0 status)
+    (check-equal? (cons "batch-ended waits" unloads) events)))
+
+(test "a Ctrl-C stops a batch-ended that holds the exit up on the main thread, and Tuna exits"
+  (let-values ([(status events) (interrupted-run "batch-spin" "batch-ended spins")])
+    (check-equal? 0 status)
+    (check-equal? (cons "batch-ended spins" unloads) events)))
+
+(test "a Ctrl-C stops again a stopped task whose after-thunk holds the exit up, and Tuna exits"
+  (let-values ([(status events) (interrupted-run "winder-stuck" "after-thunk waits")])
+    (check-equal? 0 status)
+    (check-equal? (cons "after-thunk waits" unloads) events)))
+
+(test "a Ctrl-C stops again a thread's task that the unload stopped and whose after-thunk holds the exit up, and Tuna exits"
+  (let-values ([(status events) (interrupted-run "thread-winder-stuck" "thread's after-thunk waits")])
+    (check-equal? 0 status)
+    (check-equal? '("configuration unloading" "thread's after-thunk waits" "user unloading" "keeper unloading") events)))

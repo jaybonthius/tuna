@@ -43,7 +43,7 @@
     '((import (tuna extra)) (import (only (tuna other) where)) (import (only (lang extra) where)))))
 
 (test "the owners' names, and names that would replace Chez's own, are not module names"
-  (check-equal? '("library (init) not found" "library (repl) not found")
+  (check-equal? '("a module cannot be named (init)" "a module cannot be named (repl)")
     (map (lambda (form) (cadr (raised-text form))) '((import (init)) (import (repl)))))
   (check-equal? '((import "a module cannot be named (csv7 tools)") (import "a module cannot be named (r6rs)"))
     (map raised-text '((import (csv7 tools)) (import (r6rs))))))
@@ -148,6 +148,32 @@
   (check-equal? '(1 9 k #t "hi")
     (fixtures:at-repl '(list macros:low macros:high (macros:entry-key (macros:make-entry 'k)) (macros:entry? (macros:make-entry 'k)) (macros:hello))))
   (check-equal? '(2 1) (fixtures:at-repl '(begin (define-values (fresh-value macros-free) (values 2 1)) (list fresh-value macros-free)))))
+
+(test "a define inside a body cannot define a module's name, so it changes no procedure for other callers"
+  (let ([before (fixtures:at-repl '(macros:hello))])
+    (check-equal?
+      '((define "macros:hello is (macros)'s changeable procedure; only a define at the top level overrides it")
+        (define "macros:low is (macros)'s definition and cannot be defined again"))
+      (map raised-text
+           '((let () (define macros:hello (lambda () "local")) 0)
+             (let () (define (macros:low) 7) 0))))
+    (check-equal? before (fixtures:at-repl '(macros:hello)))))
+
+(test "an import that renames or prefixes cannot bind a module's name to anything else, and changes nothing"
+  (check-equal?
+    '((import "macros:low is (macros)'s definition and cannot be defined again")
+      (import "macros:hello is (macros)'s changeable procedure; override it with define"))
+    (map raised-text
+         '((import (rename (only (chezscheme) car) (car macros:low)))
+           (import (prefix (rename (only (chezscheme) car) (car hello)) macros:)))))
+  (check-equal? '(1 #t 1)
+    (fixtures:at-repl '(begin (import (prefix (only (macros) macros:low) again-)) (import (rename (macros) (macros:low macros:low)))
+                              (list macros:low (string? (macros:hello)) again-macros:low)))))
+
+(test "a module's top-level define-record exports its names, as Chez's other definition forms do"
+  (fixtures:write-lib-module! '(records) '((define-record thing (a))))
+  (fixtures:at-repl '(import (records)))
+  (check-equal? '(3 #t) (fixtures:at-repl '(list (records:thing-a (records:make-thing 3)) (records:thing? (records:make-thing 4))))))
 
 (test "a property needs the identifier it is keyed by"
   (fixtures:write-lib-module! '(nodefiner) '((define (d) 1) (define-property d definer #t)))

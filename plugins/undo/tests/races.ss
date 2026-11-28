@@ -20,9 +20,8 @@
                      (buffers:replace! q 1 1 "q")
                      (cancel-task (current-task))
                      (let loop () (loop)))))])
-    (check-equal? '(#t)
-      (map (lambda (report) (cancelled? (cadr report)))
-           (undo-test/edits:reports-during (lambda () (check-raises cancelled? (test-runner:join body))))))
+    (check-equal? '()
+      (undo-test/edits:reports-during (lambda () (check-raises cancelled? (test-runner:join body)))))
     (check-equal? '("\n" ((0 #f))) (list (undo-test/edits:text q) (states q)))))
 
 (test "quits landing in typing, undo and redo, and in the hooks that record them, leave a tree that still matches the text"

@@ -15,8 +15,10 @@
     owner<?
     kernel-owner
     make-owner
+    made-owner
     new-module-owner
     made-owners
+    made-owner-name?
     current-owner
     changing-owner
     record-change!
@@ -32,6 +34,7 @@
     task?
     (rename (task-state* task-state) (task-owner* task-owner) (task-frames* task-frames))
     task-cleanup?
+    task-request
     task-kind
     task-in-code-of?
     live-tasks
@@ -91,6 +94,7 @@
     set-definition-documentation!
 
     report
+    report-owner
     report-safely
     report-warning
     report-warning-once
@@ -181,9 +185,11 @@
     (and (pair? x) (list? x) (for-all symbol? x)))
 
   ;; Owners made by make-owner rank above every module, in the order their
-  ;; names were first made, so a name made again keeps its place.
+  ;; names were first made, so a name made again keeps its place. Any
+  ;; thread's module lookup asks whether a name was made, so the main
+  ;; thread replaces the table whole and never changes it in place.
   (define made-band (expt 2 50))
-  (define made-ranks (make-hashtable equal-hash equal?))
+  (define made-ranks (hashtable-copy (make-hashtable equal-hash equal?) #f))
   (define made-live (make-hashtable equal-hash equal?))
   (define instance-numbers (make-hashtable equal-hash equal?))
 
@@ -198,16 +204,30 @@
     (check-main-thread 'make-owner)
     (when (equal? name '(tuna))
       (assertion-violation 'make-owner "(tuna) is the kernel's name" name))
-    (let ([live (hashtable-ref made-live name #f)])
-      (when (and live (memq (owner-state live) '(loaded unloading)))
-        (assertion-violation 'make-owner "an owner of that name is live" name)))
+    (when (hashtable-contains? latest-module-instances name)
+      (assertion-violation 'make-owner "a module has that name" name))
+    (when (live-made-owner name)
+      (assertion-violation 'make-owner "an owner of that name is live" name))
     (let ([rank (or (hashtable-ref made-ranks name #f)
-                    (let ([r (+ made-band (hashtable-size made-ranks))])
-                      (hashtable-set! made-ranks name r)
+                    (let ([r (+ made-band (hashtable-size made-ranks))] [ranks (hashtable-copy made-ranks #t)])
+                      (hashtable-set! ranks name r)
+                      (set! made-ranks (hashtable-copy ranks #f))
                       r))])
       (let ([o (make-owner* name 'made (next-number! name) rank)])
         (hashtable-set! made-live name o)
         o)))
+
+  (define (made-owner-name? name) (hashtable-contains? made-ranks name))
+
+  (define (live-made-owner name)
+    (let ([o (hashtable-ref made-live name #f)])
+      (and o (memq (owner-state o) '(loaded unloading)) o)))
+
+  (define (made-owner name)
+    (unless (owner-name-list? name)
+      (assertion-violation 'made-owner "not an owner name, a list of symbols" name))
+    (check-main-thread 'made-owner)
+    (live-made-owner name))
 
   (define (made-owners)
     (filter (lambda (o) (memq (owner-state o) '(loaded unloading)))
@@ -315,11 +335,27 @@
 
   (define (task-state* t)
     (check-task 'task-state t)
-    (task-state t))
+    (let ([state (task-state t)])
+      (if (eq? state 'paused)
+          (with-task-lock t
+            (let ([state (task-state t)] [r (task-resumed t)])
+              (if (and (eq? state 'paused) (or (and r (eq? (car r) (task-pause t))) (pending-request? t)))
+                  'woken
+                  state)))
+          state)))
 
   (define (task-owner* t)
     (check-task 'task-owner t)
     (task-owner t))
+
+  (define (task-request t)
+    (check-task 'task-request t)
+    (with-task-lock t
+      (cond
+        [(eq? (task-state t) 'done) #f]
+        [(task-stop? t) 'stop]
+        [(task-cancel t) 'cancel]
+        [else #f])))
 
   (define live-mutex (make-mutex))
   (define live (make-eq-hashtable))
@@ -440,10 +476,10 @@
             (thread-state-task-set! main-state #f)
             (after))
           (let loop ()
-            (unless (null? (unbox signals-pending))
-              (for-each handle-signal! (take-signals!)))
             (when (and exiting-task (eq? (task-state exiting-task) 'done))
               (exit-left!))
+            (when (and exit-batch (eq? (task-state (car exit-batch)) 'done))
+              (exit-batch-ended!))
             (when (and batch-ran? (null? taken))
               (set! batch-ran? #f)
               (unless (or unloading-for-exit? (eq? (wrapper-procedure-procedure batch-ended) do-nothing))
@@ -461,7 +497,7 @@
   (define (run-main-loop)
     (timer-interrupt-handler timer-handler)
     (base-exception-handler unhandled-raise)
-    (keyboard-interrupt-handler keyboard-interrupt)
+    (watch-signals!)
     (reset-handler
       (lambda ()
         (let ([t (thread-state-task main-state)])
@@ -536,7 +572,7 @@
              (begin (report-from-thread c) (reset)))]
         [(not t) (report-safely c) (reset)]
         [(task-stopping? t) (task-ended! t 'stopped #f)]
-        [(cancelled? c) (report-safely c) (task-ended! t 'cancelled (cancelled-reason c))]
+        [(cancelled? c) (task-ended! t 'cancelled (cancelled-reason c))]
         [else
          (report-safely c)
          (task-ended! t 'raised c)])))
@@ -661,7 +697,7 @@
        (check-task 'cancel-task t)
        (when (with-task-lock t
                (and (not (eq? (task-state t) 'done))
-                    (begin (unless (task-cancel t) (task-cancel-set! t (box reason))) #t)))
+                    (begin (unless (or (task-cancel t) (task-stop? t)) (task-cancel-set! t (box reason))) #t)))
          (wake-for-request! t))
        (void)]))
 
@@ -669,7 +705,7 @@
     (check-task 'stop-task t)
     (when (with-task-lock t
             (and (not (eq? (task-state t) 'done))
-                 (begin (task-stop?-set! t #t) #t)))
+                 (begin (task-stop?-set! t #t) (task-cancel-set! t #f) #t)))
       (wake-for-request! t))
     (void))
 
@@ -747,12 +783,21 @@
           (assertion-violation 'resume "the task was resumed already"))
         (if (task-thread t)
             (resume-thread-task! t token thunk)
-            (enqueue! (lambda () (continue! t token thunk)))))))
+            (begin
+              (with-task-lock t
+                (when (eq? (task-pause t) token)
+                  (task-resumed-set! t (cons token thunk))))
+              (enqueue! (lambda () (continue! t token thunk))))))))
 
+  ;; A wake that delivers nothing pauses again at the same pause, where a
+  ;; resume queued before it still continues the task.
   (define (continue! t token thunk)
     (when (with-task-lock t
             (and (eq? (task-state t) 'paused) (eq? (task-pause t) token)
-                 (begin (task-state-set! t 'running) #t)))
+                 (begin
+                   (task-state-set! t 'running)
+                   (unless (eq? thunk wake-marker) (task-resumed-set! t #f))
+                   #t)))
       (task-switching?-set! t #t)
       (thread-state-task-set! main-state t)
       ((task-continuation t) thunk)))
@@ -922,7 +967,7 @@
   (define (thread-task-raised t c)
     (cond
       [(task-stopping? t) ((task-escape t) (list 'stopped #f))]
-      [(cancelled? c) (report-from-thread c) ((task-escape t) (list 'cancelled (cancelled-reason c)))]
+      [(cancelled? c) ((task-escape t) (list 'cancelled (cancelled-reason c)))]
       [else
        (report-from-thread c)
        ((task-escape t) (list 'raised c))]))
@@ -1228,20 +1273,40 @@
       (start-exit! arguments raised)))
 
   ;; exit-anyway? is asked in a task, so that its advice can wait for the
-  ;; user's answer.
+  ;; user's answer. Then the batch exit was called in ends before anything
+  ;; stops or unloads, so batch-ended's advice sees what the batch changed.
+  ;; The loop, not that task, goes on with the exit once the task has ended,
+  ;; so a cancel or a stop that ends it cannot drop the exit.
+  (define exit-batch #f)
+
   (define (start-exit! arguments raised)
-    (unless unloading-for-exit?
-      (if (null? raised)
-          (exit-runner arguments)
-          (spawn-kernel-task
-            (lambda (restore)
-              (when (for-all (lambda (c) (exit-anyway? c)) raised)
-                (exit-runner arguments)))))))
+    (cond
+      [unloading-for-exit? (void)]
+      [exit-batch (stop-task (car exit-batch))]
+      [(null? raised)
+       (set! batch-ran? #f)
+       (let ([t (new-task end-exiting-batch kernel-owner #f 'kernel #f)])
+         (set! exit-batch (cons t arguments))
+         (start! t))]
+      [else
+       (spawn-kernel-task
+         (lambda (restore)
+           (when (and (for-all (lambda (c) (exit-anyway? c)) raised)
+                      (not (or unloading-for-exit? exit-batch)))
+             (set! exit-batch (cons (spawn-kernel-task end-exiting-batch) arguments)))))]))
+
+  (define (end-exiting-batch restore) (batch-ended))
+
+  (define (exit-batch-ended!)
+    (let ([arguments (cdr exit-batch)])
+      (set! exit-batch #f)
+      (exit-runner arguments)))
 
   ;; While a stop or exit unwinds a task, each winder's raise is taken
   ;; where it happens, as Emacs catches the error of each kill-emacs-hook
   ;; function, and the unwinding goes on: no handler of the task may catch
-  ;; it and carry on.
+  ;; it and carry on. A cancel is no fault, so it is not reported, but one
+  ;; that cut a winder of the exiting task still makes exit ask.
   (define (call-after-thunk t out)
     (if (or (task-stopping? t) (and exiting-task-leaving? (eq? t exiting-task)))
         (call/cc
@@ -1251,16 +1316,16 @@
                 (cond
                   [(warning-only? c) (set! warned (report-warning-once c warned))]
                   [else
-                   (report-safely c)
+                   (unless (cancelled? c) (report-safely c))
                    (when (eq? t exiting-task) (set! raised-leaving (cons c raised-leaving)))
                    (k (void))]))
               out)))
         (out)))
 
-  (define (stop-main-tasks! except)
+  (define (stop-main-tasks!)
     (for-each
       (lambda (t)
-        (unless (or (eq? t except) (task-thread t) (not (eq? (task-kind t) 'normal)) (eq? (task-state t) 'done))
+        (unless (or (task-thread t) (not (eq? (task-kind t) 'normal)) (eq? (task-state t) 'done))
           (stop-task t)))
       (live-tasks)))
 
@@ -1269,45 +1334,53 @@
     (flush-output-port (current-output-port))
     (apply chez:exit arguments))
 
-  ;; SIGINT is a Unix signal like any other: a plugin may register it; with
-  ;; none registered Tuna exits, and once exit unloads it stops the
-  ;; clean-up task that holds the exit up.
-  (define sigint-registrant #f)
   (define running-cleanup #f)
 
   (define (stop-running-cleanup! t) (set! running-cleanup t))
 
-  ;; Chez runs signal handlers in whichever code the interrupt lands in,
-  ;; which may be the kernel holding the queue's mutex, so a handler only
-  ;; records the signal and wakes the loop, which acts on it.
-  (define signals-pending (box '()))
+  (define (take-signal! sig)
+    ((foreign-procedure "tuna_take_signal" (int) int) sig))
 
-  (define (note-signal! sig)
-    (let retry ()
-      (let ([old (unbox signals-pending)])
-        (unless (box-cas! signals-pending old (cons sig old)) (retry))))
-    (when (mutex-acquire queue-mutex #f)
-      (condition-signal queue-ready)
-      (mutex-release queue-mutex)))
+  ;; A blocked foreign call would hold up every thread at the next
+  ;; collection, so the wait lets collections run. Once exit is under way
+  ;; the thread answers SIGINT itself, since what holds the exit up may
+  ;; hold the main thread and the loop for ever. A thread that ended on a
+  ;; raise would lose every later signal, Ctrl-C included.
+  (define (watch-signals!)
+    (let ([wait-signal (foreign-procedure __collect_safe "tuna_wait_signal" () int)])
+      (fork-thread
+        (lambda ()
+          (let loop ()
+            (let ([sig (wait-signal)])
+              (when (fx> sig 0)
+                (guard (c [#t (report-from-thread c)])
+                  (unless (and (fx= sig 2) (interrupt-exit!))
+                    (enqueue! (lambda () (handle-signal! sig)))))
+                (loop))))))
+      (take-signal! 2)))
 
-  (define (take-signals!)
-    (let retry ()
-      (let ([old (unbox signals-pending)])
-        (if (box-cas! signals-pending old '()) (reverse old) (retry)))))
+  ;; A further stop skips the winder a first stop left running.
+  (define (interrupt-exit!)
+    (cond
+      [unloading-for-exit?
+       (let ([t running-cleanup]) (when t (stop-task t)))
+       (for-each stop-task (filter task-stopping? (live-tasks)))
+       #t]
+      [exit-batch => (lambda (b) (stop-task (car b)) #t)]
+      [else #f]))
 
   ;; Each signal's registrations, newest first, so a take-back gives the
-  ;; signal back to the registration it replaced. A signal holds a key once
-  ;; Chez's handler is installed for it, which cannot be undone.
+  ;; signal back to the registration it replaced. Tuna's handler stays
+  ;; installed once a signal is first registered, so the signal keeps its
+  ;; key, and a signal no registration takes is ignored.
   (define signal-handlers (make-eqv-hashtable))
 
   (define (handle-signal! sig)
     (cond
-      [(and (fx= sig 2) unloading-for-exit?) (when running-cleanup (stop-task running-cleanup))]
+      [(and (fx= sig 2) (interrupt-exit!)) (void)]
       [(find (lambda (entry) (eq? (owner-state (car entry)) 'loaded)) (hashtable-ref signal-handlers sig '()))
        => (lambda (entry) (spawn-task* (lambda (restore) ((cdr entry) sig)) (car entry) 'normal #f))]
       [(fx= sig 2) (exit)]))
-
-  (define (keyboard-interrupt) (note-signal! 2))
 
   (define (tuna-register-signal-handler sig handler)
     (unless (fixnum? sig) (assertion-violation 'register-signal-handler "not a signal number" sig))
@@ -1316,7 +1389,7 @@
     (let* ([owner (changing-owner 'register-signal-handler)] [entry (cons owner handler)])
       (kernel-section (this-thread)
         (unless (or (fx= sig 2) (hashtable-contains? signal-handlers sig))
-          (register-signal-handler sig note-signal!))
+          (take-signal! sig))
         (hashtable-set! signal-handlers sig
           (cons entry (remp (lambda (e) (eq? (car e) owner)) (hashtable-ref signal-handlers sig '()))))
         (record-change! owner 'signal-handler sig #f
@@ -1569,7 +1642,7 @@
                      (and (memq (layer-kind l) '(advice advice-removal)) (layer-procedure l))))
              (list-sort (lambda (a b) (fx> (layer-sequence a) (layer-sequence b)))
                         (filter live-layer? (definition-layers d))))
-        (if (and definer (owner-live? definer)) (list (list definer 'define #f)) '()))))
+        (if definer (list (list definer 'define #f)) '()))))
 
   (define (definition-documentation p)
     (definition-doc (definition-of 'definition-documentation p)))
@@ -1589,6 +1662,8 @@
   (define (write-report c)
     (let ([o (or (reporting-owner) (current-owner))])
       (write-condition c (and o (eq? (owner-kind o) 'module) (owner-name o)))))
+
+  (define (report-owner) (reporting-owner))
 
   (define (as-reported chain)
     (lambda (c)
